@@ -1926,3 +1926,36 @@ describe("a receiver typed as a library's type, and a value the file imported", 
     },
   );
 });
+
+describe("the calls a route table reads through a project wrapper, over the facts", () => {
+  it("gives the call a wrapper returns, the function a call is written in, and nothing dropped", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/routes.ts",
+      `
+        declare const app: { get(path: string): unknown };
+        function route(path: string) {
+          return app.get(path);
+        }
+        export function build() {
+          route("/x");
+        }
+      `,
+    );
+    const call = file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .find((one) => one.getText() === 'route("/x")');
+    if (call === undefined) {
+      throw new Error("the fixture contains no call to route");
+    }
+    const store = new ResolutionStore();
+    const ops = opsOverFacts(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+    });
+
+    expect(ops.returnedCall?.()?.calleeText()).toBe("app.get");
+    expect(ops.callerSite?.()).not.toBeNull();
+    expect(ops.dropped?.(new Set(["get"]))).toBe(false);
+  });
+});

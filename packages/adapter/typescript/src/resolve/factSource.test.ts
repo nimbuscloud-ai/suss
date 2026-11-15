@@ -164,6 +164,20 @@ describe("the fact source", () => {
     expect(listed).toEqual([['"a"', "...items"], ['"b"'], null]);
   });
 
+  it("reads null and undefined as the literal for no value, and zero as none", () => {
+    const written = bothOps({
+      source: `
+        export function sync() {
+          track(null);
+          track(undefined);
+          track(0);
+        }
+      `,
+    }).map(({ fromFacts }) => fromFacts?.valueAt(0)?.nothing?.());
+
+    expect(written).toEqual([true, true, false]);
+  });
+
   it("reads an object that spreads itself once", () => {
     const [, , ringed] = bothOps().filter(
       ({ fromNodes }) => fromNodes.method() !== null,

@@ -12,7 +12,9 @@
  * are in `@suss/extractor`, so a discovery pattern can contain a table.
  */
 
-import { joinMountedPath } from "@suss/resolution";
+import { bySourceOrder, joinMountedPath } from "@suss/resolution";
+
+import { constructedFrom } from "./ops.js";
 
 import type {
   BaseRole,
@@ -28,6 +30,7 @@ import type {
   ModuleOps,
   MountRole,
   PairArg,
+  ReceiverUnread,
   ReplayRole,
   RouteGap,
   RouteOutcome,
@@ -53,6 +56,7 @@ export type {
   FragmentRole,
   IncludeRole,
   MountRole,
+  ReceiverUnread,
   ReplayRole,
   RootRule,
   RouteGap,
@@ -80,12 +84,61 @@ interface UnreadItem {
   readonly at?: CallOps;
 }
 
-type Walked = EntrySource | UnreadItem;
+/** An entry made on a value, which `ChildrenIn` `receiver` finds by the value its receiver comes to. */
+interface ReceiverEntry {
+  /** The role's name: the method the entry calls on the value. */
+  readonly name: string;
+  /** The entry as written, whose arguments the roles read: the call, or the decorator. */
+  readonly call: CallOps;
+  /** The call made on the value: `call`, or the library call a project wrapper the decorator calls returns. */
+  readonly made: CallOps;
+  /** The function or class the decorator is written over, for a role whose handler is decorated. */
+  readonly decorated: ValueOps | null;
+  /** The call that built the value, or null when the receiver comes to no one call. */
+  readonly value: CallOps | null;
+}
 
-/** An entry's children, and the list they are the entries of, so a list inside itself stops. */
+interface ReceiverItem {
+  readonly form: "receiver";
+  readonly entry: ReceiverEntry;
+}
+
+type Walked = EntrySource | UnreadItem | ReceiverItem;
+
+/**
+ * An entry's children, and the list they are the entries of, so a list
+ * inside itself stops. For a value's entries, the list is the value, so
+ * a mount that leads back into it is a cycle.
+ */
 interface Children {
   readonly entries: readonly Walked[];
   readonly list: string | null;
+}
+
+/** The entries made on each value in the files read, found the first time a table asks for them. */
+interface Receivers {
+  /** By the site of the call that built the value, in the order the files are read and then the source order. */
+  readonly byValue: ReadonlyMap<string, readonly ReceiverEntry[]>;
+  /** Each entry whose handler is decorated, so the ones no walk reads are said to be unreached. */
+  readonly decorated: readonly ReceiverEntry[];
+  /** Each mount written in a loop the table cannot list. */
+  readonly unlisted: readonly CallOps[];
+  /** The names each file imports from the table's modules, by its path, so a value built in another file is named the way that file names it. */
+  readonly names: ReadonlyMap<string, ReadonlyMap<string, string>>;
+}
+
+/** Why an entry whose handler is a value gave no route, with the loops that may mount it. */
+interface UnreadWhy {
+  readonly reason: "pathUnread" | "prefixUnread" | ReceiverUnread;
+  readonly loops?: readonly CallOps[];
+}
+
+/** Why no path under a scope is claimed: something above it, never the entry itself or its reach. */
+interface ScopeUnread extends UnreadWhy {
+  readonly reason: Exclude<
+    UnreadWhy["reason"],
+    "pathUnread" | "unreached" | "unlistedLoop"
+  >;
 }
 
 /** An expansion the walk is inside, with the bases an entry inside it starts from. */
@@ -111,8 +164,8 @@ interface Scope {
   readonly shallow: boolean;
   /** Where a shallow expansion's member routes start: the mount's prefix and each scope that starts the shallow path. */
   readonly shallowPath: string;
-  /** Whether an enclosing entry's own path did not read, so no path inside it is claimed. */
-  readonly pathUnread: boolean;
+  /** Why no path inside an enclosing entry is claimed, or null while every path above reads. */
+  readonly unread: ScopeUnread | null;
 }
 
 /** An entry's arguments, as the picks read them. */
@@ -129,6 +182,8 @@ interface Entry {
   readonly source: EntrySource;
   readonly name: string;
   readonly args: EntryArgs;
+  /** The function or class a decorator entry is written over. */
+  readonly decorated?: ValueOps | null;
 }
 
 interface Walk {
@@ -152,6 +207,14 @@ interface Walk {
   file: string;
   /** The names the file being read imports from the table's modules, by the name it uses. */
   names: ReadonlyMap<string, string>;
+  /** The entries made on each value, once a `receiver` child asks. */
+  receivers: Receivers | null;
+  /** The receiver entries a walk has read. */
+  readonly read: Set<ReceiverEntry>;
+  /** The values whose entries a cycle has walked once with no path, so the cycle stops. */
+  readonly cycled: Set<string>;
+  /** The sites of the roots left out because their function drops them. */
+  readonly dropped: Set<string>;
 }
 
 interface Root {
@@ -168,7 +231,7 @@ const EMPTY_SCOPE: Scope = {
   bindings: new Map(),
   shallow: false,
   shallowPath: "",
-  pathUnread: false,
+  unread: null,
 };
 
 const NO_KEYS = (): undefined => undefined;
@@ -196,6 +259,10 @@ export function composeRoutes(
     opened: [],
     file: "",
     names: new Map(),
+    receivers: null,
+    read: new Set(),
+    cycled: new Set(),
+    dropped: new Set(),
   };
   const appRoots: Root[] = [];
   for (const { module, displayPath } of sources.files) {
@@ -224,6 +291,7 @@ export function composeRoutes(
       walkChildren(root.children, EMPTY_SCOPE, walk);
     });
   }
+  sayUnreached(walk);
   return {
     routesFor: (controllerKey, action) =>
       walk.routes.get(controllerKey)?.get(action) ?? [],
@@ -356,7 +424,11 @@ function asRoot(
 ): { owner: string; root: Root } | null {
   const rule = walk.table.roots;
   const kind = callName(call, walk);
-  if (kind === null || !Object.hasOwn(rule.kinds, kind)) {
+  if (
+    kind === null ||
+    !Object.hasOwn(rule.kinds, kind) ||
+    dropped(call, walk)
+  ) {
     return null;
   }
   const owner = ownerWritten(call, rule);
@@ -376,6 +448,20 @@ function asRoot(
       names: walk.names,
     },
   };
+}
+
+/** Whether the root's function drops what it builds, which the walk then leaves out with every entry made on it. */
+function dropped(call: CallOps, walk: Walk): boolean {
+  const rule = walk.table.roots.unlessDropped;
+  if (rule === undefined) {
+    return false;
+  }
+  const owned = new Set([...Object.keys(walk.table.roles), ...rule.owned]);
+  if (call.dropped?.(owned) !== true) {
+    return false;
+  }
+  walk.dropped.add(call.site?.() ?? "");
+  return true;
 }
 
 /** A root's own list that did not read is said at the root call, where the router is created. */
@@ -424,10 +510,18 @@ function nameOf(call: CallOps): string {
  * one of them, and null for any other call.
  */
 function callName(call: CallOps, walk: Walk): string | null {
-  if (walk.table.from === undefined) {
+  return callNameIn(call, walk.names, walk.table);
+}
+
+function callNameIn(
+  call: CallOps,
+  names: ReadonlyMap<string, string>,
+  table: RouteTableDeclaration,
+): string | null {
+  if (table.from === undefined) {
     return nameOf(call);
   }
-  return hasReceiver(call) ? null : (walk.names.get(nameOf(call)) ?? null);
+  return hasReceiver(call) ? null : (names.get(nameOf(call)) ?? null);
 }
 
 /** The name an element is matched against the roles by: its tag, read the way a call's name is. */
@@ -541,6 +635,17 @@ const CHILDREN_READERS: {
         }
       : null,
   chain: () => null,
+  receiver: (source, _rule, _args, walk) => {
+    const value = source.form === "call" ? source.call.site?.() : undefined;
+    if (value === undefined) {
+      return null;
+    }
+    const entries = receiversOf(walk).byValue.get(value) ?? [];
+    return {
+      entries: entries.map((entry): Walked => ({ form: "receiver", entry })),
+      list: value,
+    };
+  },
 };
 
 /**
@@ -583,6 +688,129 @@ function turnsElementsIntoEntries(value: ValueOps, walk: Walk): boolean {
   const call = value.asCall?.() ?? null;
   const name = call === null ? null : callName(call, walk);
   return name !== null && (walk.table.elementLists ?? []).includes(name);
+}
+
+function receiversOf(walk: Walk): Receivers {
+  walk.receivers ??= indexReceivers(walk);
+  return walk.receivers;
+}
+
+/**
+ * Every entry made on a value in the files read, by the value its
+ * receiver comes to: the decorators of a serves role whose handler is
+ * decorated, and the calls of the other serves and mount roles. Each
+ * mount written in a loop the table cannot list is kept as well.
+ */
+function indexReceivers(walk: Walk): Receivers {
+  const decoratedRoles = rolesFoundBy("decorator", walk.table);
+  const calledRoles = rolesFoundBy("call", walk.table);
+  const byValue = new Map<string, ReceiverEntry[]>();
+  const decorated: ReceiverEntry[] = [];
+  const unlisted: CallOps[] = [];
+  const names = new Map<string, ReadonlyMap<string, string>>();
+  for (const { module } of walk.sources.files) {
+    const imported = namesImported(module, walk.table);
+    if (imported !== null) {
+      names.set(module.path(), imported);
+    }
+    const inFile = [
+      ...decoratedEntries(module, decoratedRoles, walk),
+      ...calledEntries(module, calledRoles),
+    ].sort((a, b) =>
+      bySourceOrder(a.call.site?.() ?? "", b.call.site?.() ?? ""),
+    );
+    for (const entry of inFile) {
+      const value = entry.value?.site?.();
+      if (value !== undefined) {
+        const onValue = byValue.get(value) ?? [];
+        onValue.push(entry);
+        byValue.set(value, onValue);
+      }
+      if (entry.decorated !== null) {
+        decorated.push(entry);
+      }
+      if (inUnlistedLoop(entry, walk)) {
+        unlisted.push(entry.call);
+      }
+    }
+  }
+  return { byValue, decorated, unlisted, names };
+}
+
+/** The roles whose entries made on a value are found by their decorators, or by their calls. */
+function rolesFoundBy(
+  found: "decorator" | "call",
+  table: RouteTableDeclaration,
+): Set<string> {
+  return new Set(
+    Object.entries(table.roles)
+      .filter(([, role]) => foundBy(role) === found)
+      .map(([name]) => name),
+  );
+}
+
+function foundBy(role: RouteRole): "decorator" | "call" | null {
+  if (role.role === "serves") {
+    return "decorated" in role.handler ? "decorator" : "call";
+  }
+  return role.role === "mount" ? "call" : null;
+}
+
+/** The decorators that call one of the roles' methods on a value, each with the definition under it. */
+function decoratedEntries(
+  module: ModuleOps,
+  roles: ReadonlySet<string>,
+  walk: Walk,
+): ReceiverEntry[] {
+  if (roles.size === 0) {
+    return [];
+  }
+  return module.decorated().flatMap(({ definition, decorators }) =>
+    decorators.flatMap((decorator) => {
+      if (decorator.form !== "call") {
+        return [];
+      }
+      const made = madeOn(decorator.call, walk);
+      const name = made?.method() ?? null;
+      return made !== null && name !== null && roles.has(name)
+        ? [
+            {
+              name,
+              call: decorator.call,
+              made,
+              decorated: definition,
+              value: made.receiver(),
+            },
+          ]
+        : [];
+    }),
+  );
+}
+
+/** The call a decorator makes on a value: itself, or the library call a project wrapper it calls returns. */
+function madeOn(call: CallOps, walk: Walk): CallOps | null {
+  if (call.method() !== null) {
+    return call;
+  }
+  return walk.table.throughWrappers === true
+    ? (call.returnedCall?.() ?? null)
+    : null;
+}
+
+/** The calls the file writes to one of the roles' methods. */
+function calledEntries(
+  module: ModuleOps,
+  roles: ReadonlySet<string>,
+): ReceiverEntry[] {
+  if (roles.size === 0) {
+    return [];
+  }
+  return module.calls("file").flatMap((call) => {
+    const name = call.method();
+    return name !== null && roles.has(name)
+      ? [{ name, call, made: call, decorated: null, value: call.receiver() }]
+      : [];
+  });
 }
 
 const ARGS_OF: {
@@ -781,7 +1009,21 @@ function joinStandAlone(prefix: string, segment: string): string {
   return `${prefix}/${segment.replace(/\/+$/, "")}`;
 }
 
+/** How a library that puts a prefix and a path together as strings serves the two. */
+const STRING_JOINS: Readonly<
+  Record<
+    NonNullable<RouteTableDeclaration["joins"]>,
+    (prefix: string, segment: string) => string
+  >
+> = {
+  asWritten: (prefix, segment) => `${prefix}${segment}`,
+  merged: (prefix, segment) => `${prefix}${segment}`.replace(/\/{2,}/g, "/"),
+};
+
 function joinTablePath(walk: Walk, prefix: string, segment: string): string {
+  if (walk.table.joins !== undefined) {
+    return STRING_JOINS[walk.table.joins](prefix, segment);
+  }
   return walk.table.absolutePaths === "standAlone"
     ? joinStandAlone(prefix, segment)
     : joinRoutePath(prefix, segment);
@@ -829,8 +1071,16 @@ export function rowRoutes(
 /** Where a row's suffix starts from the member base. */
 const MEMBER = "{member}";
 
-/** Walks an entry's children, with the list they are the entries of open while they are walked. */
+/**
+ * Walks an entry's children, with the list they are the entries of open
+ * while they are walked. Only a value's entries can be reached again
+ * while open, since a list met inside itself gives none.
+ */
 function walkChildren(children: Children, scope: Scope, walk: Walk): void {
+  if (children.list !== null && walk.opened.includes(children.list)) {
+    walkCycle(children.list, children, scope, walk);
+    return;
+  }
   if (children.list !== null) {
     walk.opened.push(children.list);
   }
@@ -838,6 +1088,29 @@ function walkChildren(children: Children, scope: Scope, walk: Walk): void {
   if (children.list !== null) {
     walk.opened.pop();
   }
+}
+
+/**
+ * A value mounted inside itself, which no chain of paths reaches. Its
+ * entries, and everything mounted under them, are walked once more with
+ * no path claimed, and a value walked that way once stops the cycle.
+ */
+function walkCycle(
+  value: string,
+  children: Children,
+  scope: Scope,
+  walk: Walk,
+): void {
+  if (walk.cycled.has(value)) {
+    return;
+  }
+  walk.cycled.add(value);
+  walkEntries(children.entries, withUnread(scope, { reason: "cycle" }), walk);
+}
+
+/** The scope with no path claimed under it, for the first reason found on the way down. */
+function withUnread(scope: Scope, unread: ScopeUnread): Scope {
+  return scope.unread === null ? { ...scope, unread } : scope;
 }
 
 /**
@@ -850,6 +1123,11 @@ function walkEntries(items: readonly Walked[], scope: Scope, walk: Walk): void {
   for (const item of items) {
     if (item.form === "unread") {
       walk.outcomes.push(unreadOutcome(item));
+      continue;
+    }
+
+    if (item.form === "receiver") {
+      readReceiverEntry(item.entry, scope, walk);
       continue;
     }
 
@@ -869,8 +1147,7 @@ function walkEntries(items: readonly Walked[], scope: Scope, walk: Walk): void {
         name,
         args: argsOf(item, walk.keywords, scope.defaults),
       };
-      const read = ROLE_READERS[role.role] as RoleReader<RouteRole>;
-      read(role, entry, scope, walk);
+      readAs(role, entry, scope, walk);
       continue;
     }
     const unmatched = UNMATCHED[item.form] as (
@@ -880,6 +1157,32 @@ function walkEntries(items: readonly Walked[], scope: Scope, walk: Walk): void {
     ) => void;
     unmatched(item, scope, walk);
   }
+}
+
+/** An entry made on a value, read by the role for its method, with the arguments the entry writes. */
+function readReceiverEntry(
+  found: ReceiverEntry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const role = walk.table.roles[found.name] as RouteRole;
+  walk.read.add(found);
+  readAs(
+    role,
+    {
+      source: { form: "call", call: found.call },
+      name: found.name,
+      args: callArgs(found.call, walk.keywords, scope.defaults),
+      decorated: found.decorated,
+    },
+    scope,
+    walk,
+  );
+}
+
+function readAs(role: RouteRole, entry: Entry, scope: Scope, walk: Walk): void {
+  const read = ROLE_READERS[role.role] as RoleReader<RouteRole>;
+  read(role, entry, scope, walk);
 }
 
 function unreadOutcome(item: UnreadItem): RouteOutcome {
@@ -1053,6 +1356,10 @@ function readServes(
   scope: Scope,
   walk: Walk,
 ): void {
+  if ("decorated" in role.handler) {
+    readServesDecorated(role, entry, scope, walk);
+    return;
+  }
   if ("value" in role.handler) {
     readServesValue(role, role.handler.value, entry, scope, walk);
     return;
@@ -1060,6 +1367,110 @@ function readServes(
   for (const method of methodsOf(role, entry.args, scope, walk)) {
     serveAt(role, role.handler, entry.args, scope, walk, method);
   }
+}
+
+/** One route a served entry gives: its method, the handler, and the class a method handler is written in. */
+interface Served {
+  readonly method: string;
+  readonly handler: ValueOps;
+  readonly owner?: ValueOps;
+}
+
+/**
+ * A decorator entry serves the definition under it at the decorator's
+ * path: a function under each of the role's methods, or each method of
+ * a class that `members` lists, as the handler of a route of its own.
+ */
+function readServesDecorated(
+  role: ServesRole,
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const definition = entry.decorated ?? null;
+  const own = ownPathOf(role, entry.args, scope);
+  if (definition === null || own.kind === "none") {
+    return;
+  }
+  const served = servedBy(role, definition, entry.args, scope, walk);
+  const unread = unreadAt(scope, own);
+  if (unread !== null) {
+    for (const one of distinctHandlers(served)) {
+      walk.outcomes.push(unreadEntry(unread, one, entry.source));
+    }
+    return;
+  }
+  const path = servedPath(scope, own, walk);
+  for (const one of served) {
+    walk.outcomes.push({
+      kind: "route",
+      method: one.method,
+      path,
+      handler: one.handler,
+      entry: entry.source,
+      ...(one.owner === undefined ? {} : { owner: one.owner }),
+    });
+  }
+}
+
+function servedBy(
+  role: ServesRole,
+  definition: ValueOps,
+  args: EntryArgs,
+  scope: Scope,
+  walk: Walk,
+): Served[] {
+  if (!("members" in role.methods)) {
+    return methodsOf(role, args, scope, walk).map((method) => ({
+      method,
+      handler: definition,
+    }));
+  }
+  const { members } = role.methods;
+  return (definition.asClass?.()?.members("instance") ?? [])
+    .filter((member) => members.includes(member.name))
+    .map((member) => ({
+      method: member.name.toUpperCase(),
+      handler: member.value,
+      owner: definition,
+    }));
+}
+
+function distinctHandlers(served: readonly Served[]): Served[] {
+  return served.filter(
+    (one, at) =>
+      served.findIndex((other) => other.handler === one.handler) === at,
+  );
+}
+
+/** Why the path an entry would serve is not claimed: something above it, or its own path. Null when it reads. */
+function unreadAt(scope: Scope, own: OwnPath): UnreadWhy | null {
+  if (scope.unread !== null) {
+    return scope.unread;
+  }
+  return own.kind === "unread" ? { reason: "pathUnread" } : null;
+}
+
+function unreadEntry(
+  unread: UnreadWhy,
+  served: Omit<Served, "method">,
+  entry: EntrySource,
+): RouteOutcome {
+  return {
+    kind: "unread",
+    reason: unread.reason,
+    handler: served.handler,
+    entry,
+    ...(served.owner === undefined ? {} : { owner: served.owner }),
+    ...(unread.loops === undefined ? {} : { loops: unread.loops }),
+  };
+}
+
+/** The path an entry whose own path reads serves at: its segment under the scope, or the scope's own path. */
+function servedPath(scope: Scope, own: OwnPath, walk: Walk): string {
+  return own.kind === "segment"
+    ? joinTablePath(walk, scope.pathPrefix, own.segment)
+    : scope.pathPrefix || "/";
 }
 
 /** What an entry whose handler is a value says about its own path. */
@@ -1115,8 +1526,11 @@ function ownPathOf(role: ServesRole, args: EntryArgs, scope: Scope): OwnPath {
 }
 
 function scopeInside(scope: Scope, own: OwnPath, walk: Walk): Scope {
-  if (scope.pathUnread || own.kind === "unread") {
-    return { ...scope, pathUnread: true };
+  if (scope.unread !== null) {
+    return scope;
+  }
+  if (own.kind === "unread") {
+    return { ...scope, unread: { reason: "prefixUnread" } };
   }
   if (own.kind === "segment") {
     return {
@@ -1135,19 +1549,12 @@ function serveValue(
   handler: ValueOps,
   own: Exclude<OwnPath, { kind: "none" }>,
 ): void {
-  if (scope.pathUnread || own.kind === "unread") {
-    walk.outcomes.push({
-      kind: "unread",
-      reason: scope.pathUnread ? "prefixUnread" : "pathUnread",
-      handler,
-      entry: entry.source,
-    });
+  const unread = unreadAt(scope, own);
+  if (unread !== null) {
+    walk.outcomes.push(unreadEntry(unread, { handler }, entry.source));
     return;
   }
-  const path =
-    own.kind === "segment"
-      ? joinTablePath(walk, scope.pathPrefix, own.segment)
-      : scope.pathPrefix || "/";
+  const path = servedPath(scope, own, walk);
   for (const method of methodsOf(role, entry.args, scope, walk)) {
     walk.outcomes.push({
       kind: "route",
@@ -1159,6 +1566,7 @@ function serveValue(
   }
 }
 
+/** The methods an entry serves its one handler under. A role whose methods are a class's members gives none here. */
 function methodsOf(
   role: ServesRole,
   args: EntryArgs,
@@ -1168,10 +1576,13 @@ function methodsOf(
   if (Array.isArray(role.methods)) {
     return role.methods.flatMap((method) => aliased(walk.table, method));
   }
-  const { pick, all } = role.methods as {
-    readonly pick: EntryPick;
-    readonly all?: string;
-  };
+  const methods = role.methods as
+    | { readonly pick: EntryPick; readonly all?: string }
+    | { readonly members: readonly string[] };
+  if ("members" in methods) {
+    return [];
+  }
+  const { pick, all } = methods;
   const names = namesOf(args, pick, scope) ?? [];
   if (all !== undefined && names.includes(all)) {
     return ["*"];
@@ -1454,6 +1865,14 @@ function readScopes(
   if (children === null) {
     return;
   }
+  if (role.noValue !== undefined) {
+    walkChildren(
+      children,
+      prefixedScope(role, role.noValue, entry.args, scope, walk),
+      walk,
+    );
+    return;
+  }
   if (
     role.both === undefined &&
     role.path === undefined &&
@@ -1466,6 +1885,66 @@ function readScopes(
   if (segments !== null) {
     walkChildren(children, enterScope(scope, segments, role, walk), walk);
   }
+}
+
+/**
+ * The scope under a library's router, read the way the library reads its
+ * prefix. One that does not read, or none where the library makes one
+ * up, leaves every route under it unread, ahead of what the mounts above
+ * it say, since the router's own prefix is what it is built with.
+ */
+function prefixedScope(
+  role: ScopesRole,
+  noValue: "unstated" | "unreadable",
+  args: EntryArgs,
+  scope: Scope,
+  walk: Walk,
+): Scope {
+  const prefix = prefixRead(firstPicked(args, role.path ?? []), noValue, scope);
+  if (prefix.kind === "unreadable") {
+    return { ...scope, unread: { reason: "prefixUnread" } };
+  }
+  if (prefix.kind === "unstated") {
+    return role.prefixRequired === true
+      ? { ...scope, unread: { reason: "prefixUnstated" } }
+      : scope;
+  }
+  const path =
+    role.trailingSlash === "trimmed"
+      ? prefix.value.replace(/\/+$/, "")
+      : prefix.value;
+  return { ...scope, pathPrefix: joinTablePath(walk, scope.pathPrefix, path) };
+}
+
+/** What a library prefix says where it is written: a path, none at all, or something that does not read as a string. */
+type PrefixRead =
+  | { readonly kind: "stated"; readonly value: string }
+  | { readonly kind: "unstated" }
+  | { readonly kind: "unreadable" };
+
+function prefixRead(
+  value: ValueOps | undefined,
+  noValue: "unstated" | "unreadable",
+  scope: Scope,
+): PrefixRead {
+  if (value === undefined || (noValue === "unstated" && writesNoValue(value))) {
+    return { kind: "unstated" };
+  }
+  const word = wordOf(value, scope);
+  return word === null
+    ? { kind: "unreadable" }
+    : { kind: "stated", value: word };
+}
+
+/** What a library that tests its prefix for truth reads as none: `""`, `0`, `false`, or the language's literal for no value. */
+function writesNoValue(value: ValueOps): boolean {
+  const literal = value.literal?.() ?? null;
+  return (
+    literal === "" ||
+    literal === 0 ||
+    literal === false ||
+    value.nothing?.() === true
+  );
 }
 
 /** The path and namespace segments a scope adds, or null when its one word for both reads nothing. */
@@ -1583,6 +2062,10 @@ function readMount(
   scope: Scope,
   walk: Walk,
 ): void {
+  if (role.prefix !== undefined) {
+    readValueMount(role, role.prefix, entry, scope, walk);
+    return;
+  }
   const written = firstSource(entry.args, role.table);
   const owner = written === null ? null : walk.sources.ownerOf(written);
   const mountPath = firstValueWord(entry.args, role.at, scope);
@@ -1614,4 +2097,240 @@ function readMount(
     );
   });
   walk.mounting.delete(owner.name);
+}
+
+/** The loop whose variable a mount's table can be: a `for` statement, which the facts state with `elementOf`. */
+const FOR_LOOP = "for";
+
+/** What a mount's table comes to: the calls that built the values it mounts, or a loop the table cannot list. */
+type Mounted =
+  | { readonly kind: "values"; readonly calls: readonly CallOps[] }
+  | { readonly kind: "unlisted" };
+
+const UNLISTED: Mounted = { kind: "unlisted" };
+
+/**
+ * The values a mount's table comes to: the call that built it, through
+ * names and fields, or for the variable of a `for` loop, the call behind
+ * each item of the list the loop goes over. A loop over anything else,
+ * or over an item that comes to no call, is one the table cannot list.
+ */
+function mountedOf(value: ValueOps | undefined, walk: Walk): Mounted {
+  const built = value?.asCall?.({ follow: "namesAndFields" }) ?? null;
+  if (built !== null) {
+    return { kind: "values", calls: [built] };
+  }
+  const over = walk.table.loops.includes(FOR_LOOP)
+    ? (value?.element?.() ?? null)
+    : null;
+  if (over === null) {
+    return { kind: "values", calls: [] };
+  }
+  if (!writtenAsList(over)) {
+    return UNLISTED;
+  }
+  const items = over
+    .items()
+    .map((item) => item.asCall?.({ follow: "namesAndFields" }) ?? null);
+  const calls = items.filter((item): item is CallOps => item !== null);
+  return calls.length === items.length ? { kind: "values", calls } : UNLISTED;
+}
+
+/** Whether the entry mounts a value from a loop the table cannot list. */
+function inUnlistedLoop(entry: ReceiverEntry, walk: Walk): boolean {
+  const role = walk.table.roles[entry.name];
+  if (role?.role !== "mount" || role.prefix === undefined) {
+    return false;
+  }
+  const args = callArgs(entry.call, walk.keywords, {});
+  return mountedOf(firstPicked(args, role.table), walk).kind === "unlisted";
+}
+
+/**
+ * A mount of a value the source built, such as `include_router(router,
+ * prefix=...)`: the call that built each value is walked as an entry,
+ * under the mount's path.
+ */
+function readValueMount(
+  role: MountRole,
+  prefix: "inFront" | "replaces",
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const mounted = mountedOf(firstPicked(entry.args, role.table), walk);
+  if (mounted.kind === "unlisted") {
+    return;
+  }
+  const at = prefixRead(
+    firstPicked(entry.args, role.at),
+    role.noValue ?? "unreadable",
+    scope,
+  );
+  for (const value of mounted.calls) {
+    walkMountedValue(
+      value,
+      mountedScope(at, prefix, entry, value, scope, walk),
+      walk,
+    );
+  }
+}
+
+/**
+ * The scope a mounted value is walked in: under the path the mount
+ * states, or with no path claimed when that path does not read, when it
+ * replaces the value's own, or when a loop may mount the value instead.
+ */
+function mountedScope(
+  at: PrefixRead,
+  prefix: "inFront" | "replaces",
+  entry: Entry,
+  value: CallOps,
+  scope: Scope,
+  walk: Walk,
+): Scope {
+  if (at.kind === "unreadable") {
+    return withUnread(scope, { reason: "mountUnread" });
+  }
+  if (at.kind === "stated" && prefix === "replaces") {
+    return withUnread(scope, { reason: "prefixReplaced" });
+  }
+  const placed =
+    at.kind === "stated"
+      ? {
+          ...scope,
+          pathPrefix: joinTablePath(walk, scope.pathPrefix, at.value),
+        }
+      : scope;
+  const loops =
+    entry.source.form === "call"
+      ? rivalsOf(entry.source.call, value, walk)
+      : [];
+  return loops.length === 0
+    ? placed
+    : withUnread(placed, { reason: "rivalledMount", loops });
+}
+
+/** A mounted value, read by the role for the call that built it, named the way that call's own file names it. */
+function walkMountedValue(value: CallOps, scope: Scope, walk: Walk): void {
+  const names = receiversOf(walk).names.get(value.file?.() ?? "");
+  const name =
+    names === undefined ? null : callNameIn(value, names, walk.table);
+  if (name === null || !Object.hasOwn(walk.table.roles, name)) {
+    return;
+  }
+  readAs(
+    walk.table.roles[name] as RouteRole,
+    {
+      source: { form: "call", call: value },
+      name,
+      args: callArgs(value, walk.keywords, {}),
+    },
+    scope,
+    walk,
+  );
+}
+
+/**
+ * The loops the table cannot list that may mount the value in place of a
+ * mount written in a function: each written somewhere else, in a
+ * directory that contains the value's file. A mount at the top of a file
+ * runs when the file is imported, so nothing rivals it.
+ */
+function rivalsOf(mount: CallOps, value: CallOps, walk: Walk): CallOps[] {
+  const site = mount.callerSite?.() ?? null;
+  if (site === null) {
+    return [];
+  }
+  const file = value.file?.() ?? null;
+  return receiversOf(walk).unlisted.filter(
+    (loop) => (loop.callerSite?.() ?? null) !== site && mayMount(loop, file),
+  );
+}
+
+/** Whether a loop may mount a value written in the file. A loader reads what it mounts from near itself, the directory it is in. */
+function mayMount(loop: CallOps, file: string | null): boolean {
+  const loopFile = loop.file?.() ?? null;
+  return (
+    file === null ||
+    loopFile === null ||
+    file.startsWith(loopFile.slice(0, loopFile.lastIndexOf("/") + 1))
+  );
+}
+
+/**
+ * Each decorated entry no walk read, so a route on a router nobody
+ * mounts still has its handler, said with the loops the table cannot
+ * list that may mount its value.
+ */
+function sayUnreached(walk: Walk): void {
+  if (!readsReceivers(walk.table)) {
+    return;
+  }
+  const receivers = receiversOf(walk);
+  for (const found of receivers.decorated) {
+    if (walk.read.has(found) || !onTableValue(found, walk)) {
+      continue;
+    }
+
+    const loops = receivers.unlisted.filter((loop) =>
+      mayMount(loop, found.call.file?.() ?? null),
+    );
+    const unread: UnreadWhy =
+      loops.length === 0
+        ? { reason: "unreached" }
+        : { reason: "unlistedLoop", loops };
+    const served = servedBy(
+      walk.table.roles[found.name] as ServesRole,
+      found.decorated as ValueOps,
+      callArgs(found.call, walk.keywords, {}),
+      EMPTY_SCOPE,
+      walk,
+    );
+    for (const one of distinctHandlers(served)) {
+      walk.outcomes.push(
+        unreadEntry(unread, one, { form: "call", call: found.call }),
+      );
+    }
+  }
+}
+
+/** Whether some entry's children are the entries made on a value, which only such a table finds. */
+function readsReceivers(table: RouteTableDeclaration): boolean {
+  return [
+    table.roots.children,
+    ...Object.values(table.roles).flatMap(childrenRulesOf),
+  ].some((rule) => rule.in === "receiver");
+}
+
+function childrenRulesOf(role: RouteRole): readonly ChildrenIn[] {
+  if (!("children" in role) || role.children === undefined) {
+    return [];
+  }
+  return "in" in role.children ? [role.children] : role.children;
+}
+
+/**
+ * Whether an entry is made on a value the table reads, and so belongs to
+ * it: one a root or a role is written as, not on a root its function
+ * drops. A receiver that comes to no one call counts when
+ * `receiverIsFrom` says the table's modules built it.
+ */
+function onTableValue(found: ReceiverEntry, walk: Walk): boolean {
+  const { value } = found;
+  const { from } = walk.table;
+  if (value === null) {
+    return (
+      from !== undefined && found.made.receiverIsFrom(constructedFrom(...from))
+    );
+  }
+  const names = walk.receivers?.names.get(value.file?.() ?? "");
+  const name =
+    names === undefined ? null : callNameIn(value, names, walk.table);
+  return (
+    name !== null &&
+    !walk.dropped.has(value.site?.() ?? "") &&
+    (Object.hasOwn(walk.table.roots.kinds, name) ||
+      Object.hasOwn(walk.table.roles, name))
+  );
 }

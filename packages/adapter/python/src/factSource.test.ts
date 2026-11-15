@@ -174,6 +174,64 @@ describe("the Python fact source", () => {
     ).toBeUndefined();
   });
 
+  it("reads None as the literal for no value, and a lambda as none", async () => {
+    const { db, source } = await sourceFor();
+    const returned = new Map(
+      db
+        .facts("returnsValue")
+        .map((row) => String(row[1]))
+        .map((key) => [source.textOf(key), key]),
+    );
+
+    expect(source.writesNothing?.(returned.get("None") ?? "")).toBe(true);
+    expect(source.writesNothing?.(returned.get("lambda: None") ?? "")).toBe(
+      false,
+    );
+  });
+
+  it("says an app a function builds and only registers on is dropped, and one it hands on, calls otherwise, or builds at the top is not", async () => {
+    const tree = await parsePython(
+      [
+        "from lib import App",
+        "",
+        "app = App()",
+        "",
+        "def build():",
+        "    local = App()",
+        '    local.get("/x")',
+        "",
+        "def served():",
+        "    kept = App()",
+        "    kept.run()",
+        "",
+        "def handed():",
+        "    passed = App()",
+        "    return passed",
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const line = (key: string) => source.lineOf?.(key) ?? 0;
+    const apps = db
+      .facts("call")
+      .map((row) => String(row[0]))
+      .filter((key) => source.textOf(key) === "App()")
+      .sort((a, b) => line(a) - line(b));
+
+    expect(apps.map((key) => source.dropped?.(key, new Set(["get"])))).toEqual([
+      false,
+      true,
+      false,
+      false,
+    ]);
+  });
+
   it("reads the standard streams and print the way the language spells them", async () => {
     const tree = await parsePython(
       [

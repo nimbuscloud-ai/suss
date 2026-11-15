@@ -123,6 +123,16 @@ describe("the Ruby fact source", () => {
     expect(source.importSpecifierOf?.(held("comp"))).toBeNull();
   });
 
+  it("reads nil as the literal for no value, and a number as none", async () => {
+    // `nil` is at bytes 10 to 13 and `1` at 20 to 21.
+    const tree = await parseRuby("NOTHING = nil\nONE = 1\n");
+    const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
+    const source = rubyFactSource(db);
+
+    expect(source.writesNothing?.(`${FILE}:10-13`)).toBe(true);
+    expect(source.writesNothing?.(`${FILE}:20-21`)).toBe(false);
+  });
+
   it("reads the standard streams and puts the way the language spells them", async () => {
     const tree = await parseRuby(
       [

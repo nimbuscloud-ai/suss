@@ -456,9 +456,14 @@ export interface ValueOps {
   /**
    * The call the source writes at this spot, such as a list item
    * written `get("/x")`, or null when it writes anything else. A name
-   * that refers to a call's result is not followed.
+   * that refers to a call's result is not followed, unless `follow`
+   * says `namesAndFields`: then a name or a field is read as the call it
+   * was written as, `users.router` as the `APIRouter(...)` the module
+   * assigns to `router`, the way `CallOps.receiver` reads a receiver.
    */
-  asCall?(): CallOps | null;
+  asCall?(how?: { readonly follow: "namesAndFields" }): CallOps | null;
+  /** Whether the source writes the language's literal for no value here: `None`, `nil`, `null` or `undefined`. */
+  nothing?(): boolean;
   /**
    * The properties this value reads off `object`, through the calls,
    * comparisons, entries and template holes it is written from, each
@@ -865,6 +870,28 @@ export interface CallOps {
    */
   callsInCallee?(): readonly CallOps[];
   /**
+   * The call the project function this call reaches returns, when that
+   * function hands it its own parameters in order and nothing else, as
+   * `def api_route(path): return ns.route(path)` does for
+   * `api_route("/x")`. The library then gets what this call passes.
+   * Null for any other call.
+   */
+  returnedCall?(): CallOps | null;
+  /**
+   * Whether what this call builds is dropped when the function that
+   * builds it returns: it is written to one name of that function, which
+   * nothing passes on or calls, and every method called on it is one of
+   * `owned`. Something built at the top of a file never is. Unset in an
+   * adapter that cannot say.
+   */
+  dropped?(owned: ReadonlySet<string>): boolean;
+  /**
+   * The function the call is written in, keyed the way `site()` keys a
+   * call, or null for a call at the top of a file. Unset in an adapter
+   * that cannot say.
+   */
+  callerSite?(): string | null;
+  /**
    * Whether the text of the file the call is in contains the word, which
    * asks nothing of the store. Undefined means the adapter cannot say.
    */
@@ -1158,6 +1185,13 @@ export interface FactSource {
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */
   literalOf(key: string): string | number | boolean | null;
+  /** Whether the language's literal for no value is written at the key. Unset reads none. */
+  writesNothing?(key: string): boolean;
+  /**
+   * Whether what the call at the key builds is dropped when its function
+   * returns, as `CallOps.dropped` says. Unset drops nothing.
+   */
+  dropped?(call: string, owned: ReadonlySet<string>): boolean;
   /** The name the value gives, read the adapter's way. A key the source computes, `{ [table]: ... }`, is read through this too. */
   nameOf(key: string, unsettled: UnsettledName): string | null;
   /** Every string the value can be, when the adapter limits it to a few. */

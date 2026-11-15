@@ -101,6 +101,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
     writtenItemsOf: (key) => writtenItemsOf(nodeAt(key)),
     formOf: (key) => formOf(nodeAt(key)),
     literalOf: (key) => literalOf(nodeAt(key)),
+    writesNothing: (key) => nodeAt(key)?.type === "nil",
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
       const settled = node === null ? null : stringValueOf(node, db);

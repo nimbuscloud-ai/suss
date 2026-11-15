@@ -118,13 +118,14 @@ function abstainedUnit(
   match: RouteTableMatch,
   kind: string,
 ): DeclaredUnit {
+  const unreadBinding = match.unread[abstained.reason];
   return {
     func: null,
     announcedAt: nodeOf(entryPlace(abstained.entry)),
     kind,
     name: abstentionLabel(abstained, match),
     nameKind: "label",
-    unreadBinding: match.unread[abstained.reason],
+    ...(unreadBinding === undefined ? {} : { unreadBinding }),
     foundAt: null,
   };
 }
