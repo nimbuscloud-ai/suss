@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Database, profileEvaluationAsync } from "@suss/datalog";
 
 import {
+  hostArgumentsPattern,
   httpClientTestPack,
   requestCallsPattern,
   wrappedUrlsPattern,
@@ -758,6 +759,77 @@ describe("a path under the base its connection was built with", () => {
     expect(await pathUnder("#{root}/v1", "orders")).toBe("{root}/v1/orders");
     expect(await pathUnder("#{root}", "/orders")).toBe("{root}/orders");
     expect(await pathUnder("#{root}", "orders")).toBe("{root}/orders");
+  });
+});
+
+describe("a host given as an argument of its own", () => {
+  const HOST_ARGUMENTS = hostArgumentsPattern();
+
+  /** The method, host and path of the one request `load` makes. */
+  async function requestIn(lines: string[]): Promise<string> {
+    const units = await unitsIn(
+      ["class OrderClient", "  def load", ...lines, "  end", "end"].join("\n"),
+      HOST_ARGUMENTS,
+    );
+    const semantics = units[0]?.boundaryBinding?.semantics;
+    return semantics?.name === "rest"
+      ? `${semantics.method} ${semantics.host ?? ""}${semantics.path}`
+      : "none";
+  }
+
+  it("reads a host, a path and a port where the pack says the method takes them", async () => {
+    expect(
+      await requestIn([
+        '    HttpClient.fetch("api.example.com", "/orders", 8080)',
+      ]),
+    ).toBe("GET api.example.com:8080/orders");
+    expect(
+      await requestIn([
+        '    HttpClient.fetch("api.example.com", "/orders", nil)',
+      ]),
+    ).toBe("GET api.example.com/orders");
+  });
+
+  it("reads the first argument as the URL when the second is not a path", async () => {
+    expect(
+      await requestIn([
+        '    HttpClient.fetch("https://api.example.com/orders", { "Accept" => "json" })',
+      ]),
+    ).toBe("GET api.example.com/orders");
+    expect(
+      await requestIn([
+        '    HttpClient.fetch("https://api.example.com/orders")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+  });
+
+  it("takes a host only on the constant, and only for the methods the pack lists", async () => {
+    expect(
+      await requestIn([
+        '    HttpClient.get("https://api.example.com/orders", "/ignored")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+    expect(
+      await requestIn([
+        '    conn = HttpClient.build("api.example.com")',
+        '    conn.fetch("/orders", "/ignored")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+  });
+
+  it("sends a call on a built value to the host and port it was built with", async () => {
+    expect(
+      await requestIn([
+        '    conn = HttpClient.build("api.example.com", 8443)',
+        '    conn.get("orders")',
+      ]),
+    ).toBe("GET api.example.com:8443/orders");
+    expect(
+      await requestIn([
+        "    conn = HttpClient.build",
+        '    conn.get("/orders")',
+      ]),
+    ).toBe("GET /orders");
   });
 });
 

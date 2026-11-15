@@ -20,7 +20,7 @@ import {
   statusMembersOf,
   testsStatus,
 } from "@suss/behavioral-ir";
-import { hostOf, pathOf } from "@suss/values";
+import { concat, hostOf, pathOf, text } from "@suss/values";
 
 import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
 import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
@@ -44,7 +44,7 @@ import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure, RawEffect } from "@suss/extractor";
 import type { CallArgs, Range } from "./ast.js";
-import type { RbClientCall, RubyPack } from "./pack.js";
+import type { RbClientCall, RbHostArguments, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
 /** What one request call states about the boundary it reaches. */
@@ -152,28 +152,39 @@ function requestArguments(
       if (!isLibraryReceiver(receiver, pattern, options)) {
         continue;
       }
-      const argument = requestArgument(call, called, pattern);
-      if (argument !== undefined) {
-        found.push(argument);
-      }
+      found.push(...requestArgument(call, called, pattern));
     }
   }
   return found;
 }
 
-/** The URL a request method was given, or the request object a sending call was given. */
+/**
+ * The URL a request method was given, with the host, path and port when
+ * the method can take those instead, or the request object a sending
+ * call was given.
+ */
 function requestArgument(
   call: RbNode,
   called: string,
   pattern: RbClientCall,
-): RbNode | undefined {
+): RbNode[] {
   const args = readCallArgs(field(call, "arguments"));
   if (pattern.verbMethodNames[called] !== undefined) {
-    return urlNodeIn(args, pattern);
+    const form = pattern.hostThenPath;
+    const places =
+      form === undefined || !form.methods.includes(called)
+        ? []
+        : [form.host, form.path, form.port];
+    return [
+      urlNodeIn(args, pattern),
+      ...places.map((place) => args.positional[place]),
+    ].filter((node): node is RbNode => node !== undefined);
   }
-  return pattern.requestObject?.attribute === called
-    ? args.positional[0]
-    : undefined;
+  const sent =
+    pattern.requestObject?.attribute === called
+      ? args.positional[0]
+      : undefined;
+  return sent === undefined ? [] : [sent];
 }
 
 /** Every method this file defines, in a class or outside one. */
@@ -252,7 +263,18 @@ function requestCall(
 
   const verb = pattern.verbMethodNames[called];
   if (verb !== undefined) {
-    const target = targetAt(urlNodeIn(args, pattern), options, site);
+    const hostFirst = hostThenPathOf(
+      call,
+      called,
+      args,
+      pattern,
+      options,
+      site,
+    );
+    const target =
+      hostFirst === undefined
+        ? targetAt(urlNodeIn(args, pattern), options, site)
+        : hostThenPathTarget(args, hostFirst, options, site);
     return target === null
       ? null
       : { method: verb, ...underBase(base, target) };
@@ -270,6 +292,81 @@ function requestCall(
   return target === null
     ? null
     : { method: built.method, ...underBase(base, target) };
+}
+
+type HostThenPath = NonNullable<RbClientCall["hostThenPath"]>;
+
+/**
+ * Where this call takes its host, path and port, when it takes them in
+ * place of a URL: a host-first method on the constant itself, with a
+ * string where the path goes. A hash there, or a value suss cannot
+ * read, leaves the first argument as the URL.
+ */
+function hostThenPathOf(
+  call: RbNode,
+  called: string,
+  args: CallArgs,
+  pattern: RbClientCall,
+  options: ClientCallOptions,
+  site?: string,
+): HostThenPath | undefined {
+  const form = pattern.hostThenPath;
+  const receiver = field(call, "receiver");
+  const path = form === undefined ? undefined : args.positional[form.path];
+  if (
+    form === undefined ||
+    path === undefined ||
+    receiver === null ||
+    !form.methods.includes(called) ||
+    !namesConstant(receiver, pattern.constantName)
+  ) {
+    return undefined;
+  }
+  return evaluatedValue(path, options.facts, undefined, site).kind === "string"
+    ? form
+    : undefined;
+}
+
+function hostThenPathTarget(
+  args: CallArgs,
+  form: HostThenPath,
+  options: ClientCallOptions,
+  site?: string,
+): Target | null {
+  const target = targetAt(args.positional[form.path], options, site);
+  return target === null
+    ? null
+    : { path: target.path, host: hostWithPort(args, form, options, site) };
+}
+
+/**
+ * The host a call takes as an argument of its own, with the port beside
+ * it, written the way `hostOf` writes the host of `http://host:port`.
+ * Net::HTTP sends to that URL until a project turns TLS on, so a port of
+ * 80 is left out and any other port is kept.
+ */
+function hostWithPort(
+  args: CallArgs,
+  places: RbHostArguments,
+  options: ClientCallOptions,
+  site?: string,
+): string | undefined {
+  const host = args.positional[places.host];
+  if (host === undefined) {
+    return undefined;
+  }
+  const port = args.positional[places.port];
+  const portText =
+    port === undefined || port.type === "nil"
+      ? []
+      : [text(":"), evaluatedValue(port, options.facts, undefined, site)];
+  return hostOf(
+    concat([
+      text("http://"),
+      evaluatedValue(host, options.facts, undefined, site),
+      ...portText,
+    ]),
+  );
 }
 
 /**
@@ -367,7 +464,8 @@ function isLibraryReceiver(
 
 /**
  * The base URL a builder gave the receiver, whose path goes in front of
- * a call's own path. Null for a call on the library's constant.
+ * a call's own path. A builder that takes a host and a port gives no
+ * path. Null for a call on the library's constant.
  */
 function receiverBase(
   receiver: RbNode,
@@ -380,6 +478,10 @@ function receiverBase(
     return null;
   }
   const args = readCallArgs(field(built, "arguments"));
+  if (pattern.builderHost !== undefined) {
+    const host = hostWithPort(args, pattern.builderHost, options, site);
+    return host === undefined ? null : { path: "", host };
+  }
   const keyword = pattern.builderUrlKeyword;
   // `Faraday.new(url: "...")` and `Faraday.new("...")` give the same base URL.
   const base =

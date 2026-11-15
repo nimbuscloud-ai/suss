@@ -50,6 +50,20 @@ function boundary(summaries: BehavioralSummary[]): {
   return { method: semantics.method, path: semantics.path };
 }
 
+/** The method, host and path of the first client summary, as one string. */
+async function requestIn(lines: string[]): Promise<string> {
+  const summaries = await summariesOf(
+    ["class OrderClient", "  def fetch", ...lines, "  end", "end"].join("\n"),
+  );
+  const semantics = summaries[0]?.identity.boundaryBinding?.semantics;
+  if (semantics?.name !== "rest") {
+    throw new Error(
+      `expected a REST boundary, got ${JSON.stringify(semantics)}`,
+    );
+  }
+  return `${semantics.method} ${semantics.host ?? ""}${semantics.path}`;
+}
+
 describe("a method that calls Net::HTTP", () => {
   it("reads the URL a call wraps in URI", async () => {
     const summaries = await summariesOf(
@@ -163,6 +177,84 @@ describe("a method that calls Net::HTTP", () => {
     );
 
     expect(summaries).toEqual([]);
+  });
+});
+
+describe("a host and a path given apart", () => {
+  it("reads the host, the path and the port of a get method", async () => {
+    expect(
+      await requestIn([
+        '    Net::HTTP.get("api.example.com", "/orders", 8080)',
+      ]),
+    ).toBe("GET api.example.com:8080/orders");
+    expect(
+      await requestIn([
+        '    Net::HTTP.get_response("api.example.com", "/orders")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+    expect(
+      await requestIn([
+        '    Net::HTTP.get_print("api.example.com", "/orders", 80)',
+      ]),
+    ).toBe("GET api.example.com/orders");
+  });
+
+  it("reads a host and a port kept in constants", async () => {
+    const summaries = await summariesOf(
+      [
+        'DEBUG_HOST = ENV["DEBUG_HOST"] || "127.0.0.1"',
+        "DEBUG_PORT = 9222",
+        "class OrderClient",
+        "  def fetch",
+        '    Net::HTTP.get(DEBUG_HOST, "/json/list", DEBUG_PORT)',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(summaries[0]?.identity.boundaryBinding?.semantics).toMatchObject({
+      method: "GET",
+      path: "/json/list",
+      host: "127.0.0.1:9222",
+    });
+  });
+
+  it("reads the first argument as the URL when the second is a hash of headers", async () => {
+    expect(
+      await requestIn([
+        "    headers = {}",
+        '    Net::HTTP.get(URI("https://cdn.example.com/assets/app.css"), headers)',
+      ]),
+    ).toBe("GET cdn.example.com/assets/app.css");
+    expect(
+      await requestIn([
+        '    Net::HTTP.get(URI("https://cdn.example.com/assets/app.css"), { "Accept" => "text/css" })',
+      ]),
+    ).toBe("GET cdn.example.com/assets/app.css");
+  });
+
+  it("reads a host-first call on a connection as a path and its headers", async () => {
+    expect(
+      await requestIn([
+        '    http = Net::HTTP.new("api.example.com")',
+        '    http.get("/orders", "/ignored")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+  });
+
+  it("sends a connection's calls to the host and port it was built on", async () => {
+    expect(
+      await requestIn([
+        '    http = Net::HTTP.new("api.example.com")',
+        '    http.get("/orders")',
+      ]),
+    ).toBe("GET api.example.com/orders");
+    expect(
+      await requestIn([
+        '    http = Net::HTTP.new("api.example.com", 8443)',
+        '    http.request(Net::HTTP::Get.new("/orders"))',
+      ]),
+    ).toBe("GET api.example.com:8443/orders");
   });
 });
 
