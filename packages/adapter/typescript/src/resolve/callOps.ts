@@ -31,6 +31,7 @@ import { elementCollectionOf } from "../values/elements.js";
 import { decodedIn, encodedIn } from "../values/encoded.js";
 import { keyedReadOf, keysReadOf } from "../values/readSites.js";
 import { typedAsExported } from "../values/receiverType.js";
+import { propertyNameOf } from "../walk/propertyName.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbValue, peelValue } from "../walk/unwrap.js";
 import { functionCalledAt } from "./functionBehind.js";
@@ -1292,7 +1293,7 @@ function entryKey(
   if (Node.isComputedPropertyName(name)) {
     return readName(name.getExpression(), { resolve, unsettled });
   }
-  return unquoted(written.getName());
+  return propertyNameOf(written);
 }
 
 /**
@@ -1385,11 +1386,6 @@ export function literalFlag(value: Node): boolean | null {
     return Node.isTrueLiteral(value);
   }
   return Node.isNumericLiteral(value) ? value.getLiteralValue() !== 0 : null;
-}
-
-/** A property name without the quotes a source that needs them writes. */
-function unquoted(name: string): string {
-  return name.replace(/^["']|["']$/g, "");
 }
 
 /** The ops for a value, when the value is a call the source wrote. */

@@ -136,20 +136,6 @@ function printGraphqlType(node: GraphqlTypeNode): string {
 }
 
 /**
- * Peel the surrounding backticks off a template-literal source so the
- * operation-header regex matches the GraphQL content (the regex
- * starts with `\s*` for leading whitespace inside the literal, not
- * for the backtick character itself).
- */
-function innerTemplateText(template: Node): string {
-  const raw = template.getText();
-  if (raw.length >= 2 && raw.startsWith("`") && raw.endsWith("`")) {
-    return raw.slice(1, -1);
-  }
-  return raw;
-}
-
-/**
  * State carried through assembling one document out of a template and
  * its `${...}` interpolations. An interpolated fragment can itself
  * interpolate another, so assembly recurses; `seen` makes a document
@@ -202,7 +188,7 @@ function assembledTemplateText(
   assembly: DocumentAssembly,
 ): string | null {
   if (Node.isNoSubstitutionTemplateLiteral(template)) {
-    return innerTemplateText(template);
+    return template.getLiteralValue();
   }
   if (!Node.isTemplateExpression(template)) {
     return null;

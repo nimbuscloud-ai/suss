@@ -1122,6 +1122,33 @@ describe("reading a value an argument states", () => {
     ]);
   });
 
+  it("reads each key as the property it names", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send({
+          Sides: {
+            "a\\"b": 1,
+            'it\\'s': 2,
+            0x10: 3,
+            1_000: 4,
+            [\`Track\`]: 5,
+          },
+        });
+      }
+    `);
+
+    const sides = ops.valueAt(0)?.property("Sides");
+    expect(sides?.entries("nothing").map((entry) => entry.key)).toEqual([
+      'a"b',
+      "it's",
+      "16",
+      "1000",
+      "Track",
+    ]);
+  });
+
   it("follows a request the source wrote into a variable first", () => {
     const ops = opsForLastCall(`
       import Deck from "tapedeck";

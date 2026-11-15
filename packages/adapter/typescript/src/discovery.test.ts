@@ -3455,6 +3455,22 @@ describe("graphqlImperativeCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("CreatePet");
   });
 
+  it("reads the escapes in a gql template that has no substitutions", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export async function loadPet() {
+        return client.query({ query: gql\`query Load\\u0050et { pet { id } }\` });
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].operationInfo?.operationName).toBe("LoadPet");
+  });
+
   it("resolves a const-bound document to its declaration", () => {
     const project = createProject();
     const file = project.createSourceFile(
