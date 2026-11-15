@@ -8,9 +8,12 @@ import {
   VALUE_ENTRY,
 } from "./valuePositions.js";
 
-/** The relations that say where each piece of a written value goes, which only readers outside the rules use so far. */
+/**
+ * The relations that say where each piece of a written value goes, which
+ * only readers outside the rules use so far. `writtenEntryAt` is left out,
+ * since a Python or Ruby subscript takes its entries from it.
+ */
 const VALUE_POSITION_RELATIONS = [
-  "writtenEntryAt",
   "computedKeyAt",
   "partAt",
   "holeAt",

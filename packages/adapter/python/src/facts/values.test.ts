@@ -1715,6 +1715,23 @@ describe("python value facts", () => {
     ]);
   });
 
+  it("lets a subscript or a get take only a written entry, and getattr any attribute", async () => {
+    const source = [
+      "def read(settings, name):",
+      "    return settings[name], settings.get(name), getattr(settings, name)",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const sites = (relation: string): string[] =>
+      rows(db, relation).map((row) => textAt(source, row[0] as string));
+
+    expect(sites("choosesWrittenEntry")).toEqual([
+      "settings[name]",
+      "settings.get(name)",
+    ]);
+    expect(sites("choosesEntry")).toEqual(["getattr(settings, name)"]);
+  });
+
   it("states nothing for a key the source writes out", async () => {
     const db = await factsFor(
       'def read(settings):\n    return settings["name"], settings[0]\n',

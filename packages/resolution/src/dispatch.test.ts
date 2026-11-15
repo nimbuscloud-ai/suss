@@ -43,7 +43,20 @@ const TABLE: readonly Fact[] = [
   ["holdsProperty", "table", "init", "runInit"],
   ["holdsProperty", "table", "check", "runCheck"],
   ["holdsProperty", "table", "ask", "runAsk"],
+  ["writtenEntryAt", "table", "0", "runInit", "value"],
+  ["writtenEntryAt", "table", "1", "runCheck", "value"],
+  ["writtenEntryAt", "table", "2", "runAsk", "value"],
   ["binds", "TABLE", "table"],
+];
+
+/** `class Registry` with a class method and an instance method, which Ruby states as an object containing both. */
+const REGISTRY_CLASS: readonly Fact[] = [
+  ["func", "registered"],
+  ["func", "resolve"],
+  ["objectValue", "registry"],
+  ["holdsProperty", "registry", ".registered", "registered"],
+  ["holdsProperty", "registry", "resolve", "resolve"],
+  ["binds", "Registry", "registry"],
 ];
 
 describe("dispatchOutcomes", () => {
@@ -107,6 +120,63 @@ describe("dispatchOutcomes", () => {
       through: new Map(),
       containers: ["TABLE"],
     });
+  });
+
+  it("says a Python or Ruby subscript may run every entry a table is written with", () => {
+    const outcome = outcomeOf(
+      [
+        ...TABLE,
+        ["choosesWrittenEntry", "TABLE[k]", "TABLE"],
+        ["call", "TABLE[k].call", "TABLE[k]"],
+      ],
+      "TABLE[k].call",
+    );
+    expect(sorted(outcome?.functions)).toEqual([
+      "runAsk",
+      "runCheck",
+      "runInit",
+    ]);
+    expect(outcome?.certain).toBe(false);
+    expect(outcome?.containers).toEqual(["TABLE"]);
+  });
+
+  it("never finds a method of a class at a subscript on it, which runs the class's own [] method", () => {
+    const outcome = outcomeOf(
+      [
+        ...REGISTRY_CLASS,
+        ["choosesWrittenEntry", "Registry[k]", "Registry"],
+        ["call", "Registry[k].call", "Registry[k]"],
+      ],
+      "Registry[k].call",
+    );
+    expect(outcome?.functions).toEqual([]);
+    expect(outcome?.unresolved).toBe(0);
+  });
+
+  it("never finds a method of a class at a subscript on it with the key written out", () => {
+    const outcome = outcomeOf(
+      [
+        ...REGISTRY_CLASS,
+        ["readsEntry", "Registry[:resolve]", "Registry", "resolve"],
+        ["call", "Registry[:resolve].call", "Registry[:resolve]"],
+      ],
+      "Registry[:resolve].call",
+    );
+    expect(outcome?.functions).toEqual([]);
+  });
+
+  it("still finds what a subscript wrote into a class under a computed key", () => {
+    const outcome = outcomeOf(
+      [
+        ...REGISTRY_CLASS,
+        ["func", "onCreated"],
+        ["holdsUnderKey", "Registry", "onCreated"],
+        ["choosesWrittenEntry", "Registry[k]", "Registry"],
+        ["call", "Registry[k].call", "Registry[k]"],
+      ],
+      "Registry[k].call",
+    );
+    expect(outcome?.functions).toEqual(["onCreated"]);
   });
 
   it("follows a read in a conditional branch, and never counts the call as certain", () => {

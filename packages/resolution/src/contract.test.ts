@@ -110,6 +110,24 @@ describe("the fact contract", () => {
     );
   });
 
+  it("catches a subscript on a table whose entries are not stated in the order they are written", async () => {
+    const subscripted = (entries: boolean) => () => {
+      const db = conformingFacts();
+      db.retract("choosesEntry", [["read:1", "f#TABLE"]]);
+      db.add("choosesWrittenEntry", ["read:1", "f#TABLE"]);
+      if (entries) {
+        db.add("writtenEntryAt", ["table:1", "0", "f#on_created", "value"]);
+      }
+      return db;
+    };
+    expect(await checkFactContract(everyCase, subscripted(true))).toEqual([]);
+
+    const failures = await checkFactContract(everyCase, subscripted(false));
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "not written down as writtenEntryAt",
+    );
+  });
+
   it("catches a write into a table that is not keyed to it", async () => {
     const failures = await checkFactContract(everyCase, () => {
       const db = conformingFacts();
