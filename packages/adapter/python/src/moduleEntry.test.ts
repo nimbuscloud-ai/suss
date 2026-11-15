@@ -11,30 +11,20 @@ import { describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
+import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PythonPack } from "./pack.js";
 
 const fixtureRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../../fixtures/python-job",
 );
 
-/** Inline rather than the shipped `@suss/framework-sqlalchemy`, which depends on this package. */
-const sqlalchemyLike: PythonPack = {
-  name: "sqlalchemy-inline-test-pack",
-  protocol: "postgresql",
-  discovery: [],
-  rawSql: [
-    { module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" },
-  ],
-};
-
 async function extract(): Promise<BehavioralSummary[]> {
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(fixtureRoot),
-    packs: [sqlalchemyLike],
+    packs: [sqlTextTestPack("postgresql")],
     roots: [fixtureRoot],
     workspaceRoot: fixtureRoot,
     cacheDir: null,

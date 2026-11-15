@@ -66,6 +66,7 @@ import type {
   InputLink,
   InterpolatesLink,
   KeysOfPick,
+  KeywordsOfPick,
   KindAsAsked,
   Link,
   ManyIn,
@@ -78,6 +79,7 @@ import type {
   NamesStated,
   Naming,
   OneArgument,
+  ParameterPick,
   RelatedAccess,
   RelationsLink,
   RenderedPropsLink,
@@ -101,6 +103,7 @@ import type {
   ToBuilder,
   ToChained,
   ToMember,
+  ToPassedTo,
   ToReceiver,
   UnitInvokeEnding,
   UnitInvokeMethod,
@@ -149,9 +152,10 @@ export function compile(
   const receiverMethods = methodsWhoseReceiversAreAsked(chain);
   const modules = modulesOfChain(chain);
   const onlyWhereWritten = options.onlyWhereWritten === true;
+  const outermost = linkIn(chain, "outermost") !== null;
   return (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
-    if (ops === null) {
+    if (ops === null || (outermost && hasCallChainedOn(ops))) {
       return null;
     }
 
@@ -201,12 +205,23 @@ export function compile(
 }
 
 /**
+ * Whether something is chained on what the call returns, so the call is
+ * not the last of its chain. An adapter that cannot say leaves every
+ * call as the last.
+ */
+function hasCallChainedOn(ops: CallOps): boolean {
+  return (ops.chainedOn?.() ?? null) !== null;
+}
+
+/**
  * The operation a subject goes to and what the table says it does, once
- * the chain's start accepts the subject. A call with no receiver that the
- * table does not list as written is read as the export its callee was
- * imported as, so `new Get(...)` after `import { GetCommand as Get }` is
- * `GetCommand`. That question asks the store, so it comes last, and with
- * `onlyWhereWritten` only where the file mentions one of the modules.
+ * the chain's start accepts the subject. A method the table does not list
+ * takes the table's `otherwise`, when it has one. A call with no receiver
+ * that the table does not list as written is read as the export its
+ * callee was imported as, so `new Get(...)` after `import { GetCommand
+ * as Get }` is `GetCommand`. That question asks the store, so it comes
+ * last, and with `onlyWhereWritten` only where the file mentions one of
+ * the modules.
  */
 function methodMatched(
   chain: Chain<MethodMeaning>,
@@ -218,6 +233,11 @@ function methodMatched(
   const asWritten = matchedAsWritten(chain, methods, subject);
   if (asWritten !== undefined) {
     return asWritten;
+  }
+  if (subject.method() !== null && methods.otherwise !== undefined) {
+    return startsHere(chain, subject)
+      ? { method: operationOf(subject), meaning: methods.otherwise }
+      : null;
   }
   if (
     subject.method() !== null ||
@@ -336,8 +356,8 @@ function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
  * The methods whose receivers the chain asks about, or null when it does
  * not say. A chain asks what made the receiver of every call whose
  * method it lists when the match starts at the receiver of the call in
- * hand and the origin is a construction. A table that ignores case
- * cannot list the spellings, so it says nothing.
+ * hand and the origin is a construction. A table that ignores case, or
+ * that has an `otherwise`, cannot list the methods, so it says nothing.
  */
 function methodsWhoseReceiversAreAsked(
   chain: Chain<MethodMeaning>,
@@ -351,7 +371,8 @@ function methodsWhoseReceiversAreAsked(
     start.at.of !== undefined ||
     linkIn(chain, "subject") !== null ||
     table === null ||
-    table.ignoringCase
+    table.ignoringCase ||
+    table.otherwise !== undefined
   ) {
     return null;
   }
@@ -521,8 +542,9 @@ const STEP: Record<
   receiver: (step, ops) => receiversOf(ops, step as ToReceiver),
   argument: (step, ops) => argumentsOf(ops, step as ToArgument),
   member: (step, ops) => membersOf(ops, step as ToMember),
-  chained: (step, ops) => chainedOf(ops, (step as ToChained).method),
+  chained: (step, ops) => chainedOf(ops, step as ToChained),
   builder: (step, ops) => builderOf(ops, step as ToBuilder),
+  passedTo: (step, ops) => passedToOf(ops, step as ToPassedTo),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -536,17 +558,30 @@ function walk(from: readonly CallOps[], steps: readonly CallStep[]): CallOps[] {
 
 /**
  * The receiver, or the one up the chain that calls the named method,
- * when it came from the step's origin.
+ * when it came from the step's origin. With `every`, each call up the
+ * chain the step accepts.
  */
 function receiversOf(ops: CallOps, step: ToReceiver): CallOps[] {
-  const found = climb(
-    ops,
-    (at) => at.receiver(),
-    (at) => step.method === undefined || at.method() === step.method,
-  );
+  const wanted = (at: CallOps): boolean =>
+    (step.method === undefined || at.method() === step.method) &&
+    !passedOver(at, step.except);
+  if (step.every === true) {
+    return climbed(ops, (at) => at.receiver(), wanted)
+      .filter((found) => cameFrom(found.at, step.origin))
+      .map((found) => chainedBack(found.at, found.from));
+  }
+  const found = climb(ops, (at) => at.receiver(), wanted);
   return found !== null && cameFrom(found.at, step.origin)
     ? [chainedBack(found.at, found.from)]
     : [];
+}
+
+/** Whether a step's `except` passes over this call. */
+function passedOver(
+  at: CallOps,
+  except: readonly string[] | undefined,
+): boolean {
+  return except !== undefined && except.includes(at.method() ?? "");
 }
 
 /** The call a climb stopped at, and the call it stepped there from. */
@@ -567,20 +602,38 @@ function climb(
   hop: (at: CallOps) => CallOps | null,
   wanted: (at: CallOps) => boolean,
 ): Climbed | null {
+  const [first] = climbed(ops, hop, wanted, 1);
+  return first ?? null;
+}
+
+/**
+ * Every call `wanted` accepts along the same climb, in the order it
+ * meets them, up to `limit` of them.
+ */
+function climbed(
+  ops: CallOps,
+  hop: (at: CallOps) => CallOps | null,
+  wanted: (at: CallOps) => boolean,
+  limit = Number.POSITIVE_INFINITY,
+): Climbed[] {
+  const found: Climbed[] = [];
   const passed = new Set<unknown>();
   let from = ops;
   for (let at = hop(ops); at !== null; at = hop(at)) {
-    if (wanted(at)) {
-      return { at, from };
-    }
     const site = at.site?.() ?? at;
     if (passed.has(site)) {
-      return null;
+      return found;
+    }
+    if (wanted(at)) {
+      found.push({ at, from });
+      if (found.length >= limit) {
+        return found;
+      }
     }
     passed.add(site);
     from = at;
   }
-  return null;
+  return found;
 }
 
 /**
@@ -608,16 +661,33 @@ function membersOf(ops: CallOps, step: ToMember): CallOps[] {
 }
 
 /**
- * The nearest call to `method` out along the calls chained on what this
- * call returns. The walk is `receiversOf` pointed the other way.
+ * The nearest call to the step's method out along the calls chained on
+ * what this call returns, or with `every` each such call. The walk is
+ * `receiversOf` pointed the other way.
  */
-function chainedOf(ops: CallOps, method: string): CallOps[] {
-  const found = climb(
+function chainedOf(ops: CallOps, step: ToChained): CallOps[] {
+  const found = climbed(
     ops,
     (at) => at.chainedOn?.() ?? null,
-    (at) => at.method() === method,
+    (at) =>
+      (step.method === undefined || at.method() === step.method) &&
+      !passedOver(at, step.except),
+    step.every === true ? Number.POSITIVE_INFINITY : 1,
   );
-  return found === null ? [] : [found.at];
+  return found.map((one) => one.at);
+}
+
+/** The call this call's result is passed to in place, when it makes the step's method at the step's position. */
+function passedToOf(ops: CallOps, step: ToPassedTo): CallOps[] {
+  const passed = ops.passedTo?.() ?? null;
+  if (
+    passed === null ||
+    (step.method !== undefined && passed.call.method() !== step.method) ||
+    (step.at !== undefined && passed.at !== step.at)
+  ) {
+    return [];
+  }
+  return [passed.call];
 }
 
 /**
@@ -1849,17 +1919,9 @@ export function statedValue(
 ): ValueOps | null {
   for (const ops of walk([subject], pick.of ?? [])) {
     const stated = pickedIn(ops, pick, pick.at);
-    if (stated === null) {
-      continue;
-    }
-    if (pick.property === undefined) {
-      return stated;
-    }
-    for (const property of pick.property) {
-      const inside = stated.property(property);
-      if (inside !== null) {
-        return inside;
-      }
+    const inside = stated === null ? null : propertyIn(stated, pick.property);
+    if (inside !== null) {
+      return inside;
     }
   }
   return null;
@@ -1906,6 +1968,9 @@ function namesFor(
   if ("keysOf" in says) {
     return keysStated(subject, says, unsettled);
   }
+  if ("keywordsOf" in says) {
+    return keywordsPassed(subject, says, read);
+  }
   if ("selectorParam" in says) {
     return [...(subject.parameterReadsAt?.(says.selectorParam) ?? [])];
   }
@@ -1917,14 +1982,70 @@ function namesFor(
   return [...pointed.by(watched({ ...stated, input }, read))];
 }
 
-/** The properties the picked condition reads off the value `off` points at. */
+/** The properties the picked conditions read off the value `off` points at, each once. */
 function fieldsReadOff(subject: CallOps, pick: FieldsReadPick): string[] {
-  const condition = statedValue(subject, pick.fieldsRead);
   const object = statedValue(subject, pick.off);
-  if (condition === null || object === null) {
+  if (object === null) {
     return [];
   }
-  return [...(condition.readsOff?.(object) ?? [])];
+  const read = conditionsAt(subject, pick.fieldsRead).flatMap(
+    (condition) => condition.readsOff?.(object) ?? [],
+  );
+  return [...new Set(read)];
+}
+
+/** The values a pick reaches: the one argument, or every argument from its position in each call the steps reach. */
+function conditionsAt(subject: CallOps, pick: ArgumentPick): ValueOps[] {
+  if ("at" in pick) {
+    const one = statedValue(subject, pick);
+    return one === null ? [] : [one];
+  }
+  return walk([subject], pick.of ?? []).flatMap((ops) =>
+    positions(ops, pick).flatMap((index) => {
+      const value = ops.valueAt(index);
+      const inside = value === null ? null : propertyIn(value, pick.property);
+      return inside === null ? [] : [inside];
+    }),
+  );
+}
+
+/** The value itself, or the first of its properties it states. */
+function propertyIn(
+  value: ValueOps,
+  properties: readonly string[] | undefined,
+): ValueOps | null {
+  if (properties === undefined) {
+    return value;
+  }
+  for (const property of properties) {
+    const inside = value.property(property);
+    if (inside !== null) {
+      return inside;
+    }
+  }
+  return null;
+}
+
+/**
+ * The keywords the reached calls pass, each once, in the order written.
+ * When somebody listens, each keyword's value is noted under its name.
+ */
+function keywordsPassed(
+  subject: CallOps,
+  pick: KeywordsOfPick,
+  read: ReadValues | null,
+): string[] {
+  const names = new Set<string>();
+  for (const ops of walk([subject], pick.keywordsOf.of ?? [])) {
+    for (const name of ops.keywordNames?.() ?? []) {
+      names.add(name);
+      const value = read === null ? null : (ops.keywordAt?.(name) ?? null);
+      if (read !== null && value !== null) {
+        noteRead(read, name, value);
+      }
+    }
+  }
+  return [...names];
 }
 
 /**
@@ -2522,11 +2643,34 @@ function placeholderValues(
   }
   const picks = says === undefined ? [] : inOrder(says);
   const given = picks
-    .map((pick) => statedValue(subject, pick))
+    .map((pick) => parametersAt(subject, pick))
     .find((value): value is ValueOps => value !== null);
   return given === undefined
     ? { numbered: [], named: null }
     : { numbered: given.items(), named: given };
+}
+
+/** The value one parameter pick reaches: an argument, or the keywords of the first reached call that passes any. */
+function parametersAt(subject: CallOps, pick: ParameterPick): ValueOps | null {
+  if (!("keywords" in pick)) {
+    return statedValue(subject, pick);
+  }
+  for (const ops of walk([subject], pick.of ?? [])) {
+    const names = ops.keywordNames?.() ?? [];
+    if (names.length > 0) {
+      return keywordsAsObject(ops, names);
+    }
+  }
+  return null;
+}
+
+/** A call's keywords, read as an object whose properties are the keywords, as a `:name` placeholder reads it. */
+function keywordsAsObject(ops: CallOps, names: readonly string[]): ValueOps {
+  return {
+    ...NOTHING_STATED,
+    property: (name) =>
+      names.includes(name) ? (ops.keywordAt?.(name) ?? null) : null,
+  };
 }
 
 /** The values a statement's `$n` placeholders take, and the object its `:name` ones read. */

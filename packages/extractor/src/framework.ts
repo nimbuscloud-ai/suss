@@ -1434,6 +1434,48 @@ export interface ParameterSupplier {
   name: string;
 }
 
+/**
+ * What a library's own calls give back, as the shared rules read it.
+ * Python and Ruby declare no return types, so without these a method
+ * called on what `session.get(User, id)` returns reaches nothing. The
+ * resolution package's words of the same names say how each one joins
+ * the rules.
+ */
+export interface PackWords {
+  /** `method`, called on a class whose ancestry reaches `base`, gives back one of that class. */
+  readonly givesBackOne?: readonly {
+    readonly base: string;
+    readonly method: string;
+  }[];
+  /** The same, for a method handed the class at position `argument`, as `session.get(User, id)` is. */
+  readonly givesBackOneOfArgument?: readonly {
+    readonly base: string;
+    readonly method: string;
+    readonly argument: number;
+  }[];
+  /** The same again, for the function `module` exports under `name`, as `select(User)` is. */
+  readonly givesBackOneOfImport?: readonly {
+    readonly module: string;
+    readonly name: string;
+    readonly argument: number;
+  }[];
+}
+
+/** Every pack's own words, pooled in the order the packs are listed. */
+export function pooledWords(
+  packs: readonly { readonly words?: PackWords }[],
+): Required<PackWords> {
+  return {
+    givesBackOne: packs.flatMap((pack) => pack.words?.givesBackOne ?? []),
+    givesBackOneOfArgument: packs.flatMap(
+      (pack) => pack.words?.givesBackOneOfArgument ?? [],
+    ),
+    givesBackOneOfImport: packs.flatMap(
+      (pack) => pack.words?.givesBackOneOfImport ?? [],
+    ),
+  };
+}
+
 /** What a library reads out of a class body: calls written there outside every method, and fields assigned from a call. */
 export interface ClassBodyDeclaration {
   /**
@@ -1723,6 +1765,8 @@ export interface PatternPack {
    * association calls. The adapter states the facts each one gives.
    */
   classBodies?: ClassBodyDeclaration[];
+  /** What the library's own calls give back, which the shared rules read in a language that declares no return types. */
+  words?: PackWords;
   /**
    * Objects whose properties are the process environment, written as
    * the dotted path the code spells, e.g. `"process.env"`. The adapter

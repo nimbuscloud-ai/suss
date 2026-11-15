@@ -93,7 +93,6 @@ export type {
   PyTestSetUp,
   PythonDiscoveryPattern,
   PythonPack,
-  RawSqlPattern,
   RequestObject,
   RouteConventions,
   RouterComposition,

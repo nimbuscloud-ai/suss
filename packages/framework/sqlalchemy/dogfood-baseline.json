@@ -1,7 +1,7 @@
 {
   "name": "@suss/framework-sqlalchemy",
-  "exports": 7,
+  "exports": 8,
   "internal": 0,
-  "consumers": 2,
+  "consumers": 6,
   "unfollowedCalls": 0
 }

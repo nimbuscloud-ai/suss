@@ -20,6 +20,7 @@ import type {
   DeclaredDiscoveryPattern,
   InvocationRecognizer,
   LibraryEnvVars,
+  PackWords,
   PatternPack,
   RedirectOption,
 } from "@suss/extractor";
@@ -67,10 +68,10 @@ export interface PythonPack {
    * from the library's own relationship callable reaches another model.
    */
   classBodies?: ClassBodyDeclaration[];
+  /** What the library's own calls give back, `session.get(User, id)` one `User`, as a `pack()` pack states it. */
+  words?: PackWords;
   /** Which of the library's classes return themselves from `__enter__`, so a `with` block gets the object itself. */
   contextManagers?: PyContextManager[];
-  /** How the library lets a project hand the database SQL it wrote itself. */
-  rawSql?: RawSqlPattern[];
   /**
    * The hooks a pack declared with `@suss/recognize` compiles to. Each one
    * is run over every call in a body, with the ops over the facts on its
@@ -306,21 +307,6 @@ export interface PyModelEntryFunction {
   module: string;
   name: string;
   argument: number;
-}
-
-/**
- * The function a library gives a project for handing the database a
- * statement written as SQL, and where it is imported from. SQLAlchemy
- * exports `text` from `sqlalchemy`. A match needs the import, so a local
- * function with the same name does not count.
- */
-export interface RawSqlPattern {
-  /** The module the function is imported from. */
-  module: string;
-  /** The functions that take a statement written as SQL. */
-  functions: string[];
-  /** Which database the library is talking to, for the boundary binding. */
-  storageSystem: "postgresql" | "mysql" | "sqlite";
 }
 
 export type PythonDiscoveryPattern =

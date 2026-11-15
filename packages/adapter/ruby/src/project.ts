@@ -41,6 +41,7 @@ import {
   moduleInitStructure,
   noopTimer,
   ownersWhereWritten,
+  pooledWords,
   runDigest,
   runPackHook,
   runRootOf,
@@ -266,14 +267,20 @@ function inheritedMethodsIn(packs: readonly RubyPack[]): ReadonlySet<string> {
  * the only source for knowing that `Account.find(id)` returns an Account.
  */
 export function packWordsOf(packs: readonly RubyPack[]): PackWords {
+  const stated = pooledWords(packs);
   return {
-    givesBackOne: packs.flatMap((pack) =>
-      (pack.storage ?? []).flatMap((pattern) =>
-        pattern.baseClasses.flatMap((base) =>
-          pattern.givesBack.map((method) => ({ base, method })),
+    givesBackOne: [
+      ...packs.flatMap((pack) =>
+        (pack.storage ?? []).flatMap((pattern) =>
+          pattern.baseClasses.flatMap((base) =>
+            pattern.givesBack.map((method) => ({ base, method })),
+          ),
         ),
       ),
-    ),
+      ...stated.givesBackOne,
+    ],
+    givesBackOneOfArgument: stated.givesBackOneOfArgument,
+    givesBackOneOfImport: stated.givesBackOneOfImport,
     unwrapsByName: packs.flatMap((pack) => pack.transparentWrappers ?? []),
   };
 }
