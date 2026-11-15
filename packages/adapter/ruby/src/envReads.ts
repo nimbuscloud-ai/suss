@@ -38,7 +38,11 @@ import {
 } from "./facts/resolve.js";
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
 import { streamSpelledBy } from "./streamWrites.js";
-import { evaluatedValue, stringValueOf } from "./values/evaluator.js";
+import {
+  evaluatedValue,
+  nodeOfResolutionKey,
+  stringValueOf,
+} from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database, Tuple } from "@suss/datalog";
@@ -371,27 +375,38 @@ function emitDefaultReads(
     if (kind === undefined || name === null || value === null) {
       continue;
     }
+    // The read's text goes in the row too, so a replayed caller notices
+    // a fallback edited in place, which keeps the read's range.
     for (const read of namedReadsUnder(value, blankToNil)) {
       db.add(DEFAULT_READ, [
         `${funcKey}#${name.text}`,
         kind,
         read.name,
         read.defaulted ? 1 : 0,
+        nodeId(file, read.at),
+        read.at.text,
       ]);
     }
   }
+}
+
+/** A read in a parameter default that writes out its variable. */
+interface DefaultRead {
+  readonly name: string;
+  readonly defaulted: boolean;
+  readonly at: RbNode;
 }
 
 /** The reads under a node that write out their variable, the node itself included. */
 function namedReadsUnder(
   node: RbNode,
   blankToNil: ReadonlySet<string>,
-): Array<{ name: string; defaulted: boolean }> {
-  const reads: Array<{ name: string; defaulted: boolean }> = [];
+): DefaultRead[] {
+  const reads: DefaultRead[] = [];
   const take = (at: RbNode): void => {
     const read = envReadAt(at, blankToNil);
     if (read?.name !== null && read?.name !== undefined) {
-      reads.push({ name: read.name, defaulted: read.defaulted });
+      reads.push({ name: read.name, defaulted: read.defaulted, at });
     }
   };
   take(node);
@@ -433,18 +448,50 @@ function defaultReadsAtCall(
       }
     }
   }
-  const byName = new Map<string, boolean>();
+  const byName = new Map<string, { defaulted: boolean; site: string }>();
   for (const { paramKey, kind } of omitted) {
     for (const row of defaultReadsOf(db, paramKey)) {
       if (row[1] !== kind) {
         continue;
       }
       const name = String(row[2]);
-      const defaulted = row[3] === 1;
-      byName.set(name, (byName.get(name) ?? true) && defaulted);
+      const known = byName.get(name);
+      byName.set(name, {
+        defaulted: (known?.defaulted ?? true) && row[3] === 1,
+        site: known?.site ?? String(row[4]),
+      });
     }
   }
-  return [...byName].map(([name, defaulted]) => ({ name, defaulted }));
+  return [...byName].map(([name, { defaulted, site }]) =>
+    withFallback({ name, defaulted }, defaulted ? fallbackAt(db, site) : null),
+  );
+}
+
+/** The value the read at this key falls back to, read where it is written. */
+function fallbackAt(
+  db: Database,
+  site: string,
+): string | number | boolean | null {
+  const node = nodeOfResolutionKey(site, db);
+  return node === null
+    ? null
+    : (envReadAt(node, blankToNilIn(db), db)?.fallback ?? null);
+}
+
+/** A defaulted read records the value it falls back to, when that settles to one. */
+function withFallback(
+  read: EnvRead,
+  fallback: string | number | boolean | null,
+): EnvRead {
+  return read.defaulted && fallback !== null ? { ...read, fallback } : read;
+}
+
+/** The value a fallback settles to, or null when it settles to none. */
+function settledValue(
+  fallback: RbNode | null,
+  db: Database | undefined,
+): string | number | boolean | null {
+  return fallback === null ? null : scalarOf(evaluatedValue(fallback, db));
 }
 
 /**
@@ -604,7 +651,14 @@ function readsAtCall(
       byName.set(name, (byName.get(name) ?? true) && defaulted);
     }
   }
-  return [...byName].map(([name, defaulted]) => ({ name, defaulted }));
+  // The fallback a caller writes around the call, as in
+  // `load("X").presence || ENDPOINT`, is what the read falls back to.
+  const fallback = [...byName.values()].some(Boolean)
+    ? settledValue(copingAt(call, db).fallback, db)
+    : null;
+  return [...byName].map(([name, defaulted]) =>
+    withFallback({ name, defaulted }, fallback),
+  );
 }
 
 function configReadEffect(read: EnvRead, at: RbNode): Effect {
@@ -631,15 +685,10 @@ function envReadAt(
   if (site === null) {
     return null;
   }
-  const fallback =
-    site.defaulted && site.fallback !== null
-      ? scalarOf(evaluatedValue(site.fallback, db))
-      : null;
-  return {
-    name: stringLiteralValue(site.name),
-    defaulted: site.defaulted,
-    ...(fallback === null ? {} : { fallback }),
-  };
+  return withFallback(
+    { name: stringLiteralValue(site.name), defaulted: site.defaulted },
+    site.defaulted ? settledValue(site.fallback, db) : null,
+  );
 }
 
 /**
