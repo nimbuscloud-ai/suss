@@ -6879,9 +6879,11 @@ const expressResPack: PatternPack = {
 };
 
 /** The functions written in place as the first argument of each `defer` call the parent runs, read off the context's call ops. */
-function deferredIn(parent: DiscoveredSubUnitParent, ctx: unknown): unknown[] {
-  const calls = (ctx as SubUnitOpsCarrier).calls?.(parent) ?? [];
-  return calls.flatMap((call) => {
+function deferredIn(
+  parent: DiscoveredSubUnitParent,
+  ctx: SubUnitOpsCarrier,
+): unknown[] {
+  return (ctx.calls?.(parent) ?? []).flatMap((call) => {
     const value = call.calleeText() === "defer" ? call.valueAt(0) : null;
     return value?.form?.() === "function"
       ? [(value as AstCapableValueOps).ast()]

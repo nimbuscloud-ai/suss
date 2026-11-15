@@ -16,6 +16,7 @@ import type {
   DiscoveredSubUnit,
   DiscoveredSubUnitParent,
   PatternPack,
+  SubUnitOpsCarrier,
 } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 
@@ -41,13 +42,13 @@ function recognizeAll(file: SourceFile): Effect[] {
 /** What the pack's sub-unit hook claims in the parent. */
 function claimed(
   parent: DiscoveredSubUnitParent,
-  ctx: unknown,
+  ctx: SubUnitOpsCarrier,
 ): DiscoveredSubUnit[] {
   return pack.subUnits?.(parent, ctx) ?? [];
 }
 
 /** The context the adapter hands the hook, over a store of its own, which lists the calls a parent runs. */
-function withStore(): unknown {
+function withStore(): SubUnitOpsCarrier {
   return createTsSubUnitContext(ResolutionStore.forPacks([pack]));
 }
 

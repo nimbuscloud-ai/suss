@@ -21,28 +21,14 @@ import type {
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
 
-/**
- * The context the TypeScript adapter passes to a pack's `subUnits` hook:
- * the ops a declared pack reads a parent through, and the run's store.
- */
-export interface TsSubUnitContext extends SubUnitOpsCarrier {
-  /**
-   * The run's store, the same one a recognizer's context has, so a pack
-   * that claims a callback off a call it recognized can ask the store
-   * the same questions about that call. Undefined when the run has no
-   * store.
-   */
-  readonly resolution?: ResolutionStore;
-}
-
+/** The context the TypeScript adapter passes to a pack's `subUnits` hook. Without a store it can only say what a file mentions. */
 export function createTsSubUnitContext(
   resolution?: ResolutionStore,
-): TsSubUnitContext {
+): SubUnitOpsCarrier {
   return {
     ...(resolution === undefined
       ? {}
       : {
-          resolution,
           calls: (parent) => callsRunAsOps(parent, resolution),
           elements: (parent) => elementsRunAsOps(parent, resolution),
           writes: (parent, fn) => parentWrites(parent, fn),

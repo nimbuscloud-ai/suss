@@ -76,6 +76,7 @@ import {
   runPackHook,
   runRootOf,
   type SettledModule,
+  type SubUnitOpsCarrier,
   splitAtHandOffs,
   stampClaimMetadata,
   stampModuleImports,
@@ -227,10 +228,7 @@ import {
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import { stableTypeText } from "./shapes/typeText.js";
-import {
-  createTsSubUnitContext,
-  type TsSubUnitContext,
-} from "./subUnitContext.js";
+import { createTsSubUnitContext } from "./subUnitContext.js";
 import {
   nameSummaries,
   workspaceNameFor,
@@ -1359,7 +1357,7 @@ function bodyRecognizersOf(
 function computeSubUnitBarriers(
   unit: DiscoveredUnit,
   packs: ReadonlyArray<PatternPack>,
-  ctx: TsSubUnitContext,
+  ctx: SubUnitOpsCarrier,
   tallies: Map<string, PackTally> | undefined,
   file: string,
 ): DescentBarriers {
@@ -1387,7 +1385,7 @@ function computeSubUnitBarriers(
 function subUnitsOrReport(
   pack: PatternPack,
   parent: DiscoveredSubUnitParent,
-  ctx: TsSubUnitContext,
+  ctx: SubUnitOpsCarrier,
   at: { tally: PackTally | undefined; file: string },
 ): DiscoveredSubUnit[] {
   return runPackHook(
@@ -2117,7 +2115,7 @@ function readCallerBody(
   pack: PatternPack,
   wrapperPack: PatternPack,
   reading: CallerReading,
-  subUnitCtx: TsSubUnitContext,
+  subUnitCtx: SubUnitOpsCarrier,
 ): RawCodeStructure {
   const file = unit.func?.getSourceFile();
   const packs = (file === undefined

@@ -167,6 +167,5 @@ export type {
   TsAccessRecognizerContext,
   TsInvocationRecognizerContext,
 } from "./resolve/invocationEffects.js";
-export type { TsSubUnitContext } from "./subUnitContext.js";
 export type { FoundTerminal } from "./terminals/index.js";
 export type { Timer, TimingReport } from "./timing.js";

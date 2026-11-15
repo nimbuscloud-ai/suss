@@ -29,6 +29,7 @@ import type {
   Inherits,
   ModuleMemberName,
   ReceiverOrigin,
+  SubUnitOpsCarrier,
   ValueOps,
 } from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
@@ -1680,13 +1681,12 @@ export interface PatternPack {
    * discovered one and gets its own summary. Set `terminals` or
    * `inputMapping` on a sub-unit when it differs from the pack's defaults.
    *
-   * `ctx` is `unknown` because each adapter builds its own context. Each is
-   * a `SubUnitOpsCarrier` listing the calls the parent runs as ops, and the
-   * TypeScript one also lists the JSX elements it renders.
+   * `ctx` lists the calls the parent runs as ops, in every language, and
+   * in TypeScript the JSX elements it renders.
    */
   subUnits?: (
     parent: DiscoveredSubUnitParent,
-    ctx: unknown,
+    ctx: SubUnitOpsCarrier,
   ) => DiscoveredSubUnit[];
   /**
    * The pack's own top-level discovery, for a convention none of the
