@@ -390,6 +390,37 @@ describe("module imports on a summary", () => {
     expect(route?.metadata?.moduleImports).toEqual(["myapp/wrappers/restx.py"]);
   });
 
+  it("records a submodule the file imports by name off its package", async () => {
+    write(
+      "myapp/wrappers/restx.py",
+      "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+    );
+    write("myapp/models.py", "LIMIT = 10\n");
+    const todos = write(
+      "myapp/routes/todos.py",
+      'from myapp import models\nfrom myapp.wrappers.restx import route\n\n\n@route("/todos")\nclass TodoList:\n    def get(self):\n        return models.LIMIT\n',
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [
+        path.join(tmpDir, "myapp/wrappers/restx.py"),
+        path.join(tmpDir, "myapp/models.py"),
+        todos,
+      ],
+      roots: [tmpDir],
+      packs: [flaskRestxLike],
+      workspaceRoot: tmpDir,
+    });
+
+    const route = summaries.find((s) =>
+      s.location.file.endsWith("routes/todos.py"),
+    );
+    expect(route?.metadata?.moduleImports).toEqual([
+      "myapp/models.py",
+      "myapp/wrappers/restx.py",
+    ]);
+  });
+
   it("stamps an empty list on a file that imports nothing in the project, so a handler entry there is a leaf of the graph", async () => {
     const only = write(
       "myapp/worker.py",
