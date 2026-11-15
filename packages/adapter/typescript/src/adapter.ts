@@ -150,7 +150,6 @@ import {
 } from "./discovery/helperIndex.js";
 import {
   type DiscoveredUnit,
-  discoveredUnitOf,
   discoverUnits,
   unitDedupKey,
 } from "./discovery/index.js";
@@ -169,7 +168,6 @@ import {
   buildWrapperIndex,
   type WrapperIndex,
 } from "./discovery/wrapperIndex.js";
-import { createTsDiscoveryContext } from "./discoveryContext.js";
 import {
   type EveryUnitDeclarations,
   everyUnitDeclarationsOf,
@@ -1480,23 +1478,6 @@ function extractFromSourceFile(
     units.push(
       ...(wrappers?.unitsIn(sourceFile.getFilePath(), pack.name) ?? []),
     );
-
-    // A pack no DiscoveryMatch variant fits does its own walking.
-    const customUnits = runPackHook(
-      tally,
-      {
-        pack: pack.name,
-        hook: "discoverUnits",
-        file: sourceFile.getFilePath(),
-      },
-      () =>
-        pack.discoverUnits?.(
-          sourceFile,
-          createTsDiscoveryContext(resolution),
-        ) ?? [],
-      [],
-    );
-    units.push(...customUnits.map(discoveredUnitOf));
 
     for (const unit of units) {
       const claimKey = unitDedupKey(unit);

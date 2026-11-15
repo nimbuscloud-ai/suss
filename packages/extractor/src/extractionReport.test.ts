@@ -101,15 +101,15 @@ describe("recordPackFailure", () => {
     const tally = emptyTally();
     const message = recordPackFailure(tally, {
       pack: "express",
-      hook: "discoverUnits",
+      hook: "subUnits",
       file: "x.ts",
       error: new Error("boom"),
     });
     expect(tally.failures).toEqual([
-      { hook: "discoverUnits", file: "x.ts", message: "boom" },
+      { hook: "subUnits", file: "x.ts", message: "boom" },
     ]);
     expect(message).toBe(
-      '[suss] pack "express" threw from discoverUnits while reading x.ts: boom\n',
+      '[suss] pack "express" threw from subUnits while reading x.ts: boom\n',
     );
   });
 
@@ -117,7 +117,7 @@ describe("recordPackFailure", () => {
     const tally = emptyTally();
     recordPackFailure(tally, {
       pack: "express",
-      hook: "discoverUnits",
+      hook: "subUnits",
       file: "x.ts",
       error: "not an Error instance",
     });
@@ -128,7 +128,7 @@ describe("recordPackFailure", () => {
     expect(() =>
       recordPackFailure(undefined, {
         pack: "express",
-        hook: "discoverUnits",
+        hook: "subUnits",
         file: "x.ts",
         error: new Error("boom"),
       }),

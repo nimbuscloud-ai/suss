@@ -17,30 +17,30 @@ import type { TypeScriptAdapter } from "./adapter.js";
 
 const SOURCE = "export const handler = () => ({ status: 200 });\n";
 
-function packThatThrows(): PatternPack {
+/** A pack whose discovery finds nothing in the file, or throws when its names are not a list. */
+function packLookingFor(name: string, names: unknown): PatternPack {
   return {
-    name: "breaks",
+    name,
     protocol: "http",
     languages: ["typescript"],
-    discovery: [],
-    discoverUnits: () => {
-      throw new Error("cannot read what I was handed");
-    },
+    discovery: [
+      {
+        kind: "handler",
+        match: { type: "namedExport", names: names as string[] },
+        requiresImport: [],
+      },
+    ],
     terminals: [],
     inputMapping: { type: "positionalParams", params: [] },
   };
 }
 
+function packThatThrows(): PatternPack {
+  return packLookingFor("breaks", 1);
+}
+
 function packThatFindsNothing(): PatternPack {
-  return {
-    name: "quiet",
-    protocol: "http",
-    languages: ["typescript"],
-    discovery: [],
-    discoverUnits: () => [],
-    terminals: [],
-    inputMapping: { type: "positionalParams", params: [] },
-  };
+  return packLookingFor("quiet", ["absent"]);
 }
 
 async function reportFor(
@@ -79,10 +79,8 @@ describe("a pack whose hook throws", () => {
       expect(quiet.packs[0]?.unitsDiscovered).toBe(0);
 
       expect(broke.packs[0]?.failures).toHaveLength(1);
-      expect(broke.packs[0]?.failures[0]?.hook).toBe("discoverUnits");
-      expect(broke.packs[0]?.failures[0]?.message).toContain(
-        "cannot read what I was handed",
-      );
+      expect(broke.packs[0]?.failures[0]?.hook).toBe("discovery");
+      expect(broke.packs[0]?.failures[0]?.message).toContain("is not iterable");
       expect(quiet.packs[0]?.failures).toEqual([]);
     } finally {
       noise.mockRestore();
@@ -97,7 +95,7 @@ describe("a pack whose hook throws", () => {
       );
 
       expect(report.filesWalked).toBe(1);
-      expect(report.packs[0]?.failures[0]?.hook).toBe("discoverUnits");
+      expect(report.packs[0]?.failures[0]?.hook).toBe("discovery");
     } finally {
       noise.mockRestore();
     }
@@ -168,7 +166,7 @@ describe("a pack whose hook throws", () => {
 
       expect(printed).toContain("threw");
       expect(printed).toContain("breaks");
-      expect(printed).toContain("discoverUnits on /src/a.ts");
+      expect(printed).toContain("discovery on /src/a.ts");
 
       const quiet = await reportFor(packThatFindsNothing());
       expect(

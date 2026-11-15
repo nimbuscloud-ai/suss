@@ -22,7 +22,6 @@
   "src/discovery/resolverMap.ts": "writtenSdl",
   "src/discovery/shared.ts": "couldStillNameAFunction, namesAParameter",
   "src/discovery/wrapperFactory.ts": "factoryStopOf",
-  "src/discoveryContext.ts": "valueToAskAbout, resolveDeclarationToFunction",
   "src/parameterReads.ts": "pathAbove, parameterReads",
   "src/paths/lowering.ts": "ownExpressionsOf",
   "src/predicates.ts": "parseConditionExpression, tryExpandArrayIncludes",

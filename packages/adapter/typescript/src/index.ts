@@ -54,7 +54,6 @@ export {
   parameterNamedBy,
   toFunctionRoot,
 } from "./discovery/shared.js";
-export { createTsDiscoveryContext } from "./discoveryContext.js";
 export { boundInProgram, dottedPathOf } from "./facts/extract.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same
@@ -162,7 +161,6 @@ export type {
   PackFunnel,
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
-export type { TsDiscoveryContext } from "./discoveryContext.js";
 export type {
   TsAccessRecognizerContext,
   TsInvocationRecognizerContext,

@@ -150,24 +150,17 @@ export function packIsUngated(pack: PatternPack): boolean {
   ) {
     return false;
   }
-  // Packs whose only mechanism is a recognizer or a `discoverUnits`
-  // callback (no data-driven discovery patterns) without a pack-level
-  // gate fall through to "ungated": they walk every file because they
-  // have no per-pattern `requiresImport` to declare relevance through.
-  // Truly universal recognizers like `@suss/runtime-node`'s
-  // process-surface / env-var recognizers (process.* is always
-  // available) and callback-driven packs that key off something other
-  // than imports (a manifest on disk) are the intended consumers of
-  // this fallback.
+  // A pack whose only mechanism is a recognizer, with no pack-level gate,
+  // walks every file: it has no pattern whose `requiresImport` could say
+  // which files matter. `process.*` recognizers rely on this.
   const hasInvocationRecognizers =
     pack.invocationRecognizers !== undefined &&
     pack.invocationRecognizers.length > 0;
   const hasAccessRecognizers =
     pack.accessRecognizers !== undefined && pack.accessRecognizers.length > 0;
-  const hasDiscoverUnits = pack.discoverUnits !== undefined;
   if (
     pack.discovery.length === 0 &&
-    (hasInvocationRecognizers || hasAccessRecognizers || hasDiscoverUnits)
+    (hasInvocationRecognizers || hasAccessRecognizers)
   ) {
     return true;
   }

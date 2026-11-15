@@ -1194,10 +1194,7 @@ async function runTypeScript(
     cacheDiagnostic,
     extractionReport,
     recognizersOnly:
-      packs.length > 0 &&
-      packs.every(
-        (p) => p.discovery.length === 0 && p.discoverUnits === undefined,
-      ),
+      packs.length > 0 && packs.every((p) => p.discovery.length === 0),
     packsNeedingConfig: packConfig.needs,
     packPathsMissing: packConfig.missingPaths,
   };

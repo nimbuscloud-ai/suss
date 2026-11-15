@@ -26,7 +26,6 @@ interface PatternPack {
   invocationRecognizers?: InvocationRecognizer[];
   accessRecognizers?: AccessRecognizer[];
   subUnits?: (parent, ctx) => DiscoveredSubUnit[];
-  discoverUnits?: (sourceFile, ctx) => DiscoveredCustomUnit[];
   requiresImport?: string[];
   generatedModules?: {
     of: string;
@@ -798,18 +797,6 @@ interface DiscoveredSubUnitParent {
 Returned units go through the same pipeline top-level units do, and each becomes its own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` when a sub-unit is written differently from the parent pack's defaults.
 
 The parent's summary stops at every function a pack returned, and so does each sub-unit's. A timer callback written inside a click handler, with one pack returning the handler and another the callback, is read on the callback's summary and not on the handler's as well.
-
-## Custom discovery
-
-```typescript
-discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
-```
-
-`discoverUnits` is the discovery counterpart of `subUnits`. When a framework's convention doesn't fit any of the `DiscoveryMatch` variants, the pack ships its own walker and the adapter calls it once per source file alongside the data-driven dispatch.
-
-Use it for a convention no other pack shares and no declared member reads yet. Adding each of those to the central union would make every unrelated pack deal with them, so a pack starts with the hook and moves to a declared member once one fits, as the React pack did for its exports and its boot calls.
-
-When this callback finds a unit at the same `(func, kind)` as one from another pack's data-driven discovery, suss keeps the unit from whichever pack claimed it first. The order of the packs in the run decides which one that is.
 
 ## Gates and per-project reading
 

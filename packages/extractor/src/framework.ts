@@ -6,7 +6,7 @@
  * Most of a pack is data, so one pack description works with any adapter
  * that reads these patterns. When a pack needs to compute something, the
  * usual fix is another declarative field here. The function hooks
- * (`subUnits`, `discoverUnits` and the recognizers) cover what data cannot.
+ * (`subUnits` and the recognizers) cover what data cannot.
  *
  * Sections follow the order an adapter uses them. The pack patterns
  * reference at https://suss.sh/packs/patterns shows each variant with the
@@ -1689,21 +1689,6 @@ export interface PatternPack {
     ctx: SubUnitOpsCarrier,
   ) => DiscoveredSubUnit[];
   /**
-   * The pack's own top-level discovery, for a convention none of the
-   * `DiscoveryMatch` variants fits, such as React's component-export
-   * heuristic or Storybook's `.stories.tsx` files. Keeping those in the
-   * pack leaves the `DiscoveryMatch` union to patterns any pack can share.
-   * The adapter calls it once per source file beside the data-driven
-   * discovery, and the units it returns go through the normal pipeline
-   * with the same per-unit overrides.
-   *
-   * `ctx` is `unknown` for the same reason as in `subUnits`
-   * (`TsDiscoveryContext` in `@suss/adapter-typescript`). When this finds
-   * a unit at the same function and kind as another pack's discovery, the
-   * pack that comes first in the framework list claims it.
-   */
-  discoverUnits?: (sourceFile: unknown, ctx: unknown) => DiscoveredCustomUnit[];
-  /**
    * Per-call recognizers that emit typed `Effect`s beside the generic
    * `invocation` effect. The adapter calls each one on every call in the
    * function body, whichever pack discovered the function, and in its
@@ -1944,7 +1929,7 @@ export interface DiscoveredSubUnitParent {
 }
 
 /**
- * One top-level unit a pack's `discoverUnits` hook found. The adapter
+ * One top-level unit a declared discovery pattern found. The adapter
  * widens it into its own internal unit type and runs it through the
  * normal extraction pipeline. `func` is whatever the adapter's primitive
  * returned, and the adapter narrows it to its function-root type

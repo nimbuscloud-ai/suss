@@ -86,7 +86,6 @@ describe("awsLambdaFramework: pack shape", () => {
       "manifest",
     ]);
     expect(pack.discovery[0]?.requiresImport).toEqual([]);
-    expect(pack.discoverUnits).toBeUndefined();
     expect(
       pack.declarations?.declarations.find((one) => one.name === "manifest"),
     ).toEqual({

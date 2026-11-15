@@ -217,13 +217,13 @@ describe("the remaining checks", () => {
     const found = firedBy("no pack throws while it reads", [
       funnel({
         failures: [
-          { hook: "discoverUnits", file: "a.ts", message: "boom" },
-          { hook: "discoverUnits", file: "b.ts", message: "also boom" },
+          { hook: "subUnits", file: "a.ts", message: "boom" },
+          { hook: "subUnits", file: "b.ts", message: "also boom" },
         ],
       }),
     ]);
     expect(found).toHaveLength(1);
-    expect(found[0]?.detail).toBe("discoverUnits on a.ts (+1 more): boom");
+    expect(found[0]?.detail).toBe("subUnits on a.ts (+1 more): boom");
   });
 
   it("gives the line of a failure a recognizer had on one call", () => {

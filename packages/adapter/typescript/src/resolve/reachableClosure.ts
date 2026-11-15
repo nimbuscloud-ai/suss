@@ -1161,7 +1161,6 @@ export function recognizerOnlyRoots(
     const recognizerOnly = packs.some(
       (pack) =>
         pack.discovery.length === 0 &&
-        pack.discoverUnits === undefined &&
         ((pack.invocationRecognizers?.length ?? 0) > 0 ||
           (pack.accessRecognizers?.length ?? 0) > 0),
     );
