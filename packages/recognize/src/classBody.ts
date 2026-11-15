@@ -23,16 +23,22 @@ import type {
   ClassValueOps,
   DeclaredMatch,
   DefinesMethodMeaning,
+  Inherits,
   ModuleOps,
   ValueOps,
 } from "@suss/extractor";
 
 /** A class-body declaration, with whatever it leaves out read as nothing. */
 export function classBody(declared: {
+  readonly in?: Inherits;
   readonly calls?: Readonly<Record<string, ClassBodyMeaning>>;
   readonly fields?: ClassBodyFields;
 }): ClassBodyDeclaration {
-  return { calls: declared.calls ?? {}, fields: declared.fields ?? {} };
+  return {
+    ...(declared.in === undefined ? {} : { in: declared.in }),
+    calls: declared.calls ?? {},
+    fields: declared.fields ?? {},
+  };
 }
 
 /** A call that declares an association, `has_many :items`. */
@@ -101,11 +107,26 @@ export function declareClassBody(
   declaration: ClassBodyDeclaration,
   cls: ClassValueOps,
 ): ClassDeclaration[] {
+  if (!readsBodyOf(declaration, cls)) {
+    return [];
+  }
   const fromCalls = cls.bodyCalls().flatMap((call) => {
     const meaning = meaningOf(declaration, call);
     return meaning === null ? [] : readMeaning(meaning, call, cls);
   });
   return [...fromCalls, ...fieldDeclarations(declaration.fields, cls)];
+}
+
+/** A body that writes no base class may be a mixin the library's classes include, so the base cannot rule it out. */
+function readsBodyOf(
+  declaration: ClassBodyDeclaration,
+  cls: ClassValueOps,
+): boolean {
+  return (
+    declaration.in === undefined ||
+    !cls.writesBase() ||
+    cls.inherits(declaration.in)
+  );
 }
 
 /**

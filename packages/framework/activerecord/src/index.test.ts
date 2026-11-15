@@ -66,6 +66,14 @@ describe("the ActiveRecord pack", () => {
     });
   });
 
+  it("reads a body only in a class that reaches ActiveRecord's base", () => {
+    const [body] = activeRecordClassBodies();
+    expect(body?.in).toMatchObject({
+      from: ["ActiveRecord"],
+      named: ["Base"],
+    });
+  });
+
   it("declares the association calls and the scope call a model body writes", () => {
     const [body] = activeRecordClassBodies();
     expect(body?.calls.has_many).toEqual({

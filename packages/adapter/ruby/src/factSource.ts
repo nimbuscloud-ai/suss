@@ -145,6 +145,12 @@ export function rubyFactSource(db: Database): FactSource {
     },
     classBodyCalls: (key) =>
       classBodyCalls(db, [key], RUBY_PROGRAM).get(key) ?? [],
+    spellsBase: (written, spec) => {
+      const path = written.startsWith("::") ? written.slice(2) : written;
+      return spec.from.some((module) =>
+        spec.named.some((name) => path === `${module}::${name}`),
+      );
+    },
     givesBack: (key) => {
       resolveValues(db, [key]);
       return givenBackFunction(db, key);

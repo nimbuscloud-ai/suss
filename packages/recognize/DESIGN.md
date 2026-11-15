@@ -322,11 +322,12 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `elements(tag)` | the adapter's `elementsOf` on the function `function()` settles to, which states `writesElement` for every element written under it and the element's `jsxElement`, `jsxAttribute`, `jsxSpread` and `jsxChild` rows. It keeps the elements whose `jsxElement` tag the adapter's `textOf` spells as `tag`, in source order. Each element's `props()` are its `jsxAttribute` names, its `spreads()` the values of its `jsxSpread` rows, and `hasChildren()` says whether it has a `jsxChild` row. An adapter that writes no JSX leaves `elementsOf` unset, and the op gives nothing |
 | `declaration()` | the adapter's `declarationOf` where it has one. TypeScript reads the declaration a name `binds` to, and for an import binding follows `imports(d, m, n)` to what the store's export table gives for `m` under `n`, with each module stated only as far as its export statements; a variable, function or class gives its name, a name leads on to what it binds to, and anything else gives its file and no name. Without `declarationOf`, `imports(x, m, n)` on the value leads to the `exportsAs(m, n, v)` row, following `v` on when it is imported in turn, and otherwise the `exportsAs` row of the value or of what it `binds` to gives the file and the name, which is how Python states a module-level def and Ruby a top-level class or constant. When neither gives an answer and the value is a member read, `readsProperty(x, o, n)`, it is declared where `property(n)` of `o`'s `object()` is, so `Card.Root` with `Card = { Root: CardRoot }` is declared where `CardRoot` is. TypeScript asks this of the expression inside `Slider.Root<number>`. Null when nothing is behind it |
 | `parameterAt(fn)` | the position `k` of a `paramOf(f, k, p)` row on the function `fn` settles to, where `p` is the value itself (how Python and Ruby key a name for a parameter), what it `binds` to (how TypeScript does), or the parameter whose destructure has that declaration as its rest, `restOf(d, p)`. Null for none, or for two positions |
-| `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names; its `members(kind)` are the functions among its `holdsProperty` rows |
+| `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names, or an `extendsNamed` base the adapter's `spellsBase` says the spec spells, which is how Ruby matches `ActiveRecord::Base` in a project that reopens `module ActiveRecord`; its `members(kind)` are the functions among its `holdsProperty` rows |
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
 | `bodyCalls()` on a value or a module | `bodyCallAt(f, k, r)` on the value's own key or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
 | `bodyCalls()` on a class | `classBodyCall(c, r)`, which the adapter asks the rules for: the class body's statements and, in Ruby, those of each block written there, in source order |
 | `fieldCalls()` | the `holdsProperty(c, n, v)` and `declaresDefault(c, n, v)` rows whose `v` is a call, in source order, each under its plain name |
+| `writesBase()` | an `extendsNamed(c, n)` row, which an adapter states for a base the declaration writes and never for a mixin |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
 | `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
@@ -1475,6 +1476,14 @@ body declares. It states no fact. The adapter does, because an
 association's class comes from the language's own inflection when the
 call writes none, and only the adapter knows how its language keys a
 class.
+
+`in` limits the reading to the library's own classes, as
+`classBody({ in: inherits({ from: ["ActiveRecord"], named: ["Base"] }) })`
+does for ActiveRecord's models, so a serializer's `has_many` says
+nothing. A body whose declaration writes no base class is read anyway.
+A Ruby module has none, and its declarations reach a model through the
+`include` that mixes it in. A class reopened without its base has none
+either, and its body is the same model's.
 
 A call is matched by the name it is written under. A callback's events
 are the ones its `narrowedBy` argument lists, one name or a list, and
