@@ -12,6 +12,7 @@
 import { Node, type ObjectLiteralExpression, type SourceFile } from "ts-morph";
 
 import { ResolutionStore } from "../facts/store.js";
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import { callsResolvingTo } from "./importedCalls.js";
 import {
   couldNameAValue,
@@ -48,7 +49,7 @@ export function discoverResolverMaps(
     }
     const config = args[0];
 
-    const resolversProp = config.getProperty(mapProperty);
+    const resolversProp = propertyWrittenAs(config, mapProperty);
     if (resolversProp === undefined) {
       continue;
     }
@@ -135,7 +136,7 @@ function extractTypeDefsSdl(
   if (!Node.isObjectLiteralExpression(config)) {
     return null;
   }
-  const prop = config.getProperty("typeDefs");
+  const prop = propertyWrittenAs(config, "typeDefs");
   if (prop === undefined) {
     return null;
   }

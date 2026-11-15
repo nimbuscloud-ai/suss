@@ -19,6 +19,7 @@ import {
   type SourceFile,
 } from "ts-morph";
 
+import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
 import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
@@ -56,7 +57,7 @@ function splitPackageSpec(spec: string): {
 
 function enclosingFunctionName(func: FunctionRoot): string {
   if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
-    const n = func.getName?.();
+    const n = functionNameOf(func);
     if (typeof n === "string" && n.length > 0) {
       return n;
     }
@@ -74,7 +75,7 @@ function enclosingFunctionName(func: FunctionRoot): string {
       return parent.getName();
     }
     if (Node.isPropertyAssignment(parent)) {
-      return parent.getName();
+      return memberNameOf(parent);
     }
   }
   return "<anon>";

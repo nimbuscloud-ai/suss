@@ -387,4 +387,20 @@ describe("reading one body", () => {
       properties: { "X-Amz-Target": { as: "parameter", position: 1 } },
     });
   });
+
+  it("reads a numeric property key as the number JavaScript makes of it", () => {
+    const { sinks } = bodyOf(`
+      export function f(send: (init: unknown) => void, target: string) {
+        send({ 0x10: target, 1_000: target });
+      }
+    `);
+
+    expect(sinks[0]?.arguments[0]).toEqual({
+      as: "object",
+      properties: {
+        "16": { as: "parameter", position: 1 },
+        "1000": { as: "parameter", position: 1 },
+      },
+    });
+  });
 });

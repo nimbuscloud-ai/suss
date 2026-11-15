@@ -245,6 +245,7 @@ import {
   withDescentStops,
 } from "./walk/descent.js";
 import { fileOfOffsetKey, offsetKeyOf } from "./walk/nodeKeys.js";
+import { functionNameOf, memberNameOf } from "./walk/propertyName.js";
 import {
   forEachDescendantOfKinds,
   statementsOfKind,
@@ -2357,7 +2358,7 @@ function synthesizeCallerSummaries(
 
 function callerName(func: FunctionRoot): string {
   if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
-    return func.getName() ?? "anonymous";
+    return functionNameOf(func) ?? "anonymous";
   }
   const parent = func.getParent();
   if (parent !== undefined && Node.isVariableDeclaration(parent)) {
@@ -2368,7 +2369,7 @@ function callerName(func: FunctionRoot): string {
   }
   // An arrow written as a member of an object literal: `client.get`.
   if (parent !== undefined && Node.isPropertyAssignment(parent)) {
-    return parent.getName();
+    return memberNameOf(parent);
   }
   return "anonymous";
 }

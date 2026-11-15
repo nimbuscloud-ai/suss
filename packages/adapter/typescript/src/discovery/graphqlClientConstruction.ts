@@ -17,6 +17,7 @@ import {
 } from "@suss/behavioral-ir";
 
 import { ResolutionStore } from "../facts/store.js";
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import {
   callsNamed,
   type ImportedCallOrigins,
@@ -533,7 +534,7 @@ function constructionRegistryStatus(
     return "unknown";
   }
 
-  if (cacheOptions.getProperty(spec.registryProperty) !== undefined) {
+  if (propertyWrittenAs(cacheOptions, spec.registryProperty) !== undefined) {
     return "configured";
   }
 
@@ -612,7 +613,7 @@ function constructionRef(
   if (optionsArg === undefined || !Node.isObjectLiteralExpression(optionsArg)) {
     return null;
   }
-  const property = optionsArg.getProperty(uriProperty);
+  const property = propertyWrittenAs(optionsArg, uriProperty);
   if (property === undefined || !Node.isPropertyAssignment(property)) {
     return null;
   }

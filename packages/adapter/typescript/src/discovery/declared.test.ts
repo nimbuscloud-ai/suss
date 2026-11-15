@@ -52,6 +52,19 @@ async function unitsFor(
     .sort();
 }
 
+const SERVER_ACTIONS: DiscoveryPattern[] = [
+  {
+    kind: "action",
+    match: {
+      type: "marked",
+      word: "use server",
+      scopes: ["function"],
+      name: ["assignedName", "countInFile"],
+      countedAs: "serverAction",
+    },
+  },
+];
+
 describe("a declared discovery pattern", () => {
   it("takes the functions marked in place by the name they are declared or assigned under, or a count", async () => {
     expect(
@@ -69,18 +82,7 @@ describe("a declared discovery pattern", () => {
             "function run(action: unknown) { return action; }",
           ].join("\n"),
         },
-        [
-          {
-            kind: "action",
-            match: {
-              type: "marked",
-              word: "use server",
-              scopes: ["function"],
-              name: ["assignedName", "countInFile"],
-              countedAs: "serverAction",
-            },
-          },
-        ],
+        SERVER_ACTIONS,
       ),
     ).toEqual([
       "action declared",
@@ -88,6 +90,24 @@ describe("a declared discovery pattern", () => {
       "action save",
       "action serverAction#0",
     ]);
+  });
+
+  it("names a marked quoted method and a marked quoted property by the key, without its quotes", async () => {
+    expect(
+      await unitsFor(
+        {
+          "/form.tsx": [
+            "class Store {",
+            '  "save-all"() { "use server"; return 2; }',
+            "}",
+            "export const handlers = {",
+            '  "remove-all": async () => { "use server"; return 3; },',
+            "};",
+          ].join("\n"),
+        },
+        SERVER_ACTIONS,
+      ),
+    ).toEqual(["action remove-all", "action save-all"]);
   });
 
   it("states no function of a file whose text never writes the directive", () => {

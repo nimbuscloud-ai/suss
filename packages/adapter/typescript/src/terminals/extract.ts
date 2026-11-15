@@ -16,6 +16,7 @@ import { settledConstantOf } from "@suss/values";
 import { extractShape, extractShapeWithArguments } from "../shapes/shapes.js";
 import { encodedIn } from "../values/encoded.js";
 import { evaluatedValue } from "../values/evaluator.js";
+import { propertyNameOf, propertyWrittenAs } from "../walk/propertyName.js";
 import { peelSyntax } from "../walk/unwrap.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -177,7 +178,7 @@ function statusFromProperty(
   name: string,
   ctx: ExtractionContext,
 ): RawTerminal["statusCode"] {
-  const prop = obj.getProperty(name);
+  const prop = propertyWrittenAs(obj, name);
   if (prop === undefined) {
     return null;
   }
@@ -286,7 +287,7 @@ function extractStatusCodeFromRule(
         continue;
       }
 
-      if (prop.getName() !== sc.name) {
+      if (propertyNameOf(prop) !== sc.name) {
         continue;
       }
 
@@ -376,7 +377,7 @@ export function extractBody(ctx: ExtractionContext): RawTerminal["body"] {
         continue;
       }
 
-      if (prop.getName() !== b.name) {
+      if (propertyNameOf(prop) !== b.name) {
         continue;
       }
 

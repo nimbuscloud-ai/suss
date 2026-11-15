@@ -33,6 +33,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { recordFileDependency } from "../depTracking.js";
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import { createProgramMemo, type ProgramMemo } from "../programMemo.js";
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import { peelParens, peelSyntax } from "../walk/unwrap.js";
 
 import type {
@@ -614,7 +615,7 @@ function valueWrittenFor(
   object: ObjectLiteralExpression,
   key: string,
 ): Expression | undefined {
-  const property = object.getProperty(key);
+  const property = propertyWrittenAs(object, key);
   if (property !== undefined && Node.isPropertyAssignment(property)) {
     return property.getInitializer();
   }

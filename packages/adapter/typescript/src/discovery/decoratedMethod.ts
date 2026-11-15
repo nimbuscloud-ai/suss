@@ -4,6 +4,7 @@
 
 import { type ClassDeclaration, Node, type SourceFile } from "ts-morph";
 
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import {
   decoratedCallablesOf,
   importedDecoratorLocals,
@@ -77,7 +78,7 @@ function resolveOperationNameOverride(
     if (!Node.isObjectLiteralExpression(arg)) {
       continue;
     }
-    const prop = arg.getProperty("name");
+    const prop = propertyWrittenAs(arg, "name");
     if (prop === undefined || !Node.isPropertyAssignment(prop)) {
       continue;
     }
