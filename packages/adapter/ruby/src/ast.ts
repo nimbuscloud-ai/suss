@@ -113,20 +113,30 @@ export function nestedStatements(stmt: RbNode): RbNode[] {
   return [];
 }
 
+/** A call written as a statement of a body, and whether it is written inside another of the body's statements. */
+export interface StatementCall {
+  readonly call: RbNode;
+  readonly nested: boolean;
+}
+
 /**
  * The calls written as statements of a body, in order, through the
  * branches of any `if`, `unless`, `case`, `begin` or loop among them and
- * not into a block or a definition. A bare name Ruby runs as a method is
- * not a `call` node, and is left out.
+ * not into a block or a definition. A call reached through one of those
+ * is nested. A bare name Ruby runs as a method is not a `call` node, and
+ * is left out.
  */
-export function callStatementsOf(body: RbNode): RbNode[] {
-  const inOrder = (statements: readonly RbNode[]): RbNode[] =>
+export function callStatementsOf(body: RbNode): StatementCall[] {
+  const inOrder = (
+    statements: readonly RbNode[],
+    nested: boolean,
+  ): StatementCall[] =>
     statements.flatMap((statement) =>
       statement.type === "call"
-        ? [statement]
-        : inOrder(nestedStatements(statement)),
+        ? [{ call: statement, nested }]
+        : inOrder(nestedStatements(statement), true),
     );
-  return inOrder(bodyStatements(body));
+  return inOrder(bodyStatements(body), false);
 }
 
 /** A branch is a statement list, a clause, or, after a modifier such as `x if y`, one statement. */

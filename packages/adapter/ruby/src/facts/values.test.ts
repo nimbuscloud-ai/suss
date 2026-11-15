@@ -2050,6 +2050,40 @@ describe("the calls a body writes as statements, and the pairs a call passes", (
     });
   });
 
+  it("says which of a body's calls are written inside another statement: a modifier, an if, a begin and its ensure", async () => {
+    const source = [
+      "def run",
+      "  prepare(:all)",
+      '  skip "not yet" unless ready?',
+      "  if slow?",
+      '    skip "slow"',
+      "    note(:slow)",
+      "  end",
+      "  begin",
+      '    skip "flaky"',
+      "  ensure",
+      "    clean(:all)",
+      "  end",
+      "  finish(:all)",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const method = keyOf(source, source.trimEnd());
+    expect(placed(db, source)).toEqual({
+      [method]: ["prepare", "skip", "skip", "note", "skip", "clean", "finish"],
+    });
+    expect(
+      rows(db, "nestedBodyCall").map(([call = ""]) => textAt(source, call)),
+    ).toEqual([
+      'skip "not yet"',
+      'skip "slow"',
+      "note(:slow)",
+      'skip "flaky"',
+      "clean(:all)",
+    ]);
+  });
+
   it("states a pair whose key is a string, a constant or a local, and keeps a string key as a keyword too", async () => {
     const source =
       'get "status" => "health#show", :constraints => {}\n' +

@@ -1178,7 +1178,8 @@ function emitBlockFunction(
 
 /**
  * `bodyCallAt` for each call written as a statement of `body`, which the
- * method, block, class or file at `ownerKey` runs in that order.
+ * method, block, class or file at `ownerKey` runs in that order, and
+ * `nestedBodyCall` for each one written inside another statement.
  */
 function emitBodyCallPositions(
   emitter: Emitter,
@@ -1188,14 +1189,12 @@ function emitBodyCallPositions(
   if (body === null) {
     return;
   }
-  callStatementsOf(body).forEach((call, position) => {
-    add(
-      emitter,
-      "bodyCallAt",
-      ownerKey,
-      String(position),
-      nodeId(emitter.filePath, call),
-    );
+  callStatementsOf(body).forEach(({ call, nested }, position) => {
+    const callKey = nodeId(emitter.filePath, call);
+    add(emitter, "bodyCallAt", ownerKey, String(position), callKey);
+    if (nested) {
+      add(emitter, "nestedBodyCall", callKey);
+    }
   });
 }
 
