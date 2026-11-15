@@ -15,7 +15,6 @@ export {
   TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
-export { rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 // One file as the module ops a declared reader asks, for a test that
 // asks the same questions of each language.
@@ -80,7 +79,7 @@ export {
 export { parseConditionExpression } from "./predicates.js";
 // The executor ops a declared pack runs on. Exported so a pack's test
 // harness can build the same context the adapter threads through.
-export { callOpsFor } from "./resolve/callOps.js";
+export { callOpsFor, rootIdentifier } from "./resolve/callOps.js";
 export {
   factSourceFor,
   readOpsAt,
