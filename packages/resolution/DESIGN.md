@@ -57,7 +57,9 @@ readsEntry(site, o, n)      site reads the entry of o under the key n,
                             which the source writes out, as
                             params[:id]. The source walk reads it, and
                             so does a call that takes its function from
-                            a table (Python, Ruby)
+                            a table, which takes only an entry o is
+                            written with under n, the way
+                            choosesWrittenEntry does (Python, Ruby)
 assigns(site, v)            site is the left side of a plain =, an
                             entry or a property, and v the value written
                             on the right, as in process.exitCode = v.
@@ -66,9 +68,19 @@ assigns(site, v)            site is the left side of a plain =, an
                             TypeScript states it when the site is stated
 choosesEntry(site, o)       site reads one entry of o, or one of its
                             members, by a key the program works out at
-                            run time: o[k], a map's get(k), Python's
-                            getattr(o, k), or Ruby's send(k). Any entry
-                            can be the one
+                            run time: o[k] or a map's get(k) in
+                            TypeScript, Python's getattr(o, k), or
+                            Ruby's send(k). Any entry can be the one
+choosesWrittenEntry(site, o)  the same read at a subscript, a dict's
+                            get(k) or a hash's fetch(k), where only an
+                            entry written into o can be the one: one
+                            writtenEntryAt lists, or one a subscript
+                            put there under a computed key. On a class
+                            or an instance the language runs its
+                            __getitem__ or [] method instead, which
+                            never hands back a method o contains.
+                            An adapter states this in place of
+                            choosesEntry (Python, Ruby)
 choosesNamedEntry(site, o, n)  the same read, where the source says the
                             key is n or another name the site has a row
                             for: a key typed as a union of literals
@@ -92,9 +104,9 @@ writtenEntryAt(c, k, x, form)  the list or object c is written out with
                             holdsProperty or holdsUnderKey gives. form is
                             spread for [...xs], {...opts} or **opts, and
                             x is the collection whose entries all go at
-                            k. No rule reads it yet. The rules derive a
-                            different relation, entryAt(site, held), for
-                            what a read of an entry can give back
+                            k. The entries written in place are what a
+                            Python or Ruby subscript can take, and
+                            entryAt(site, held) reads them for that
 computedKeyAt(o, k, x)      the entry at position k of the object o, as
                             writtenEntryAt counts them, is under the key
                             the expression x computes, as in
@@ -1536,6 +1548,34 @@ same goes for a map filled through `set`, which the TypeScript adapter
 states as `collectionValue` for the `new Map()` and `holdsUnderKey` for
 each `set`. A write under a computed key could be under any name, so a
 read narrowed to one name still finds it.
+
+A subscript does not mean the same thing in every language. In
+JavaScript `Services[kind]` reads a static off the class, which is a
+property like any other. In Python and Ruby it calls the class's own
+`__getitem__` or `[]` method. When that method comes from a library,
+it hands back what the library has registered, never a method the
+class declares:
+
+```ruby
+class Services
+  extend Dry::Core::Container::Mixin
+
+  def self.registered = keys
+end
+
+Services["mailer.#{kind}"].call(message)
+```
+
+So the Python and Ruby adapters state a subscript, a dict's `get` and a
+hash's `fetch` as `choosesWrittenEntry(site, o)`. It takes an entry the
+container is written with, which `writtenEntryAt` lists, or one a
+subscript put there under a computed key. A hash, a dict or a list
+written out has entries of that kind, and a class or an instance
+doesn't, so `MAP[kind]` still finds the functions in `MAP = { ... }`
+and `Services[kind]` never finds a method. A key written out,
+`readsEntry`, takes the entry under its name the same way.
+`getattr(o, k)` and `send(k)` stay `choosesEntry`, since they do pick
+a member.
 
 A Python registry is often filled by a decorator, `@register("created")`
 over `def on_created`. The Python adapter states each decorator as the

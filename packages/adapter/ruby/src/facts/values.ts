@@ -1251,8 +1251,9 @@ function emitKeyedRead(
     valueKey(emitter, key, keyParent),
   );
   // Nothing in Ruby narrows a key the program works out, so the read can
-  // take any entry the container has.
-  add(emitter, "choosesEntry", siteKey, containerKey);
+  // take any entry a hash or an array is written with. A class or an
+  // instance runs its own `[]` or `fetch`, so its methods are not entries.
+  add(emitter, "choosesWrittenEntry", siteKey, containerKey);
 }
 
 function emitKeyedElement(

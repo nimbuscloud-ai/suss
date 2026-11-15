@@ -229,6 +229,7 @@ import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 import { RUNS_CALL_QUESTIONS, RUNS_CALL_RULES } from "./runsCall.js";
 import { RUNS_ELEMENT_QUESTIONS, RUNS_ELEMENT_RULES } from "./runsElement.js";
+import { VALUE_ENTRY } from "./valuePositions.js";
 
 import type { Rule, Term } from "@suss/datalog";
 
@@ -300,6 +301,9 @@ const NO_ARGUMENTS = constant("0");
 /** The position of a call's first argument, and of a function's first parameter. */
 const FIRST_POSITION = constant("0");
 
+/** The form `writtenEntryAt` gives an entry written in place, which a spread is not. */
+const ENTRY_IN_PLACE = constant(VALUE_ENTRY);
+
 /** The method a promise hands its settled value on through. */
 const THEN_METHOD = constant("then");
 
@@ -343,6 +347,11 @@ const DISPATCH_RULES: readonly Rule[] = [
     "entryRead",
     [v("site"), v("o")],
     [lit("choosesEntryLike", v("site"), v("o"), v("p"), v("s"))],
+  ),
+  rule(
+    "entryRead",
+    [v("site"), v("o")],
+    [lit("choosesWrittenEntry", v("site"), v("o"))],
   ),
   // Every entry of a read whose key is partly written out, by name. A rule
   // cannot compare strings, so dispatch.ts keeps the names that match, and
@@ -394,11 +403,35 @@ const DISPATCH_RULES: readonly Rule[] = [
     "entryAt",
     [v("site"), v("held")],
     [
-      lit("namedEntryRead", v("site"), v("o"), v("n")),
+      lit("choosesNamedEntry", v("site"), v("o"), v("n")),
       lit("containerOf", v("o"), v("obj")),
       lit("contains", v("obj"), v("n"), v("held")),
     ],
     "named entry",
+  ),
+  // A Python or Ruby subscript takes an entry its container was written
+  // out with. On a class or an instance it runs `__getitem__` or `[]`,
+  // which never hands back a member `contains` lists.
+  rule(
+    "entryAt",
+    [v("site"), v("held")],
+    [
+      lit("choosesWrittenEntry", v("site"), v("o")),
+      lit("containerOf", v("o"), v("c")),
+      lit("writtenEntryAt", v("c"), v("k"), v("held"), ENTRY_IN_PLACE),
+    ],
+    "written entry",
+  ),
+  rule(
+    "entryAt",
+    [v("site"), v("held")],
+    [
+      lit("readsEntry", v("site"), v("o"), v("n")),
+      lit("containerOf", v("o"), v("c")),
+      lit("holdsProperty", v("c"), v("n"), v("held")),
+      lit("writtenEntryAt", v("c"), v("k"), v("held"), ENTRY_IN_PLACE),
+    ],
+    "written entry under a name",
   ),
   rule(
     "entryAt",
