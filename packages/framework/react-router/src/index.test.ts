@@ -290,39 +290,38 @@ describe("reactRouterFramework: declared route trees", () => {
   const unreadOf = (name: string, file: string): string[] =>
     unitIn(name, file)?.gaps.map((g) => g.description) ?? [];
 
-  it("reads a route whose element is in parentheses as a boundary named by its path", () => {
-    expect(unitIn("profile", "parenthesizedElements.tsx")).toBeDefined();
-    expect(routeOf("profile")).toBe("/profile");
-    expect(routeOf("audit")).toBe("/audit");
-    expect(routeOf("Profile")).toBeNull();
-    expect(routeOf("PageLoader")).toBeNull();
+  it("reads the component a route renders through parentheses", () => {
+    expect(routeOf("Profile")).toBe("/profile");
+    expect(routeOf("PageLoader")).toBe("/audit");
+    expect(unitIn("profile", "parenthesizedElements.tsx")).toBeUndefined();
+    expect(unitIn("audit", "parenthesizedElements.tsx")).toBeUndefined();
   });
 
-  it("labels a parenthesized element under a path it cannot read as a declaration", () => {
-    expect(unreadOf("declaration", "parenthesizedElements.tsx")).toContainEqual(
+  it("labels a parenthesized element under a path it cannot read by its component", () => {
+    expect(unreadOf("PageLoader", "parenthesizedElements.tsx")).toContainEqual(
       expect.stringContaining("not written as a string literal"),
     );
   });
 
-  it("gives a route that says index={false} its parent's path, as it does a bare index", () => {
+  it("serves nothing for a route that says index={false}, and keeps the routes inside it", () => {
     expect(routeOf("ProjectList")).toBe("/projects");
-    expect(routeOf("ProjectBoard")).toBe("/projects");
+    expect(routed.some((s) => s.identity.name === "ProjectBoard")).toBe(false);
     expect(routeOf("BoardColumns")).toBe("/projects/board");
   });
 
-  it("names a router argument it cannot read under a cast by its syntax kind", () => {
-    expect(unreadOf("AsExpression", "castRouter.tsx")).toContainEqual(
+  it("names a router argument it cannot read by the name under the cast", () => {
+    expect(unreadOf("pluginRoutes", "castRouter.tsx")).toContainEqual(
       expect.stringContaining("not written as an array literal"),
     );
   });
 
-  it("announces a spread among a route's children at the spread element", () => {
+  it("announces a spread among a route's children where its collection is written", () => {
     const source = fs.readFileSync(
       path.join(fixturesDir, "spreadChildren.tsx"),
       "utf8",
     );
     const spread = unitIn("adminRoutes", "spreadChildren.tsx");
-    expect(spread?.location.span?.start).toBe(source.indexOf("...adminRoutes"));
+    expect(spread?.location.span?.start).toBe(source.indexOf("adminRoutes]"));
     expect(spread?.gaps.map((g) => g.description)).toContainEqual(
       expect.stringContaining("A spread stands in for routes"),
     );
