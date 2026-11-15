@@ -1,4 +1,4 @@
-// The JSX rows a reader asks for on one function, and the rest element
+// The JSX rows a reader asks for on one function or file, and the rest element
 // of a parameter's destructure. No rule reads any of them.
 
 import { Project, SyntaxKind } from "ts-morph";
@@ -11,7 +11,7 @@ import { createNodeTable } from "./extract.js";
 import { stateElementsWritten } from "./jsxWrites.js";
 import { ResolutionStore } from "./store.js";
 
-import type { Node } from "ts-morph";
+import type { Node, SourceFile } from "ts-morph";
 
 const RENDER = [
   "export function render(args: { label: string }) {",
@@ -42,16 +42,27 @@ function shown(node: Node | undefined, value: string): string {
   return node.getText().replace(/\s+/g, " ").trim();
 }
 
-function rowsFor(): Record<string, string[][]> {
+const ROUTES = [
+  "export const tree = (",
+  "  <Routes>",
+  '    <Route path="/a" element={<Layout />}>',
+  '      {flag && <Route path="b" element={(<B />) as never} />}',
+  '      <Route path="c" element={<Guard><Route path="d" /></Guard>} />',
+  "    </Route>",
+  "  </Routes>",
+  ");",
+].join("\n");
+
+function rowsFor(
+  source = RENDER,
+  rootOf: (file: SourceFile) => Node = (file) =>
+    file.getFunctionOrThrow("render"),
+): Record<string, string[][]> {
   const project = new Project({ useInMemoryFileSystem: true });
-  const sourceFile = project.createSourceFile("/mod.tsx", RENDER);
+  const sourceFile = project.createSourceFile("/mod.tsx", source);
   const db = new Database();
   const table = createNodeTable([]);
-  const written = stateElementsWritten(
-    db,
-    table,
-    sourceFile.getFunctionOrThrow("render"),
-  );
+  const written = stateElementsWritten(db, table, rootOf(sourceFile));
   const rows = (relation: string) =>
     db
       .facts(relation)
@@ -65,6 +76,7 @@ function rowsFor(): Record<string, string[][]> {
     jsxAttribute: rows("jsxAttribute"),
     jsxSpread: rows("jsxSpread"),
     jsxChild: rows("jsxChild"),
+    jsxParent: rows("jsxParent"),
   };
 }
 
@@ -99,6 +111,40 @@ describe("the JSX a function writes", () => {
       ["<Frame>", "2", "text"],
       ["<Frame>", "5", "{held}"],
       ["<Frame>", "7", '{[1].map(() => <Chip size="md" />)}'],
+    ]);
+  });
+
+  it("states the elements a file writes under its path, each under the nearest element written with children around it", () => {
+    const rows = rowsFor(ROUTES, (file) => file);
+
+    expect(rows.writesElement.map(([writer]) => writer)).toEqual(
+      Array(8).fill("/mod.tsx"),
+    );
+    expect(rows.jsxParent).toEqual([
+      ["<Route>", "<Routes>"],
+      ["<Layout />", "<Route>"],
+      ['<Route path="b" element={(<B />) as never} />', "<Route>"],
+      ["<B />", "<Route>"],
+      [
+        '<Route path="c" element={<Guard><Route path="d" /></Guard>} />',
+        "<Route>",
+      ],
+      ["<Guard>", "<Route>"],
+      ['<Route path="d" />', "<Guard>"],
+    ]);
+  });
+
+  it("keys an attribute's value inside its braces and under parentheses and casts", () => {
+    const rows = rowsFor(ROUTES, (file) => file);
+
+    expect(rows.jsxAttribute.filter(([, name]) => name === "element")).toEqual([
+      ["<Route>", "element", "<Layout />"],
+      ['<Route path="b" element={(<B />) as never} />', "element", "<B />"],
+      [
+        '<Route path="c" element={<Guard><Route path="d" /></Guard>} />',
+        "element",
+        "<Guard>",
+      ],
     ]);
   });
 });
@@ -184,6 +230,7 @@ describe("the JSX rows and restOf", () => {
               "jsxAttribute",
               "jsxSpread",
               "jsxChild",
+              "jsxParent",
               "restOf",
             ].includes(literal.relation),
         ),

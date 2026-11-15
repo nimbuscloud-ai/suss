@@ -339,6 +339,75 @@ describe("a declared discovery pattern", () => {
     }
   });
 
+  it("lists the elements no element written with children encloses, with each one's attributes and the elements within it", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/routes.tsx",
+      [
+        'import { Route as R, Routes } from "react-router-dom";',
+        "export const tree = (",
+        "  <Routes>",
+        '    <R path="/a" index element={(<A />)}>',
+        '      {flag && <R path="b" />}',
+        "    </R>",
+        "  </Routes>",
+        ");",
+        'export const loose = <R path="/c" />;',
+      ].join("\n"),
+    );
+    const module = moduleOpsFor(file, new ResolutionStore());
+    const roots = module.elements();
+    expect(roots.map((element) => element.tag?.()?.source?.())).toEqual([
+      "Routes",
+      "R",
+    ]);
+
+    const [routeA] = roots[0]?.elementsWithin?.() ?? [];
+    const attributes = routeA?.attributes?.() ?? [];
+    expect(attributes.map(({ key }) => key)).toEqual([
+      "path",
+      "index",
+      "element",
+    ]);
+    expect(attributes[0]?.value.text()).toBe("/a");
+    expect(attributes[1]?.value.flag()).toBe(true);
+    expect(attributes[2]?.value.tag?.()?.source?.()).toBe("A");
+    expect(
+      routeA?.elementsWithin?.().map((element) => element.source?.()),
+    ).toEqual(["<A />", '<R path="b" />']);
+
+    expect([...module.importedNames(["react-router-dom"])]).toEqual([
+      ["R", "Route"],
+      ["Routes", "Routes"],
+    ]);
+  });
+
+  it("reads a list through a name with its spreads in place, and no list a function returns", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/router.ts",
+      [
+        'import { more } from "./more";',
+        'const routes = [{ path: "/" }, ...more, make()];',
+        'function built() { return [{ path: "/x" }]; }',
+        "router(routes);",
+        "again(routes);",
+        "router(built());",
+      ].join("\n"),
+    );
+    const module = moduleOpsFor(file, new ResolutionStore());
+    const [first, second, third] = module
+      .calls()
+      .filter((call) => ["router", "again"].includes(call.calleeText()))
+      .map((call) => call.valueAt(0)?.listed?.() ?? null);
+
+    expect(
+      first?.entries.map(({ form, value }) => `${form} ${value.source?.()}`),
+    ).toEqual(['value { path: "/" }', "spread more", "value make()"]);
+    expect(second?.key).toBe(first?.key);
+    expect(third).toBeNull();
+  });
+
   it("finds the export a manifest spells through a re-export", async () => {
     expect(
       await unitsFor(

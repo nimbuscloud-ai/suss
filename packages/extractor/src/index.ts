@@ -1402,6 +1402,8 @@ export type {
   Inheriting,
   Inherits,
   KeySupplied,
+  ListedEntry,
+  ListedValues,
   Loop,
   MarkedFunction,
   ModuleMember,

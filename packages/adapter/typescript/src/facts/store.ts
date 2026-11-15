@@ -1548,12 +1548,11 @@ export class ResolutionStore {
   }
 
   /**
-   * The JSX elements a function writes, in source order, with the rows
-   * that describe each one stated. No rule reads them, so nothing needs
-   * deriving again.
+   * The JSX elements a function or a file writes, in source order, with
+   * the rows for each one stated. No rule reads them, so nothing derives.
    */
-  elementsWrittenIn(func: Node): string[] {
-    return stateElementsWritten(this.db, this.table, func);
+  elementsWrittenIn(root: Node): string[] {
+    return stateElementsWritten(this.db, this.table, root);
   }
 
   /**

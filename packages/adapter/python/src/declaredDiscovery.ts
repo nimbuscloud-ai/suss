@@ -112,7 +112,29 @@ export function pythonModuleOps(
   return factModuleOps(file.file, source, {
     calls: (scope) => callsWritten(file, source, scope),
     classes: () => classesIn(file),
+    importedNames: (modules) => importedNamesOf(file, modules),
   });
+}
+
+/**
+ * `from m import n as x` from each of the modules, as the module scope binds
+ * it, a later binding of the name winning. A relative import is the project's.
+ */
+function importedNamesOf(
+  file: BoundPythonFile,
+  modules: readonly string[],
+): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const [local, binding] of file.module.moduleScope.bindings) {
+    if (
+      binding.kind === "importFrom" &&
+      binding.relativeLevel === 0 &&
+      modules.includes(binding.module)
+    ) {
+      names.set(local, binding.importedName);
+    }
+  }
+  return names;
 }
 
 /** Every class the module writes, however deep, in source order. */

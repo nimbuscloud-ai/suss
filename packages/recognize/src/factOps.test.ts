@@ -6,6 +6,7 @@ import {
   type FactSource,
   factCallOps,
   factElementOps,
+  factModuleOps,
   factValueOps,
   SlotsHeard,
 } from "./factOps.js";
@@ -2157,6 +2158,96 @@ describe("the JSX a function writes and the parameter a value is, over the facts
     const { elementsOf: _, ...withoutJsx } = rendered();
 
     expect(factValueOps("render", withoutJsx).elements?.("Chip")).toEqual([]);
+  });
+});
+
+/**
+ * The facts for a file `/f.tsx`, keyed by span as TypeScript keys them,
+ * with each relation's rows stated out of source order:
+ *
+ *   <Routes>                                         0-100
+ *     <Route path="/a" path="/b" element={<A />}>   10-90, values 15, 20, 30
+ *       <Route />                                    50-60
+ *     </Route>
+ *   </Routes>
+ *   <Loose />                                        110-120
+ *   const routes = [a, ...more, c];                  the list at 200-260
+ *   router(routesName);
+ */
+function nested(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const at = (span: string) => `/f.tsx:${span}`;
+  add("jsxParent", at("50-60"), at("10-90"));
+  add("jsxParent", at("30-40"), at("10-90"));
+  add("jsxParent", at("10-90"), at("0-100"));
+  add("jsxAttribute", at("10-90"), "element", at("30-40"));
+  add("jsxAttribute", at("10-90"), "path", at("20-23"));
+  add("jsxAttribute", at("10-90"), "path", at("15-18"));
+  add("writtenEntryAt", at("200-260"), "2", "c", "value");
+  add("writtenEntryAt", at("200-260"), "0", "a", "value");
+  add("writtenEntryAt", at("200-260"), "1", "more", "spread");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => (key === "routesName" ? at("200-260") : null),
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: (key) => (key === at("200-260") ? "list" : null),
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+  };
+}
+
+describe("a file's JSX and a list as written, over the facts", () => {
+  const at = (span: string) => `/f.tsx:${span}`;
+  const keyOf = (value: ValueOps | undefined) => value?.source?.();
+
+  it("lists the elements no element written with children encloses, and the elements within each, in source order", () => {
+    const module = factModuleOps("/f.tsx", nested(), {
+      calls: () => [],
+      elements: () => [at("110-120"), at("0-100"), at("10-90"), at("30-40")],
+    });
+
+    expect(module.elements().map(keyOf)).toEqual([at("110-120"), at("0-100")]);
+    expect(
+      factValueOps(at("10-90"), nested()).elementsWithin?.().map(keyOf),
+    ).toEqual([at("30-40"), at("50-60")]);
+  });
+
+  it("gives an element's attributes in the order they are written, the first of each name", () => {
+    const attributes = factValueOps(at("10-90"), nested()).attributes?.();
+
+    expect(attributes?.map(({ key, value }) => [key, keyOf(value)])).toEqual([
+      ["path", at("15-18")],
+      ["element", at("30-40")],
+    ]);
+  });
+
+  it("reads a list through a name, each entry in order and a spread marked as one, and no list for any other value", () => {
+    const listed = factValueOps("routesName", nested()).listed?.();
+
+    expect(listed?.key).toBe(at("200-260"));
+    expect(
+      listed?.entries.map(({ form, value }) => `${form} ${keyOf(value)}`),
+    ).toEqual(["value a", "spread more", "value c"]);
+    expect(factValueOps("a", nested()).listed?.()).toBeNull();
+  });
+
+  it("gives no elements and no imported names where the adapter lists none", () => {
+    const module = factModuleOps("/f.tsx", nested(), { calls: () => [] });
+
+    expect(module.elements()).toEqual([]);
+    expect(module.importedNames(["react-router"]).size).toBe(0);
+    expect(
+      factModuleOps("/f.tsx", nested(), {
+        calls: () => [],
+        importedNames: () => new Map([["R", "Route"]]),
+      }).importedNames(["react-router"]),
+    ).toEqual(new Map([["R", "Route"]]));
   });
 });
 

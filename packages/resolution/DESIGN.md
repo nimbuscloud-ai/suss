@@ -411,31 +411,38 @@ rendersElement(f, v)        the function f's own body writes the JSX
                             jsxAttribute rows. Only runsElement reads it
                             (TypeScript)
 writesElement(f, v)         the JSX element v is written inside the
-                            function f: in its own body, in a function
-                            written inside it, or in an attribute's
-                            value. Each element also gets its
+                            function or the file f: in its own body, in
+                            a function written inside it, or in an
+                            attribute's value. A file is keyed by its
+                            path. Each element also gets its
                             jsxElement(v, t) row
 jsxAttribute(v, n, x)       the element v writes the attribute n, as the
                             source spells it, with the value x, keyed
                             after peelValue. An attribute written with
-                            no value is its own x. The body walk and the
-                            fact source state it the same way, so one
-                            attribute has one row. A sub-unit hook reads
-                            it through the elements a parent renders,
-                            and no rule does
+                            no value is its own x, which the fact source
+                            reads as the literal true. The body walk and
+                            the fact source state it the same way, so
+                            one attribute has one row. A sub-unit hook
+                            reads it through the elements a parent
+                            renders, and no rule does
 jsxSpread(v, x)             the element v spreads x into its props,
                             {...x}
 jsxChild(v, k, c)           c reaches the element v as its child at
                             position k among what is written between its
                             tags: an element, a fragment, an expression,
                             or text other than whitespace. An empty
-                            expression such as a comment is no child.
+                            expression such as a comment is no child
+jsxParent(v, p)             p is the nearest element written with
+                            children that encloses the element v, at any
+                            depth: through an expression, a function or
+                            another element's attribute.
                             The fact source states writesElement,
-                            jsxSpread and jsxChild for one function when
-                            the value ops' elements(tag) asks about it,
-                            and the body walk does not, so they are
-                            partial and no rule reads them
-                            (TypeScript)
+                            jsxSpread, jsxChild and jsxParent for one
+                            function when the value ops' elements(tag)
+                            asks about it, and for one file when the
+                            module ops' elements() does. The body walk
+                            does not, so they are partial and no rule
+                            reads them (TypeScript)
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports: export *
                             from in TypeScript, from m2 import * in
