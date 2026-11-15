@@ -280,7 +280,49 @@ function underBase(base: Target | null, target: Target): Target {
   if (base === null || target.host !== undefined) {
     return target;
   }
-  return { path: base.path + target.path, host: base.host };
+  return { path: resolvedPath(base.path, target.path), host: base.host };
+}
+
+// Pairing reads a hole at the front of a path as the base URL.
+const OPENING_HOLE = /^(\{[^{}]+\})(.*)$/;
+
+/**
+ * The path a call's own path goes to under its connection's base path.
+ * Faraday resolves it the way RFC 3986 resolves a reference: a path that
+ * starts with `/` replaces the base's path, and any other path goes after
+ * it with one slash between. A hole at the front of the base is the base
+ * URL, which stays in front either way.
+ */
+function resolvedPath(basePath: string, path: string): string {
+  const opening = OPENING_HOLE.exec(basePath);
+  if (opening !== null) {
+    return `${opening[1]}${resolvedPath(opening[2] ?? "", path)}`;
+  }
+  if (path.startsWith("/")) {
+    return withoutDotSegments(path);
+  }
+  // Faraday ends the base's path with a slash before it resolves, so the
+  // base's last segment stays.
+  const directory = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  return withoutDotSegments(directory + path);
+}
+
+/** The path with each `.` dropped and each `..` taken back one segment, as RFC 3986 does. */
+function withoutDotSegments(path: string): string {
+  const segments = path.replace(/^\//, "").split("/");
+  const kept: string[] = [];
+  for (const segment of segments) {
+    if (segment === "..") {
+      kept.pop();
+    } else if (segment !== ".") {
+      kept.push(segment);
+    }
+  }
+  const last = segments.at(-1);
+  if (last === "." || last === "..") {
+    kept.push("");
+  }
+  return `/${kept.join("/")}`;
 }
 
 /**
@@ -347,12 +389,7 @@ function receiverBase(
     return null;
   }
   const value = evaluatedValue(base, options.facts, undefined, site);
-  return { path: trimmed(pathOf(value) ?? ""), host: hostOf(value) };
-}
-
-/** A trailing slash on the base would double the one the call's own path starts with. */
-function trimmed(path: string): string {
-  return path === "/" ? "" : path.replace(/\/+$/, "");
+  return { path: pathOf(value) ?? "", host: hostOf(value) };
 }
 
 /** Whether this receiver is the constant the pack declared, such as `Faraday` or `Net::HTTP`. */
