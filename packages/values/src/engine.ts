@@ -76,6 +76,12 @@ interface State {
   readonly parameters: Set<string>;
 }
 
+interface AllocatedByDeferredCall {
+  readonly content: Value;
+  /** The number of the deferred call whose content this is. */
+  readonly madeBy: number;
+}
+
 interface Outcome {
   readonly returns: Value[];
   readonly completes: boolean;
@@ -122,6 +128,21 @@ export class Evaluator<N extends object> {
   private readonly stateAfterStatement = new Map<unknown, State>();
   private readonly outerByNode = new Map<unknown, Value>();
   private readonly writtenByNode = new Map<unknown, Value>();
+  /**
+   * What each allocation a deferred call made contained when the call
+   * returned, and which deferred call that was. A read can force the
+   * call in one state and follow its `ref` in another that was copied
+   * before the call ran, such as the state the memo kept after the
+   * call's statement. That state's heap has no entry for the allocation,
+   * and nothing in it has written to the allocation since, so this is
+   * its content there.
+   */
+  private readonly allocatedByDeferredCalls = new Map<
+    number,
+    AllocatedByDeferredCall
+  >();
+  /** How many calls have been deferred, which numbers each one in the order it was made. */
+  private deferredCalls = 0;
   private readonly computing = new Set<unknown>();
   private readonly methodRows: ReadonlyMap<
     string,
@@ -381,7 +402,7 @@ export class Evaluator<N extends object> {
     if (shape.kind === "loop") {
       const after = cloneState(state);
       this.run(shape.body, after, root, depth);
-      const entry = widenState(state, after);
+      const entry = widenState(state, after, this.allocatedByDeferredCalls);
       return this.runPath(shape.body, rest, entry, root, depth, memo);
     }
     if (shape.kind === "block") {
@@ -447,7 +468,10 @@ export class Evaluator<N extends object> {
     if (shape.kind === "loop") {
       const after = cloneState(state);
       const outcome = this.run(shape.body, after, root, depth);
-      replaceState(state, widenState(state, after));
+      replaceState(
+        state,
+        widenState(state, after, this.allocatedByDeferredCalls),
+      );
       return { returns: outcome.returns, completes: true };
     }
     if (shape.kind === "return") {
@@ -516,7 +540,10 @@ export class Evaluator<N extends object> {
     }
     replaceState(
       state,
-      rest.reduce((acc, other) => joinStates(acc, other), first),
+      rest.reduce(
+        (acc, other) => joinStates(acc, other, this.allocatedByDeferredCalls),
+        first,
+      ),
     );
     return { returns, completes: true };
   }
@@ -575,7 +602,7 @@ export class Evaluator<N extends object> {
       this.escape(written, state);
       return;
     }
-    const content = state.heap.get(target.id) ?? hole("value");
+    const content = this.allocationIn(state, target.id) ?? hole("value");
     if (content.kind === "record") {
       const fields = new Map(content.fields);
       if (name === null) {
@@ -693,13 +720,18 @@ export class Evaluator<N extends object> {
     return { kind: "ref", id };
   }
 
+  /** What an allocation contains in this state, or undefined when this state cannot reach it. */
+  private allocationIn(state: State, id: number): Value | undefined {
+    return state.heap.get(id) ?? this.allocatedByDeferredCalls.get(id)?.content;
+  }
+
   /** The content behind a value, with a `ref` followed into the heap. */
   private contentOf(value: Value, state: State): Value {
     const forced = force(value);
     if (forced.kind !== "ref") {
       return forced;
     }
-    return state.heap.get(forced.id) ?? hole("value");
+    return this.allocationIn(state, forced.id) ?? hole("value");
   }
 
   private arrayOf(
@@ -960,7 +992,49 @@ export class Evaluator<N extends object> {
       this.escapeCallbacks(args, state);
       return this.inlineOrEscape(node, argValues, state, depth);
     }
-    return deferred(() => this.inlineOrEscape(node, argValues, state, depth));
+    const madeBy = this.deferredCalls++;
+    return deferred(() =>
+      this.keepingAllocations(madeBy, state, () =>
+        this.inlineOrEscape(node, argValues, state, depth),
+      ),
+    );
+  }
+
+  /**
+   * Runs a deferred call and records what each allocation made while it
+   * ran contains once it returns. A deferred call it ran may have
+   * recorded one of them already. When that call was made while this one
+   * ran, only this call's result reaches the allocation, and this call's
+   * statements came after, so its content replaces the earlier entry.
+   * When that call was made before, a read through it may come before
+   * this call, so the two contents are joined.
+   */
+  private keepingAllocations(
+    madeBy: number,
+    state: State,
+    run: () => Value,
+  ): Value {
+    const allocatedFrom = this.nextAllocation;
+    const madeWhileRunning = this.deferredCalls;
+    const value = run();
+    for (let id = allocatedFrom; id < this.nextAllocation; id++) {
+      const content = state.heap.get(id);
+      if (content === undefined) {
+        continue;
+      }
+      const earlier = this.allocatedByDeferredCalls.get(id);
+      if (earlier === undefined || earlier.madeBy >= madeWhileRunning) {
+        this.allocatedByDeferredCalls.set(id, { content, madeBy });
+        continue;
+      }
+      if (earlier.content !== content) {
+        this.allocatedByDeferredCalls.set(id, {
+          content: join(earlier.content, content),
+          madeBy: earlier.madeBy,
+        });
+      }
+    }
+    return value;
   }
 
   private inlineOrEscape(
@@ -1208,7 +1282,7 @@ export class Evaluator<N extends object> {
     if (forced.kind !== "ref") {
       return;
     }
-    const content = state.heap.get(forced.id);
+    const content = this.allocationIn(state, forced.id);
     if (content === undefined) {
       return;
     }
@@ -1228,7 +1302,7 @@ export class Evaluator<N extends object> {
       if (seen.has(value.id)) {
         return hole("value");
       }
-      const content = state.heap.get(value.id);
+      const content = this.allocationIn(state, value.id);
       return content === undefined
         ? hole("value")
         : this.materialize(content, state, new Set([...seen, value.id]));
@@ -1366,18 +1440,34 @@ function replaceState(target: State, source: State): void {
   }
 }
 
-function joinStates(a: State, b: State): State {
-  return combineStates(a, b, join);
+type DeferredAllocations = ReadonlyMap<number, AllocatedByDeferredCall>;
+
+function joinStates(
+  a: State,
+  b: State,
+  allocatedByDeferredCalls: DeferredAllocations,
+): State {
+  return combineStates(a, b, join, allocatedByDeferredCalls);
 }
 
-function widenState(before: State, after: State): State {
-  return combineStates(before, after, widen);
+function widenState(
+  before: State,
+  after: State,
+  allocatedByDeferredCalls: DeferredAllocations,
+): State {
+  return combineStates(before, after, widen, allocatedByDeferredCalls);
 }
 
+/**
+ * A state with no heap entry for an allocation a deferred call made
+ * still reaches it, with the content the call left, so the join takes
+ * that content for its side.
+ */
 function combineStates(
   a: State,
   b: State,
   combine: (left: Value, right: Value) => Value,
+  allocatedByDeferredCalls: DeferredAllocations,
 ): State {
   const bindings = new Map<string, Value>();
   for (const name of new Set([...a.bindings.keys(), ...b.bindings.keys()])) {
@@ -1392,8 +1482,8 @@ function combineStates(
   }
   const heap = new Map<number, Value>();
   for (const id of new Set([...a.heap.keys(), ...b.heap.keys()])) {
-    const left = a.heap.get(id);
-    const right = b.heap.get(id);
+    const left = a.heap.get(id) ?? allocatedByDeferredCalls.get(id)?.content;
+    const right = b.heap.get(id) ?? allocatedByDeferredCalls.get(id)?.content;
     const only = left ?? right;
     if (left === undefined || right === undefined) {
       if (only !== undefined) {
