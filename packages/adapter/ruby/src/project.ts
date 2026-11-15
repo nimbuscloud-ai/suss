@@ -1066,6 +1066,7 @@ async function runRuby(
       ...(jobs === undefined ? {} : { jobs }),
       inheritedMethods,
       bodyBlocks,
+      environmentIn: db,
       dynamicNames: watchedNames,
       gapHandling,
       examples: exampleReads(

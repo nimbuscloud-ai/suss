@@ -1805,6 +1805,36 @@ describe("ruby value facts", () => {
     ).toContain("config.force_ssl");
   });
 
+  it("states what a method's parameter defaults read, and leaves their calls off the method's own", async () => {
+    const source = [
+      "class Client",
+      '  def initialize(token: ENV["TOKEN"], host = ENV.fetch("HOST", "h"))',
+      "  end",
+      "",
+      "  def connect(url = ENV[key], at: Time.now)",
+      "    open(url)",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const texts = (relation: string) =>
+      rows(db, relation).map((row) => textAt(source, row[0] as string));
+    expect(
+      rows(db, "readsEntry").map((row) => [
+        textAt(source, row[0] as string),
+        row[2],
+      ]),
+    ).toEqual([['ENV["TOKEN"]', "TOKEN"]]);
+    expect(texts("readsKeyed")).toEqual(["ENV[key]"]);
+    expect(texts("call")).toEqual(
+      expect.arrayContaining(['ENV.fetch("HOST", "h")', "Time.now"]),
+    );
+    expect(
+      rows(db, "makesCall").map((row) => textAt(source, row[1] as string)),
+    ).toEqual(["open(url)"]);
+  });
+
   it("states a method a class body defines under a condition as one of the class's", async () => {
     const source = [
       "class SessionController",
