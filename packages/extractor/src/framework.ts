@@ -1681,8 +1681,8 @@ export interface PatternPack {
    * `inputMapping` on a sub-unit when it differs from the pack's defaults.
    *
    * `ctx` is `unknown` because each adapter builds its own context. Each is
-   * a `SubUnitOpsCarrier`, which lists the calls and JSX elements the parent
-   * runs as ops; `TsSubUnitContext` adds the run's store.
+   * a `SubUnitOpsCarrier` listing the calls the parent runs as ops, and the
+   * TypeScript one also lists the JSX elements it renders.
    */
   subUnits?: (
     parent: DiscoveredSubUnitParent,
