@@ -30,7 +30,7 @@ One `component`-kind summary per named story export:
 - **`argTypes`.** Control types and option lists per arg could support stricter type checking, but they are not read today.
 - **What `decorators`, `render` and `parameters` do.** Their presence is recorded, as above. A render function is read only for the attributes and children it gives the component's element, and the other bodies are not read. Decorators set in `.storybook/preview` apply to every story and are not seen at all.
 - **CSF1 and MDX stories.** CSF3 is the supported format.
-- **A `component` that is a member of an object**, such as `Card.Root` with `export const Card = { Root: CardRoot }`. No module is recorded for it. A member of a namespace import, `Icons.Chip` with `import * as Icons from "./icons"`, is followed to the module that declares it like a plain name.
+- **A `component` that is a member of an object the run cannot see written out**, such as an object a function builds or one a library's declaration file types. No module is recorded for it. A member of an object a module writes out, `Card.Root` with `export const Card = { Root: CardRoot }`, is followed to where `CardRoot` is declared, through type arguments such as `Slider.Root<number>` too, and a member of a namespace import, `Icons.Chip` with `import * as Icons from "./icons"`, is followed like a plain name.
 - **Arg values as structured shapes.** An arg's value stays as source text inside a `ref` shape, and is not parsed into a `TypeShape`.
 
 ## Worked example
