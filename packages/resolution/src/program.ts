@@ -58,6 +58,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedMembers",
   "wantedCallsRun",
   "wantedClassBody",
+  "wantedElementsRun",
 ];
 
 /**

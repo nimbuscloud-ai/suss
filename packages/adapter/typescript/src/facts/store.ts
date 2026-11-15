@@ -36,6 +36,7 @@ import {
   CALLS_RUN_QUESTION,
   CLASS_BODY_QUESTION,
   DISPATCH_QUESTION,
+  ELEMENTS_RUN_QUESTION,
   type ExplainStats,
   fallbackWrittenAs,
   type HandedInAt,
@@ -45,6 +46,7 @@ import {
   readCallsRun,
   readClassBodyCalls,
   readDispatchOutcomes,
+  readElementsRun,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -150,6 +152,7 @@ type Question =
   | typeof DISPATCH_QUESTION
   | typeof CALLS_RUN_QUESTION
   | typeof CLASS_BODY_QUESTION
+  | typeof ELEMENTS_RUN_QUESTION
   | "wantedSubject"
   | "wantedUses"
   | "wantedSource";
@@ -938,6 +941,18 @@ export class ResolutionStore {
     return this.askAbout(cls, CLASS_BODY_QUESTION, () => {
       this.derive();
       return readClassBodyCalls(this.db, key);
+    });
+  }
+
+  /**
+   * The JSX elements a function renders, in source order: its own, and
+   * those of a function written inside it that runs inline, as the
+   * summary walk reads them. A nested declaration's are its own.
+   */
+  elementsRunBy(func: Node): Node[] {
+    return this.askAbout(func, ELEMENTS_RUN_QUESTION, () => {
+      this.derive();
+      return this.nodesFor(readElementsRun(this.db, nodeId(func)));
     });
   }
 

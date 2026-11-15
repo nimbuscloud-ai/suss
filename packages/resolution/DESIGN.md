@@ -404,14 +404,25 @@ jsxElement(v, t)            v is a JSX element whose tag is written t,
                             the component it renders. A discovery
                             pattern reads it through the value ops, and
                             no rule does (TypeScript)
+rendersElement(f, v)        the function f's own body writes the JSX
+                            element v, which has a tag; a fragment has
+                            none and is not stated. Stated where
+                            makesCall is, with v's jsxElement and
+                            jsxAttribute rows. Only runsElement reads it
+                            (TypeScript)
 writesElement(f, v)         the JSX element v is written inside the
                             function f: in its own body, in a function
                             written inside it, or in an attribute's
                             value. Each element also gets its
                             jsxElement(v, t) row
 jsxAttribute(v, n, x)       the element v writes the attribute n, as the
-                            source spells it, with the value x. An
-                            attribute written with no value is its own x
+                            source spells it, with the value x, keyed
+                            after peelValue. An attribute written with
+                            no value is its own x. The body walk and the
+                            fact source state it the same way, so one
+                            attribute has one row. A sub-unit hook reads
+                            it through the elements a parent renders,
+                            and no rule does
 jsxSpread(v, x)             the element v spreads x into its props,
                             {...x}
 jsxChild(v, k, c)           c reaches the element v as its child at
@@ -419,10 +430,11 @@ jsxChild(v, k, c)           c reaches the element v as its child at
                             tags: an element, a fragment, an expression,
                             or text other than whitespace. An empty
                             expression such as a comment is no child.
-                            The fact source states these four for one
-                            function when the value ops' elements(tag)
-                            asks about it, and the body walk does not,
-                            so they are partial and no rule reads them
+                            The fact source states writesElement,
+                            jsxSpread and jsxChild for one function when
+                            the value ops' elements(tag) asks about it,
+                            and the body walk does not, so they are
+                            partial and no rule reads them
                             (TypeScript)
 reExports(m, n, m2, n2)     m's n is m2's n2 (TypeScript)
 reExportsAll(m, m2)         m forwards everything m2 exports: export *
@@ -1879,6 +1891,19 @@ function's `makesCall`, though a TypeScript or Ruby default runs on
 each call. A `->` lambda written as an argument inside a Ruby block is
 contained in the method around both, so the block's own `runsCall`
 does not reach its calls.
+
+The JSX elements a component renders are listed the same way, so a
+pack that claims the handler an element is handed finds the elements
+the component writes in an arrow handed to `items.map`, and not those
+of a function the component declares:
+
+```
+runsElement(f, e) <- rendersElement(f, e)
+runsElement(f, e) <- containsFn(f, g), inlineFn(g), runsElement(g, e)
+```
+
+A caller asks `wantedElementsRun(f)`, and `readElementsRun` returns the
+elements in source order, an element before the elements inside it.
 
 ## The calls a class body makes
 
