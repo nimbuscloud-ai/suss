@@ -481,4 +481,24 @@ describe("a declaration read only in the library's own classes", () => {
 
     expect(declaredIn(db)).toEqual(["Account: statuses"]);
   });
+
+  it("reads a model in a project that reopens the library's base class itself", async () => {
+    const db = await factsFor(
+      {
+        "patches.rb": "module ActiveRecord\n  class Base\n  end\nend\n",
+        "models.rb": [
+          "class Status; end",
+          "class Account < ActiveRecord::Base",
+          "  has_many :statuses",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      [],
+      MODELS_ONLY,
+    );
+
+    expect(declaredIn(db)).toEqual(["Account: statuses"]);
+  });
 });

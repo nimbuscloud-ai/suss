@@ -75,15 +75,96 @@ describe("a Ruby constant a library defines", () => {
     expect(source.importedFrom(client as string, "Aws::S3")).toBe(false);
   });
 
-  it("is not imported when a file in the run defines its root, even one reopened under it", async () => {
+  it("is imported when the project reopens its module to add a member of its own", async () => {
     const db = await factsFor({
-      "ledger.rb": "module Ledger\nend\n",
-      "client.rb": "class Aws::SQS::Client\nend\n",
-      "use.rb": "Ledger.publish('ledger')\nAws::SQS::Client.new\n",
+      "patches.rb": "module ActiveRecord\n  module Batches\n  end\nend\n",
+      "account.rb": [
+        "class Account < ActiveRecord::Base",
+        "  include ActiveRecord::Batches",
+        "end",
+        "",
+      ].join("\n"),
     });
 
     expect(importsOf(db)).toEqual([
-      [expect.stringMatching(/^use\.rb:/), GLOBAL_MODULE, "Aws::SQS::Client"],
+      [
+        expect.stringMatching(/^account\.rb:/),
+        GLOBAL_MODULE,
+        "ActiveRecord::Base",
+      ],
+    ]);
+  });
+
+  it("is not imported when a file in the run defines the constant itself, nested or written in full", async () => {
+    const db = await factsFor({
+      "ledger.rb": "module Ledger\nend\n",
+      "client.rb": "class Aws::SQS::Client\nend\n",
+      "base.rb": "module ActiveRecord\n  class Base\n  end\nend\n",
+      "use.rb": [
+        "Ledger.publish('ledger')",
+        "Aws::SQS::Client.new",
+        "ActiveRecord::Base.transaction { }",
+        "Aws::S3::Client.new",
+        "",
+      ].join("\n"),
+    });
+
+    expect(importsOf(db)).toEqual([
+      [expect.stringMatching(/^use\.rb:/), GLOBAL_MODULE, "Aws::S3::Client"],
+    ]);
+  });
+
+  it("is not imported where a module it is written inside has its first segment", async () => {
+    const db = await factsFor({
+      "patches.rb": "module ActiveRecord\n  module Batches\n  end\nend\n",
+      "billing.rb": [
+        "module Billing",
+        "  module ActiveRecord",
+        "    class Money",
+        "    end",
+        "  end",
+        "",
+        "  class Invoice < ActiveRecord::Base",
+        "    def total",
+        "      ActiveRecord::Money.new",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+      "shipping.rb": [
+        "module Shipping",
+        "  class Parcel < ActiveRecord::Base",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(importsOf(db)).toEqual([
+      [
+        expect.stringMatching(/^shipping\.rb:/),
+        GLOBAL_MODULE,
+        "ActiveRecord::Base",
+      ],
+    ]);
+  });
+
+  it("is imported as a class's base where the class's full name writes a module of the same name", async () => {
+    const db = await factsFor({
+      "sessions.rb": [
+        "class Admin::Devise::SessionsController < Devise::SessionsController",
+        "end",
+        "",
+      ].join("\n"),
+    });
+
+    expect(importsOf(db)).toEqual([
+      [
+        expect.stringMatching(/^sessions\.rb:/),
+        GLOBAL_MODULE,
+        "Devise::SessionsController",
+      ],
     ]);
   });
 });
