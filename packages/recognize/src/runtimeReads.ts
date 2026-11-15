@@ -16,9 +16,12 @@
 import type {
   Chain,
   Deployment,
+  EntriesBy,
   EntryMeaning,
   GetterMeaning,
   Link,
+  MissingEntry,
+  OffLink,
   RuntimeReadEnding,
   WriteMeaning,
 } from "./chain.js";
@@ -30,6 +33,10 @@ export interface RuntimeReadsSpec {
   object: RuntimeObject;
   /** What the run says about the deployment a config read belongs to. A metadata read leaves it off. */
   deployment?: Deployment;
+  /** `key` for a mapping, whose entries are read only at a key. Defaults to `keyOrMember`. */
+  entriesBy?: EntriesBy;
+  /** What a read of a key the object lacks does. Defaults to `nothing`. */
+  missing?: MissingEntry;
 }
 
 /** What one link of a read chain can say. */
@@ -44,6 +51,8 @@ export interface RuntimeReads {
   ): RuntimeReads;
   /** Methods that read one entry, with where the key and the fallback are. */
   getters(table: Readonly<Record<string, GetterMeaning>>): RuntimeReads;
+  /** Functions the runtime provides that read one entry, by global path, with where the key and the fallback are. */
+  functions(table: Readonly<Record<string, GetterMeaning>>): RuntimeReads;
   /** Entries whose assignment is a state change, and what an assignment to any other entry is. */
   writes(
     table: Readonly<Record<string, WriteMeaning>>,
@@ -63,11 +72,13 @@ export function runtimeReads(spec: RuntimeReadsSpec): RuntimeReads {
     yields: "runtimeRead",
     deployment: spec.deployment ?? {},
   };
-  return chainFrom({
-    links: [{ asks: "off", object: spec.object }],
-    ending,
-    example: null,
-  });
+  const off: OffLink = {
+    asks: "off",
+    object: spec.object,
+    ...(spec.entriesBy === undefined ? {} : { entriesBy: spec.entriesBy }),
+    ...(spec.missing === undefined ? {} : { missing: spec.missing }),
+  };
+  return chainFrom({ links: [off], ending, example: null });
 }
 
 /** The same chain with one more link, or with its example set. */
@@ -84,6 +95,7 @@ function chainFrom(declared: Chain<ReadMeaning>): RuntimeReads {
         ...(otherwise === undefined ? {} : { otherwise }),
       }),
     getters: (table) => adding({ asks: "getters", table }),
+    functions: (table) => adding({ asks: "functions", table }),
     writes: (table, otherwise) =>
       adding({
         asks: "writes",

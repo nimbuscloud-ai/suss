@@ -21,6 +21,7 @@ import {
 } from "@suss/resolution";
 
 import { envLookupAgain } from "./envReads.js";
+import { factSourceOf } from "./factSource.js";
 import { resolveModule } from "./moduleResolver.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -362,6 +363,9 @@ export function lookAgainIn(args: {
         (file) => args.moduleOfFile.has(file),
       );
     }
-    return args.wrapperIndex.lookAgain(id) ?? envLookupAgain(args.db, id);
+    return (
+      args.wrapperIndex.lookAgain(id) ??
+      envLookupAgain(factSourceOf(args.db), id)
+    );
   };
 }

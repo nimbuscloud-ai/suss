@@ -4,10 +4,11 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { envReadEffects } from "./envReads.js";
 import { parsePython } from "./parser.js";
 import { extractPythonProject, factsForFile } from "./project.js";
 import { bindModule } from "./scope.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
+import { ENVIRONMENT } from "./stdlib/environment.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { PyNode } from "./parser.js";
@@ -33,54 +34,38 @@ function readsOf(found: readonly EffectAt[]): Read[] {
   });
 }
 
-async function moduleReads(source: string): Promise<Read[]> {
-  const tree = await parsePython(source);
-  return readsOf(envReadEffects(tree.rootNode, bindModule(tree.rootNode)));
-}
-
-async function functionReads(source: string, name: string): Promise<Read[]> {
-  const tree = await parsePython(source);
-  const module = bindModule(tree.rootNode);
-  const definition = findFunction(tree.rootNode, name);
-  return readsOf(envReadEffects(definition, module));
-}
-
 /** One file with the facts a project run would emit over it, so a call can ask the rules about its callee. */
 async function withFacts(source: string): Promise<{
   root: PyNode;
-  module: ReturnType<typeof bindModule>;
   db: ReturnType<typeof factsForFile>;
 }> {
   const file = path.join(os.tmpdir(), "suss-env-reads", "settings.py");
   const tree = await parsePython(source);
   const module = bindModule(tree.rootNode);
   const db = factsForFile({ file, root: tree.rootNode, module, packs: [] });
-  return { root: tree.rootNode, module, db };
+  return { root: tree.rootNode, db };
+}
+
+async function moduleReads(source: string): Promise<Read[]> {
+  const { root, db } = await withFacts(source);
+  return readsOf(stdlibReads(root, db));
+}
+
+async function functionReads(source: string, name: string): Promise<Read[]> {
+  const { root, db } = await withFacts(source);
+  return readsOf(stdlibReads(findFunction(root, name), db));
 }
 
 /** Each read in a module and the value it falls back to, with the facts a project run would emit. */
 async function moduleDefaults(
   source: string,
 ): Promise<Array<[string | null, unknown]>> {
-  const { root, module, db } = await withFacts(source);
-  return envReadEffects(root, module, db).map(({ effect }) =>
+  const { root, db } = await withFacts(source);
+  return stdlibReads(root, db).map(({ effect }) =>
     effect.type === "interaction" && effect.interaction.class === "config-read"
       ? [effect.interaction.name, effect.interaction.default]
       : [null, null],
   );
-}
-
-async function moduleReadsWithFacts(source: string): Promise<Read[]> {
-  const { root, module, db } = await withFacts(source);
-  return readsOf(envReadEffects(root, module, db));
-}
-
-async function functionReadsWithFacts(
-  source: string,
-  name: string,
-): Promise<Read[]> {
-  const { root, module, db } = await withFacts(source);
-  return readsOf(envReadEffects(findFunction(root, name), module, db));
 }
 
 function findFunction(node: PyNode, name: string): PyNode {
@@ -228,7 +213,7 @@ describe("os.environ spellings", () => {
   it("ignores writes, deletions and membership tests", async () => {
     expect(
       await moduleReads(
-        'import os\nos.environ["A"] = "1"\ndel os.environ["D"]\nos.environ["E"] += "1"\nif "B" in os.environ:\n    pass\n',
+        'import os\nos.environ["A"] = "1"\ndel os.environ["D"]\nos.environ["E"] += "1"\nif "B" in os.environ:\n    pass\ndel os.environ["F"], os.environ["G"]\n',
       ),
     ).toEqual([]);
   });
@@ -239,6 +224,115 @@ describe("os.environ spellings", () => {
         'import os\nA = settings()["A"]\nB = os.path["B"]\nC = load().get("C")\nD = os.environ.copy().get("D")\nE = load().getenv("E")\n',
       ),
     ).toEqual([]);
+  });
+});
+
+const EVERY_SPELLING = `import os
+import os as o
+from os import environ, getenv
+
+KEY = "K"
+
+
+def need(name):
+    return os.environ[name]
+
+
+def need_or(name, fallback=None):
+    return os.environ.get(name, fallback)
+
+
+def reads():
+    a = os.environ["A"]
+    b = os.environ.get("B", "d")
+    c = os.getenv("C")
+    d = environ["D"]
+    e = getenv("E", default="x")
+    f = os.environ.get("F") or "y"
+    g = need("G")
+    h = need(name="H")
+    i = need_or("I", "z")
+    k1 = os.environ.get(KEY)
+    k2 = os.environ[KEY]
+    q = o.environ["Q"]
+    if "R" in os.environ:
+        r = os.environ["R"]
+    s = environ.get("S")
+    t = os.environ.copy()
+    os.environ["W"] = "1"
+    os.environ.setdefault("U", "u")
+    return a, b, c, d, e, f, g, h, i, k1, k2, q, r, s, t
+
+
+class Settings:
+    token = os.environ["TOKEN"]
+    port = int(os.getenv("PORT", "80"))
+
+
+LOADED = os.environ.get("LOADED", "on")
+`;
+
+describe("every spelling in one file", () => {
+  /** Each read's callee, name, whether it is defaulted and what it falls back to. */
+  async function readsIn(unit: string | null) {
+    const { root, db } = await withFacts(EVERY_SPELLING);
+    const body = unit === null ? root : findFunction(root, unit);
+    return stdlibReads(body, db).map(({ effect }) =>
+      effect.type === "interaction" &&
+      effect.interaction.class === "config-read"
+        ? [
+            effect.callee,
+            effect.interaction.name,
+            effect.interaction.defaulted,
+            effect.interaction.default ?? null,
+          ]
+        : [],
+    );
+  }
+
+  it("reads each one as the variable it names, spelled at a key", async () => {
+    expect(await readsIn("reads")).toEqual([
+      ['os.environ["A"]', "A", false, null],
+      ['os.environ["B"]', "B", true, "d"],
+      ['os.environ["C"]', "C", false, null],
+      ['os.environ["D"]', "D", false, null],
+      ['os.environ["E"]', "E", true, "x"],
+      ['os.environ["F"]', "F", true, "y"],
+      ['os.environ["G"]', "G", false, null],
+      ['os.environ["H"]', "H", false, null],
+      ['os.environ["I"]', "I", true, null],
+      ["os.environ.get(KEY)", null, false, null],
+      ["os.environ[KEY]", null, false, null],
+      ['os.environ["Q"]', "Q", false, null],
+      ['os.environ["R"]', "R", true, null],
+      ['os.environ["S"]', "S", false, null],
+    ]);
+  });
+
+  it("reads a class body and the module's own statements at import time", async () => {
+    expect(await readsIn(null)).toEqual([
+      ['os.environ["TOKEN"]', "TOKEN", false, null],
+      ['os.environ["PORT"]', "PORT", true, "80"],
+      ['os.environ["LOADED"]', "LOADED", true, "on"],
+    ]);
+  });
+
+  it("matches the example the chain declares", async () => {
+    const { root, db } = await withFacts(
+      `import os\nTABLE = ${ENVIRONMENT.declared.example}\n`,
+    );
+    expect(
+      stdlibReads(root, db).map(({ effect }) =>
+        effect.type === "interaction" ? effect.interaction : null,
+      ),
+    ).toEqual([
+      {
+        class: "config-read",
+        name: "TABLE_NAME",
+        defaulted: true,
+        default: "accounts",
+      },
+    ]);
   });
 });
 
@@ -547,8 +641,8 @@ describe("what a function body reads", () => {
   });
 
   it("spells every read as os.environ[...] so the checker names one channel", async () => {
-    const tree = await parsePython('import os\nA = os.getenv("A")\n');
-    const [read] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    const { root, db } = await withFacts('import os\nA = os.getenv("A")\n');
+    const [read] = stdlibReads(root, db);
     expect(read?.effect).toMatchObject({
       type: "interaction",
       callee: 'os.environ["A"]',
@@ -558,8 +652,8 @@ describe("what a function body reads", () => {
   });
 
   it("leaves the deployment off a read, since the code does not say which one runs it", async () => {
-    const tree = await parsePython('import os\nA = os.getenv("A")\n');
-    const [read] = envReadEffects(tree.rootNode, bindModule(tree.rootNode));
+    const { root, db } = await withFacts('import os\nA = os.getenv("A")\n');
+    const [read] = stdlibReads(root, db);
     const effect = read?.effect;
     expect(effect?.type === "interaction" && effect.binding.semantics).toEqual({
       name: "runtime-config",
@@ -580,7 +674,7 @@ const SUBSCRIPT_HELPER = [
 describe("a call to a helper that reads the environment", () => {
   it("reads the caller's literal as the variable the helper looks up", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         `${SUBSCRIPT_HELPER}DATABASE_URL = env("DATABASE_URL")\n`,
       ),
     ).toEqual([{ name: "DATABASE_URL", defaulted: false }]);
@@ -588,7 +682,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("takes the fallback from the helper's own read", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -610,7 +704,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("takes the fallback from a helper that checks membership before its read", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -638,7 +732,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("takes the fallback from a test the caller wrote around the call", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         `${SUBSCRIPT_HELPER}if env("CACHE_URL"):\n    use(env("CACHE_URL"))\n`,
       ),
     ).toEqual([
@@ -649,7 +743,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a helper written as os.getenv, under whichever name the file imported it", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "from os import getenv",
@@ -676,7 +770,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("takes the fallback from an or the caller wrote around the call", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         `${SUBSCRIPT_HELPER}HOST = env("HOST") or "localhost"\n`,
       ),
     ).toEqual([{ name: "HOST", defaulted: true }]);
@@ -695,7 +789,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reports one read for a name two of the helper's reads look up, defaulted only when both are", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -714,7 +808,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name passed to a callee a factory returned", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -736,7 +830,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name passed to a lambda a factory returned", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -755,7 +849,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name forwarded to a callee a factory returned", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -783,7 +877,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("says nothing where the function a factory returned never reads the environment", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -806,7 +900,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name through a lambda closed over an environment it was handed", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -823,9 +917,28 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "TABLE_NAME", defaulted: false }]);
   });
 
+  it("takes the fallback from an or at a read off an environment the helper was handed", async () => {
+    expect(
+      await moduleReads(
+        [
+          "import os",
+          "",
+          "",
+          "def make_reader(env):",
+          '    return lambda name: env[name] or "x"',
+          "",
+          "",
+          "require_env = make_reader(os.environ)",
+          'TABLE = require_env("TABLE_NAME")',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual([{ name: "TABLE_NAME", defaulted: true }]);
+  });
+
   it("reads a name off a name declared as the environment", async () => {
     expect(
-      await functionReadsWithFacts(
+      await functionReads(
         [
           "import os",
           "",
@@ -847,7 +960,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("follows the environment through two calls", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -870,7 +983,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("says nothing when the factory is handed a plain dict instead", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -890,7 +1003,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name the caller passes by keyword", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         `${SUBSCRIPT_HELPER}REDIS_URL = env(key="REDIS_URL")\n`,
       ),
     ).toEqual([{ name: "REDIS_URL", defaulted: false }]);
@@ -898,7 +1011,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a name the caller wrote as a constant somewhere else", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         `${SUBSCRIPT_HELPER}NAME = "CACHE_URL"\nCACHE_URL = env(NAME)\n`,
       ),
     ).toEqual([{ name: "CACHE_URL", defaulted: false }]);
@@ -906,7 +1019,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("says nothing at a call whose parameter never reaches a read", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           SUBSCRIPT_HELPER,
           "def log(message):",
@@ -923,7 +1036,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("says nothing at a call to a helper that only sets the variable it is given", async () => {
     expect(
-      await moduleReadsWithFacts(
+      await moduleReads(
         [
           "import os",
           "",
@@ -945,14 +1058,12 @@ describe("a call to a helper that reads the environment", () => {
   });
 
   it("says nothing when the caller writes no argument at the parameter", async () => {
-    expect(
-      await moduleReadsWithFacts(`${SUBSCRIPT_HELPER}A = env()\n`),
-    ).toEqual([]);
+    expect(await moduleReads(`${SUBSCRIPT_HELPER}A = env()\n`)).toEqual([]);
   });
 
   it("says nothing when the caller's argument does not settle on one string", async () => {
     expect(
-      await functionReadsWithFacts(
+      await functionReads(
         `${SUBSCRIPT_HELPER}def handler(name):\n    return env(name)\n`,
         "handler",
       ),
@@ -961,7 +1072,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("reads a call in a function body, on that body's own unit", async () => {
     expect(
-      await functionReadsWithFacts(
+      await functionReads(
         `${SUBSCRIPT_HELPER}def handler():\n    return env("TABLE_NAME")\n`,
         "handler",
       ),
@@ -970,13 +1081,13 @@ describe("a call to a helper that reads the environment", () => {
 
   it("records a read with no name on the helper's own body, whatever its callers pass", async () => {
     expect(
-      await functionReadsWithFacts(`${SUBSCRIPT_HELPER}A = env("A")\n`, "env"),
+      await functionReads(`${SUBSCRIPT_HELPER}A = env("A")\n`, "env"),
     ).toEqual([{ name: null, defaulted: false }]);
   });
 
   it("records nothing at a call that hands the caller's own parameter on", async () => {
     expect(
-      await functionReadsWithFacts(
+      await functionReads(
         `${SUBSCRIPT_HELPER}def get_env(key):\n    return env(key)\n\nA = get_env("A")\n`,
         "get_env",
       ),
@@ -985,7 +1096,7 @@ describe("a call to a helper that reads the environment", () => {
 
   it("records nothing at a call whose argument does not settle to a name", async () => {
     expect(
-      await moduleReadsWithFacts(`${SUBSCRIPT_HELPER}A = env(pick_name())\n`),
+      await moduleReads(`${SUBSCRIPT_HELPER}A = env(pick_name())\n`),
     ).toEqual([]);
   });
 });
@@ -1116,7 +1227,7 @@ describe("a project whose environment reads go through a helper", () => {
 
 describe("an output stream passed to a helper", () => {
   it("is stated where it is passed on, and reads no variable", async () => {
-    const { root, module, db } = await withFacts(
+    const { root, db } = await withFacts(
       [
         "import sys",
         "from sys import stderr",
@@ -1133,6 +1244,6 @@ describe("an output stream passed to a helper", () => {
     // The stream `write` is called on is passed nowhere.
     expect(db.facts("streamObject")).toHaveLength(2);
     expect(db.facts("environmentObject")).toEqual([]);
-    expect(readsOf(envReadEffects(root, module, db))).toEqual([]);
+    expect(readsOf(stdlibReads(root, db))).toEqual([]);
   });
 });

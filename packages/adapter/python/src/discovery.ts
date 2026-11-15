@@ -51,7 +51,6 @@ import {
   unwrapDecorator,
 } from "./decorators.js";
 import { routeOnDroppedApp } from "./droppedApps.js";
-import { envReadEffects } from "./envReads.js";
 import { enqueueEffects, enqueuesAmong } from "./jobQueues.js";
 import {
   bodyTerminals,
@@ -67,6 +66,7 @@ import {
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
 import { rawSqlCallIds, rawSqlOptionsOf } from "./rawSql.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
 import {
   bodyStorage,
   declaredCallIds,
@@ -1726,7 +1726,7 @@ function besidesCallsWith(
   facts: Database | undefined,
 ): EffectAt[] {
   return [
-    ...envReadEffects(definitionNode, module, facts),
+    ...(facts === undefined ? [] : stdlibReads(definitionNode, facts)),
     ...storage.effects,
     ...streamWriteEffects(definitionNode, module),
     ...enqueueEffects(definitionNode, facts),

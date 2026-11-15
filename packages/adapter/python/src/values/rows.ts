@@ -5,6 +5,7 @@
  * spelled `join` does not match the `os.path` row.
  */
 
+import { readSpellingsOf } from "@suss/recognize";
 import {
   appended,
   caseRows,
@@ -30,6 +31,15 @@ import {
   truthOf,
   type Value,
 } from "@suss/values";
+
+import { ENVIRONMENT } from "../stdlib/environment.js";
+
+import type {
+  ArgumentPosition,
+  Chain,
+  GetterMeaning,
+  ReadMeaning,
+} from "@suss/recognize";
 
 const operatorRows: Row[] = [
   {
@@ -173,17 +183,56 @@ const calleeRows: Row[] = [
     origin: { module: "os.path", name: "join" },
     apply: ({ args }) => ({ result: joinedPath(args) }),
   },
-  {
-    kind: "callee",
-    origin: { module: "os", name: "getenv" },
-    apply: ({ args }) => ({ result: environmentRead(args) }),
-  },
-  {
-    kind: "callee",
-    origin: { module: "os.environ", name: "get" },
-    apply: ({ args }) => ({ result: environmentRead(args) }),
-  },
+  ...environmentRows(ENVIRONMENT.declared),
 ];
+
+/**
+ * A read of the environment through one of the chain's functions or
+ * getters, `os.getenv("X", d)` and `os.environ.get("X", d)`, is its
+ * fallback when it passes one, read at the getter's own positions.
+ */
+function environmentRows(chain: Chain<ReadMeaning>): Row[] {
+  const spellings = readSpellingsOf(chain);
+  const origins = [
+    ...Object.entries(spellings.functions).map(([path, getter]) => {
+      const dot = path.lastIndexOf(".");
+      return {
+        origin: { module: path.slice(0, dot), name: path.slice(dot + 1) },
+        getter,
+      };
+    }),
+    ...Object.entries(spellings.getters).flatMap(([name, getter]) =>
+      spellings.paths.map((module) => ({ origin: { module, name }, getter })),
+    ),
+  ];
+  return origins.map(({ origin, getter }) => ({
+    kind: "callee",
+    origin,
+    apply: ({ args }) => ({
+      result: environmentRead(getterArguments(args, getter)),
+    }),
+  }));
+}
+
+/** The key a getter call passes, then its fallback, as `environmentRead` takes them. */
+function getterArguments(
+  args: readonly Value[],
+  getter: GetterMeaning,
+): Value[] {
+  const key = args[getter.key.at];
+  const fallback = args[fallbackPosition(getter)];
+  if (key === undefined) {
+    return [];
+  }
+  return fallback === undefined ? [key] : [key, fallback];
+}
+
+/** The position a getter takes its fallback at, or -1 when it takes none by position. */
+function fallbackPosition(getter: GetterMeaning): number {
+  const picks = getter.fallback === undefined ? [] : [getter.fallback].flat();
+  const pick = picks.find((one): one is ArgumentPosition => !("block" in one));
+  return pick?.at ?? -1;
+}
 
 const BRACE_PLACEHOLDER = /\{([^{}]*)\}/g;
 

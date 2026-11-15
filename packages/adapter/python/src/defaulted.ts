@@ -11,18 +11,31 @@
  * `os.environ["X"]`, is defaulted only by a test that runs before it.
  */
 
-import { children, enclosingFunction, field, fields } from "./ast.js";
-import { envReadSpellingAt, isEnviron, isSameName } from "./envSpellings.js";
+import {
+  children,
+  enclosingFunction,
+  field,
+  fields,
+  stringLiteralValue,
+} from "./ast.js";
 import { readKey } from "./facts/values.js";
+import {
+  environmentReadAt,
+  spellsEnvironment,
+} from "./stdlib/environmentRead.js";
 
-import type { EnvReadSpelling } from "./envSpellings.js";
+import type { SiteRead } from "@suss/recognize";
+import type { PythonFactSource } from "./factSource.js";
 import type { PyNode } from "./parser.js";
-import type { Scope } from "./scope.js";
 
-/** An environment read, and the scope the names around it resolve in. */
-export interface EnvVariableRead {
-  spelling: EnvReadSpelling;
-  scope: Scope;
+/**
+ * An environment read as the environment chain reads it, and the facts
+ * to ask the chain about another expression, so a test that writes the
+ * read another way still counts.
+ */
+export interface VariableRead {
+  readonly site: SiteRead;
+  readonly source: PythonFactSource;
 }
 
 /**
@@ -31,7 +44,7 @@ export interface EnvVariableRead {
  * initializes; or, for any other read, the read's source text.
  */
 type ReadSubject =
-  | { kind: "variable"; read: EnvVariableRead }
+  | { kind: "variable"; read: VariableRead }
   | { kind: "local"; local: Local }
   | { kind: "spelling"; text: string };
 
@@ -40,10 +53,7 @@ type ReadSubject =
  * `variable` for a read of the environment, so a test that writes the
  * read another way still counts.
  */
-export function isDefaultedAt(
-  read: PyNode,
-  variable?: EnvVariableRead,
-): boolean {
+export function isDefaultedAt(read: PyNode, variable?: VariableRead): boolean {
   const subject: ReadSubject =
     variable === undefined
       ? { kind: "spelling", text: read.text }
@@ -51,7 +61,7 @@ export function isDefaultedAt(
   if (hasFallbackOperand(read) || isPresentAt(read, subject)) {
     return true;
   }
-  if (variable?.spelling.raises === true) {
+  if (variable?.site.raises === true) {
     return false;
   }
   if (isPresenceTest(read, subject)) {
@@ -74,9 +84,16 @@ function isSubject(subject: ReadSubject, expression: PyNode): boolean {
   return expression.text === subject.text;
 }
 
-function readsVariable(expression: PyNode, read: EnvVariableRead): boolean {
-  const other = envReadSpellingAt(expression, read.scope);
-  return other !== null && isSameName(other.name, read.spelling.name);
+function readsVariable(expression: PyNode, read: VariableRead): boolean {
+  const other = environmentReadAt(expression, read.source);
+  return other !== null && isSameKey(other, read.site);
+}
+
+/** Two reads of one written-out entry, or of one computed key written the same way. */
+function isSameKey(one: SiteRead, other: SiteRead): boolean {
+  return one.entry === null
+    ? other.entry === null && one.keySource === other.keySource
+    : one.entry === other.entry;
 }
 
 /** Only an environment read has a key that `"X" in os.environ` asks about. */
@@ -85,11 +102,17 @@ function isKeyOfSubject(
   key: PyNode,
   container: PyNode,
 ): boolean {
-  return (
-    subject.kind === "variable" &&
-    isEnviron(container, subject.read.scope) &&
-    isSameName(key, subject.read.spelling.name)
-  );
+  if (
+    subject.kind !== "variable" ||
+    !spellsEnvironment(container, subject.read.source)
+  ) {
+    return false;
+  }
+  const { site } = subject.read;
+  const written = stringLiteralValue(key);
+  return written === null
+    ? site.entry === null && key.text === site.keySource
+    : written === site.entry;
 }
 
 /**

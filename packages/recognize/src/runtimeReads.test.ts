@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { compile } from "./compile.js";
+import { readSpellingsOf, siteReadOf } from "./compileReads.js";
 import { global } from "./ops.js";
 import { declarationsIn, pack } from "./pack.js";
 import { runtimeReads } from "./runtimeReads.js";
@@ -18,11 +19,20 @@ import type {
 const CONFIG: EntryMeaning = { reads: "config" };
 const META: EntryMeaning = { reads: "metadata" };
 
-/** A value that settles to `settled` and is written as `source`. */
-function value(settled: string | number | null, source = String(settled)) {
+/**
+ * A value that settles to `settled` and is written as `source`. It is
+ * written out as `settled` unless `literal` says what is written there,
+ * as null does for a name.
+ */
+function value(
+  settled: string | number | null,
+  source = String(settled),
+  literal: string | number | null = settled,
+) {
   return {
     evaluated: () => settled,
     source: () => source,
+    literal: () => literal,
   } as unknown as ValueOps;
 }
 
@@ -31,6 +41,9 @@ interface Site {
   /** The path the object is spelled as. */
   object?: string;
   entry?: string | null;
+  /** Whether the site reads at a key rather than a member. */
+  byKey?: boolean;
+  computedKey?: ValueOps;
   defaulted?: boolean;
   fallback?: ValueOps;
   assigned?: ValueOps;
@@ -50,6 +63,8 @@ function site(spec: Site): ReadOps {
         ? spec.object
         : undefined,
     entry: () => spec.entry,
+    byKey: () => spec.byKey ?? false,
+    computedKey: () => spec.computedKey ?? null,
     readsOff: () => spec.readsOff ?? [],
     defaulted: () => spec.defaulted ?? false,
     fallback: () => spec.fallback ?? null,
@@ -421,6 +436,7 @@ describe("a getter on a read chain", () => {
       valueAt: (index: number) => spec.args?.[index] ?? null,
       keywordAt: () => null,
       block: () => spec.block ?? null,
+      isFrom: () => false,
     } as unknown as CallOps;
   }
 
@@ -445,12 +461,48 @@ describe("a getter on a read chain", () => {
     expect(effect).toMatchObject({ interaction: { defaulted: true } });
   });
 
-  it("is not defaulted without a fallback, since the getter raises", () => {
-    const [effect] = run(GETTER, {
-      read: site({ defaulted: true }),
-      ops: call({ args: [value("H")] }),
+  it("takes the adapter's rule when a getter that raises passes no fallback, which a test before it can satisfy", () => {
+    const defaulted = (guarded: boolean) =>
+      run(GETTER, {
+        read: site({ defaulted: guarded }),
+        ops: call({ args: [value("H")] }),
+      }).map((effect) =>
+        effect.type === "interaction" ? effect.interaction : null,
+      );
+    expect([defaulted(false), defaulted(true)]).toMatchObject([
+      [{ name: "H", defaulted: false }],
+      [{ name: "H", defaulted: true }],
+    ]);
+  });
+
+  it("reports the getter's read at a call the facts state a keyed read at, and not the call's own", () => {
+    const chain = runtimeReads({ object: global("ENV") })
+      .entries({}, { reads: "config", callee: "keyed" })
+      .getters({ fetch: { key: { at: 0 } } });
+    const effects = run(chain, {
+      read: site({ object: "ENV", entry: null, source: "ENV.fetch(name)" }),
+      ops: call({ args: [value(null, "name")] }),
     });
-    expect(effect).toMatchObject({ interaction: { defaulted: false } });
+    expect(
+      effects.map((effect) =>
+        effect.type === "interaction" ? effect.callee : null,
+      ),
+    ).toEqual(["ENV.fetch(name)"]);
+  });
+
+  it("reads a key kept in a constant as one the program works out, the way a read at a key does", () => {
+    const [effect] = run(GETTER, {
+      read: site({ source: "ENV.fetch(KEY)" }),
+      ops: call({ args: [value("K", "KEY", null)] }),
+    });
+    expect(effect).toMatchObject({
+      callee: "ENV.fetch(KEY)",
+      interaction: { name: null },
+    });
+  });
+
+  it("reads nothing at a getter call that passes no key", () => {
+    expect(run(GETTER, { read: site({}), ops: call({}) })).toEqual([]);
   });
 
   it("reads nothing for another method or another receiver", () => {
@@ -491,6 +543,199 @@ describe("a getter on a read chain", () => {
     ]).toMatchObject([
       [],
       { interaction: { name: "B", defaulted: true, default: "z" } },
+    ]);
+  });
+});
+
+describe("a read chain over a mapping", () => {
+  const GET = { key: { at: 0 }, fallback: { at: 1, keyword: "default" } };
+  const ENVIRON = runtimeReads({
+    object: global("os.environ"),
+    entriesBy: "key",
+    missing: "raises",
+  })
+    .entries({}, { reads: "config", callee: "keyed" })
+    .getters({ get: GET })
+    .functions({ "os.getenv": GET })
+    .writes({}, { changes: "nothing" });
+
+  /** A call to `os.getenv` when `getenv` is true, else to a method off `os.environ` named `method`. */
+  function call(spec: {
+    getenv?: boolean;
+    method?: string;
+    args?: ValueOps[];
+  }): CallOps {
+    return {
+      method: () => (spec.getenv === true ? "getenv" : (spec.method ?? "get")),
+      receiverIsFrom: () => spec.getenv !== true,
+      receiverGlobal: () => "os.environ",
+      valueAt: (index: number) => spec.args?.[index] ?? null,
+      keywordAt: () => null,
+      isFrom: (origin: RuntimeObject) =>
+        spec.getenv === true &&
+        origin.origin === "global" &&
+        origin.paths.includes("os.getenv"),
+    } as unknown as CallOps;
+  }
+
+  const calleeAndName = (effects: Effect[]) =>
+    effects.map((effect) =>
+      effect.type === "interaction" &&
+      effect.interaction.class === "config-read"
+        ? [effect.callee, effect.interaction.name]
+        : null,
+    );
+
+  it("spells the callee at a key for a written key, and as written for a computed one", () => {
+    expect(
+      calleeAndName([
+        ...run(ENVIRON, {
+          read: site({ object: "os.environ", entry: "A", byKey: true }),
+        }),
+        ...run(ENVIRON, {
+          read: site({
+            object: "os.environ",
+            entry: null,
+            byKey: true,
+            source: "os.environ[name]",
+          }),
+        }),
+      ]),
+    ).toEqual([
+      ['os.environ["A"]', "A"],
+      ["os.environ[name]", null],
+    ]);
+  });
+
+  it("reads an entry only at a key, so a method of the mapping is no read", () => {
+    expect(
+      run(ENVIRON, {
+        read: site({ object: "os.environ", entry: "get", byKey: false }),
+      }),
+    ).toEqual([]);
+  });
+
+  it("reads a function the runtime provides by the object's path", () => {
+    const effects = run(ENVIRON, {
+      read: site({}),
+      ops: call({ getenv: true, args: [value("C"), value("c")] }),
+    });
+    expect(effects).toMatchObject([
+      {
+        callee: 'os.environ["C"]',
+        interaction: { name: "C", defaulted: true, default: "c" },
+      },
+    ]);
+  });
+
+  it("says what a site reads before anything asks whether the program copes", () => {
+    const read = (spec: Site, ops: CallOps | null = null) =>
+      siteReadOf(ENVIRON.declared, { read: site(spec), ops });
+    expect([
+      read({ object: "os.environ", entry: "A", byKey: true }),
+      read({
+        object: "os.environ",
+        entry: null,
+        byKey: true,
+        computedKey: value(null, "name"),
+      }),
+      read({}, call({ args: [value("B"), value("d")] })),
+      read({}, call({ getenv: true, args: [value(null, "name", null)] })),
+    ]).toMatchObject([
+      { entry: "A", keySource: "A", passesFallback: false, raises: true },
+      { entry: null, keySource: "name", raises: true },
+      { entry: "B", keySource: "B", passesFallback: true, raises: false },
+      { entry: null, keySource: "name", passesFallback: false },
+    ]);
+  });
+
+  it("says a site reads nothing when it is an assignment, a member, or off another object", () => {
+    expect([
+      siteReadOf(ENVIRON.declared, {
+        read: site({
+          object: "os.environ",
+          entry: "W",
+          byKey: true,
+          assigned: value("1"),
+        }),
+        ops: null,
+      }),
+      siteReadOf(ENVIRON.declared, {
+        read: site({ object: "os.environ", entry: "copy" }),
+        ops: null,
+      }),
+      siteReadOf(ENVIRON.declared, {
+        read: site({ object: "sys.argv", entry: "A", byKey: true }),
+        ops: call({ method: "pop" }),
+      }),
+    ]).toEqual([null, null, null]);
+  });
+
+  it("says a site reads nothing at an entry the chain reads as nothing, or one it says nothing about", () => {
+    const quiet = runtimeReads({ object: global("os.environ") }).entries({
+      env: { reads: "nothing" },
+    });
+    const read = site({ object: "os.environ", entry: "env" });
+    expect([
+      siteReadOf(quiet.declared, { read, ops: null }),
+      siteReadOf(runtimeReads({ object: global("os.environ") }).declared, {
+        read,
+        ops: null,
+      }),
+    ]).toEqual([null, null]);
+  });
+
+  it("reads nothing through a getter of a chain that says no entry is a read", () => {
+    const getterOnly = runtimeReads({ object: global("os.environ") }).getters({
+      get: GET,
+    });
+    expect(
+      run(getterOnly, {
+        read: site({}),
+        ops: call({ args: [value("B")] }),
+      }),
+    ).toEqual([]);
+  });
+
+  it("gives its paths, getters and functions as data, and no path for an object a platform hands in", () => {
+    expect(readSpellingsOf(ENVIRON.declared)).toEqual({
+      paths: ["os.environ"],
+      getters: { get: GET },
+      functions: { "os.getenv": GET },
+    });
+    expect(
+      readSpellingsOf(
+        runtimeReads({ object: { origin: "handedIn", name: "env" } }).declared,
+      ),
+    ).toEqual({ paths: [], getters: {}, functions: {} });
+  });
+
+  it("says a getter that raises without a fallback raises, and one passed a block does not", () => {
+    const fetch = runtimeReads({ object: global("ENV"), entriesBy: "key" })
+      .entries({}, CONFIG)
+      .getters({
+        fetch: {
+          key: { at: 0 },
+          fallback: [{ at: 1 }, { block: true }],
+          raisesWithout: true,
+        },
+      });
+    const fetchCall = (block: ValueOps | null) =>
+      ({
+        method: () => "fetch",
+        receiverIsFrom: () => true,
+        valueAt: (index: number) => (index === 0 ? value("H") : null),
+        block: () => block,
+      }) as unknown as CallOps;
+    expect([
+      siteReadOf(fetch.declared, { read: site({}), ops: fetchCall(null) }),
+      siteReadOf(fetch.declared, {
+        read: site({}),
+        ops: fetchCall(value("d")),
+      }),
+    ]).toMatchObject([
+      { entry: "H", raises: true, passesFallback: false },
+      { entry: "H", raises: false, passesFallback: true, fallback: null },
     ]);
   });
 });

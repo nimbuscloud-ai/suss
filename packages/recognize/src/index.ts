@@ -10,6 +10,7 @@ export {
   definesMethod,
 } from "./classBody.js";
 export { compile } from "./compile.js";
+export { readSpellingsOf, siteReadOf } from "./compileReads.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared, discoverEntryObject } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
@@ -101,6 +102,7 @@ export type {
   Deployment,
   ElementNamePart,
   Ending,
+  EntriesBy,
   EntriesLink,
   EntryMeaning,
   Envelope,
@@ -108,6 +110,7 @@ export type {
   FallbackPick,
   FieldsReadPick,
   FromReceiver,
+  FunctionsLink,
   GetterMeaning,
   GettersLink,
   InputLink,
@@ -127,6 +130,7 @@ export type {
   MetadataEntry,
   MethodMeaning,
   MethodsLink,
+  MissingEntry,
   NamesStated,
   Naming,
   NoEntry,
@@ -176,6 +180,7 @@ export type {
 } from "./chain.js";
 export type { AssociationTarget, ClassDeclaration } from "./classBody.js";
 export type { CompileOptions } from "./compile.js";
+export type { ReadSpellings, SiteRead } from "./compileReads.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
