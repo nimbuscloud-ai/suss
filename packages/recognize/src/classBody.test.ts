@@ -16,7 +16,7 @@ import {
   describeClassBody,
 } from "./classBody.js";
 import { type FactSource, factModuleOps, factValueOps } from "./factOps.js";
-import { imported } from "./ops.js";
+import { imported, inherits } from "./ops.js";
 
 import type { ClassValueOps } from "@suss/extractor";
 import type { ClassDeclaration } from "./classBody.js";
@@ -68,6 +68,8 @@ function source(over: Partial<FactSource> = {}): FactSource {
   add("extends", "Other", "Thing#ref");
   add("rbConstantName", "Other", "Other");
   call("o1", "has_many", "items");
+  add("objectValue", "Patched");
+  add("extendsNamed", "Patched", "lib::Model");
   add("objectValue", "Mixin");
   add("rbConstantName", "Mixin", "Mixin");
   call("m1", "has_many", "items");
@@ -199,6 +201,19 @@ describe("the reader of a class body", () => {
     ).toContain("Mixin");
   });
 
+  it("reads a class that reaches the base, and a body that writes none, when the declaration names one", () => {
+    const gated = classBody({
+      ...LIBRARY,
+      in: inherits({ from: ["lib"], named: ["Model"] }),
+    });
+    const facts = source();
+    expect(declareClassBody(gated, classOf("Account", facts))).not.toEqual([]);
+    expect(declareClassBody(gated, classOf("Other", facts))).toEqual([]);
+    expect(said(declareClassBody(gated, classOf("Mixin", facts)))).toEqual([
+      ITEMS,
+    ]);
+  });
+
   it("counts one data link for each call and field a declaration reads", () => {
     expect(describeClassBody(LIBRARY)).toEqual({
       name: "classBody",
@@ -212,6 +227,22 @@ describe("the reader of a class body", () => {
 });
 
 describe("the class ops a class body is read through", () => {
+  it("reach a base by the name the class writes, where the adapter says it spells the spec", () => {
+    const spec = inherits({ from: ["lib"], named: ["Model"] });
+    expect(classOf("Patched").inherits(spec)).toBe(false);
+    const spelled = source({
+      spellsBase: (written, asked) =>
+        asked.from.some((module) => written === `${module}::Model`),
+    });
+    expect(classOf("Patched", spelled).inherits(spec)).toBe(true);
+  });
+
+  it("say whether the declaration writes a base class", () => {
+    const facts = source();
+    expect(classOf("Account", facts).writesBase()).toBe(true);
+    expect(classOf("Mixin", facts).writesBase()).toBe(false);
+  });
+
   it("list the calls assigned to the class's own names", () => {
     expect(
       classOf("Account")

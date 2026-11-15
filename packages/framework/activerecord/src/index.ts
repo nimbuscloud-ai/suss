@@ -12,6 +12,7 @@ import {
   callback,
   classBody,
   definesMethod,
+  inherits,
 } from "@suss/recognize";
 
 import { storageSystemFromDatabaseYml } from "./databaseYml.js";
@@ -213,10 +214,9 @@ const REGISTERED_BY: Record<string, string[]> = {
 const CLASS_NAME: ClassBodyArgument = { keyword: "class_name" };
 
 /**
- * What a model's body declares. A plural association's class is its
- * name singularised, a callback runs on the events its registering call
- * covers unless `on:` narrows them, and a scope's lambda runs as the
- * class method the scope defines.
+ * What a model's body declares, read in the classes that reach
+ * `ActiveRecord::Base` and in the concerns they include. A serializer
+ * writes `has_many` too, and declares nothing about the database.
  */
 export function activeRecordClassBodies(): ClassBodyDeclaration[] {
   const callbacks = Object.fromEntries(
@@ -231,6 +231,7 @@ export function activeRecordClassBodies(): ClassBodyDeclaration[] {
   );
   return [
     classBody({
+      in: inherits({ from: ["ActiveRecord"], named: ["Base"] }),
       calls: {
         has_one: association({ name: { at: 0 }, target: CLASS_NAME }),
         belongs_to: association({ name: { at: 0 }, target: CLASS_NAME }),
@@ -368,6 +369,7 @@ export function activeRecordFramework(
   }
   return {
     name: "activerecord",
+    version: "1",
     protocol: options.storageSystem,
     discovery: [],
     storage: activeRecordStorage(options),

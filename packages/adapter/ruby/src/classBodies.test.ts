@@ -9,6 +9,7 @@ import {
   callback,
   classBody,
   definesMethod,
+  inherits,
 } from "@suss/recognize";
 import { classMemberName } from "@suss/resolution";
 
@@ -58,12 +59,13 @@ async function factsFor(
   files: Record<string, string>,
   inflections?: RbInflections,
   bodyBlocks: RbBodyBlock[] = [],
+  declaration = ACTIVE_RECORD,
 ): Promise<Database> {
   const pack: RubyPack = {
     name: "models",
     protocol: "postgresql",
     discovery: [],
-    classBodies: [ACTIVE_RECORD],
+    classBodies: [declaration],
     bodyBlocks,
     ...(inflections === undefined ? {} : { inflections }),
   };
@@ -403,5 +405,80 @@ describe("a scope ActiveRecord defines", () => {
     expect(
       await scopesOf("class Account\n  scope :recent, order(:id)\nend\n"),
     ).toEqual({});
+  });
+});
+
+describe("a declaration read only in the library's own classes", () => {
+  const MODELS_ONLY = classBody({
+    ...ACTIVE_RECORD,
+    in: inherits({ from: ["ActiveRecord"], named: ["Base"] }),
+  });
+
+  /** The classes each association is declared in, as `class: name`. */
+  function declaredIn(db: Database): string[] {
+    const named = new Map(
+      db.facts("rbConstantName").map((row) => [String(row[0]), String(row[1])]),
+    );
+    return db
+      .facts("declaresAssociation")
+      .map((row) => `${named.get(String(row[0]))}: ${String(row[1])}`);
+  }
+
+  it("reads a class two below the base and a module, and leaves out a class beside them", async () => {
+    const db = await factsFor(
+      {
+        "models.rb": [
+          "class Status; end",
+          "class ApplicationRecord < ActiveRecord::Base; end",
+          "",
+          "module Account::Associations",
+          "  has_many :statuses",
+          "end",
+          "",
+          "class Account < ApplicationRecord",
+          "  has_many :statuses",
+          "end",
+          "",
+          "class AccountSerializer < ActiveModel::Serializer",
+          "  has_many :statuses",
+          "end",
+          "",
+          "class Account",
+          "  belongs_to :status",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      [],
+      MODELS_ONLY,
+    );
+
+    expect(declaredIn(db)).toEqual([
+      "Account::Associations: statuses",
+      "Account: statuses",
+      "Account: status",
+    ]);
+  });
+
+  it("reads a model in a project that reopens the library's module", async () => {
+    const db = await factsFor(
+      {
+        "patches.rb": "module ActiveRecord\n  module Batches; end\nend\n",
+        "models.rb": [
+          "class Status; end",
+          "class ApplicationRecord < ActiveRecord::Base; end",
+          "class Account < ApplicationRecord",
+          "  has_many :statuses",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      [],
+      MODELS_ONLY,
+    );
+
+    expect(declaredIn(db)).toEqual(["Account: statuses"]);
   });
 });

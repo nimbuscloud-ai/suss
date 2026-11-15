@@ -1,5 +1,7 @@
 {
   "activerecord": "ActiveRecord: the library, and this pack's name",
+  "ActiveRecord": "ActiveRecord: the library's top-level module",
+  "Base": "ActiveRecord::Base: the class every model reaches",
   "create": "ActiveRecord: builds and stores a row",
   "insert": "ActiveRecord: adds a row without callbacks",
   "insert_all": "ActiveRecord: adds several rows without callbacks",

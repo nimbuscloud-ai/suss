@@ -495,6 +495,12 @@ export interface Inherits {
 export interface ClassValueOps {
   /** Whether the class's ancestry reaches the base, through any of the project's own classes between. */
   inherits(spec: Inherits): boolean;
+  /**
+   * Whether the class's declaration writes a base class: `class Account
+   * < ApplicationRecord`, `class Item(Base)`, `class A extends B`. A Ruby
+   * module writes none, and neither does a class reopened without one.
+   */
+  writesBase(): boolean;
   /** The methods the class writes itself, instance ones or the class's own, in source order. */
   members(kind: "instance" | "singleton"): readonly ModuleMember[];
   /**
@@ -1102,6 +1108,12 @@ export interface FactSource {
    * statements alone.
    */
   classBodyCalls?(key: string): readonly string[];
+  /**
+   * Whether a base a class writes by name spells one of the spec's names
+   * inside one of its modules, as `ActiveRecord::Base`. A project that
+   * reopens the library's module states no import of the base to match.
+   */
+  spellsBase?(written: string, spec: Inherits): boolean;
   /**
    * Every function and object the value at the key comes to, through
    * names and through a call that returns its argument. The ops pick the

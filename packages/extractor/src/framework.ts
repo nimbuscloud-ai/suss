@@ -1408,14 +1408,12 @@ export interface ParameterSupplier {
   name: string;
 }
 
-/**
- * What a library reads out of a class body: calls written there outside
- * every method, and fields assigned from a call. `in` limits the reading
- * to classes whose ancestry reaches a library base, and every module is
- * read either way, since a mixin has no ancestry of its own. Without it
- * every class and module body is read.
- */
+/** What a library reads out of a class body: calls written there outside every method, and fields assigned from a call. */
 export interface ClassBodyDeclaration {
+  /**
+   * Read only classes whose ancestry reaches this base, and every body
+   * that writes no base class: a Ruby module, or a class reopened bare.
+   */
   readonly in?: Inherits;
   /** What each call does, by the name it is written under with no receiver. */
   readonly calls: Readonly<Record<string, ClassBodyMeaning>>;

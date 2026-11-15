@@ -1577,6 +1577,11 @@ class FactClass implements ClassValueOps {
     return inheritsFrom(this.key, spec, this.facts);
   }
 
+  /** `extendsNamed`, which every adapter states for a written base and none for a mixin. */
+  writesBase(): boolean {
+    return this.facts.db.lookup("extendsNamed", 0, this.key).length > 0;
+  }
+
   members(kind: "instance" | "singleton"): readonly ModuleMember[] {
     return this.facts.db.lookup("holdsProperty", 0, this.key).flatMap((row) => {
       const stated = String(row[1]);
@@ -1650,15 +1655,33 @@ export function inheritsFrom(
       return false;
     }
     seen.add(key);
-    return source.db.lookup("extends", 0, key).some((row) => {
-      const base = String(row[1]);
-      return (
-        isListedBase(base, spec, source) ||
-        (source.comesTo?.(base) ?? []).some(reaches)
-      );
-    });
+    return (
+      writesListedBase(key, spec, source) ||
+      source.db.lookup("extends", 0, key).some((row) => {
+        const base = String(row[1]);
+        return (
+          isListedBase(base, spec, source) ||
+          (source.comesTo?.(base) ?? []).some(reaches)
+        );
+      })
+    );
   };
   return reaches(cls);
+}
+
+/** Whether a base the class writes by name, `extendsNamed`, is one the adapter says the spec spells. */
+function writesListedBase(
+  cls: string,
+  spec: Inherits,
+  source: FactSource,
+): boolean {
+  const spells = source.spellsBase;
+  return (
+    spells !== undefined &&
+    source.db
+      .lookup("extendsNamed", 0, cls)
+      .some((row) => spells(String(row[1]), spec))
+  );
 }
 
 function isListedBase(

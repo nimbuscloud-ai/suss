@@ -123,6 +123,11 @@ Concerns are covered too. A `has_many` inside an `included do` belongs
 to the module, and the module is in the ancestry of every model that
 includes it.
 
+The pack reads these calls only in a class whose ancestry reaches
+`ActiveRecord::Base`, in a module, and in a class reopened without its
+base. A serializer that writes `has_many :statuses` declares nothing
+about the database, so its body is left out.
+
 ## Scopes
 
 `scope :recent, -> { order(:created_at) }` defines a class method
