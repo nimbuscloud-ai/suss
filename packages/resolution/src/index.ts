@@ -782,11 +782,13 @@ const STATED_RULES = [
 
   // A container fills a parameter from the decorator a pack says
   // supplies it, so the parameter is written as that decorator's call.
+  // A function or class under the same decorator is not a parameter.
   rule(
     "hop",
     [v("p"), v("d"), VALUE_STEP],
     [
       lit("decoratedWith", v("p"), v("d")),
+      lit("paramOf", v("f"), v("k"), v("p")),
       lit("call", v("d"), v("c")),
       lit("comesFrom", v("c"), v("m"), v("n")),
       lit("suppliesParameter", v("m"), v("n")),

@@ -37,6 +37,8 @@ import type {
   Declaration,
   DeclaredBy,
   Decoded,
+  DecoratedDefinition,
+  Decorator,
   EffectArg,
   ElementAttribute,
   ElementOps,
@@ -1841,6 +1843,13 @@ export interface ModuleWritten {
     readonly key: string;
     readonly assignedName: string | null;
   }[];
+  /**
+   * The keys of the functions and classes the file writes under a
+   * decorator, nested ones included, in source order, with their
+   * `decoratedWith` rows stated. Unset where the language writes no
+   * decorators.
+   */
+  decorated?(): readonly string[];
   /** How the language writes a nested name in one piece, `::` in Ruby, so `class Reports::Nightly` is found at the path `Reports`, `Nightly`. */
   qualifier?: string;
   /**
@@ -1967,6 +1976,26 @@ class FactModule implements ModuleOps {
     );
   }
 
+  decorated(): readonly DecoratedDefinition[] {
+    return (this.written.decorated?.() ?? []).flatMap((key) => {
+      const decorators = inSourceOrder(
+        this.facts.db
+          .lookup("decoratedWith", 0, key)
+          .map((row) => String(row[1])),
+      );
+      return decorators.length === 0
+        ? []
+        : [
+            {
+              definition: factValueOps(key, this.facts),
+              decorators: decorators.map((decorator) =>
+                decoratorAt(decorator, this.facts),
+              ),
+            },
+          ];
+    });
+  }
+
   private listExports(): ModuleMember[] {
     this.state();
     const named =
@@ -1987,6 +2016,14 @@ class FactModule implements ModuleOps {
       this.written.state?.();
     }
   }
+}
+
+/** A decorator's expression as call ops when it is a call, and as value ops otherwise. */
+function decoratorAt(key: string, source: FactSource): Decorator {
+  const call = isCall(key, source) ? factCallOps(key, source) : null;
+  return call === null
+    ? { form: "value", value: factValueOps(key, source) }
+    : { form: "call", call };
 }
 
 /** The one key in a list, or null for none or several. */

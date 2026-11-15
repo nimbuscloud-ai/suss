@@ -190,6 +190,31 @@ describe("a declared discovery pattern", () => {
     ).toEqual([["items", "links"]]);
   });
 
+  it("lists the classes and methods written under decorators, an unexported class's included", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/orders.ts",
+      [
+        'import { Controller, Get } from "lib";',
+        '@Controller("orders")',
+        "class Orders {",
+        '  @Get("/")',
+        "  list() { return []; }",
+        "  plain() { return null; }",
+        "}",
+      ].join("\n"),
+    );
+    expect(
+      moduleOpsFor(file, new ResolutionStore())
+        .decorated()
+        .map(({ decorators }) =>
+          decorators.map((decorator) =>
+            decorator.form === "call" ? decorator.call.calleeText() : null,
+          ),
+        ),
+    ).toEqual([["Controller"], ["Get"]]);
+  });
+
   it("reads a registration the module body runs, and none written inside a function", async () => {
     expect(
       await unitsFor(

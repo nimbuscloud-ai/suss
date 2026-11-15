@@ -84,6 +84,7 @@ import type {
   BinaryExpression,
   CallExpression,
   ClassDeclaration,
+  Decorator,
   ElementAccessExpression,
   JsxAttribute,
   JsxElement,
@@ -2059,7 +2060,7 @@ function emitConversion(
  * argument in the parameter the same way a call puts one in a
  * function's, and a field the constructor was handed reaches it.
  */
-function emitClassFacts(
+export function emitClassFacts(
   db: Database,
   table: NodeTable,
   declaration: ClassDeclaration,
@@ -2078,6 +2079,7 @@ function emitClassFacts(
 
   emitBaseClassFacts(db, table, declaration, id);
   emitConstructorFacts(db, table, declaration, id);
+  emitDecorators(db, table, id, declaration.getDecorators());
 
   for (const method of declaration.getMethods()) {
     const methodId = emitFunctionDeclaration(db, table, method);
@@ -2088,6 +2090,7 @@ function emitClassFacts(
       recordedMemberName(declaration, method),
       methodId,
     );
+    emitDecorators(db, table, methodId, method.getDecorators());
   }
 
   for (const property of declaration.getProperties()) {
@@ -2301,6 +2304,23 @@ function emitParameterDecorators(
         );
       }
     }
+  }
+}
+
+/** The decorators a class or a method is written under, each as the value its expression is. */
+function emitDecorators(
+  db: Database,
+  table: NodeTable,
+  decoratedId: string,
+  decorators: Decorator[],
+): void {
+  for (const decorator of decorators) {
+    fact(
+      db,
+      "decoratedWith",
+      decoratedId,
+      emitValue(db, table, decorator.getExpression()),
+    );
   }
 }
 

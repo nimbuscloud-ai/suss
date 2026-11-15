@@ -66,6 +66,13 @@ function source(over: Partial<FactSource> = {}): FactSource {
   add("readsProperty", "tap#callee", "config", "tap");
   add("callBlock", "tap", "tapped");
   add("func", "tapped");
+  // @route("/x") and @cached over def handler, stated bottom first, and
+  // def plain under none.
+  add("func", "app.py:30-60");
+  add("decoratedWith", "app.py:30-60", "app.py:20-27");
+  add("decoratedWith", "app.py:30-60", "app.py:1-11");
+  add("call", "app.py:1-11", "route");
+  add("func", "app.py:70-90");
 
   const text: Record<string, string> = {
     "get#callee": "get",
@@ -76,6 +83,7 @@ function source(over: Partial<FactSource> = {}): FactSource {
     "loop#name": "name",
     "loop#i": "i",
     X: "X",
+    "app.py:20-27": "cached",
   };
   const literal: Record<string, string> = {
     a: "a",
@@ -202,6 +210,36 @@ describe("the classes a file writes", () => {
   it("lists none for an adapter that lists none", () => {
     expect(
       factModuleOps("app.rb", source(), { calls: () => [] }).classes(),
+    ).toEqual([]);
+  });
+});
+
+describe("the definitions a file writes under decorators", () => {
+  it("gives each one the adapter lists its decorators top first, a call as its call ops", () => {
+    const module = factModuleOps("app.py", source(), {
+      calls: () => [],
+      decorated: () => ["app.py:30-60", "app.py:70-90"],
+    });
+    expect(
+      module.decorated().map(({ definition, decorators }) => ({
+        definition: definition.source?.(),
+        decorators: decorators.map((decorator) =>
+          decorator.form === "call"
+            ? `call ${decorator.call.calleeText()}`
+            : `value ${decorator.value.source?.()}`,
+        ),
+      })),
+    ).toEqual([
+      {
+        definition: "app.py:30-60",
+        decorators: ["call route", "value cached"],
+      },
+    ]);
+  });
+
+  it("lists none for an adapter that lists none", () => {
+    expect(
+      factModuleOps("app.py", source(), { calls: () => [] }).decorated(),
     ).toEqual([]);
   });
 });

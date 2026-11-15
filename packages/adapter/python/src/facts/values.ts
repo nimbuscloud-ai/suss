@@ -2063,6 +2063,9 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       continue;
     }
     const memberKey = declaredMemberKey(emitter, member, classKey);
+    if (memberKey !== null) {
+      emitDecoratedWith(emitter, statement, memberKey);
+    }
     const name = field(member, "name");
     if (memberKey !== null && name !== null) {
       const part = accessorPart(statement, accessed);
@@ -2215,6 +2218,7 @@ function emitContainedFunction(
 function emitDecoratorCalls(emitter: Emitter, decorated: PyNode): void {
   const { definition, decorators } = stripDecorators(decorated);
   let applied = nodeId(emitter.filePath, definition);
+  emitDecoratedWith(emitter, decorated, applied);
   for (const decorator of [...decorators].reverse()) {
     const [expression] = children(decorator);
     if (expression === undefined) {
@@ -2224,6 +2228,29 @@ function emitDecoratorCalls(emitter: Emitter, decorated: PyNode): void {
     addCall(emitter, callKey, valueKey(emitter, expression));
     add(emitter, "callArg", callKey, "0", applied);
     applied = callKey;
+  }
+}
+
+/**
+ * Each decorator a definition is written under, by its expression. The
+ * calls above nest one decorator inside the next, so they cannot say
+ * which definition a decorator is over.
+ */
+function emitDecoratedWith(
+  emitter: Emitter,
+  statement: PyNode,
+  definitionKey: string,
+): void {
+  for (const decorator of stripDecorators(statement).decorators) {
+    const [expression] = children(decorator);
+    if (expression !== undefined) {
+      add(
+        emitter,
+        "decoratedWith",
+        definitionKey,
+        valueKey(emitter, expression),
+      );
+    }
   }
 }
 

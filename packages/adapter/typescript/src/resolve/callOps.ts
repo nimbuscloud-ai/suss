@@ -873,16 +873,23 @@ function classOpsFor(
   };
 }
 
-/** The one decorator call on a class that the origin accepts. */
+/** The one decorator call on a class that the origin accepts, among the decorators the facts state for it. */
 function decoratorOn(
   declared: ClassDeclaration | ClassExpression,
   origin: ReceiverOrigin,
   reading: CallReading,
 ): CallOps | null {
-  const { originatesFrom } = reading;
-  const matching = declared
-    .getDecorators()
-    .map((decorator) => decorator.getExpression())
+  const { originatesFrom, resolution } = reading;
+  if (resolution === undefined) {
+    return null;
+  }
+  const access = resolution.factAccess();
+  if (Node.isClassDeclaration(declared)) {
+    access.stateClass(declared);
+  }
+  const matching = access.db
+    .lookup("decoratedWith", 0, nodeId(declared))
+    .map((row) => access.nodeOf(String(row[1])))
     .filter(
       (written): written is CallExpression =>
         Node.isCallExpression(written) &&
@@ -890,7 +897,7 @@ function decoratorOn(
           callee: null,
           expression: written.getExpression(),
           resolve: reading.resolve ?? (() => null),
-          resolution: reading.resolution,
+          resolution,
           ...(originatesFrom === undefined ? {} : { originatesFrom }),
         }),
     );
