@@ -35,13 +35,12 @@ async function runAdapter(): Promise<BehavioralSummary[]> {
 // ---------------------------------------------------------------------------
 
 describe("reactFramework: pack shape", () => {
-  it("finds a component by its default export, then by any capitalised export that returns JSX", () => {
+  it("finds a component by its default export, by any capitalised export that returns JSX, and by the calls that boot an app", () => {
     const pack = reactFramework();
     expect(pack.name).toBe("react");
-    expect(pack.discovery.map((pattern) => pattern.kind)).toEqual([
-      "component",
-      "component",
-    ]);
+    expect(new Set(pack.discovery.map((pattern) => pattern.kind))).toEqual(
+      new Set(["component"]),
+    );
     expect(pack.discovery.map((pattern) => pattern.match)).toEqual([
       { type: "namedExport", names: ["default"] },
       expect.objectContaining({
@@ -49,7 +48,20 @@ describe("reactFramework: pack shape", () => {
         pattern: "^[A-Z]",
         bodyEndsIn: "element",
       }),
+      ...[
+        { method: "render", handler: { at: 0, through: "element" } },
+        { handler: { at: 1, through: "element" } },
+        { method: "hydrate", handler: { at: 0, through: "element" } },
+        { handler: { at: 0, through: "element" } },
+      ].map((boot) =>
+        expect.objectContaining({
+          type: "registeredFunction",
+          in: "file",
+          ...boot,
+        }),
+      ),
     ]);
+    expect(pack.discoverUnits).toBeUndefined();
   });
 
   it("declares a jsxReturn terminal for render outputs", () => {

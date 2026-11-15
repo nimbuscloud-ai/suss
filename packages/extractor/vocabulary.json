@@ -67,6 +67,7 @@
   "exception": "suss: FailureDelivery tag",
   "externalFunction": "suss: effect target kind",
   "field": "suss: record field kind in a value lowering, which graphql-ruby also happens to call its field declaration",
+  "file": "suss: CallScope, every call the file writes, the ones inside functions too",
   "fileConvention": "suss: DiscoveryMatch variant tag",
   "followed": "suss: RedirectDelivery tag",
   "expands": "suss: route table role tag, an entry read as a fixed list of rows under a base",

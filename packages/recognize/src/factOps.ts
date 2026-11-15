@@ -30,6 +30,7 @@ import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   ByOrigin,
   CallOps,
+  CallScope,
   CallsAndOptions,
   ClassValueOps,
   ConstructedFrom,
@@ -1707,8 +1708,8 @@ export interface ModuleWritten {
   state?(): void;
   /** The file's exports, for an adapter whose export table follows a re-export, as TypeScript's does. Unset reads `exportsAs`. */
   exports?(): readonly { readonly name: string; readonly key: string }[];
-  /** The calls the module body runs outside every function, in source order. */
-  calls(): readonly CallOps[];
+  /** The calls the module body runs outside every function, or every call the file writes for `file`, in source order. */
+  calls(scope: CallScope): readonly CallOps[];
   /** The keys of the classes and modules the file writes, nested ones included, in source order. Unset lists none. */
   classes?(): readonly string[];
   /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
@@ -1793,8 +1794,8 @@ class FactModule implements ModuleOps {
     return values;
   }
 
-  calls(): readonly CallOps[] {
-    return this.written.calls();
+  calls(scope: CallScope = "moduleBody"): readonly CallOps[] {
+    return this.written.calls(scope);
   }
 
   /** `bodyCallAt` keys a file's own statements by the file's path, as `exportsAs` keys its exports. */
