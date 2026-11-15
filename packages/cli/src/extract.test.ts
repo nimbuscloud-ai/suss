@@ -667,6 +667,43 @@ describe("extract over a project with a repository checked out inside it", () =>
       true,
     );
   });
+
+  it("marks a route in a package's top test folder as test code", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-package-tests-"));
+    const route = (name: string): string =>
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        `@app.get("/${name}")`,
+        `def ${name}():`,
+        "    return []",
+        "",
+      ].join("\n");
+    for (const [file, source] of Object.entries({
+      "services/api/pyproject.toml": "",
+      "services/api/app/main.py": route("orders"),
+      "services/api/tests/fake_server.py": route("refunds"),
+    })) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), source);
+    }
+
+    const summaries = await extract({
+      dir: root,
+      frameworks: ["fastapi"],
+      noCache: true,
+    });
+
+    const marks = Object.fromEntries(
+      summaries.map((s) => [s.location.file, s.location.inTests]),
+    );
+    expect(marks).toEqual({
+      "services/api/app/main.py": undefined,
+      "services/api/tests/fake_server.py": true,
+    });
+  });
 });
 
 describe("extract over a Ruby project", () => {

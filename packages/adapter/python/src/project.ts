@@ -26,6 +26,7 @@ import {
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
+import { readTestFilesFrom } from "@suss/behavioral-ir/files";
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
@@ -524,6 +525,16 @@ export async function extractPythonProject(
   return { summaries, facts, roots, unreadManifests };
 }
 
+/**
+ * The directory a summary's id measures its file from. The CLI shortens
+ * `location.file` to it after the run, so an id written from the longer
+ * path would not match, and which files are test code is read from it
+ * too, so the facts and pairing agree on them.
+ */
+function summaryRootOf(options: ExtractPythonOptions): string | undefined {
+  return options.projectRoot ?? options.workspaceRoot;
+}
+
 async function runPython(
   options: ExtractPythonOptions,
   roots: string[],
@@ -533,6 +544,10 @@ async function runPython(
 ): Promise<{ summaries: BehavioralSummary[]; facts: Database }> {
   const { timer, cacheDir } = cache;
   const db = new Database();
+  const summaryRoot = summaryRootOf(options);
+  if (summaryRoot !== undefined) {
+    readTestFilesFrom(db, summaryRoot);
+  }
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs, beforeLookup);
@@ -1083,10 +1098,6 @@ async function runPython(
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
   stampModules(summaries, declaredModules, options.workspaceRoot);
 
-  // A summary's id is measured from the project root, because the CLI
-  // shortens `location.file` to that root after this returns and an id
-  // written from the longer path would not match it.
-  const idRoot = options.projectRoot ?? options.workspaceRoot;
   for (const summary of summaries) {
     const absoluteFile =
       options.workspaceRoot === undefined
@@ -1095,9 +1106,9 @@ async function runPython(
     summary.identity.id = summaryIdFromParts({
       workspace: undefined,
       file:
-        idRoot === undefined
+        summaryRoot === undefined
           ? absoluteFile
-          : path.relative(idRoot, absoluteFile),
+          : path.relative(summaryRoot, absoluteFile),
       name: summary.identity.name,
       exportPath: summary.identity.exportPath,
     });

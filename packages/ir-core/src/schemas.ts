@@ -103,6 +103,13 @@ export const SourceLocationSchema = z.object({
    */
   module: z.string().optional(),
   /**
+   * True when the unit is test code and `file` does not show it, because
+   * the file's own project starts below the directory `file` is measured
+   * from, as `packages/api/test/app.js` is in an extract of the whole
+   * repository. Absent when `file` shows it or the unit is not test code.
+   */
+  inTests: z.boolean().optional(),
+  /**
    * The git repository the extract ran in. Summaries from several
    * repositories can share a folder, and two of them can both have
    * `src/index.ts::handler`; this says which one each came from, and

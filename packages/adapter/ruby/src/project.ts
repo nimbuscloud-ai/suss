@@ -27,6 +27,7 @@ import {
   summaryIdFromParts,
   unfollowedCallGap,
 } from "@suss/behavioral-ir";
+import { readTestFilesFrom } from "@suss/behavioral-ir/files";
 import { Database } from "@suss/datalog";
 import {
   assembleSummary,
@@ -712,6 +713,16 @@ function addForSeed(
   bySeed.set(seedKey, [...(bySeed.get(seedKey) ?? []), summary]);
 }
 
+/**
+ * The directory a summary's id measures its file from. The CLI shortens
+ * `location.file` to it after the run, so an id written from the longer
+ * path would not match, and which files are test code is read from it
+ * too, so the facts and pairing agree on them.
+ */
+function summaryRootOf(options: ExtractRubyOptions): string | undefined {
+  return options.projectRoot ?? options.workspaceRoot;
+}
+
 async function runRuby(
   options: ExtractRubyOptions,
   walked: WalkedFiles,
@@ -721,6 +732,10 @@ async function runRuby(
 ): Promise<ExtractRubyResult> {
   const { timer, cacheDir } = cache;
   const db = new Database();
+  const summaryRoot = summaryRootOf(options);
+  if (summaryRoot !== undefined) {
+    readTestFilesFrom(db, summaryRoot);
+  }
   const summaries: BehavioralSummary[] = [];
   const gapHandling = options.gapHandling ?? "permissive";
   const tallies = createPackTallies(options.packs, beforeLookup);
@@ -1179,9 +1194,6 @@ async function runRuby(
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
   stampModules(summaries, declaredModules, options.workspaceRoot);
 
-  // Ids use paths relative to the project root, because the CLI later
-  // shortens `location.file` to that root and the two have to match.
-  const idRoot = options.projectRoot ?? options.workspaceRoot;
   for (const summary of summaries) {
     const absoluteFile =
       options.workspaceRoot === undefined
@@ -1190,9 +1202,9 @@ async function runRuby(
     summary.identity.id = summaryIdFromParts({
       workspace: undefined,
       file:
-        idRoot === undefined
+        summaryRoot === undefined
           ? absoluteFile
-          : path.relative(idRoot, absoluteFile),
+          : path.relative(summaryRoot, absoluteFile),
       name: summary.identity.name,
       exportPath: summary.identity.exportPath,
     });

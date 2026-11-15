@@ -303,8 +303,9 @@ callOutsideMethod(r)        the call r is outside every method body. Ruby
                             of a class body, which runs as the class loads
 callOutsideTests(r)         the call r is written outside test code,
                             which isTestFile in @suss/behavioral-ir
-                            decides from the file's path. Only such a
-                            call fills a parameter of production code
+                            decides from the file's path in its
+                            project. Only such a call fills a
+                            parameter of production code
 callsChosenEntry(r)         the call r runs the member its own entry read
                             chooses, as Ruby's send(k) does (Ruby)
 bodyCalls(f, c)             f's body calls the callee c, keyed the way
@@ -1232,7 +1233,11 @@ written once and stated twice. One copy requires
 negation, which the demand rewrite refuses.
 
 `isTestFile` decides which files are test code from their paths, as it
-does for pairing. A helper module that only tests import still counts
+does for pairing. The adapter measures each path from the top of every
+project the file is in: the run's root, and each directory between it
+and the file with a manifest of its own, so `test/app.js` and
+`packages/api/test/app.js` are both test code in a run over a
+repository. A helper module that only tests import still counts
 as production code when its name matches none of the patterns. Its
 importers say too little to go on: a Ruby project requires few of its
 files by name, and a library's entry file is often imported by nothing

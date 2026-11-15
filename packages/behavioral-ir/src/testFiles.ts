@@ -8,7 +8,8 @@
  * host production code calls. A `test`, `tests`, `spec` or `e2e` folder
  * counts only at the top of the project, because an application can
  * serve a route from `app/api/test/route.ts`. An absolute path has no top
- * folder, so only the other rules apply to one.
+ * folder, so only the other rules apply to one. `testFilesUnder` gives a
+ * file on disk its path from the top of each project it is in.
  */
 
 const TEST_FILE_NAMES: readonly RegExp[] = [

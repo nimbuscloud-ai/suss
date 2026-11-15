@@ -34,6 +34,7 @@ import {
   withGraphqlMetadata,
   withSourceDocumentMetadata,
 } from "@suss/behavioral-ir";
+import { readTestFilesFrom } from "@suss/behavioral-ir/files";
 import { Database } from "@suss/datalog";
 import {
   type AccessRecognizer,
@@ -2620,6 +2621,22 @@ export function createTypeScriptAdapter(
     ],
   };
 
+  // Settled once, before any file loads, so a cached run and a cold
+  // run of the same command measure their ids from the same directory.
+  const runRoot =
+    config.projectRoot ??
+    (config.tsConfigFilePath !== undefined
+      ? workspaceRootFor(path.dirname(config.tsConfigFilePath))
+      : undefined);
+  // Which files are test code is measured from the same directory, so a
+  // unit the facts treat as a test's is one pairing leaves out too.
+  const measuredFromRoot = (made: Project): Project => {
+    if (runRoot !== undefined) {
+      readTestFilesFrom(made, runRoot);
+    }
+    return made;
+  };
+
   const newProject = (): Project => {
     const made = new Project(
       config.tsConfigFilePath !== undefined
@@ -2630,23 +2647,18 @@ export function createTypeScriptAdapter(
         : { skipAddingFilesFromTsConfig: true },
     );
     pinAutomaticTypes(made);
-    return made;
+    return measuredFromRoot(made);
   };
-  let project = config.project ?? newProject();
+  let project =
+    config.project === undefined
+      ? newProject()
+      : measuredFromRoot(config.project);
   // An adapter that made its project from a tsconfig picks the files it
   // walks on every run, so a later run on a kept project walks the same
   // files a fresh process would.
   const ownsProject =
     config.tsConfigFilePath !== undefined && config.project === undefined;
   let loaded = emptyLoadedState();
-
-  // Settled once, before any file loads, so a cached run and a cold
-  // run of the same command measure their ids from the same directory.
-  const runRoot =
-    config.projectRoot ??
-    (config.tsConfigFilePath !== undefined
-      ? workspaceRootFor(path.dirname(config.tsConfigFilePath))
-      : undefined);
 
   // The whole tsconfig include set, which bounds what closure expansion
   // may lazy-add, so a run never pulls in `node_modules`.

@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { readTestFilesFrom } from "@suss/behavioral-ir/files";
 import { Database } from "@suss/datalog";
 import { explainResolvedKey, RESOLUTION_RULES } from "@suss/resolution";
 
@@ -145,6 +146,8 @@ export class RubyWhySession {
 
   constructor(options: RubyWhySessionOptions) {
     this.root = path.resolve(options.dir);
+    // An extract measures from this root too, so both read the same files as tests.
+    readTestFilesFrom(this.db, this.root);
     const facts = new RunFacts(this.db, options.packs ?? []);
 
     for (const file of findRubyFiles(this.root)) {

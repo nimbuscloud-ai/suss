@@ -6,10 +6,12 @@
  * passes never decides what production code reads. The resolution rules
  * keep a test's call from filling a production function's parameter, and
  * the facts say which side of that line each call and function is on.
- * Pairing keeps the same rule for whole summaries.
+ * Pairing keeps the same rule for whole summaries. A file's path is
+ * measured from the root the adapter gave its project, so a `test`
+ * folder at the top of the run counts.
  */
 
-import { isTestFile } from "@suss/behavioral-ir";
+import { isTestFileIn } from "@suss/behavioral-ir/files";
 
 import type { Node, SourceFile } from "ts-morph";
 
@@ -22,7 +24,7 @@ export function inTestFile(node: Node): boolean {
   if (known !== undefined) {
     return known;
   }
-  const found = isTestFile(file.getFilePath());
+  const found = isTestFileIn(file.getProject(), file.getFilePath());
   testFiles.set(file, found);
   return found;
 }
