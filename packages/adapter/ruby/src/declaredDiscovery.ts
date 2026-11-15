@@ -75,8 +75,10 @@ export function declaredDiscoveryUnits(
         [],
       );
       for (const unit of found) {
-        const node = unit.func as RbNode;
-        if (node.tree !== root.tree) {
+        // A unit with no function, such as a route table entry that did
+        // not read, is announced where it is written, which Ruby cannot do.
+        const node = unit.func as RbNode | null;
+        if (node === null || node.tree !== root.tree) {
           continue;
         }
         if (unit.handedIn !== undefined) {

@@ -16,6 +16,8 @@ import picomatch from "picomatch";
 
 import { lastValueWins } from "@suss/extractor";
 
+import { readRouteTable } from "./routeTableDiscovery.js";
+
 import type {
   AstCapableValueOps,
   CallOps,
@@ -126,6 +128,7 @@ const READERS: {
   subclassOf: readSubclasses,
   marked: readMarked,
   registeredFunction: readRegistrations,
+  routeTable: readRouteTable,
 };
 
 function readManifest(

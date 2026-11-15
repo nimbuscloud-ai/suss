@@ -523,15 +523,78 @@ The roles:
 | `mount` | serves another table under a prefix, keyed under that table's namespace |
 
 An `EntryPick` says where an entry states a value: a position, a
-keyword, the key or value of a pair argument, or a key of an object
-entry. `ChildrenIn` says where an entry's children are: its block, the
-body of the function it is handed, or the calls a list it is handed
-contains. An entry with no role has its children where the roots have
+keyword, the key or value of a pair argument, or a key, which reads an
+element's attribute or an object's own property. `ChildrenIn` says
+where an entry's children are: its block, the body of the function it
+is handed, the entries of a list it is handed, or the elements written
+inside it. An entry with no role has its children where the roots have
 theirs: a loop over a literal list in `loops` is walked once per
 element with its variable bound, a library's wrapper with entries
 inside is walked in place and reported, and anything else is reported
-unread. `EntryPick.key` and `ChildrenIn.chain`, for a table written as
-objects or as a chain of calls, are in the types with no reader yet.
+unread. `ChildrenIn.chain`, for a table written as a chain of calls, is
+in the types with no reader yet.
+
+An entry is a call, as Rails writes one, or, for a table like React
+Router's, a JSX element or an object in a list:
+
+```ts
+const REACT_ROUTER_ROUTES: RouteTableDeclaration = {
+  roots: { kinds: { createBrowserRouter: 0 }, children: { in: "list", pick: { at: 0 } }, in: "file", elements: true },
+  roles: {
+    Route: {
+      role: "serves",
+      methods: ["GET"],
+      path: [{ key: "path" }],
+      index: { key: "index" },
+      handler: { value: [{ key: "element" }] },
+      children: [{ in: "elements" }, { in: "list", pick: { key: "children" } }],
+    },
+  },
+  objects: "Route",
+  from: ["react-router", "react-router-dom"],
+  absolutePaths: "standAlone",
+  elementLists: ["createRoutesFromElements"],
+  loops: [],
+};
+```
+
+- `from` reads a root call's name and an element's tag as the name one
+  of these modules exports, through the module ops' `importedNames`. A
+  file whose text writes none of the modules, or that imports none of
+  the table's root or role names from them, has no table, and nothing
+  else of it is read.
+- A root with `in: "file"` is read among every call the file writes,
+  through `calls("file")`. With `elements: true`, every element of the
+  file that no element written with children encloses is a root too,
+  walked in place: an element no role reads, such as `<Routes>` or a
+  guard, has its `elementsWithin()` walked as entries in the same
+  scope.
+- With `objects`, a list pick reads `listed()`: each object item is an
+  entry under that role, and a spread or an item written as anything
+  else is reported where it is. A pick that reads an element, or a call
+  in `elementLists`, reads nothing, since those elements are read where
+  they are written. A pick that reads no list is reported, at the root
+  call when it is the root's own list. A list reached again inside
+  itself stops, as an include of the file being read does.
+- A `serves` role whose `handler` is `{ value: [...] }` hands back the
+  value the pick reads. It serves it at its path, or at the scope's own
+  path when its `index` flag reads true, and walks its `children`, the
+  first rule that reads, under that path. An entry with neither a path
+  nor an index serves nothing and leaves the scope to its children as
+  it is. A path that does not read is reported, and so is every route
+  under it.
+- `absolutePaths: "standAlone"` reads a nested path written with a
+  leading `/` as the whole path. A relative segment goes under the
+  prefix with its trailing slashes left off.
+
+What such a table serves comes back as `RouteSet.outcomes`, in walk
+order: each route with its handler value and its entry, and each entry
+or list item left unread with the reason, a `RouteUnread`. The
+`routeTable` discovery pattern reads a table in one file into units
+from them: a route is a unit on the function its handler's component
+settles to, or a boundary announced at the entry, and an entry left
+unread is a unit that claims no route, with the pattern's sentence for
+the reason.
 
 What stays with the pack is what needs the file system or the pack's
 configuration: which files to read, which table an owner such as
@@ -545,7 +608,10 @@ includes itself each stop.
 
 `packages/cli/src/routeTableLanguages.test.ts` writes one table with
 blocks in Ruby, callbacks in TypeScript and lists in Python, and
-expects the same routes from each.
+expects the same routes from each. It also writes one table of objects
+in all three languages, with a nested list, an index entry, a path that
+does not read, a spread and an item that is no object, and expects the
+same outcomes from each.
 
 ## Reaching a call next to this one
 

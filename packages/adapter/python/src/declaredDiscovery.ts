@@ -75,8 +75,10 @@ function unitOf(
   pack: PythonPack,
   options: Pick<ReachOptions, "storageFor" | "facts" | "tests">,
 ): RawCodeStructure | null {
-  const node = unit.func as PyNode;
-  if (node.tree !== file.root.tree) {
+  // A unit with no function, such as a route table entry that did not
+  // read, is announced where it is written, which this adapter cannot do.
+  const node = unit.func as PyNode | null;
+  if (node === null || node.tree !== file.root.tree) {
     return null;
   }
   if (unit.handedIn !== undefined) {

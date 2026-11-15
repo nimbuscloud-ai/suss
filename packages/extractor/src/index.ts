@@ -201,6 +201,7 @@ export type {
   RegisteredFunctionMatch,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
+  RouteTableMatch,
   RouteVersioning,
   SubclassOfMatch,
   TerminalExtraction,
@@ -248,6 +249,31 @@ export type {
   Reading,
   SourceRange,
 } from "./reading.js";
+export type {
+  BaseRole,
+  ChildrenIn,
+  DefaultsRole,
+  EntryPick,
+  EntrySource,
+  ExpandsRole,
+  ExpansionRow,
+  FragmentRole,
+  IncludeRole,
+  MountRole,
+  ReplayRole,
+  RootRule,
+  RouteGap,
+  RouteOutcome,
+  RouteRole,
+  RouteSet,
+  RouteSources,
+  RouteTableDeclaration,
+  RouteUnread,
+  ScopesRole,
+  ServesRole,
+  TableOwner,
+  TableRoute,
+} from "./routeTable.js";
 
 // =============================================================================
 // RawCodeStructure: what a language adapter hands the engine

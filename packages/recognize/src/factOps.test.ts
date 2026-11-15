@@ -2202,6 +2202,35 @@ function nested(): FactSource {
   };
 }
 
+describe("a value evaluated with names bound", () => {
+  const plain = (over: Partial<FactSource>): FactSource => ({
+    ...nested(),
+    nameOf: () => "as a name",
+    ...over,
+  });
+
+  it("asks the adapter's bound evaluator, else its own evaluator when nothing is bound, else reads the value as a name", () => {
+    const bound = new Map([["root", "users"]]);
+    const evaluatedOf = () => "evaluated";
+
+    expect(
+      factValueOps(
+        "x",
+        plain({ evaluatedWith: () => "bound", evaluatedOf }),
+      ).evaluatedWith?.(bound),
+    ).toBe("bound");
+    expect(
+      factValueOps("x", plain({ evaluatedOf })).evaluatedWith?.(new Map()),
+    ).toBe("evaluated");
+    expect(
+      factValueOps("x", plain({ evaluatedOf })).evaluatedWith?.(bound),
+    ).toBe("as a name");
+    expect(factValueOps("x", plain({})).evaluatedWith?.(new Map())).toBe(
+      "as a name",
+    );
+  });
+});
+
 describe("a file's JSX and a list as written, over the facts", () => {
   const at = (span: string) => `/f.tsx:${span}`;
   const keyOf = (value: ValueOps | undefined) => value?.source?.();

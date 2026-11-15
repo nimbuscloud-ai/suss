@@ -1,269 +1,91 @@
 /**
- * A route table a library writes apart from the handlers it routes to,
- * such as Rails' `config/routes.rb`, read into the routes each handler
- * serves.
+ * A route table a library writes, read into the routes each handler
+ * serves: Rails' `config/routes.rb`, or React Router's `<Route>` elements
+ * and route objects, which route to the component each one renders.
  *
- * A pack states what each entry of the table is called and what it does,
- * as a role: it serves a method at a path, expands to a fixed set of
- * routes, opens a scope its children inherit, replays a fragment, includes
- * another file, or mounts another table. `composeRoutes` walks the entries
- * through the module ops with the scope passed down, and gives back every
- * route with the entries it could not read. Which files to read and which
- * table an owner is stay with the pack, because they need the file system
- * and the pack's own configuration.
+ * A pack states what each entry is called and what it does, as a role: it
+ * serves a method at a path, expands to a fixed set of routes, opens a
+ * scope, replays a fragment, includes another file, or mounts another
+ * table. An entry is a call, a JSX element, or an object in a list.
+ * `composeRoutes` walks the entries through the module ops and gives back
+ * every route with the entries it could not read. The declaration's types
+ * are in `@suss/extractor`, so a discovery pattern can contain a table.
  */
 
 import { joinMountedPath } from "@suss/resolution";
 
-import type { CallOps, ModuleOps, PairArg, ValueOps } from "@suss/extractor";
+import type {
+  BaseRole,
+  CallOps,
+  ChildrenIn,
+  DefaultsRole,
+  EntryPick,
+  EntrySource,
+  ExpandsRole,
+  ExpansionRow,
+  FragmentRole,
+  IncludeRole,
+  ModuleOps,
+  MountRole,
+  PairArg,
+  ReplayRole,
+  RouteGap,
+  RouteOutcome,
+  RouteRole,
+  RouteSet,
+  RouteSources,
+  RouteTableDeclaration,
+  ScopesRole,
+  ServesRole,
+  TableOwner,
+  TableRoute,
+  ValueOps,
+} from "@suss/extractor";
 
-/** What a route table's entries are called and what each one does, as one library writes them. */
-export interface RouteTableDeclaration {
-  /** Where a table starts in a file. */
-  readonly roots: RootRule;
-  /** What each entry does, by the name the entry is written with. */
-  readonly roles: Readonly<Record<string, RouteRole>>;
-  /** How a handler splits into a controller key and an action, and how a namespace joins onto a key. */
-  readonly handler: {
-    readonly separator: string;
-    readonly namespaceJoin: string;
-  };
-  /** The loop methods whose block runs once per element of a literal list, replayed with the element bound. */
-  readonly loops: readonly string[];
-  /** A method in an expansion's row that the table serves under several, such as `update` under PATCH and PUT. */
-  readonly methodAliases?: Readonly<Record<string, readonly string[]>>;
-}
-
-/** The calls a table starts from, such as `<owner>.routes.draw do`, and the order each kind runs in. */
-export interface RootRule {
-  /** The method the root call is made on, `routes`, whose receiver is the owner. Unset for a root called bare. */
-  readonly calledOn?: string;
-  /** Each root method and its run order: `{ prepend: 0, draw: 1, append: 2 }`. */
-  readonly kinds: Readonly<Record<string, number>>;
-  /**
-   * Where the root's entries are. An entry with no role, such as a loop
-   * or a library's own wrapper, has its children in the same place.
-   */
-  readonly children: ChildrenIn;
-}
-
-/**
- * Where an entry's children are written: in its block, in the body of the
- * function it is handed at a position, or as the calls in a list it is
- * handed. `chain` is for a builder written as a chain of calls, and
- * has no reader yet.
- */
-export type ChildrenIn =
-  | { readonly in: "block" }
-  | { readonly in: "callback"; readonly at: number }
-  | { readonly in: "list"; readonly pick: EntryPick }
-  | { readonly in: "chain" };
-
-/**
- * One value an entry states: by position, by keyword, as the key or the
- * value of a pair argument, or under a key of an object entry. `key` is
- * for an entry written as an object, and has no reader yet.
- */
-export type EntryPick =
-  | { readonly at: number }
-  | { readonly keyword: string }
-  | { readonly pair: "key" | "value" }
-  | { readonly key: string };
-
-export type RouteRole =
-  | ServesRole
-  | ExpandsRole
-  | ScopesRole
-  | BaseRole
-  | DefaultsRole
-  | FragmentRole
-  | ReplayRole
-  | IncludeRole
-  | MountRole;
-
-/** An entry that serves one or more methods at a path. */
-export interface ServesRole {
-  readonly role: "serves";
-  /**
-   * The methods, fixed by the entry's name or read from a pick. A picked
-   * list is upper-cased, and when it has the word `all` gives, the entry
-   * serves every method, which the table writes as `*`.
-   */
-  readonly methods:
-    | readonly string[]
-    | { readonly pick: EntryPick; readonly all?: string };
-  /** Where the path is, tried in order, or the scope's own path for an entry such as `root`. */
-  readonly path: readonly EntryPick[] | { readonly fixed: "scope" };
-  /** Where the handler is, tried in order, written `controller#action` with the table's separator. */
-  readonly handler: readonly EntryPick[];
-  /**
-   * What an entry means when it states no handler: the path is `path`,
-   * and the action is `action`, or else the path when it is one word, on
-   * `controller` or the expansion's own controller. `on` says which of
-   * the expansion's bases the path starts from, whether or not the entry
-   * states a handler. A word is letters, digits, `_` and the character
-   * `wordRule` replaces.
-   */
-  readonly bare?: {
-    readonly path: EntryPick;
-    readonly action: EntryPick;
-    readonly controller: EntryPick;
-    readonly on: EntryPick;
-    readonly wordRule: { readonly replace: readonly [string, string] };
-  };
-  /** A flag that turns the format suffix off, when the pick reads `when`. */
-  readonly formatless?: { readonly pick: EntryPick; readonly when: boolean };
-}
+export type {
+  BaseRole,
+  ChildrenIn,
+  DefaultsRole,
+  EntryPick,
+  EntrySource,
+  ExpandsRole,
+  ExpansionRow,
+  FragmentRole,
+  IncludeRole,
+  MountRole,
+  ReplayRole,
+  RootRule,
+  RouteGap,
+  RouteOutcome,
+  RouteRole,
+  RouteSet,
+  RouteSources,
+  RouteTableDeclaration,
+  RouteUnread,
+  ScopesRole,
+  ServesRole,
+  TableOwner,
+  TableRoute,
+} from "@suss/extractor";
 
 /**
- * One route an expansion's row gives: its method, and its path, which is
- * the collection base and the suffix, or the member base where the
- * suffix starts with `{member}`.
+ * An item the walk meets that is no entry, which it reports where it is:
+ * a spread or a value in a list of objects, or a list that did not read.
+ * `at` is the root call whose own list did not read.
  */
-export interface ExpansionRow {
-  readonly method: string;
-  readonly suffix: string;
+interface UnreadItem {
+  readonly form: "unread";
+  readonly reason: "spread" | "notAnEntry" | "listUnread" | "rootListUnread";
+  readonly value: ValueOps;
+  readonly at?: CallOps;
 }
 
-/** An entry read as a fixed list of rows under a base, such as `resources` and `resource`. */
-export interface ExpandsRole {
-  readonly role: "expands";
-  readonly name: EntryPick;
-  /** Each action and the routes it gives, in the order the table serves them. */
-  readonly rows: Readonly<Record<string, readonly ExpansionRow[]>>;
-  readonly only?: EntryPick;
-  readonly except?: EntryPick;
-  readonly controller?: EntryPick;
-  readonly path?: EntryPick;
-  readonly module?: EntryPick;
-  /** Fragments replayed inside the expansion before its children. */
-  readonly concerns?: EntryPick;
-  /** How the controller is named from the entry's name: as written, or pluralized. */
-  readonly controllerNaming: "asWritten" | "plural";
-  /** Where an expansion nested inside goes: under `:{singular}_id` after the base, or under the base itself. */
-  readonly nested: "singularId" | "self";
-  /** The member base: the base and `:id`, or the base itself. */
-  readonly member: "id" | "self";
-  /** The name the member segment and the nesting parameter take in place of `id`, such as `param: :username`. */
-  readonly param?: EntryPick;
-  /**
-   * A flag that serves the member routes of an expansion with an id, and
-   * of every one inside it, under the shallow path rather than under the
-   * expansions around it. What is nested inside goes under the shallow
-   * path too, and the collection routes stay where they are.
-   */
-  readonly shallow?: EntryPick;
-  readonly children: ChildrenIn;
-}
+type Walked = EntrySource | UnreadItem;
 
-/**
- * A block that adds a path segment, a namespace segment, both, or
- * neither. One that adds neither leaves the scope as it is, inside an
- * expansion too; any other leaves the expansion and continues from where
- * a nested one would go.
- */
-export interface ScopesRole {
-  readonly role: "scopes";
-  readonly path?: readonly EntryPick[];
-  readonly namespace?: readonly EntryPick[];
-  /** One word for both, as `namespace :admin` writes it. The scope opens only when it reads. */
-  readonly both?: EntryPick;
-  /** Whether the path segment also starts the shallow path, as `namespace` does and `scope` does not. */
-  readonly shallowPath?: boolean;
-  readonly children: ChildrenIn;
-}
-
-/** A block such as `member do` that chooses the base an entry inside an expansion starts from. */
-export interface BaseRole {
-  readonly role: "base";
-  readonly which: "member" | "collection";
-  readonly children: ChildrenIn;
-}
-
-/** A block such as `with_options k: v do` whose keywords every entry inside takes when it leaves them out. */
-export interface DefaultsRole {
-  readonly role: "defaults";
-  readonly children: ChildrenIn;
-}
-
-/** A named fragment, such as `concern :name do`, that a replay writes again in its own scope. */
-export interface FragmentRole {
-  readonly role: "fragment";
-  readonly name: EntryPick;
-  readonly children: ChildrenIn;
-}
-
-/** An entry that replays the fragments its positional arguments name, from position `from` on. */
-export interface ReplayRole {
-  readonly role: "replay";
-  readonly names: { readonly from: number };
-}
-
-/** An entry such as `draw(:name)` that reads another file's entries in place. */
-export interface IncludeRole {
-  readonly role: "include";
-  readonly name: EntryPick;
-}
-
-/** An entry such as `mount X, at:` that serves another table under a prefix, keyed under that table's namespace. */
-export interface MountRole {
-  readonly role: "mount";
-  /** Where the table is written, tried in order, read as the source writes it. */
-  readonly table: readonly EntryPick[];
-  readonly at: readonly EntryPick[];
-}
-
-/** Which table a root or a mount refers to. */
-export type TableOwner =
-  | { readonly table: "app" }
-  | {
-      readonly table: "mounted";
-      readonly name: string;
-      readonly namespace: string;
-    };
-
-export interface RouteSources {
-  /** The files that may write roots, in the order their roots run, each with the path a gap message prints for it. */
-  readonly files: readonly {
-    readonly module: ModuleOps;
-    readonly displayPath: string;
-  }[];
-  /** The table an owner refers to, as a root's receiver or a mount writes it, or null for neither. */
-  readonly ownerOf: (owner: string) => TableOwner | null;
-  /** The file an include reads by name, or null when there is none. */
-  readonly include: (name: string) => ModuleOps | null;
-  /** How the library inflects an expansion's name, for its controller and its nesting parameter. */
-  readonly naming: {
-    readonly singular: (word: string) => string;
-    readonly plural: (word: string) => string;
-  };
-}
-
-export interface TableRoute {
-  readonly method: string;
-  readonly path: string;
-  /** Set for a route whose format suffix is turned off. */
-  readonly formatless?: true;
-}
-
-export type RouteGap =
-  | { readonly kind: "unread"; readonly file: string; readonly name: string }
-  | {
-      readonly kind: "walkedBlock";
-      readonly file: string;
-      readonly name: string;
-    }
-  | {
-      readonly kind: "missingInclude";
-      readonly file: string;
-      readonly name: string;
-    };
-
-export interface RouteSet {
-  /** Every distinct route that reaches the action, in the order the table declares them. */
-  routesFor(controllerKey: string, action: string): readonly TableRoute[];
-  /** The entries left unread, in the order the walk met them. */
-  readonly gaps: readonly RouteGap[];
+/** An entry's children, and the list they are the entries of, so a list inside itself stops. */
+interface Children {
+  readonly entries: readonly Walked[];
+  readonly list: string | null;
 }
 
 /** An expansion the walk is inside, with the bases an entry inside it starts from. */
@@ -289,18 +111,22 @@ interface Scope {
   readonly shallow: boolean;
   /** Where a shallow expansion's member routes start: the mount's prefix and each scope that starts the shallow path. */
   readonly shallowPath: string;
+  /** Whether an enclosing entry's own path did not read, so no path inside it is claimed. */
+  readonly pathUnread: boolean;
 }
 
-/** A call's arguments, as the picks read them. */
+/** An entry's arguments, as the picks read them. */
 interface EntryArgs {
   readonly positional: readonly ValueOps[];
   readonly keyword: Readonly<Record<string, ValueOps>>;
   /** The last pair whose key is a value rather than a keyword. */
   readonly pair: PairArg | null;
+  /** An element's attribute or an object's own property, by name. */
+  readonly keyed: (key: string) => ValueOps | undefined;
 }
 
 interface Entry {
-  readonly call: CallOps;
+  readonly source: EntrySource;
   readonly name: string;
   readonly args: EntryArgs;
 }
@@ -312,21 +138,27 @@ interface Walk {
   readonly keywords: readonly string[];
   readonly routes: Map<string, Map<string, TableRoute[]>>;
   readonly gaps: RouteGap[];
-  readonly fragments: Map<string, readonly CallOps[]>;
+  readonly outcomes: RouteOutcome[];
+  readonly fragments: Map<string, Children>;
   /** Names an include has read, so a file that includes itself stops. */
   readonly included: Set<string>;
   /** The first root of each mounted table, by the table's name. */
   readonly mounted: Map<string, Root>;
   /** Tables being walked under a mount, so a table that mounts itself stops. */
   readonly mounting: Set<string>;
+  /** The lists being walked, outermost first, so a list inside itself stops. */
+  readonly opened: string[];
   /** The file a gap is attributed to. */
   file: string;
+  /** The names the file being read imports from the table's modules, by the name it uses. */
+  names: ReadonlyMap<string, string>;
 }
 
 interface Root {
   readonly kind: string;
-  readonly children: readonly CallOps[];
+  readonly children: Children;
   readonly displayPath: string;
+  readonly names: ReadonlyMap<string, string>;
 }
 
 const EMPTY_SCOPE: Scope = {
@@ -336,7 +168,10 @@ const EMPTY_SCOPE: Scope = {
   bindings: new Map(),
   shallow: false,
   shallowPath: "",
+  pathUnread: false,
 };
+
+const NO_KEYS = (): undefined => undefined;
 
 /**
  * Reads every root the files write into one route set. The app's roots
@@ -353,16 +188,27 @@ export function composeRoutes(
     keywords: [...keywordsPicked(table.roles, new Set<string>())],
     routes: new Map(),
     gaps: [],
+    outcomes: [],
     fragments: new Map(),
     included: new Set(),
     mounted: new Map(),
     mounting: new Set(),
+    opened: [],
     file: "",
+    names: new Map(),
   };
   const appRoots: Root[] = [];
   for (const { module, displayPath } of sources.files) {
-    for (const { owner, root } of rootsIn(module, displayPath, table)) {
+    const names = namesImported(module, table);
+    if (names === null) {
+      continue;
+    }
+    walk.names = names;
+    for (const { owner, root } of rootsIn(module, displayPath, walk)) {
       collectRoot(walk, appRoots, sources.ownerOf(owner), root);
+    }
+    if (table.roots.elements === true) {
+      appRoots.push(elementRoot(module, displayPath, names));
     }
   }
   const ordered = appRoots
@@ -373,15 +219,54 @@ export function composeRoutes(
           (table.roots.kinds[b.root.kind] ?? 0) || a.position - b.position,
     );
   for (const { root } of ordered) {
+    walk.names = root.names;
     inFile(walk, root.displayPath, () => {
-      walkEntries(root.children, EMPTY_SCOPE, walk);
+      walkChildren(root.children, EMPTY_SCOPE, walk);
     });
   }
   return {
     routesFor: (controllerKey, action) =>
       walk.routes.get(controllerKey)?.get(action) ?? [],
     gaps: walk.gaps,
+    outcomes: walk.outcomes,
   };
+}
+
+/**
+ * The names the file imports from the table's modules, by the name the
+ * file uses, or null when it imports none the table starts from or reads
+ * as an entry. The file's text is asked first, since stating a file's
+ * imports to learn it writes none of them costs more than the answer.
+ * A table with no modules matches names as written, in every file.
+ */
+function namesImported(
+  module: ModuleOps,
+  table: RouteTableDeclaration,
+): ReadonlyMap<string, string> | null {
+  if (table.from === undefined) {
+    return new Map();
+  }
+  if (!table.from.some((name) => module.mentions(name))) {
+    return null;
+  }
+  const names = module.importedNames(table.from);
+  const read = new Set([
+    ...Object.keys(table.roles),
+    ...Object.keys(table.roots.kinds),
+  ]);
+  return [...names.values()].some((name) => read.has(name)) ? names : null;
+}
+
+/** The elements of the file that no element written with children encloses, as one root walked in place. */
+function elementRoot(
+  module: ModuleOps,
+  displayPath: string,
+  names: ReadonlyMap<string, string>,
+): Root {
+  const entries = module
+    .elements()
+    .map((value): EntrySource => ({ form: "element", value }));
+  return { kind: "", children: { entries, list: null }, displayPath, names };
 }
 
 function collectRoot(
@@ -424,27 +309,41 @@ function inFile(walk: Walk, file: string, run: () => void): void {
 }
 
 /**
- * Every root the file writes outside a method: among the calls of its
- * body, or among the children of a call there, however deep, since a
- * library's hook such as `after_initialize do` can hold one.
+ * Every root the file writes: among the calls the module body runs, or
+ * among the children of a call there, however deep, since a library's
+ * hook such as `after_initialize do` can hold one. A table read `in` the
+ * whole file lists every call the file writes, inside functions too, so
+ * there is nothing more to look inside.
  */
 function rootsIn(
   module: ModuleOps,
   displayPath: string,
-  table: RouteTableDeclaration,
+  walk: Walk,
 ): { owner: string; root: Root }[] {
+  const scope = walk.table.roots.in ?? "moduleBody";
   const found: { owner: string; root: Root }[] = [];
   const visit = (call: CallOps): void => {
-    const root = asRoot(call, displayPath, table.roots);
+    const root = asRoot(call, displayPath, walk);
     if (root !== null) {
       found.push(root);
       return;
     }
-    for (const inner of childrenOf(call, table.roots.children, null) ?? []) {
-      visit(inner);
+    if (scope === "file") {
+      return;
+    }
+    const inner = childrenOf(
+      { form: "call", call },
+      walk.table.roots.children,
+      null,
+      walk,
+    );
+    for (const child of inner?.entries ?? []) {
+      if (child.form === "call") {
+        visit(child.call);
+      }
     }
   };
-  for (const call of module.calls()) {
+  for (const call of module.calls(scope)) {
     visit(call);
   }
   return found;
@@ -453,17 +352,43 @@ function rootsIn(
 function asRoot(
   call: CallOps,
   displayPath: string,
-  rule: RootRule,
+  walk: Walk,
 ): { owner: string; root: Root } | null {
-  const kind = nameOf(call);
-  const owner = Object.hasOwn(rule.kinds, kind)
-    ? ownerWritten(call, rule)
-    : null;
+  const rule = walk.table.roots;
+  const kind = callName(call, walk);
+  if (kind === null || !Object.hasOwn(rule.kinds, kind)) {
+    return null;
+  }
+  const owner = ownerWritten(call, rule);
   const children =
-    owner === null ? null : childrenOf(call, rule.children, null);
-  return owner === null || children === null
-    ? null
-    : { owner, root: { kind, children, displayPath } };
+    owner === null
+      ? null
+      : childrenOf({ form: "call", call }, rule.children, null, walk);
+  if (owner === null || children === null) {
+    return null;
+  }
+  return {
+    owner,
+    root: {
+      kind,
+      children: rootListAt(children, call),
+      displayPath,
+      names: walk.names,
+    },
+  };
+}
+
+/** A root's own list that did not read is said at the root call, where the router is created. */
+function rootListAt(children: Children, call: CallOps): Children {
+  return {
+    ...children,
+    entries: children.entries.map(
+      (entry): Walked =>
+        entry.form === "unread" && entry.reason === "listUnread"
+          ? { ...entry, reason: "rootListUnread", at: call }
+          : entry,
+    ),
+  };
 }
 
 /**
@@ -471,7 +396,10 @@ function asRoot(
  * `Rails.application`, or "" for a root called bare. Null when the call
  * is not made where the rule says.
  */
-function ownerWritten(call: CallOps, rule: RootRule): string | null {
+function ownerWritten(
+  call: CallOps,
+  rule: RouteTableDeclaration["roots"],
+): string | null {
   if (rule.calledOn === undefined) {
     return hasReceiver(call) ? null : "";
   }
@@ -487,6 +415,47 @@ function ownerWritten(call: CallOps, rule: RootRule): string | null {
 /** The name an entry is matched against the roles by: its method, or the name it calls bare. */
 function nameOf(call: CallOps): string {
   return call.method() ?? call.calleeText();
+}
+
+/**
+ * The name a call is matched against the roots and roles by. Where the
+ * table says which modules its names come from, that is the name the
+ * module exports, for a call made bare on a name the file imports from
+ * one of them, and null for any other call.
+ */
+function callName(call: CallOps, walk: Walk): string | null {
+  if (walk.table.from === undefined) {
+    return nameOf(call);
+  }
+  return hasReceiver(call) ? null : (walk.names.get(nameOf(call)) ?? null);
+}
+
+/** The name an element is matched against the roles by: its tag, read the way a call's name is. */
+function elementName(value: ValueOps, walk: Walk): string | null {
+  const written = value.tag?.()?.source?.() ?? null;
+  if (written === null || walk.table.from === undefined) {
+    return written;
+  }
+  return walk.names.get(written) ?? null;
+}
+
+const ENTRY_NAMES: {
+  readonly [F in EntrySource["form"]]: (
+    source: Extract<EntrySource, { form: F }>,
+    walk: Walk,
+  ) => string | null;
+} = {
+  call: (source, walk) => callName(source.call, walk),
+  element: (source, walk) => elementName(source.value, walk),
+  object: (_source, walk) => walk.table.objects ?? null,
+};
+
+function entryName(source: EntrySource, walk: Walk): string | null {
+  const read = ENTRY_NAMES[source.form] as (
+    source: EntrySource,
+    walk: Walk,
+  ) => string | null;
+  return read(source, walk);
 }
 
 /** Whether the call is written on a receiver, which an entry never is. */
@@ -508,44 +477,156 @@ function positionalOf(call: CallOps): ValueOps[] {
 
 /** The entries an entry's children are, or null when it has none where the rule says. */
 function childrenOf(
-  call: CallOps,
+  source: EntrySource,
   rule: ChildrenIn,
   args: EntryArgs | null,
-): readonly CallOps[] | null {
+  walk: Walk,
+): Children | null {
   const read = CHILDREN_READERS[rule.in] as (
-    call: CallOps,
+    source: EntrySource,
     rule: ChildrenIn,
     args: EntryArgs | null,
-  ) => readonly CallOps[] | null;
-  return read(call, rule, args);
+    walk: Walk,
+  ) => Children | null;
+  return read(source, rule, args, walk);
+}
+
+function callsAsChildren(calls: readonly CallOps[]): Children {
+  return {
+    entries: calls.map((call): EntrySource => ({ form: "call", call })),
+    list: null,
+  };
 }
 
 const CHILDREN_READERS: {
   readonly [K in ChildrenIn["in"]]: (
-    call: CallOps,
+    source: EntrySource,
     rule: Extract<ChildrenIn, { in: K }>,
     args: EntryArgs | null,
-  ) => readonly CallOps[] | null;
+    walk: Walk,
+  ) => Children | null;
 } = {
-  block: (call) => {
-    const block = call.block?.() ?? null;
-    return block === null ? null : (block.bodyCalls?.() ?? []);
+  block: (source) => {
+    const block =
+      source.form === "call" ? (source.call.block?.() ?? null) : null;
+    return block === null ? null : callsAsChildren(block.bodyCalls?.() ?? []);
   },
-  callback: (call, rule) => {
-    const handed = positionalOf(call)[rule.at];
-    return handed === undefined ? null : (handed.bodyCalls?.() ?? []);
-  },
-  list: (call, rule, args) => {
-    const keywords = "keyword" in rule.pick ? [rule.pick.keyword] : [];
-    const list = picked(args ?? argsOf(call, keywords, {}), rule.pick);
-    return list === undefined
+  callback: (source, rule) => {
+    const handed =
+      source.form === "call" ? positionalOf(source.call)[rule.at] : undefined;
+    return handed === undefined
       ? null
-      : list.items().flatMap((item) => item.asCall?.() ?? []);
+      : callsAsChildren(handed.bodyCalls?.() ?? []);
   },
+  list: (source, rule, args, walk) => {
+    const keywords = "keyword" in rule.pick ? [rule.pick.keyword] : [];
+    const list = picked(args ?? argsOf(source, keywords, {}), rule.pick);
+    if (list === undefined) {
+      return null;
+    }
+    if (walk.table.objects === undefined) {
+      return callsAsChildren(
+        list.items().flatMap((item) => item.asCall?.() ?? []),
+      );
+    }
+    return objectsListed(list, walk);
+  },
+  elements: (source) =>
+    source.form === "element"
+      ? {
+          entries: (source.value.elementsWithin?.() ?? []).map(
+            (value): EntrySource => ({ form: "element", value }),
+          ),
+          list: null,
+        }
+      : null,
   chain: () => null,
 };
 
+/**
+ * The entries a list of objects writes. A spread, or an item written as
+ * anything but an object, is unread where it is. A value that is no list
+ * is unread where the pick read it, unless it is an element or a call
+ * that turns elements into entries, whose elements are read where they
+ * are written. A list reached again inside itself stops.
+ */
+function objectsListed(list: ValueOps, walk: Walk): Children {
+  if (list.form?.() === "element" || turnsElementsIntoEntries(list, walk)) {
+    return { entries: [], list: null };
+  }
+  const listed = list.listed?.() ?? null;
+  if (listed === null) {
+    return {
+      entries: [{ form: "unread", reason: "listUnread", value: list }],
+      list: null,
+    };
+  }
+  if (walk.opened.includes(listed.key)) {
+    return { entries: [], list: null };
+  }
+  return {
+    entries: listed.entries.map(({ form, value }) => listItemOf(form, value)),
+    list: listed.key,
+  };
+}
+
+function listItemOf(form: "value" | "spread", value: ValueOps): Walked {
+  if (form === "spread") {
+    return { form: "unread", reason: "spread", value };
+  }
+  return value.form?.() === "object"
+    ? { form: "object", value }
+    : { form: "unread", reason: "notAnEntry", value };
+}
+
+function turnsElementsIntoEntries(value: ValueOps, walk: Walk): boolean {
+  const call = value.asCall?.() ?? null;
+  const name = call === null ? null : callName(call, walk);
+  return name !== null && (walk.table.elementLists ?? []).includes(name);
+}
+
+const ARGS_OF: {
+  readonly [F in EntrySource["form"]]: (
+    source: Extract<EntrySource, { form: F }>,
+    keywords: readonly string[],
+    defaults: Readonly<Record<string, ValueOps>>,
+  ) => EntryArgs;
+} = {
+  call: (source, keywords, defaults) =>
+    callArgs(source.call, keywords, defaults),
+  element: (source, _keywords, defaults) => {
+    const attributes = new Map(
+      (source.value.attributes?.() ?? []).flatMap(({ key, value }) =>
+        key === null ? [] : [[key, value] as const],
+      ),
+    );
+    return keyedArgs(defaults, (key) => attributes.get(key));
+  },
+  object: (source, _keywords, defaults) =>
+    keyedArgs(defaults, (key) => source.value.ownProperty?.(key) ?? undefined),
+};
+
 function argsOf(
+  source: EntrySource,
+  keywords: readonly string[],
+  defaults: Readonly<Record<string, ValueOps>>,
+): EntryArgs {
+  const read = ARGS_OF[source.form] as (
+    source: EntrySource,
+    keywords: readonly string[],
+    defaults: Readonly<Record<string, ValueOps>>,
+  ) => EntryArgs;
+  return read(source, keywords, defaults);
+}
+
+function keyedArgs(
+  defaults: Readonly<Record<string, ValueOps>>,
+  keyed: (key: string) => ValueOps | undefined,
+): EntryArgs {
+  return { positional: [], keyword: { ...defaults }, pair: null, keyed };
+}
+
+function callArgs(
   call: CallOps,
   keywords: readonly string[],
   defaults: Readonly<Record<string, ValueOps>>,
@@ -565,6 +646,7 @@ function argsOf(
     positional: positionalOf(call),
     keyword,
     pair: pairs[pairs.length - 1] ?? null,
+    keyed: NO_KEYS,
   };
 }
 
@@ -577,6 +659,20 @@ function picked(args: EntryArgs, pick: EntryPick): ValueOps | undefined {
   }
   if ("pair" in pick) {
     return args.pair?.[pick.pair];
+  }
+  return args.keyed(pick.key);
+}
+
+/** The value the first pick that gives one reads. */
+function firstPicked(
+  args: EntryArgs,
+  picks: readonly EntryPick[],
+): ValueOps | undefined {
+  for (const pick of picks) {
+    const value = picked(args, pick);
+    if (value !== undefined) {
+      return value;
+    }
   }
   return undefined;
 }
@@ -656,7 +752,7 @@ function namesOf(
 function joinKey(walk: Walk, prefix: string, segment: string): string {
   return prefix === ""
     ? segment
-    : `${prefix}${walk.table.handler.namespaceJoin}${segment}`;
+    : `${prefix}${walk.table.handler?.namespaceJoin ?? ""}${segment}`;
 }
 
 /**
@@ -671,6 +767,24 @@ export function joinRoutePath(prefix: string, segment: string): string {
     return base === "" ? "/" : base;
   }
   return joinMountedPath(base, `/${trimmed}`);
+}
+
+/**
+ * A nested segment under a path, for a table that reads a segment written
+ * with a leading `/` as the whole path. Any other segment goes under the
+ * prefix with its trailing slashes left off.
+ */
+function joinStandAlone(prefix: string, segment: string): string {
+  if (segment.startsWith("/")) {
+    return segment;
+  }
+  return `${prefix}/${segment.replace(/\/+$/, "")}`;
+}
+
+function joinTablePath(walk: Walk, prefix: string, segment: string): string {
+  return walk.table.absolutePaths === "standAlone"
+    ? joinStandAlone(prefix, segment)
+    : joinRoutePath(prefix, segment);
 }
 
 function addRoute(
@@ -715,55 +829,110 @@ export function rowRoutes(
 /** Where a row's suffix starts from the member base. */
 const MEMBER = "{member}";
 
+/** Walks an entry's children, with the list they are the entries of open while they are walked. */
+function walkChildren(children: Children, scope: Scope, walk: Walk): void {
+  if (children.list !== null) {
+    walk.opened.push(children.list);
+  }
+  walkEntries(children.entries, scope, walk);
+  if (children.list !== null) {
+    walk.opened.pop();
+  }
+}
+
 /**
  * Walks the entries a root, a block or a file writes, which the ops list
  * through the branches of a conditional, so an entry under
  * `if Rails.env.development?` is declared in the same scope as one
  * written outside it.
  */
-function walkEntries(
-  calls: readonly CallOps[],
-  scope: Scope,
-  walk: Walk,
-): void {
-  for (const call of calls) {
-    if (hasReceiver(call)) {
-      replayLiteralLoop(call, scope, walk);
+function walkEntries(items: readonly Walked[], scope: Scope, walk: Walk): void {
+  for (const item of items) {
+    if (item.form === "unread") {
+      walk.outcomes.push(unreadOutcome(item));
       continue;
     }
-    const name = nameOf(call);
-    const role = Object.hasOwn(walk.table.roles, name)
-      ? walk.table.roles[name]
-      : undefined;
-    if (role !== undefined) {
+
+    if (item.form === "call" && hasReceiver(item.call)) {
+      replayLiteralLoop(item.call, scope, walk);
+      continue;
+    }
+
+    const name = entryName(item, walk);
+    const role =
+      name !== null && Object.hasOwn(walk.table.roles, name)
+        ? walk.table.roles[name]
+        : undefined;
+    if (role !== undefined && name !== null) {
       const entry: Entry = {
-        call,
+        source: item,
         name,
-        args: argsOf(call, walk.keywords, scope.defaults),
+        args: argsOf(item, walk.keywords, scope.defaults),
       };
       const read = ROLE_READERS[role.role] as RoleReader<RouteRole>;
       read(role, entry, scope, walk);
       continue;
     }
-    const wrapped = childrenOf(call, walk.table.roots.children, null) ?? [];
-    if (wrapsEntries(wrapped, walk)) {
-      walk.gaps.push({ kind: "walkedBlock", file: walk.file, name });
-      walkEntries(wrapped, scope, walk);
-      continue;
-    }
-    walk.gaps.push({ kind: "unread", file: walk.file, name });
+    const unmatched = UNMATCHED[item.form] as (
+      source: EntrySource,
+      scope: Scope,
+      walk: Walk,
+    ) => void;
+    unmatched(item, scope, walk);
   }
 }
+
+function unreadOutcome(item: UnreadItem): RouteOutcome {
+  return {
+    kind: "unread",
+    reason: item.reason,
+    value: item.value,
+    at: item.at === undefined ? { value: item.value } : { call: item.at },
+  };
+}
+
+/**
+ * An entry no role reads. A call is a library's own wrapper when it has
+ * entries inside, and unread otherwise. An element, such as `<Routes>`
+ * or a guard around routes, is walked in place.
+ */
+const UNMATCHED: {
+  readonly [F in EntrySource["form"]]: (
+    source: Extract<EntrySource, { form: F }>,
+    scope: Scope,
+    walk: Walk,
+  ) => void;
+} = {
+  call: (source, scope, walk) => {
+    const name = nameOf(source.call);
+    const wrapped = childrenOf(source, walk.table.roots.children, null, walk);
+    if (wrapped !== null && wrapsEntries(wrapped, walk)) {
+      walk.gaps.push({ kind: "walkedBlock", file: walk.file, name });
+      walkChildren(wrapped, scope, walk);
+      return;
+    }
+    walk.gaps.push({ kind: "unread", file: walk.file, name });
+  },
+  element: (source, scope, walk) => {
+    const inside = childrenOf(source, { in: "elements" }, null, walk);
+    if (inside !== null) {
+      walkChildren(inside, scope, walk);
+    }
+  },
+  object: () => undefined,
+};
 
 /**
  * A library's own wrapper, such as `devise_scope :user do ... end`, has
  * entries the table knows inside and leaves their path and handler
  * alone. One with no such entry, such as `direct`, stays unread.
  */
-function wrapsEntries(children: readonly CallOps[], walk: Walk): boolean {
-  return children.some(
+function wrapsEntries(children: Children, walk: Walk): boolean {
+  return children.entries.some(
     (inner) =>
-      !hasReceiver(inner) && Object.hasOwn(walk.table.roles, nameOf(inner)),
+      inner.form === "call" &&
+      !hasReceiver(inner.call) &&
+      Object.hasOwn(walk.table.roles, nameOf(inner.call)),
   );
 }
 
@@ -775,7 +944,12 @@ function wrapsEntries(children: readonly CallOps[], walk: Walk): boolean {
  */
 function replayLiteralLoop(call: CallOps, scope: Scope, walk: Walk): void {
   const loop = call.loopsOver?.() ?? null;
-  const children = childrenOf(call, walk.table.roots.children, null);
+  const children = childrenOf(
+    { form: "call", call },
+    walk.table.roots.children,
+    null,
+    walk,
+  );
   if (
     loop === null ||
     children === null ||
@@ -794,7 +968,7 @@ function replayLiteralLoop(call: CallOps, scope: Scope, walk: Walk): void {
     if (loop.position !== null) {
       bindings.set(loop.position, String(position));
     }
-    walkEntries(children, { ...scope, bindings }, walk);
+    walkChildren(children, { ...scope, bindings }, walk);
   });
 }
 
@@ -814,29 +988,50 @@ const ROLE_READERS: {
   expands: readExpands,
   scopes: readScopes,
   base: readBase,
-  defaults: (role, entry, scope, walk) => {
-    const children = childrenOf(entry.call, role.children, entry.args);
-    if (children !== null) {
-      walkEntries(children, { ...scope, defaults: entry.args.keyword }, walk);
-    }
-  },
-  fragment: (role, entry, scope, walk) => {
-    const name = pickedWord(entry.args, role.name, scope);
-    const children = childrenOf(entry.call, role.children, entry.args);
-    if (name !== null && children !== null) {
-      walk.fragments.set(name, children);
-    }
-  },
-  replay: (role, entry, scope, walk) => {
-    const names = entry.args.positional
-      .slice(role.names.from)
-      .map((value) => wordOf(value, scope))
-      .filter((name): name is string => name !== null);
-    replayFragments(names, scope, walk);
-  },
+  defaults: readDefaults,
+  fragment: readFragment,
+  replay: readReplay,
   include: readInclude,
   mount: readMount,
 };
+
+function readDefaults(
+  role: DefaultsRole,
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const children = childrenOf(entry.source, role.children, entry.args, walk);
+  if (children !== null) {
+    walkChildren(children, { ...scope, defaults: entry.args.keyword }, walk);
+  }
+}
+
+function readFragment(
+  role: FragmentRole,
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const name = pickedWord(entry.args, role.name, scope);
+  const children = childrenOf(entry.source, role.children, entry.args, walk);
+  if (name !== null && children !== null) {
+    walk.fragments.set(name, children);
+  }
+}
+
+function readReplay(
+  role: ReplayRole,
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const names = entry.args.positional
+    .slice(role.names.from)
+    .map((value) => wordOf(value, scope))
+    .filter((name): name is string => name !== null);
+  replayFragments(names, scope, walk);
+}
 
 /** Walks each named fragment's children in the scope the replay is written in. */
 function replayFragments(
@@ -847,7 +1042,7 @@ function replayFragments(
   for (const name of names) {
     const children = walk.fragments.get(name);
     if (children !== undefined) {
-      walkEntries(children, scope, walk);
+      walkChildren(children, scope, walk);
     }
   }
 }
@@ -858,8 +1053,109 @@ function readServes(
   scope: Scope,
   walk: Walk,
 ): void {
+  if ("value" in role.handler) {
+    readServesValue(role, role.handler.value, entry, scope, walk);
+    return;
+  }
   for (const method of methodsOf(role, entry.args, scope, walk)) {
-    serveAt(role, entry.args, scope, walk, method);
+    serveAt(role, role.handler, entry.args, scope, walk, method);
+  }
+}
+
+/** What an entry whose handler is a value says about its own path. */
+type OwnPath =
+  | { readonly kind: "segment"; readonly segment: string }
+  | { readonly kind: "unread" }
+  | { readonly kind: "index" }
+  | { readonly kind: "none" };
+
+/**
+ * An entry whose handler is a value, such as React Router's
+ * `<Route path element>`, serves its handler at its path, or at the
+ * scope's own path when its index flag reads true. The entries nested
+ * under it walk under its path; one with neither path nor index serves
+ * nothing and leaves the path to its children as it is. A path that does
+ * not read leaves no path to claim for it or for anything under it.
+ */
+function readServesValue(
+  role: ServesRole,
+  handlerPicks: readonly EntryPick[],
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+): void {
+  const handler = firstPicked(entry.args, handlerPicks);
+  const own = ownPathOf(role, entry.args, scope);
+  if (handler !== undefined && own.kind !== "none") {
+    serveValue(role, entry, scope, walk, handler, own);
+  }
+  const inside = scopeInside(scope, own, walk);
+  for (const rule of role.children ?? []) {
+    const children = childrenOf(entry.source, rule, entry.args, walk);
+    if (children !== null) {
+      walkChildren(children, inside, walk);
+      return;
+    }
+  }
+}
+
+function ownPathOf(role: ServesRole, args: EntryArgs, scope: Scope): OwnPath {
+  if ("fixed" in role.path) {
+    return { kind: "index" };
+  }
+  const value = firstPicked(args, role.path);
+  if (value !== undefined) {
+    const segment = wordOf(value, scope);
+    return segment === null ? { kind: "unread" } : { kind: "segment", segment };
+  }
+  if (role.index !== undefined && picked(args, role.index)?.flag() === true) {
+    return { kind: "index" };
+  }
+  return { kind: "none" };
+}
+
+function scopeInside(scope: Scope, own: OwnPath, walk: Walk): Scope {
+  if (scope.pathUnread || own.kind === "unread") {
+    return { ...scope, pathUnread: true };
+  }
+  if (own.kind === "segment") {
+    return {
+      ...scope,
+      pathPrefix: joinTablePath(walk, scope.pathPrefix, own.segment),
+    };
+  }
+  return scope;
+}
+
+function serveValue(
+  role: ServesRole,
+  entry: Entry,
+  scope: Scope,
+  walk: Walk,
+  handler: ValueOps,
+  own: Exclude<OwnPath, { kind: "none" }>,
+): void {
+  if (scope.pathUnread || own.kind === "unread") {
+    walk.outcomes.push({
+      kind: "unread",
+      reason: scope.pathUnread ? "prefixUnread" : "pathUnread",
+      handler,
+      entry: entry.source,
+    });
+    return;
+  }
+  const path =
+    own.kind === "segment"
+      ? joinTablePath(walk, scope.pathPrefix, own.segment)
+      : scope.pathPrefix || "/";
+  for (const method of methodsOf(role, entry.args, scope, walk)) {
+    walk.outcomes.push({
+      kind: "route",
+      method,
+      path,
+      handler,
+      entry: entry.source,
+    });
   }
 }
 
@@ -888,13 +1184,14 @@ function handlerNamed(
   text: string,
   walk: Walk,
 ): { controllerKey: string; action: string } | null {
-  const index = text.indexOf(walk.table.handler.separator);
-  if (index === -1) {
+  const separator = walk.table.handler?.separator;
+  const index = separator === undefined ? -1 : text.indexOf(separator);
+  if (separator === undefined || index === -1) {
     return null;
   }
   return {
     controllerKey: text.slice(0, index),
-    action: text.slice(index + walk.table.handler.separator.length),
+    action: text.slice(index + separator.length),
   };
 }
 
@@ -917,13 +1214,14 @@ function handlerOf(
 
 function serveAt(
   role: ServesRole,
+  handlerPicks: readonly EntryPick[],
   args: EntryArgs,
   scope: Scope,
   walk: Walk,
   method: string,
 ): void {
-  const handler = handlerOf(role.handler, args, scope, walk);
-  if (!Array.isArray(role.path)) {
+  const handler = handlerOf(handlerPicks, args, scope, walk);
+  if ("fixed" in role.path) {
     if (handler !== null) {
       addRoute(
         walk,
@@ -945,7 +1243,7 @@ function serveAt(
   const served =
     handler === null
       ? bareRoute(role, args, scope, walk)
-      : stated(handler, role.path as readonly EntryPick[], args, scope, walk);
+      : stated(handler, role.path, args, scope, walk);
   if (served === null) {
     return;
   }
@@ -1109,9 +1407,9 @@ function readExpands(
     },
   };
   replayFragments(namesOf(args, role.concerns, scope) ?? [], inside, walk);
-  const children = childrenOf(entry.call, role.children, args);
+  const children = childrenOf(entry.source, role.children, args, walk);
   if (children !== null) {
-    walkEntries(children, inside, walk);
+    walkChildren(children, inside, walk);
   }
 }
 
@@ -1152,7 +1450,7 @@ function readScopes(
   scope: Scope,
   walk: Walk,
 ): void {
-  const children = childrenOf(entry.call, role.children, entry.args);
+  const children = childrenOf(entry.source, role.children, entry.args, walk);
   if (children === null) {
     return;
   }
@@ -1161,12 +1459,12 @@ function readScopes(
     role.path === undefined &&
     role.namespace === undefined
   ) {
-    walkEntries(children, scope, walk);
+    walkChildren(children, scope, walk);
     return;
   }
   const segments = scopeSegments(role, entry.args, scope);
   if (segments !== null) {
-    walkEntries(children, enterScope(scope, segments, role, walk), walk);
+    walkChildren(children, enterScope(scope, segments, role, walk), walk);
   }
 }
 
@@ -1222,13 +1520,13 @@ function readBase(
   walk: Walk,
 ): void {
   const expansion = scope.expansion;
-  const children = childrenOf(entry.call, role.children, entry.args);
+  const children = childrenOf(entry.source, role.children, entry.args, walk);
   if (expansion === undefined || children === null) {
     return;
   }
   const ambientBase =
     role.which === "member" ? expansion.memberBase : expansion.collectionBase;
-  walkEntries(
+  walkChildren(
     children,
     { ...scope, expansion: { ...expansion, ambientBase } },
     walk,
@@ -1251,7 +1549,7 @@ function readInclude(
     walk.gaps.push({ kind: "missingInclude", file: walk.file, name });
     return;
   }
-  walkEntries(module.bodyCalls(), scope, walk);
+  walkChildren(callsAsChildren(module.bodyCalls()), scope, walk);
 }
 
 /** The first pick that gives a value, read as the source writes it. */
@@ -1259,13 +1557,8 @@ function firstSource(
   args: EntryArgs,
   picks: readonly EntryPick[],
 ): string | null {
-  for (const pick of picks) {
-    const value = picked(args, pick);
-    if (value !== undefined) {
-      return value.source?.() ?? null;
-    }
-  }
-  return null;
+  const value = firstPicked(args, picks);
+  return value === undefined ? null : (value.source?.() ?? null);
 }
 
 /** The first pick that gives a value, read as a word. */
@@ -1309,7 +1602,7 @@ function readMount(
   walk.mounting.add(owner.name);
   const prefix = joinRoutePath(scope.pathPrefix, mountPath);
   inFile(walk, root.displayPath, () => {
-    walkEntries(
+    walkChildren(
       root.children,
       {
         ...EMPTY_SCOPE,
