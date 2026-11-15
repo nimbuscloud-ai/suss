@@ -25,6 +25,7 @@ const VERB_METHODS: Record<string, string> = {
 export function faradayClient(): RubyPack {
   return {
     name: "faraday",
+    version: "1",
     protocol: "http",
     discovery: [],
     clients: [
@@ -33,8 +34,8 @@ export function faradayClient(): RubyPack {
         verbMethodNames: VERB_METHODS,
         url: { position: 0 },
         receiverBuilders: ["new"],
-        // Calls on a connection from `Faraday.new(url: ".../v1")` get the
-        // path of that URL in front of their own.
+        // On a connection from `Faraday.new(url: ".../v1")`, `get("orders")`
+        // goes to `/v1/orders` and `get("/orders")` to `/orders`.
         builderUrlKeyword: "url",
         // A caller's condition on one of these members shows which
         // statuses it handles.
@@ -57,7 +58,7 @@ export const declares: PackDeclaration = {
   kind: "client",
   package: "@suss/client-faraday",
   dependencies: [{ ecosystem: "rubygems", name: "faraday" }],
-  reads: `Faraday call sites (Ruby): a request method on the module itself or on a connection \`Faraday.new\` built, served under the path that connection's own URL states.`,
+  reads: `Faraday call sites (Ruby): a request method on the module itself or on a connection \`Faraday.new\` built, with the call's path resolved against that connection's own URL the way Faraday resolves it.`,
 };
 
 export default faradayClient;

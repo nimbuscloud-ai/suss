@@ -70,7 +70,22 @@ describe("a method that calls Faraday", () => {
     expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
   });
 
-  it("serves a connection's calls under the path its own URL states", async () => {
+  it("serves a connection's relative paths under the path its own URL states", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def create(body)",
+        '    conn = Faraday.new(url: "https://api.example.com/v1")',
+        '    conn.post("orders", body)',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).path).toBe("/v1/orders");
+  });
+
+  it("sends a path that starts with a slash to that path, as Faraday resolves it", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",
@@ -82,7 +97,7 @@ describe("a method that calls Faraday", () => {
       ].join("\n"),
     );
 
-    expect(boundary(units).path).toBe("/v1/orders");
+    expect(boundary(units).path).toBe("/orders");
   });
 
   it("says nothing about a call on something else entirely", async () => {

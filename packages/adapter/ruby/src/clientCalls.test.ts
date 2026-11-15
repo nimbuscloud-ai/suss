@@ -132,7 +132,7 @@ describe("a method that calls a request method", () => {
         "class OrderClient",
         "  def load",
         '    conn = HttpClient.build(base: "https://api.example.com/v2")',
-        '    conn.get("/orders")',
+        '    conn.get("orders")',
         "  end",
         "end",
       ].join("\n"),
@@ -703,6 +703,64 @@ describe("a library that sends a request object", () => {
   });
 });
 
+describe("a path under the base its connection was built with", () => {
+  /** The path `conn.get(path)` goes to on a connection built on `base`. */
+  async function pathUnder(base: string, path: string): Promise<string> {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        `    conn = HttpClient.build(base: "${base}")`,
+        `    conn.get("${path}")`,
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    return boundary(units).path ?? "";
+  }
+
+  it("goes after the base's path when it is relative", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "orders")).toBe(
+      "/v1/orders",
+    );
+    expect(await pathUnder("https://api.example.com/v1/", "orders")).toBe(
+      "/v1/orders",
+    );
+    expect(await pathUnder("https://api.example.com", "orders")).toBe(
+      "/orders",
+    );
+  });
+
+  it("replaces the base's path when it starts with a slash", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "/orders")).toBe(
+      "/orders",
+    );
+  });
+
+  it("drops a dot segment and takes a double dot back one segment", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "./orders")).toBe(
+      "/v1/orders",
+    );
+    expect(
+      await pathUnder("https://api.example.com/v1/beta", "../orders"),
+    ).toBe("/v1/orders");
+    expect(await pathUnder("https://api.example.com/v1", "orders/..")).toBe(
+      "/v1/",
+    );
+  });
+
+  it("keeps every segment of a base path written without a leading slash", async () => {
+    expect(await pathUnder("v1/beta", "orders")).toBe("/v1/beta/orders");
+  });
+
+  it("keeps a base URL suss could not read in front of the call's path", async () => {
+    expect(await pathUnder("#{root}/v1", "/orders")).toBe("{root}/orders");
+    expect(await pathUnder("#{root}/v1", "orders")).toBe("{root}/v1/orders");
+    expect(await pathUnder("#{root}", "/orders")).toBe("{root}/orders");
+    expect(await pathUnder("#{root}", "orders")).toBe("{root}/orders");
+  });
+});
+
 describe("a connection the class builds in a method of its own", () => {
   it("serves the calls that go through it", async () => {
     const units = await unitsIn(`
@@ -712,7 +770,7 @@ describe("a connection the class builds in a method of its own", () => {
         end
 
         def self.show(id)
-          conn.get("/orders/#{id}")
+          conn.get("orders/#{id}")
         end
       end
     `);
@@ -731,7 +789,7 @@ describe("a connection the class builds in a method of its own", () => {
         end
 
         def self.show(id)
-          conn.get("/orders/#{id}")
+          conn.get("orders/#{id}")
         end
       end
     `);
@@ -750,7 +808,7 @@ describe("a connection the class builds in a method of its own", () => {
         end
 
         def show(id)
-          @conn.get("/orders/#{id}")
+          @conn.get("orders/#{id}")
         end
       end
     `);
@@ -769,7 +827,7 @@ describe("a connection the class builds in a method of its own", () => {
         end
 
         def show(id)
-          conn.get("/orders/#{id}")
+          conn.get("orders/#{id}")
         end
       end
     `);
@@ -804,7 +862,7 @@ describe("a connection the class builds in a method of its own", () => {
         end
 
         def self.show(id)
-          conn.get("/orders/#{id}")
+          conn.get("orders/#{id}")
         end
       end
     `);
@@ -872,7 +930,7 @@ describe("a file with several call sites", () => {
       "  end",
       ...names.flatMap((name) => [
         `  def load_${name}`,
-        `    @${name}.get("/recent")`,
+        `    @${name}.get("recent")`,
         "  end",
       ]),
       "end",
