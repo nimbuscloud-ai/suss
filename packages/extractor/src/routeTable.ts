@@ -1,0 +1,360 @@
+/**
+ * The words a pack declares a route table with, and what the composer in
+ * `@suss/recognize` gives back. They are here, beside the other discovery
+ * patterns, so a discovery pattern can contain a table and a pack depends
+ * on this package alone. `@suss/recognize` composes the routes and
+ * re-exports every name.
+ *
+ * A table's entries are calls, as Rails writes `get "/x"`, JSX elements,
+ * as React Router writes `<Route path element>`, or objects in a list,
+ * as `createBrowserRouter([{ path, element }])` writes them.
+ */
+
+import type { CallOps, ModuleOps, ValueOps } from "./ops.js";
+
+/** What a route table's entries are called and what each one does, as one library writes them. */
+export interface RouteTableDeclaration {
+  /** Where a table starts in a file. */
+  readonly roots: RootRule;
+  /** What each entry does, by the name the entry is written with. */
+  readonly roles: Readonly<Record<string, RouteRole>>;
+  /**
+   * How a handler splits into a controller key and an action, and how a
+   * namespace joins onto a key. Unset for a table whose handlers are
+   * values, which no role reads as a name.
+   */
+  readonly handler?: {
+    readonly separator: string;
+    readonly namespaceJoin: string;
+  };
+  /** The loop methods whose block runs once per element of a literal list, replayed with the element bound. */
+  readonly loops: readonly string[];
+  /** A method in an expansion's row that the table serves under several, such as `update` under PATCH and PUT. */
+  readonly methodAliases?: Readonly<Record<string, readonly string[]>>;
+  /** The role an object written as an item of a list is read as. Unset reads only calls there. */
+  readonly objects?: string;
+  /**
+   * The modules a root call's name and an element's tag are imported from.
+   * Each is read as the name the module exports it under, and a file that
+   * imports none of the table's names has no table. Unset matches names as
+   * the source writes them.
+   */
+  readonly from?: readonly string[];
+  /**
+   * How a nested path written with a leading `/` reads: joined under the
+   * scope, as Rails reads `scope "/api" do get "/x"`, or on its own, as
+   * React Router requires a nested absolute path to repeat its parent's.
+   */
+  readonly absolutePaths?: "join" | "standAlone";
+  /**
+   * Calls that turn elements into entries, such as React Router's
+   * `createRoutesFromElements`. A list pick that reads one reads nothing,
+   * since those elements are read where they are written.
+   */
+  readonly elementLists?: readonly string[];
+}
+
+/** The calls a table starts from, such as `<owner>.routes.draw do`, and the order each kind runs in. */
+export interface RootRule {
+  /** The method the root call is made on, `routes`, whose receiver is the owner. Unset for a root called bare. */
+  readonly calledOn?: string;
+  /** Each root method and its run order: `{ prepend: 0, draw: 1, append: 2 }`. */
+  readonly kinds: Readonly<Record<string, number>>;
+  /**
+   * Where the root's entries are. An entry with no role, such as a loop
+   * or a library's own wrapper, has its children in the same place.
+   */
+  readonly children: ChildrenIn;
+  /**
+   * Where root calls are read: the calls the module body runs, the
+   * default, or every call the file writes, inside functions too.
+   */
+  readonly in?: "moduleBody" | "file";
+  /** Whether every element of the file that no element written with children encloses is a root too, walked in place. */
+  readonly elements?: boolean;
+}
+
+/**
+ * Where an entry's children are written: in its block, in the body of the
+ * function it is handed at a position, as the entries of a list it is
+ * handed, or as the elements written inside it. `chain` is for a builder
+ * written as a chain of calls, and has no reader yet.
+ */
+export type ChildrenIn =
+  | { readonly in: "block" }
+  | { readonly in: "callback"; readonly at: number }
+  | { readonly in: "list"; readonly pick: EntryPick }
+  | { readonly in: "elements" }
+  | { readonly in: "chain" };
+
+/**
+ * One value an entry states: by position, by keyword, as the key or the
+ * value of a pair argument, or under a key: an element's attribute or an
+ * object's own property.
+ */
+export type EntryPick =
+  | { readonly at: number }
+  | { readonly keyword: string }
+  | { readonly pair: "key" | "value" }
+  | { readonly key: string };
+
+export type RouteRole =
+  | ServesRole
+  | ExpandsRole
+  | ScopesRole
+  | BaseRole
+  | DefaultsRole
+  | FragmentRole
+  | ReplayRole
+  | IncludeRole
+  | MountRole;
+
+/** An entry that serves one or more methods at a path. */
+export interface ServesRole {
+  readonly role: "serves";
+  /**
+   * The methods, fixed by the entry's name or read from a pick. A picked
+   * list is upper-cased, and when it has the word `all` gives, the entry
+   * serves every method, which the table writes as `*`.
+   */
+  readonly methods:
+    | readonly string[]
+    | { readonly pick: EntryPick; readonly all?: string };
+  /** Where the path is, tried in order, or the scope's own path for an entry such as `root`. */
+  readonly path: readonly EntryPick[] | { readonly fixed: "scope" };
+  /**
+   * Where the handler is, tried in order: a name written
+   * `controller#action` with the table's separator, or, under `value`,
+   * the value itself, handed back with the route, for a table whose
+   * handler is a component rather than a name.
+   */
+  readonly handler:
+    | readonly EntryPick[]
+    | { readonly value: readonly EntryPick[] };
+  /** A flag that, read true, has the entry serve the scope's own path when it states none. */
+  readonly index?: EntryPick;
+  /**
+   * Where entries nested under this one are, tried in order, the first
+   * that reads. They walk under this entry's path, and under the scope's
+   * own when this entry states none.
+   */
+  readonly children?: readonly ChildrenIn[];
+  /**
+   * What an entry means when it states no handler: the path is `path`,
+   * and the action is `action`, or else the path when it is one word, on
+   * `controller` or the expansion's own controller. `on` says which of
+   * the expansion's bases the path starts from, whether or not the entry
+   * states a handler. A word is letters, digits, `_` and the character
+   * `wordRule` replaces.
+   */
+  readonly bare?: {
+    readonly path: EntryPick;
+    readonly action: EntryPick;
+    readonly controller: EntryPick;
+    readonly on: EntryPick;
+    readonly wordRule: { readonly replace: readonly [string, string] };
+  };
+  /** A flag that turns the format suffix off, when the pick reads `when`. */
+  readonly formatless?: { readonly pick: EntryPick; readonly when: boolean };
+}
+
+/**
+ * One route an expansion's row gives: its method, and its path, which is
+ * the collection base and the suffix, or the member base where the
+ * suffix starts with `{member}`.
+ */
+export interface ExpansionRow {
+  readonly method: string;
+  readonly suffix: string;
+}
+
+/** An entry read as a fixed list of rows under a base, such as `resources` and `resource`. */
+export interface ExpandsRole {
+  readonly role: "expands";
+  readonly name: EntryPick;
+  /** Each action and the routes it gives, in the order the table serves them. */
+  readonly rows: Readonly<Record<string, readonly ExpansionRow[]>>;
+  readonly only?: EntryPick;
+  readonly except?: EntryPick;
+  readonly controller?: EntryPick;
+  readonly path?: EntryPick;
+  readonly module?: EntryPick;
+  /** Fragments replayed inside the expansion before its children. */
+  readonly concerns?: EntryPick;
+  /** How the controller is named from the entry's name: as written, or pluralized. */
+  readonly controllerNaming: "asWritten" | "plural";
+  /** Where an expansion nested inside goes: under `:{singular}_id` after the base, or under the base itself. */
+  readonly nested: "singularId" | "self";
+  /** The member base: the base and `:id`, or the base itself. */
+  readonly member: "id" | "self";
+  /** The name the member segment and the nesting parameter take in place of `id`, such as `param: :username`. */
+  readonly param?: EntryPick;
+  /**
+   * A flag that serves the member routes of an expansion with an id, and
+   * of every one inside it, under the shallow path rather than under the
+   * expansions around it. What is nested inside goes under the shallow
+   * path too, and the collection routes stay where they are.
+   */
+  readonly shallow?: EntryPick;
+  readonly children: ChildrenIn;
+}
+
+/**
+ * A block that adds a path segment, a namespace segment, both, or
+ * neither. One that adds neither leaves the scope as it is, inside an
+ * expansion too; any other leaves the expansion and continues from where
+ * a nested one would go.
+ */
+export interface ScopesRole {
+  readonly role: "scopes";
+  readonly path?: readonly EntryPick[];
+  readonly namespace?: readonly EntryPick[];
+  /** One word for both, as `namespace :admin` writes it. The scope opens only when it reads. */
+  readonly both?: EntryPick;
+  /** Whether the path segment also starts the shallow path, as `namespace` does and `scope` does not. */
+  readonly shallowPath?: boolean;
+  readonly children: ChildrenIn;
+}
+
+/** A block such as `member do` that chooses the base an entry inside an expansion starts from. */
+export interface BaseRole {
+  readonly role: "base";
+  readonly which: "member" | "collection";
+  readonly children: ChildrenIn;
+}
+
+/** A block such as `with_options k: v do` whose keywords every entry inside takes when it leaves them out. */
+export interface DefaultsRole {
+  readonly role: "defaults";
+  readonly children: ChildrenIn;
+}
+
+/** A named fragment, such as `concern :name do`, that a replay writes again in its own scope. */
+export interface FragmentRole {
+  readonly role: "fragment";
+  readonly name: EntryPick;
+  readonly children: ChildrenIn;
+}
+
+/** An entry that replays the fragments its positional arguments name, from position `from` on. */
+export interface ReplayRole {
+  readonly role: "replay";
+  readonly names: { readonly from: number };
+}
+
+/** An entry such as `draw(:name)` that reads another file's entries in place. */
+export interface IncludeRole {
+  readonly role: "include";
+  readonly name: EntryPick;
+}
+
+/** An entry such as `mount X, at:` that serves another table under a prefix, keyed under that table's namespace. */
+export interface MountRole {
+  readonly role: "mount";
+  /** Where the table is written, tried in order, read as the source writes it. */
+  readonly table: readonly EntryPick[];
+  readonly at: readonly EntryPick[];
+}
+
+/** Which table a root or a mount refers to. */
+export type TableOwner =
+  | { readonly table: "app" }
+  | {
+      readonly table: "mounted";
+      readonly name: string;
+      readonly namespace: string;
+    };
+
+export interface RouteSources {
+  /** The files that may write roots, in the order their roots run, each with the path a gap message prints for it. */
+  readonly files: readonly {
+    readonly module: ModuleOps;
+    readonly displayPath: string;
+  }[];
+  /** The table an owner refers to, as a root's receiver or a mount writes it, or null for neither. */
+  readonly ownerOf: (owner: string) => TableOwner | null;
+  /** The file an include reads by name, or null when there is none. */
+  readonly include: (name: string) => ModuleOps | null;
+  /** How the library inflects an expansion's name, for its controller and its nesting parameter. */
+  readonly naming: {
+    readonly singular: (word: string) => string;
+    readonly plural: (word: string) => string;
+  };
+}
+
+export interface TableRoute {
+  readonly method: string;
+  readonly path: string;
+  /** Set for a route whose format suffix is turned off. */
+  readonly formatless?: true;
+}
+
+export type RouteGap =
+  | { readonly kind: "unread"; readonly file: string; readonly name: string }
+  | {
+      readonly kind: "walkedBlock";
+      readonly file: string;
+      readonly name: string;
+    }
+  | {
+      readonly kind: "missingInclude";
+      readonly file: string;
+      readonly name: string;
+    };
+
+/** An entry as the source writes it: a call, an element, or an object in a list. */
+export type EntrySource =
+  | { readonly form: "call"; readonly call: CallOps }
+  | { readonly form: "element"; readonly value: ValueOps }
+  | { readonly form: "object"; readonly value: ValueOps };
+
+/**
+ * Why an entry of a table whose handlers are values gave no route:
+ *
+ * - `pathUnread`: its own path does not read.
+ * - `prefixUnread`: the path of an entry it is nested under does not read.
+ * - `spread`: an item of a list spreads another collection into it.
+ * - `notAnEntry`: an item of a list is written as something other than an object.
+ * - `rootListUnread`: a root call's list is no list within reach.
+ * - `listUnread`: an entry's children are no list within reach.
+ */
+export type RouteUnread =
+  | "pathUnread"
+  | "prefixUnread"
+  | "spread"
+  | "notAnEntry"
+  | "rootListUnread"
+  | "listUnread";
+
+/** What one entry of a table whose handlers are values came to, in the order the walk met it. */
+export type RouteOutcome =
+  | {
+      readonly kind: "route";
+      readonly method: string;
+      readonly path: string;
+      readonly handler: ValueOps;
+      readonly entry: EntrySource;
+    }
+  | {
+      readonly kind: "unread";
+      readonly reason: "pathUnread" | "prefixUnread";
+      readonly handler: ValueOps;
+      readonly entry: EntrySource;
+    }
+  | {
+      readonly kind: "unread";
+      readonly reason: Exclude<RouteUnread, "pathUnread" | "prefixUnread">;
+      /** The value that did not read: the spread's collection, the item, or the list. */
+      readonly value: ValueOps;
+      /** Where to say so: the root call whose list did not read, or the value itself. */
+      readonly at: { readonly call: CallOps } | { readonly value: ValueOps };
+    };
+
+export interface RouteSet {
+  /** Every distinct route that reaches the action, in the order the table declares them. */
+  routesFor(controllerKey: string, action: string): readonly TableRoute[];
+  /** The entries left unread, in the order the walk met them. */
+  readonly gaps: readonly RouteGap[];
+  /** Each route an entry whose handler is a value serves, and each such entry or list item left unread, in walk order. */
+  readonly outcomes: readonly RouteOutcome[];
+}

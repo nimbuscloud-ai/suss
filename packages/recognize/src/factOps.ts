@@ -889,13 +889,22 @@ class FactValue implements ValueOps {
     return this.facts.evaluatedOf?.(this.key) ?? null;
   }
 
+  /**
+   * With nothing bound, the adapter's own evaluator reads the value where
+   * it has one, so a template with a hole nothing settles is no word.
+   * Reading it as a name would give a word with a made-up segment.
+   */
   evaluatedWith(
     bindings: ReadonlyMap<string, string>,
   ): string | number | boolean | null {
     const evaluate = this.facts.evaluatedWith;
-    return evaluate === undefined
-      ? this.name("nothing")
-      : evaluate(this.key, bindings);
+    if (evaluate !== undefined) {
+      return evaluate(this.key, bindings);
+    }
+    if (bindings.size === 0 && this.facts.evaluatedOf !== undefined) {
+      return this.evaluated();
+    }
+    return this.name("nothing");
   }
 
   bodyCalls(): readonly CallOps[] {
