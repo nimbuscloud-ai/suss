@@ -207,9 +207,7 @@ function settledFallback(
   syntax: EnvReadSyntax,
   facts: Database | undefined,
 ): string | number | boolean | null {
-  return syntax.defaulted && syntax.fallback !== null
-    ? scalarOf(evaluatedValue(syntax.fallback, facts))
-    : null;
+  return syntax.defaulted ? settledValue(syntax.fallback, facts) : null;
 }
 
 function hasFallback(
@@ -640,7 +638,29 @@ function readsThroughHelper(
     return [];
   }
   const defaultedAtCall = isDefaultedAt(call);
-  return [...reads].map(([name, defaulted]) =>
-    configReadEffect({ name, defaulted: defaulted || defaultedAtCall }, call),
-  );
+  // The fallback a caller writes around the call, as in
+  // `need("X") or "x"`, is what the read falls back to.
+  const fallback =
+    defaultedAtCall || [...reads.values()].some(Boolean)
+      ? settledValue(copingAt(call).fallback, db)
+      : null;
+  return [...reads].map(([name, defaulted]) => {
+    const coped = defaulted || defaultedAtCall;
+    return configReadEffect(
+      {
+        name,
+        defaulted: coped,
+        ...(coped && fallback !== null ? { fallback } : {}),
+      },
+      call,
+    );
+  });
+}
+
+/** The value a fallback settles to, or null when it settles to none. */
+function settledValue(
+  fallback: PyNode | null,
+  db: Database | undefined,
+): string | number | boolean | null {
+  return fallback === null ? null : scalarOf(evaluatedValue(fallback, db));
 }

@@ -105,12 +105,19 @@ async function projectReads(
   files: Record<string, string>,
   blankToNil: string[] = [],
 ): Promise<Read[]> {
+  return readsOf(await projectEffects(files, blankToNil));
+}
+
+async function projectEffects(
+  files: Record<string, string>,
+  blankToNil: string[] = [],
+): Promise<EffectAt[]> {
   const { db, parsed } = await projectFacts(files, blankToNil);
   const entry = parsed.find(({ file }) => file === "use.rb");
   if (entry === undefined) {
     throw new Error("no use.rb");
   }
-  return readsOf(envReadEffects(entry.root, { db, file: "use.rb" }));
+  return envReadEffects(entry.root, { db, file: "use.rb" });
 }
 
 /** The same, for what one method of `use.rb` reads when it runs. */
@@ -118,13 +125,29 @@ async function projectMethodReads(
   files: Record<string, string>,
   name: string,
 ): Promise<Read[]> {
+  return readsOf(await projectMethodEffects(files, name));
+}
+
+async function projectMethodEffects(
+  files: Record<string, string>,
+  name: string,
+): Promise<EffectAt[]> {
   const { db, parsed } = await projectFacts(files);
   const entry = parsed.find(({ file }) => file === "use.rb");
   if (entry === undefined) {
     throw new Error("no use.rb");
   }
-  return readsOf(
-    envReadEffects(findMethod(entry.root, name), { db, file: "use.rb" }),
+  return envReadEffects(findMethod(entry.root, name), { db, file: "use.rb" });
+}
+
+/** Each read that records a value it falls back to, with that value. */
+function fallbacksOf(found: readonly EffectAt[]): [string | null, unknown][] {
+  return found.flatMap(({ effect }) =>
+    effect.type === "interaction" &&
+    effect.interaction.class === "config-read" &&
+    effect.interaction.default !== undefined
+      ? [[effect.interaction.name, effect.interaction.default]]
+      : [],
   );
 }
 
@@ -774,6 +797,19 @@ describe("a name handed to a project helper", () => {
     ).toEqual([{ name: "REDIS_URL", defaulted: true }]);
   });
 
+  it("records the value the fallback around the call settles to", async () => {
+    const found = await projectEffects({
+      "settings.rb": SETTINGS,
+      "use.rb": [
+        'ENDPOINT = "redis://localhost"',
+        'URL = Settings.setting("REDIS_URL") || ENDPOINT',
+        'HOST = Settings.setting("REDIS_HOST")',
+        "",
+      ].join("\n"),
+    });
+    expect(fallbacksOf(found)).toEqual([["REDIS_URL", "redis://localhost"]]);
+  });
+
   it("reads a name a constant in the caller's file holds", async () => {
     expect(
       await projectReads({
@@ -1083,6 +1119,17 @@ describe("a parameter default", () => {
         "keyed",
       ),
     ).toEqual([{ name: "LEDGER_TABLE", defaulted: false }]);
+  });
+
+  it("records the value a default the call runs falls back to", async () => {
+    const found = await projectMethodEffects(
+      {
+        "ledger.rb": LEDGER,
+        "use.rb": ["def bare", "  Ledger.new", "end", ""].join("\n"),
+      },
+      "bare",
+    );
+    expect(fallbacksOf(found)).toEqual([["LEDGER_REGION", "eu"]]);
   });
 
   it("runs the inherited initialize for a class that writes none", async () => {

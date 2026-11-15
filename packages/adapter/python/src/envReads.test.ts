@@ -682,6 +682,17 @@ describe("a call to a helper that reads the environment", () => {
     ).toEqual([{ name: "HOST", defaulted: true }]);
   });
 
+  it("records the value the or around the call settles to", async () => {
+    expect(
+      await moduleDefaults(
+        `${SUBSCRIPT_HELPER}LOCAL = "localhost"\nHOST = env("HOST") or LOCAL\nPORT = env("PORT")\n`,
+      ),
+    ).toEqual([
+      ["HOST", "localhost"],
+      ["PORT", undefined],
+    ]);
+  });
+
   it("reports one read for a name two of the helper's reads look up, defaulted only when both are", async () => {
     expect(
       await moduleReadsWithFacts(
