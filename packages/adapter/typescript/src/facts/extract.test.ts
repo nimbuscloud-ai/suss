@@ -999,33 +999,38 @@ describe("the calls a body runs", () => {
 });
 
 describe("the calls a body writes as statements", () => {
-  it("places a function's and the file's calls in order through if, switch and try, and not a nested function's or a loop's", () => {
-    const { db, table } = factsFor({
-      "/routes.ts": [
-        "setup();",
-        "export function routes(kind: string) {",
-        '  get("a");',
-        "  if (dev) {",
-        '    post("b");',
-        '  } else put("c");',
-        "  switch (kind) {",
-        '    case "x":',
-        '      patch("d");',
-        "  }",
-        "  try {",
-        '    remove("e");',
-        "  } catch {",
-        '    head("f");',
-        "  } finally {",
-        '    trace("g");',
-        "  }",
-        '  const x = build("h");',
-        '  const inner = () => { skip("i"); };',
-        '  for (const item of items) { loop("j"); }',
-        "}",
-        "run();",
-      ].join("\n"),
-    });
+  const ROUTES = {
+    "/routes.ts": [
+      "setup();",
+      "export function routes(kind: string) {",
+      '  get("a");',
+      "  if (dev) {",
+      '    post("b");',
+      '  } else put("c");',
+      "  switch (kind) {",
+      '    case "x":',
+      '      patch("d");',
+      "  }",
+      "  try {",
+      '    remove("e");',
+      "  } catch {",
+      '    head("f");',
+      "  } finally {",
+      '    trace("g");',
+      "  }",
+      "  {",
+      '    scoped("h");',
+      "  }",
+      '  const x = build("i");',
+      '  const inner = () => { skip("j"); };',
+      '  for (const item of items) { loop("k"); }',
+      "}",
+      "run();",
+    ].join("\n"),
+  };
+
+  it("places a function's and the file's calls in order through if, switch, try and a block, and not a nested function's or a loop's", () => {
+    const { db, table } = factsFor(ROUTES);
     const placed: Record<string, string[]> = {};
     const sorted = [...rows(db, table, "bodyCallAt")].sort(
       (a, b) => Number(a[1]) - Number(b[1]),
@@ -1044,8 +1049,18 @@ describe("the calls a body writes as statements", () => {
         "remove",
         "head",
         "trace",
+        "scoped",
       ],
-      '() => { skip("i"); }': ["skip"],
+      '() => { skip("j"); }': ["skip"],
     });
+  });
+
+  it("says which of them are written inside another statement: an if, a switch, a try and a block", () => {
+    const { db, table } = factsFor(ROUTES);
+    expect(
+      rows(db, table, "nestedBodyCall").map(
+        ([call = ""]) => call.split("(")[0],
+      ),
+    ).toEqual(["post", "put", "patch", "remove", "head", "trace", "scoped"]);
   });
 });
