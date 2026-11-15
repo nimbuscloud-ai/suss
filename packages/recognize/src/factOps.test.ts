@@ -5,6 +5,7 @@ import { Database } from "@suss/datalog";
 import {
   type FactSource,
   factCallOps,
+  factElementOps,
   factValueOps,
   SlotsHeard,
 } from "./factOps.js";
@@ -485,6 +486,26 @@ describe("factValueOps, of a value an encoder was handed", () => {
     );
     expect(factValueOps("opts", encoding).encoded?.()).toBeNull();
     expect(factValueOps("put", source()).encoded?.()).toBeNull();
+  });
+});
+
+describe("factElementOps", () => {
+  it("reads an element's tag and its attributes in the order they were stated", () => {
+    const facts = source();
+    const db = facts.db as Database;
+    db.add("jsxElement", ["button", "buttonTag"]);
+    db.add("jsxAttribute", ["button", "onClick", "set"]);
+    db.add("jsxAttribute", ["button", "type", "tpl"]);
+    const element = factElementOps("button", facts);
+
+    expect(element.tag()).toBe("buttonTag");
+    expect(
+      element.attributes().map(({ name, value }) => [name, value.source?.()]),
+    ).toEqual([
+      ["onClick", "set"],
+      ["type", "tpl"],
+    ]);
+    expect(factElementOps("fragment", facts).tag()).toBe("");
   });
 });
 

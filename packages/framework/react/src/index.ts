@@ -28,19 +28,19 @@ import {
   declarationsIn,
   describeDiscovery,
   imported,
+  renderedProps,
   subUnitsOf,
 } from "@suss/recognize";
 
-import { reactEventHandlers } from "./subUnits.js";
-
 import type { DeclaredDiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { ClaimInputs } from "@suss/recognize";
 
 /**
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "3";
+const VERSION = "4";
 
 const PASS_THROUGH = ["useCallback", "memo", "forwardRef"];
 
@@ -162,7 +162,34 @@ const EFFECTS = callbacks({ client: HOOKS })
   })
   .example("useEffect(() => { document.title = label; }, [label])");
 
-const EFFECT_UNITS = subUnitsOf([EFFECTS]);
+const HANDLER_METADATA = {
+  react: {
+    kind: { reads: "text", text: "handler" },
+    component: { reads: "parent" },
+  },
+} as const;
+
+const EVENT: ClaimInputs = [{ position: 0, role: "event" }];
+
+/**
+ * React calls a function handed to an element under an `on` prop when
+ * the event fires, not while the component renders, so each one the
+ * component writes is a unit of its own.
+ */
+const HANDLERS = renderedProps({ matching: "^on[A-Z]" })
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "callee", "prop", "countOnCollision"],
+    inputs: EVENT,
+    metadata: HANDLER_METADATA,
+  })
+  .unitWhenNamedInParent({
+    kind: "handler",
+    name: ["parent", "written"],
+    inputs: EVENT,
+    metadata: HANDLER_METADATA,
+  })
+  .example("<button onClick={() => save(order)}>Save</button>");
 
 export function reactFramework(): PatternPack {
   return {
@@ -240,15 +267,12 @@ export function reactFramework(): PatternPack {
       argument: 0,
     })),
 
-    subUnits: (parent, ctx) => [
-      ...reactEventHandlers(parent, ctx),
-      ...EFFECT_UNITS(parent, ctx),
-    ],
+    subUnits: subUnitsOf([HANDLERS, EFFECTS]),
 
     declarations: {
       declarations: [
         ...DECLARED_DISCOVERY.map(describeDiscovery),
-        ...declarationsIn([EFFECTS]).declarations,
+        ...declarationsIn([EFFECTS, HANDLERS]).declarations,
       ],
     },
   };

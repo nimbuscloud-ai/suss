@@ -37,6 +37,7 @@ export {
   pack,
   subUnitsOf,
 } from "./pack.js";
+export { renderedProps } from "./renderedProps.js";
 export { composeRoutes, rowRoutes } from "./routeTable.js";
 export { runtimeReads } from "./runtimeReads.js";
 export { schemaReads } from "./schemaReads.js";
@@ -84,6 +85,7 @@ export type {
   CallsLink,
   Chain,
   ChannelPart,
+  ClaimInputs,
   ClaimMetadata,
   ClaimMetadataLeaf,
   ClaimsEnding,
@@ -97,6 +99,7 @@ export type {
   DeclaredSlots,
   DefaultedWhenLink,
   Deployment,
+  ElementNamePart,
   Ending,
   EntriesLink,
   EntryMeaning,
@@ -135,6 +138,7 @@ export type {
   PropertyPart,
   RelatedAccess,
   RelationsLink,
+  RenderedPropsLink,
   RuntimeReadEnding,
   ScheduleEnding,
   ScheduleUnread,
@@ -165,6 +169,7 @@ export type {
   UnitInvokeEnding,
   UnitInvokeMethod,
   UnitWhenInPlaceLink,
+  UnitWhenNamedInParentLink,
   WholeMessage,
   WriteMeaning,
   WritesLink,
@@ -211,6 +216,7 @@ export type {
   ValueRead,
 } from "./ops.js";
 export type { Match, PackSpec } from "./pack.js";
+export type { ClaimSpec, RenderedProps } from "./renderedProps.js";
 export type {
   BaseRole,
   ChildrenIn,

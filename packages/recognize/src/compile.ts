@@ -80,6 +80,7 @@ import type {
   OneArgument,
   RelatedAccess,
   RelationsLink,
+  RenderedPropsLink,
   ScheduleEnding,
   ScheduleUnread,
   ScopeLink,
@@ -104,6 +105,7 @@ import type {
   UnitInvokeEnding,
   UnitInvokeMethod,
   UnitWhenInPlaceLink,
+  UnitWhenNamedInParentLink,
 } from "./chain.js";
 import type {
   CallOps,
@@ -948,16 +950,41 @@ function propertyWrittenAt(
   return null;
 }
 
+type SubUnitsHook = NonNullable<PatternPack["subUnits"]>;
+
 /**
- * The `subUnits` hook for the chains that say what a callback written in
- * place becomes. It reads the calls the adapter says the parent runs,
- * matches each the way the recognizer does, and claims the callback
- * when the source writes it in place. Null when no chain says.
+ * The `subUnits` hook for the chains that say what a function handed
+ * over becomes: a callback a call writes in place, or a function an
+ * element is handed under a matching attribute. Each element chain's
+ * claims come first, in the order of the chains, then the calls'. Null
+ * when no chain says.
  */
 export function compileSubUnits(
   chains: readonly Chain<MethodMeaning>[],
   options: CompileOptions = {},
-): NonNullable<PatternPack["subUnits"]> | null {
+): SubUnitsHook | null {
+  const hooks = [
+    ...chains.flatMap((chain) => {
+      const hook = elementClaimsOf(chain);
+      return hook === null ? [] : [hook];
+    }),
+    ...(callClaimsOf(chains, options) ?? []),
+  ];
+  if (hooks.length === 0) {
+    return null;
+  }
+  return (parent, ctx) => hooks.flatMap((hook) => hook(parent, ctx));
+}
+
+/**
+ * The hook for the chains that claim a callback a call writes in place.
+ * It reads the calls the adapter says the parent runs, matches each the
+ * way the recognizer does, and claims the first chain's callback.
+ */
+function callClaimsOf(
+  chains: readonly Chain<MethodMeaning>[],
+  options: CompileOptions,
+): [SubUnitsHook] | null {
   const claiming = chains.flatMap((chain) => {
     const link: UnitWhenInPlaceLink | null = linkIn(chain, "unitWhenInPlace");
     const methods = methodsIn(chain);
@@ -975,7 +1002,7 @@ export function compileSubUnits(
           ...modules,
         ])
       : null;
-  return (parent, ctx) => {
+  const hook: SubUnitsHook = (parent, ctx) => {
     const carrier = ctx as SubUnitOpsCarrier | null;
     if (words !== null && !writesAny(carrier, parent, words)) {
       return [];
@@ -1000,26 +1027,21 @@ export function compileSubUnits(
       counts.set(callee, count + 1);
       const countInParent = countsInParent.get(link) ?? 0;
       countsInParent.set(link, countInParent + 1);
-      const naming: ClaimNaming = {
-        parent: parent.name,
-        callee,
-        count,
-        countInParent,
-        countedAs: link.countedAs ?? callee,
-        call,
-      };
-      claims.push({
-        func: claim.func,
-        kind: link.kind,
-        name: link.name.map((part) => NAME_PART[part](naming)).join(""),
-        inputMapping: { type: "positionalParams", params: [] },
-        ...(link.metadata === undefined
-          ? {}
-          : { metadata: metadataOf(link.metadata, naming) }),
-      });
+      claims.push(
+        claimed(claim.func, link, {
+          ...NO_ELEMENT,
+          parent: parent.name,
+          callee,
+          count,
+          countInParent,
+          countedAs: link.countedAs ?? callee,
+          call,
+        }),
+      );
     }
     return claims;
   };
+  return [hook];
 }
 
 /** How a hand-built pack asks for its compiled hooks. */
@@ -1045,23 +1067,176 @@ function writesAny(
   return mentions === undefined || words.some((word) => mentions(parent, word));
 }
 
-/** What a claimed callback's name and metadata are built from. */
+/** A claim's unit: its kind, its name built from the link's parts, its inputs and its metadata. */
+function claimed(
+  func: unknown,
+  link: UnitWhenInPlaceLink | UnitWhenNamedInParentLink,
+  naming: ClaimNaming,
+): DiscoveredSubUnit {
+  return {
+    func,
+    kind: link.kind,
+    name: link.name.map((part) => NAME_PART[part](naming)).join(""),
+    inputMapping: {
+      type: "positionalParams",
+      params: [...(link.inputs ?? [])],
+    },
+    ...(link.metadata === undefined
+      ? {}
+      : { metadata: metadataOf(link.metadata, naming) }),
+  };
+}
+
+/**
+ * The hook for a chain over the elements a parent renders. For each
+ * attribute whose name the chain's pattern matches, it claims a function
+ * written there in place, or a function handed over by name that the
+ * parent's own body writes. A name ending in `countOnCollision` gets
+ * `#N` only when two claims in the parent come out with the same name.
+ */
+function elementClaimsOf(chain: Chain<MethodMeaning>): SubUnitsHook | null {
+  const start: RenderedPropsLink | null = linkIn(chain, "renderedProps");
+  if (start === null) {
+    return null;
+  }
+  const matching = new RegExp(start.matching);
+  const links: AttributeClaimLinks = {
+    inPlace: linkIn(chain, "unitWhenInPlace"),
+    named: linkIn(chain, "unitWhenNamedInParent"),
+  };
+  return (parent, ctx) => {
+    const carrier = ctx as SubUnitOpsCarrier | null;
+    const found: AttributeClaim[] = [];
+    for (const element of carrier?.elements?.(parent) ?? []) {
+      for (const { name, value } of element.attributes()) {
+        const claim = matching.test(name)
+          ? ATTRIBUTE_CLAIM[formOf(value)]?.(value, links, {
+              parent,
+              carrier,
+            })
+          : null;
+        if (claim !== null && claim !== undefined) {
+          found.push({
+            ...claim,
+            naming: {
+              ...NO_CALL,
+              parent: parent.name,
+              callee: element.tag(),
+              countInParent: found.length,
+              prop: name,
+              written: value.source?.() ?? "",
+            },
+          });
+        }
+      }
+    }
+    return numberedOnCollision(found);
+  };
+}
+
+/** What an element chain's two claim links are, when the chain gives them. */
+interface AttributeClaimLinks {
+  readonly inPlace: UnitWhenInPlaceLink | null;
+  readonly named: UnitWhenNamedInParentLink | null;
+}
+
+/** One function an attribute hands over, before its name is numbered. */
+interface AttributeClaim {
+  readonly func: unknown;
+  readonly link: UnitWhenInPlaceLink | UnitWhenNamedInParentLink;
+  readonly naming: ClaimNaming;
+}
+
+/** How each form of an attribute's value is claimed, by the link that takes it. */
+const ATTRIBUTE_CLAIM: Partial<
+  Record<
+    ValueForm,
+    (
+      value: ValueOps,
+      links: AttributeClaimLinks,
+      reading: {
+        parent: DiscoveredSubUnitParent;
+        carrier: SubUnitOpsCarrier | null;
+      },
+    ) => Omit<AttributeClaim, "naming"> | null
+  >
+> = {
+  function: (value, links) => {
+    const func = (value as Partial<AstCapableValueOps>).ast?.() ?? null;
+    return links.inPlace === null || func === null
+      ? null
+      : { func, link: links.inPlace };
+  },
+  name: (value, links, { parent, carrier }) => {
+    const fn = value.function?.() ?? null;
+    const func = (fn as Partial<AstCapableValueOps> | null)?.ast?.() ?? null;
+    const written = fn !== null && carrier?.writes?.(parent, fn) === true;
+    return links.named === null || func === null || !written
+      ? null
+      : { func, link: links.named };
+  },
+};
+
+/** The claims as units, each name that more than one claim comes out with numbered in source order. */
+function numberedOnCollision(
+  found: readonly AttributeClaim[],
+): DiscoveredSubUnit[] {
+  const units = found.map(({ func, link, naming }) =>
+    claimed(func, link, naming),
+  );
+  const colliding = new Map<string, number>();
+  units.forEach((unit, at) => {
+    if (found[at]?.link.name.includes("countOnCollision") === true) {
+      colliding.set(unit.name, (colliding.get(unit.name) ?? 0) + 1);
+    }
+  });
+  const seen = new Map<string, number>();
+  return units.map((unit, at) => {
+    const numbered =
+      found[at]?.link.name.includes("countOnCollision") === true &&
+      (colliding.get(unit.name) ?? 0) > 1;
+    if (!numbered) {
+      return unit;
+    }
+    const index = seen.get(unit.name) ?? 0;
+    seen.set(unit.name, index + 1);
+    return { ...unit, name: `${unit.name}#${index}` };
+  });
+}
+
+/** What a claimed function's name and metadata are built from. */
 interface ClaimNaming {
   readonly parent: string;
+  /** The callee as written, or an element's tag. */
   readonly callee: string;
   /** The claims under this callee in the parent before this one. */
   readonly count: number;
   /** The claims this chain made in the parent before this one. */
   readonly countInParent: number;
   readonly countedAs: string;
-  readonly call: CallOps;
+  /** The call that handed the callback over, or null for an element. */
+  readonly call: CallOps | null;
+  /** The attribute an element handed the function over under. */
+  readonly prop: string;
+  /** The name the function was handed over as. */
+  readonly written: string;
 }
 
+/** The naming a call's claim has no element for. */
+const NO_ELEMENT = { prop: "", written: "" } as const;
+
+/** The naming an element's claim has no call for. */
+const NO_CALL = { count: 0, countedAs: "", call: null } as const;
+
+/** Each name part; `countOnCollision` is added once every claim in the parent has its name. */
 const NAME_PART: Record<SubUnitNamePart, (naming: ClaimNaming) => string> = {
   parent: (naming) => naming.parent,
   callee: (naming) => `.${naming.callee}`,
   countPerCallee: (naming) => `#${naming.count}`,
   countInParent: (naming) => `.${naming.countedAs}#${naming.countInParent}`,
+  prop: (naming) => `.${naming.prop}`,
+  written: (naming) => `.${naming.written}`,
+  countOnCollision: () => "",
 };
 
 /** How each kind of metadata leaf reads the claim. */
@@ -1074,7 +1249,9 @@ const METADATA_LEAF: Record<
   parent: (_leaf, naming) => naming.parent,
   count: (_leaf, naming) => naming.countInParent,
   argumentItems: (leaf, naming) =>
-    argumentItems(naming.call, (leaf as ArgumentItemsLeaf).at),
+    naming.call === null
+      ? null
+      : argumentItems(naming.call, (leaf as ArgumentItemsLeaf).at),
 };
 
 /** The metadata the link declares, with each leaf read off the claim, in the order the pack wrote the keys. */

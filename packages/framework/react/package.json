@@ -46,21 +46,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-typescript": "0.39.0",
     "@suss/extractor": "0.39.0",
     "@suss/recognize": "0.39.0"
   },
   "devDependencies": {
+    "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
     "@suss/ir-core": "*",
     "@suss/test-project": "*",
-    "ts-morph": "*",
     "tsup": "*",
     "typescript": "*",
     "vitest": "*"
   },
-  "private": true,
-  "peerDependencies": {
-    "ts-morph": "^23.0.0"
-  }
+  "private": true
 }

@@ -17,7 +17,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { extractPythonProject } from "@suss/adapter-python";
 import { extractRubyProject } from "@suss/adapter-ruby";
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { callbacks, constructedFrom, pack } from "@suss/recognize";
+import {
+  callbacks,
+  constructedFrom,
+  pack,
+  renderedProps,
+} from "@suss/recognize";
 import { nodeRuntimePack } from "@suss/runtime-node";
 import { createTestProject } from "@suss/test-project";
 
@@ -159,6 +164,7 @@ end
 async function typescriptSummaries(
   declared: PatternPack = DECLARED,
   source = TYPESCRIPT,
+  file = "/jobs.ts",
 ): Promise<BehavioralSummary[]> {
   const project = createTestProject();
   project.createSourceFile(
@@ -169,7 +175,7 @@ async function typescriptSummaries(
     "/node_modules/jobs/index.d.ts",
     "export declare class Jobs { later(run: () => void, tags?: string[]): void; }",
   );
-  project.createSourceFile("/jobs.ts", source);
+  project.createSourceFile(file, source);
   // TypeScript reads `process.env` through the Node runtime pack.
   const adapter = createTypeScriptAdapter({
     project,
@@ -402,5 +408,44 @@ describe("a callbacks declaration that only claims", () => {
     expect(claimsOf(await rubySummaries(CLAIMING, "queue"))).toEqual(
       expectedClaims("*tags"),
     );
+  });
+});
+
+const CLICKS = renderedProps({ matching: "^on[A-Z]" })
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "callee", "prop", "countOnCollision"],
+  })
+  .example("<button onClick={() => notify()}>go</button>");
+
+const CLICKING = pack("declared-clicks", [CLICKS], {
+  languages: ["typescript", "python", "ruby"],
+  recognizedAs: "@suss/declared-test",
+});
+
+// The TypeScript adapter runs a pack in a file only when the pack has
+// something to find there, so the chain rides on the export pattern.
+const CLICKING_TS: PatternPack = { ...CLICKING, discovery: EXPORTS.discovery };
+
+// Only TypeScript writes JSX, so the Python and Ruby adapters list no
+// elements and the same declaration claims nothing there.
+describe("a chain over the elements a parent renders", () => {
+  it("claims the handler an element is handed in TypeScript, and nothing in Python or Ruby", async () => {
+    const handlers = (summaries: readonly BehavioralSummary[]) =>
+      summaries
+        .filter((summary) => summary.identity.name.includes(".onClick"))
+        .map((summary) => summary.identity.name);
+
+    expect(
+      handlers(
+        await typescriptSummaries(
+          CLICKING_TS,
+          "export function enqueue() {\n  return <button onClick={() => notify()}>go</button>;\n}\n",
+          "/jobs.tsx",
+        ),
+      ),
+    ).toEqual(["enqueue.button.onClick"]);
+    expect(handlers(await pythonSummaries(CLICKING))).toEqual([]);
+    expect(handlers(await rubySummaries(CLICKING))).toEqual([]);
   });
 });
