@@ -2138,9 +2138,12 @@ describe("the JSX a function writes and the parameter a value is, over the facts
  *   def local(): ...
  *   loop = loop   # a name that binds back to itself
  */
-function declared(): FactSource {
+function declared(extra: readonly string[][] = []): FactSource {
   const db = new Database();
   const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  for (const [relation, ...row] of extra) {
+    add(relation ?? "", ...row);
+  }
   add("exportsAs", "chip.py", "Chip", "chip.py:0-20");
   add("imports", "barrel.py#Badge", "chip.py", "Chip");
   add("exportsAs", "barrel.py", "Badge", "barrel.py#Badge");
@@ -2194,5 +2197,37 @@ describe("where a value is declared, over the facts", () => {
       name: null,
     });
     expect(factValueOps("use.py#local", facts).declaration?.()).toBeNull();
+  });
+
+  it("reads a member off an object the module writes out where the member's value is declared, and stops at an object that reads itself", () => {
+    // card.ts: export const Card = { Root: CardRoot }, with CardRoot
+    // imported from root.ts; loop.ts: const loop = { self: loop.self }.
+    const facts = declared([
+      ["readsProperty", "use.ts#Card.Root", "use.ts#Card", "Root"],
+      ["imports", "use.ts#Card", "card.ts", "Card"],
+      ["exportsAs", "card.ts", "Card", "card.ts#object"],
+      ["holdsProperty", "card.ts#object", "Root", "card.ts#CardRoot"],
+      ["writtenEntryAt", "card.ts#object", "0", "card.ts#CardRoot", "value"],
+      ["imports", "card.ts#CardRoot", "root.ts", "CardRoot"],
+      ["exportsAs", "root.ts", "CardRoot", "root.ts:0-30"],
+      ["readsProperty", "loop.self", "loopObject", "self"],
+      ["holdsProperty", "loopObject", "self", "loop.self"],
+      ["writtenEntryAt", "loopObject", "0", "loop.self", "value"],
+      ["readsProperty", "use.ts#Card.Other", "use.ts#Card", "Other"],
+    ]);
+    const objects = new Set(["card.ts#object", "loopObject"]);
+    const withObjects: FactSource = {
+      ...facts,
+      shapeOf: (key) => (objects.has(key) ? "object" : null),
+      comesTo: (key) => (key === "use.ts#Card" ? ["card.ts#object"] : []),
+    };
+    const at = (key: string) => factValueOps(key, withObjects).declaration?.();
+
+    expect(at("use.ts#Card.Root")).toEqual({
+      file: "root.ts",
+      name: "CardRoot",
+    });
+    expect(at("use.ts#Card.Other")).toBeNull();
+    expect(at("loop.self")).toBeNull();
   });
 });
