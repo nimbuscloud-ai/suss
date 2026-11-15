@@ -1238,7 +1238,9 @@ function emitKeyedRead(
   key: RbNode,
   keyParent: RbNode | null,
 ): void {
-  if (WRITTEN_KEY_TYPES.has(key.type)) {
+  // `ENV["#{name}_KEY"]` writes its key as a template, which the program
+  // works out like any other computed key.
+  if (WRITTEN_KEY_TYPES.has(key.type) && !isInterpolated(key)) {
     return;
   }
   const siteKey = nodeId(emitter.filePath, site);
