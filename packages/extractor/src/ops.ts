@@ -340,6 +340,11 @@ export interface ValueOps {
   /** The value as the source wrote it, before any name in it is followed. */
   source?(): string;
   /**
+   * The text of each item of a list written out at this spot, a spread
+   * as written, or null when the source writes anything else here.
+   */
+  writtenItems?(): readonly string[] | null;
+  /**
    * How the source wrote this value at this spot, without following
    * anything: a function written in place, a name, an object written
    * out, a JSX element, or anything else. A word the language keeps for
@@ -1034,6 +1039,8 @@ export interface FactSource {
    * that states every fact up front has already stated.
    */
   declarationOf?(key: string): Declaration | null;
+  /** The text of each item of the list written at the key, or null when it is not a list. Unset reads none. */
+  writtenItemsOf?(key: string): readonly string[] | null;
   /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
   formOf?(key: string): ValueForm;
   /** The string, number or boolean written at the key, or null when it is not one. */

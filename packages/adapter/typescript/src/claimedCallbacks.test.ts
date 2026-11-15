@@ -22,6 +22,10 @@ import type { CallExpression } from "ts-morph";
 // claim's own read misses is on no summary at all.
 const LATER = callbacks({ client: constructedFrom("jobs", "Jobs") })
   .methods({ later: { callback: [{ written: "callback", at: 0 }] } })
+  .schedules({
+    via: "asWritten",
+    unread: { missing: "missing-callback", other: "non-literal-callback" },
+  })
   .unitWhenInPlace({
     kind: "scheduled-callback",
     name: ["parent", "callee", "countPerCallee"],

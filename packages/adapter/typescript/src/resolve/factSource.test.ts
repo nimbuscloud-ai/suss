@@ -150,6 +150,20 @@ describe("the fact source", () => {
     });
   });
 
+  it("gives each item of a list written at the call as written, through a cast, and nothing for a name", () => {
+    const listed = bothOps({
+      source: `
+        export function sync(items: string[]) {
+          track(["a", ...items]);
+          track(["b"] as const);
+          track(items);
+        }
+      `,
+    }).map(({ fromFacts }) => fromFacts?.valueAt(0)?.writtenItems?.());
+
+    expect(listed).toEqual([['"a"', "...items"], ['"b"'], null]);
+  });
+
   it("reads an object that spreads itself once", () => {
     const [, , ringed] = bothOps().filter(
       ({ fromNodes }) => fromNodes.method() !== null,

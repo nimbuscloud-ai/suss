@@ -20,10 +20,18 @@
 // already pickable via dep-call tracking; giving them summaries of
 // their own comes later).
 
-import { describeDiscovery } from "@suss/recognize";
+import {
+  anyOf,
+  callbacks,
+  constructedFrom,
+  declarationsIn,
+  describeDiscovery,
+  imported,
+  subUnitsOf,
+} from "@suss/recognize";
 
 import { reactRootComponents } from "./rootDiscovery.js";
-import { reactSubUnits } from "./subUnits.js";
+import { reactEventHandlers } from "./subUnits.js";
 
 import type { DeclaredDiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -32,7 +40,7 @@ import type { PackDeclaration } from "@suss/ir-core";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 const PASS_THROUGH = ["useCallback", "memo", "forwardRef"];
 
@@ -57,6 +65,36 @@ const COMPONENT_EXPORTS: DeclaredDiscoveryPattern = {
     bodyEndsIn: "element",
   },
 };
+
+/** React's hooks, imported by name or read off the default or namespace import. */
+const HOOKS = anyOf(
+  constructedFrom("react"),
+  imported({ from: ["react"], named: ["default", "*"] }),
+);
+
+/**
+ * React runs an effect after the render that scheduled it, so each one
+ * written in place is a unit of its own, and the component's summary
+ * records nothing of it.
+ */
+const EFFECTS = callbacks({ client: HOOKS })
+  .methods({ useEffect: { callback: { written: "callback", at: 0 } } })
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "countInParent"],
+    countedAs: "effect",
+    metadata: {
+      react: {
+        kind: { reads: "text", text: "effect" },
+        component: { reads: "parent" },
+        index: { reads: "count" },
+        deps: { reads: "argumentItems", at: 1 },
+      },
+    },
+  })
+  .example("useEffect(() => { document.title = label; }, [label])");
+
+const EFFECT_UNITS = subUnitsOf([EFFECTS]);
 
 export function reactFramework(): PatternPack {
   return {
@@ -134,10 +172,18 @@ export function reactFramework(): PatternPack {
       argument: 0,
     })),
 
-    subUnits: reactSubUnits,
+    subUnits: (parent, ctx) => [
+      ...reactEventHandlers(parent, ctx),
+      ...EFFECT_UNITS(parent, ctx),
+    ],
     discoverUnits: reactRootComponents,
 
-    declarations: { declarations: [describeDiscovery(COMPONENT_EXPORTS)] },
+    declarations: {
+      declarations: [
+        describeDiscovery(COMPONENT_EXPORTS),
+        ...declarationsIn([EFFECTS]).declarations,
+      ],
+    },
   };
 }
 

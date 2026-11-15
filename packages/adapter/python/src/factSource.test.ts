@@ -65,6 +65,23 @@ describe("the Python fact source", () => {
     expect(source.comesTo?.(`${FILE}#missing`)).toEqual([]);
   });
 
+  it("gives each item of a list written out as written, and nothing for a name or an object", async () => {
+    const tree = await parsePython(
+      'tags = ["a", *rest]\nlabels = ("b",)\nopts = {"c": 1}\n',
+    );
+    const root = tree.rootNode;
+    const source = pythonFactSource(
+      factsForFile({ file: FILE, root, module: bindModule(root), packs: [] }),
+    );
+    const itemsAt = (name: string) =>
+      source.writtenItemsOf?.(source.writtenAs(`${FILE}#${name}`) ?? "");
+
+    expect(itemsAt("tags")).toEqual(['"a"', "*rest"]);
+    expect(itemsAt("labels")).toEqual(['"b"']);
+    expect(itemsAt("opts")).toBeNull();
+    expect(source.writtenItemsOf?.(`${FILE}#tags`)).toBeNull();
+  });
+
   it("gives the function a name comes to, and the one a factory call gives back", async () => {
     const { db, source } = await sourceFor();
     const isFunction = (key: string | null | undefined) =>

@@ -238,6 +238,7 @@ walk it:
 | `flag()` | the yes or no the source wrote, taking a number the way it takes a boolean |
 | `entries(unsettled)` | what an object states, as key and value per entry |
 | `items()` | what a list states, item by item |
+| `writtenItems()` | the text of each item of a list written at this spot, a spread as written, without following a name; null for anything else |
 | `property(name)` | what one named property states, as a value of its own |
 | `parts()` | the pieces of text the source wrote, with the holes left out |
 | `holes()` | what the source interpolated between those pieces, each as the call it was written as |
@@ -322,6 +323,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `elements(tag)` | the adapter's `elementsOf` on the function `function()` settles to, which states `writesElement` for every element written under it and the element's `jsxElement`, `jsxAttribute`, `jsxSpread` and `jsxChild` rows. It keeps the elements whose `jsxElement` tag the adapter's `textOf` spells as `tag`, in source order. Each element's `props()` are its `jsxAttribute` names, its `spreads()` the values of its `jsxSpread` rows, and `hasChildren()` says whether it has a `jsxChild` row. An adapter that writes no JSX leaves `elementsOf` unset, and the op gives nothing |
 | `declaration()` | the adapter's `declarationOf` where it has one. TypeScript reads the declaration a name `binds` to, and for an import binding follows `imports(d, m, n)` to what the store's export table gives for `m` under `n`, with each module stated only as far as its export statements; a variable, function or class gives its name, a name leads on to what it binds to, and anything else gives its file and no name. Without `declarationOf`, `imports(x, m, n)` on the value leads to the `exportsAs(m, n, v)` row, following `v` on when it is imported in turn, and otherwise the `exportsAs` row of the value or of what it `binds` to gives the file and the name, which is how Python states a module-level def and Ruby a top-level class or constant. When neither gives an answer and the value is a member read, `readsProperty(x, o, n)`, it is declared where `property(n)` of `o`'s `object()` is, so `Card.Root` with `Card = { Root: CardRoot }` is declared where `CardRoot` is. TypeScript asks this of the expression inside `Slider.Root<number>`. Null when nothing is behind it |
 | `parameterAt(fn)` | the position `k` of a `paramOf(f, k, p)` row on the function `fn` settles to, where `p` is the value itself (how Python and Ruby key a name for a parameter), what it `binds` to (how TypeScript does), or the parameter whose destructure has that declaration as its rest, `restOf(d, p)`. Null for none, or for two positions |
+| `writtenItems()` | the adapter's `writtenItemsOf` on the value as written: an array literal's elements in TypeScript, a list's, tuple's or set's children in Python, and an array's children in Ruby |
 | `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names, or an `extendsNamed` base the adapter's `spellsBase` says the spec spells, which is how Ruby matches `ActiveRecord::Base` in a project that reopens `class Base` inside `module ActiveRecord`; its `members(kind)` are the functions among its `holdsProperty` rows |
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
 | `bodyCalls()` on a value or a module | `bodyCallAt(f, k, r)` on the value's own key or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
@@ -1205,7 +1207,12 @@ argument pick does, for Python and Ruby.
 
 The effect records the callee as `via`, and `callbackRef` says what was
 found: `literal` for a function written in place, the name for a name,
-and the pack's `unread` reasons for anything else or for nothing.
+and the pack's `unread` reasons for anything else or for nothing. A
+chain records that effect only when it says `.schedules(...)`. Without
+it the chain's ending is `{ yields: "claims" }`, no walk dispatches on
+it, and it only claims the callbacks its calls write in place. React's
+`useEffect` is read that way, since the component's summary keeps
+nothing of an effect.
 
 A runtime's timer takes nothing but its callback in the first place, so
 the Node pack reads it with `written: "argument"`, which takes whatever
@@ -1240,17 +1247,51 @@ body runs in source order, the ones in functions it runs inline
 included. The hook matches each call the way the recognizer does, a bare
 call of the chain's global first, and claims the callback when its
 `form()` is `function`, handing back the adapter's own node through
-`ast()`. The name is built from the parts in order: the parent's name,
-`.` and the callee, `#` and how many claims under that callee came
-before it in the parent. A callback written inside another claimed one
-still belongs to the parent, because the calls are not cut at a claim.
+`ast()`. For a bare call whose callee the table does not list as
+written, the hook asks what the callee was imported as before it asks
+whether the call starts at the chain's origin. A component calls its
+own setters far more than a library's hooks, and a callee no import
+binds is turned down without asking the store. The recognizer keeps the
+origin first, since there most calls fail the origin and the import
+question costs more. The name is built from the parts in order: the
+parent's name, `.` and the callee, `#` and how many claims under that
+callee came before it in the parent. A callback written inside another
+claimed one still belongs to the parent, because the calls are not cut
+at a claim.
 
-`metadata` on the link is a record of records whose leaves say what to
-read, and the claim's summary records it with each leaf read, keeping
-the order the pack wrote the keys in. `{ reads: "callee" }` is the
-callee as the source writes it. A pack that builds its `PatternPack` by
-hand takes the hook from `subUnitsOf(matches)`, which is what `pack()`
-uses.
+`countInParent` counts every claim the chain makes in the parent,
+however the callee is spelled, and writes the link's `countedAs` before
+the count, so React's effects are `Panel.effect#0` and `Panel.effect#1`
+whether the second was written `React.useEffect`. `metadata` on the link
+is a record of records whose leaves say what to read, and the claim's
+summary records it with each leaf read, keeping the order the pack
+wrote the keys in:
+
+```ts
+.unitWhenInPlace({
+  kind: "handler",
+  name: ["parent", "countInParent"],
+  countedAs: "effect",
+  metadata: {
+    react: {
+      kind: { reads: "text", text: "effect" },
+      component: { reads: "parent" },
+      index: { reads: "count" },
+      deps: { reads: "argumentItems", at: 1 },
+    },
+  },
+})
+```
+
+`callee` is the callee as the source writes it, `text` the pack's own
+text, `parent` the parent's name, `count` the number `countInParent`
+writes, and `argumentItems` the items of the list the call passes at
+`at` as the source writes each one, through `writtenItems()`. An
+argument that is not a list written there is its whole text in a list
+of one, since a name for a list is what the call passes, and a call
+that passes nothing there gives null. A pack that builds its
+`PatternPack` by hand takes the hook from `subUnitsOf(matches)`, which
+is what `pack()` uses.
 
 A pack built by hand can pass `{ onlyWhereWritten: true }` to `compile`
 and to `subUnitsOf`, and the hooks then read the file's text through the

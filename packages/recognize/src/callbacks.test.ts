@@ -19,6 +19,8 @@ interface Written {
   /** The object's own properties. */
   readonly own?: Readonly<Record<string, Written>>;
   readonly node?: string;
+  /** The items of a list written here, each as written. */
+  readonly items?: readonly string[];
 }
 
 function valueOps(written: Written): ValueOps {
@@ -34,6 +36,7 @@ function valueOps(written: Written): ValueOps {
     holes: () => [],
     form: () => written.form,
     source: () => written.source ?? "",
+    writtenItems: () => written.items ?? null,
     object: () =>
       written.object === true ? valueOps({ form: "object" }) : null,
     ownProperty: (name) => {
@@ -47,7 +50,7 @@ function valueOps(written: Written): ValueOps {
 /**
  * A call to `callee`, made off the library `from` names, with these
  * arguments. `global` makes it a bare call of the runtime's global of
- * that name.
+ * that name. `importedAs` is the export a bare callee was imported as.
  */
 function callOps(over: {
   callee: string;
@@ -55,6 +58,8 @@ function callOps(over: {
   args?: readonly Written[];
   block?: Written;
   global?: boolean;
+  importedAs?: string;
+  method?: string;
 }): CallOps {
   const from = over.from ?? ["@acme/jobs"];
   const args = over.args ?? [];
@@ -62,7 +67,8 @@ function callOps(over: {
     (origin.origin === "global" && over.global === true) ||
     modulesOf(origin).some((module) => from.includes(module));
   return {
-    method: () => null,
+    method: () => over.method ?? null,
+    calleeImportedAs: () => over.importedAs ?? null,
     calleeText: () => over.callee,
     receiverIsFrom: fromHere,
     isFrom: fromHere,
@@ -397,5 +403,120 @@ describe("the unit a callback written in place becomes", () => {
         example: 'later("nightly", () => sweep())',
       }),
     ]);
+  });
+});
+
+/** A chain that says nothing about a schedule, numbering its claims across the parent with the metadata each records. */
+const WATCHERS = callbacks({ client: constructedFrom("@acme/jobs") })
+  .methods({ watch: { callback: { written: "callback", at: 0 } } })
+  .unitWhenInPlace({
+    kind: "handler",
+    name: ["parent", "countInParent"],
+    countedAs: "watcher",
+    metadata: {
+      jobs: {
+        kind: { reads: "text", text: "watcher" },
+        owner: { reads: "parent" },
+        index: { reads: "count" },
+        deps: { reads: "argumentItems", at: 1 },
+      },
+    },
+  })
+  .example("watch(() => sweep(), [table])");
+
+const WATCHERS_PACK = pack("watchers", [WATCHERS], {
+  languages: ["typescript"],
+  recognizedAs: "@suss/framework-jobs",
+});
+
+describe("a chain that only claims callbacks", () => {
+  const parent = { func: "the component", name: "Panel", kind: "component" };
+
+  it("records nothing on the unit, and goes by its claims in the pack health report", () => {
+    expect(WATCHERS_PACK.invocationRecognizers).toEqual([]);
+    expect(
+      compile(WATCHERS.declared, "@suss/framework-jobs")(null, {
+        ops: callOps({ callee: "watch", args: [INLINE] }),
+      }),
+    ).toBeNull();
+    expect(WATCHERS_PACK.accessRecognizers).toBeUndefined();
+    expect(WATCHERS_PACK.protocol).toBe("in-process");
+    expect(WATCHERS_PACK.declarations?.declarations).toEqual([
+      expect.objectContaining({ name: "claims" }),
+    ]);
+  });
+
+  it("numbers every claim in the parent however its callee is spelled, and reads each metadata leaf off the call", () => {
+    const calls = [
+      callOps({
+        callee: "watch",
+        args: [
+          { ...INLINE, node: "listed" },
+          { form: "other", items: ["table", "...rest"] },
+        ],
+      }),
+      callOps({ callee: "observe", importedAs: "unwatch", args: [INLINE] }),
+      callOps({ callee: "jobs.observe", method: "observe", args: [INLINE] }),
+      callOps({
+        callee: "observe",
+        importedAs: "watch",
+        args: [
+          { ...INLINE, node: "aliased" },
+          { form: "name", source: "deps" },
+        ],
+      }),
+      callOps({ callee: "watch", args: [{ ...INLINE, node: "bare" }] }),
+    ];
+    const claimed = WATCHERS_PACK.subUnits?.(parent, { calls: () => calls });
+    expect(
+      (claimed ?? []).map((one) => [one.func, one.name, one.metadata]),
+    ).toEqual([
+      [
+        "listed",
+        "Panel.watcher#0",
+        {
+          jobs: {
+            kind: "watcher",
+            owner: "Panel",
+            index: 0,
+            deps: ["table", "...rest"],
+          },
+        },
+      ],
+      [
+        "aliased",
+        "Panel.watcher#1",
+        { jobs: { kind: "watcher", owner: "Panel", index: 1, deps: ["deps"] } },
+      ],
+      [
+        "bare",
+        "Panel.watcher#2",
+        { jobs: { kind: "watcher", owner: "Panel", index: 2, deps: null } },
+      ],
+    ]);
+  });
+
+  it("counts after the callee as written when the link names no count", () => {
+    const counted = callbacks({ client: constructedFrom("@acme/jobs") })
+      .methods({ watch: { callback: { written: "callback", at: 0 } } })
+      .unitWhenInPlace({ kind: "handler", name: ["parent", "countInParent"] });
+    const hook = subUnitsOf([counted]);
+    const claimed = hook(parent, {
+      calls: () => [callOps({ callee: "watch", args: [INLINE] })],
+    });
+    expect(claimed.map((one) => [one.name, one.metadata])).toEqual([
+      ["Panel.watch#0", undefined],
+    ]);
+  });
+
+  it("gives a pack built by hand a hook that claims nothing when no chain says what a callback becomes", () => {
+    const plain = callbacks({ client: constructedFrom("@acme/jobs") }).methods({
+      watch: { callback: { written: "callback", at: 0 } },
+    });
+    expect(
+      subUnitsOf([plain])(parent, {
+        calls: () => [callOps({ callee: "watch", args: [INLINE] })],
+      }),
+    ).toEqual([]);
   });
 });

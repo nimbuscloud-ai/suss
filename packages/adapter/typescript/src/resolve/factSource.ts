@@ -163,6 +163,7 @@ export function factSourceFor(
             ).declaration?.() ?? null)
           : declarationBehind(node, store),
       ),
+    writtenItemsOf: (key) => at(key, null, writtenItemsOf),
     formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
@@ -423,6 +424,12 @@ function specifierBound(declarations: readonly (Node | null)[]): string | null {
   );
   const [one] = specifiers;
   return specifiers.size === 1 && one !== undefined ? one : null;
+}
+
+function writtenItemsOf(node: Node): string[] | null {
+  return Node.isArrayLiteralExpression(node)
+    ? node.getElements().map((element) => element.getText())
+    : null;
 }
 
 function shapeOf(node: Node): "object" | "list" | null {
