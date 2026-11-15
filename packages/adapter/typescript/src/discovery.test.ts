@@ -3455,6 +3455,24 @@ describe("graphqlImperativeCall discovery", () => {
     expect(units[0].operationInfo?.operationName).toBe("CreatePet");
   });
 
+  it("names a unit for a call written in a quoted method by the key, without its quotes", () => {
+    const project = createProject();
+    const file = project.createSourceFile(
+      "page.ts",
+      `
+      import { ApolloClient, gql } from "@apollo/client";
+      declare const client: ApolloClient<unknown>;
+      export class Pets {
+        async "load-pet"() {
+          return client.query({ query: gql\`query LoadPet { pet { id } }\` });
+        }
+      }
+    `,
+    );
+    const units = discoverUnits(file, [makeImperativePattern()]);
+    expect(units[0].name).toBe("load-pet.LoadPet");
+  });
+
   it("reads the escapes in a gql template that has no substitutions", () => {
     const project = createProject();
     const file = project.createSourceFile(

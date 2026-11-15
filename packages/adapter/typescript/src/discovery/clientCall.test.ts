@@ -133,6 +133,27 @@ describe("naming a unit by its enclosing shape", () => {
     expect(names.sort()).toEqual(["getUser", "listOrders"]);
   });
 
+  it("names a quoted method and a quoted property by the key, without its quotes", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `
+      export class Api {
+        "get-user"() {
+          return fetch("/users/1");
+        }
+      }
+      export const handlers = {
+        "list-orders": () => fetch("/orders"),
+      };
+      `,
+    );
+    const names = discoverClientCalls(file, match, "client").map(
+      (unit) => unit.name,
+    );
+    expect(names.sort()).toEqual(["get-user", "list-orders"]);
+  });
+
   it("matches the global through globalThis and window, and not a method of that name elsewhere", () => {
     const project = createTestProject();
     const file = project.createSourceFile(

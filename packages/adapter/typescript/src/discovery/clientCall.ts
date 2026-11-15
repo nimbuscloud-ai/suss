@@ -28,6 +28,7 @@ import {
   pathFromProperty,
   statesLocalUrl,
 } from "../resolve/routePath.js";
+import { memberNameOf } from "../walk/propertyName.js";
 import { forEachDescendantOfKinds, skipsNothing } from "../walk/rawDescent.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
@@ -715,14 +716,14 @@ function clientUnitName(
     return enclosingFunc.getName() ?? methodName ?? "anonymous";
   }
   if (Node.isMethodDeclaration(enclosingFunc)) {
-    return enclosingFunc.getName();
+    return memberNameOf(enclosingFunc);
   }
   const parent = enclosingFunc.getParent();
   if (parent !== undefined && Node.isVariableDeclaration(parent)) {
     return parent.getName();
   }
   if (parent !== undefined && Node.isPropertyAssignment(parent)) {
-    return parent.getName();
+    return memberNameOf(parent);
   }
   return methodName ?? "anonymous";
 }

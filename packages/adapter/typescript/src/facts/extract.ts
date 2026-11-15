@@ -48,7 +48,7 @@ import {
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import { inTestFile } from "../testCode.js";
 import { runsInline } from "../walk/descent.js";
-import { propertyNameOf } from "../walk/propertyName.js";
+import { memberNameOf, propertyNameOf } from "../walk/propertyName.js";
 import {
   forEachDescendantOfKinds,
   forEachDescendantWhere,
@@ -1197,9 +1197,10 @@ function recordedMemberName(
   owner: ClassDeclaration,
   member: MethodDeclaration | PropertyDeclaration,
 ): string {
+  const name = memberNameOf(member);
   return member.isStatic() && spellsClassMembers(owner)
-    ? classMemberName(member.getName())
-    : member.getName();
+    ? classMemberName(name)
+    : name;
 }
 
 /**

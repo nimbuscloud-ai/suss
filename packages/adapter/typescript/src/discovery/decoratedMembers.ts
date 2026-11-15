@@ -8,6 +8,7 @@
 
 import { Node } from "ts-morph";
 
+import { memberNameOf } from "../walk/propertyName.js";
 import { importedNamesOf } from "./importScan.js";
 import { toFunctionRoot } from "./shared.js";
 
@@ -85,7 +86,7 @@ export function decoratedCallablesOf(
       }
       callables.push({
         func,
-        name: member.getName(),
+        name: memberNameOf(member),
         standsFor: candidate,
         decorator,
       });

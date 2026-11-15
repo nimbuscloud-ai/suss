@@ -14,6 +14,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { UNPLACED_STORE_NAME } from "@suss/resolution";
 
 import { isFunctionRoot } from "../discovery/shared.js";
+import { memberNameOf } from "../walk/propertyName.js";
 import { climbValue } from "../walk/unwrap.js";
 import { isWrittenAgain } from "./assignments.js";
 import { emitValue, factKeyOf, nodeId, referencedSymbol } from "./extract.js";
@@ -206,7 +207,7 @@ function emitFieldInitializer(
       db,
       "storesProperty",
       nodeId(cls),
-      parent.getName(),
+      memberNameOf(parent),
       key,
       UNPLACED_STORE_NAME,
     );

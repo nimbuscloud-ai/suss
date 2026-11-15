@@ -1122,6 +1122,20 @@ describe("reading a value an argument states", () => {
     ]);
   });
 
+  it("finds a property written under a quoted or numeric key by the name it has", () => {
+    const ops = opsForLastCall(`
+      import Deck from "tapedeck";
+      declare const deck: Deck;
+      export function play() {
+        return deck.send({ "Order": "shuffled", 0x10: "sixteen" });
+      }
+    `);
+
+    const stated = ops.valueAt(0);
+    expect(stated?.property("Order")?.text()).toBe("shuffled");
+    expect(stated?.property("16")?.text()).toBe("sixteen");
+  });
+
   it("reads each key as the property it names", () => {
     const ops = opsForLastCall(`
       import Deck from "tapedeck";

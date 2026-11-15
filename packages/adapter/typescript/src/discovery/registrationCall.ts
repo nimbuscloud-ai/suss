@@ -17,6 +17,7 @@ import { joinMountedPath, staysInItsFunction } from "@suss/resolution";
 import { nodeId } from "../facts/extract.js";
 import { createPerFileCache } from "../perFileCache.js";
 import { routePatternFromArgument } from "../resolve/routePath.js";
+import { memberNameOf } from "../walk/propertyName.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
@@ -183,7 +184,7 @@ export function discoverRegistrationCalls(
           results.push({
             func: prop,
             kind,
-            name: prop.getName(),
+            name: memberNameOf(prop),
             registrationSubjectId,
           });
           continue;
@@ -203,7 +204,7 @@ export function discoverRegistrationCalls(
           results.push({
             func: held,
             kind,
-            name: prop.getName(),
+            name: memberNameOf(prop),
             registrationSubjectId,
           });
         }

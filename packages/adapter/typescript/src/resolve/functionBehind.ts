@@ -16,6 +16,7 @@ import { Node, SyntaxKind } from "ts-morph";
 import { normalizeCalleeText } from "@suss/behavioral-ir";
 
 import { toFunctionRoot } from "../discovery/index.js";
+import { functionNameOf } from "../walk/propertyName.js";
 import {
   declarationsBehind,
   hasBody,
@@ -331,7 +332,7 @@ function declName(decl: Node): string | null {
       : null;
   }
   if (Node.isFunctionDeclaration(decl) || Node.isMethodDeclaration(decl)) {
-    const n = decl.getName?.();
+    const n = functionNameOf(decl);
     if (typeof n === "string" && n.length > 0) {
       return n;
     }

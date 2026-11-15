@@ -285,6 +285,48 @@ describe("reading a local response helper", () => {
       value: 204,
     });
   });
+
+  it("reads an object written with quoted keys, including the keys a pack requires", () => {
+    const terminals = terminalsFor(`
+      export function handler() {
+        return { "statusCode": 201, "body": JSON.stringify({ ok: true }) };
+      }
+    `);
+
+    expect(terminals).toHaveLength(1);
+    expect(terminals[0]?.terminal.statusCode).toEqual({
+      type: "literal",
+      value: 201,
+    });
+    expect(terminals[0]?.terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { ok: { type: "literal", value: true } },
+    });
+  });
+
+  it("reads the status and the body off quoted keys when the pack requires no key", () => {
+    const anyObject: TerminalPattern = {
+      ...RESPONSE_SHAPE,
+      match: { type: "returnShape" },
+    };
+    const terminals = terminalsFor(
+      `
+      export function handler() {
+        return { "statusCode": 202, "body": JSON.stringify({ ok: true }) };
+      }
+    `,
+      [anyObject],
+    );
+
+    expect(terminals[0]?.terminal.statusCode).toEqual({
+      type: "literal",
+      value: 202,
+    });
+    expect(terminals[0]?.terminal.body?.shape).toEqual({
+      type: "record",
+      properties: { ok: { type: "literal", value: true } },
+    });
+  });
 });
 
 describe("a pack naming a library's function", () => {

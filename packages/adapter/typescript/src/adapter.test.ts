@@ -195,6 +195,29 @@ describe("extractCodeStructure", () => {
     expect(raw.identity.kind).toBe("handler");
   });
 
+  it("names a handler written under a quoted key by the key, without its quotes", async () => {
+    const project = createTestProject();
+    const source = `
+      import { initServer } from "@ts-rest/express";
+      const s = initServer();
+      export const router = s.router({} as any, {
+        "get-user": async () => {
+          return { status: 200, body: {} };
+        },
+        "list-users"() {
+          return { status: 200, body: {} };
+        },
+      });
+    `;
+    const file = project.createSourceFile("test.ts", source);
+    const units = discoverUnits(file, tsRestPack.discovery);
+
+    expect(units.map((unit) => unit.name).sort()).toEqual([
+      "get-user",
+      "list-users",
+    ]);
+  });
+
   it("gives each name an ArrayBindingPattern binds its own input under allPositional, skipping holes", async () => {
     const project = createTestProject();
     const source = `
@@ -5481,6 +5504,49 @@ describe("wrapper expansion", () => {
       (caller?.metadata as { derivedFromWrapper?: { name: string } })
         ?.derivedFromWrapper?.name,
     ).toBe("getJson");
+  });
+
+  it("names a wrapper's caller written under a quoted key by the key, without its quotes", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const api = axios.create({ baseURL: "/api" });
+
+      export async function getJson<T>(path: string): Promise<T> {
+        const { data } = await api.get(path);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getJson } from "./api";
+
+      export class Pets {
+        async "get-pet"(id: number) {
+          return getJson<unknown>(\`/pet/\${id}\`);
+        }
+      }
+      export const lists = {
+        "list-pets": () => getJson<unknown>("/pets"),
+      };
+    `,
+    );
+
+    const summaries = await createTypeScriptAdapter({
+      project,
+      frameworks: [axiosLikePack],
+    }).extractAll();
+
+    expect(
+      summaries
+        .filter((s) => s.kind === "client" && s.identity.name !== "getJson")
+        .map((s) => s.identity.name)
+        .sort(),
+    ).toEqual(["get-pet", "list-pets"]);
   });
 
   it("reads no request from a test calling the wrapper, since a test passes a stand-in", async () => {

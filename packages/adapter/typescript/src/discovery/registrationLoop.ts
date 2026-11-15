@@ -29,6 +29,7 @@ import {
   arrayLiteralOf,
   functionValueOf,
   objectLiteralOf,
+  propertyNameOf,
   stringValueOf,
 } from "./resolveValue.js";
 
@@ -248,14 +249,17 @@ function readRouteSpec(
   let handler: { func: FunctionRoot; name: string } | null = null;
 
   for (const prop of element.getProperties()) {
-    if (Node.isMethodDeclaration(prop) && prop.getName() === shape.handlerKey) {
+    if (
+      Node.isMethodDeclaration(prop) &&
+      propertyNameOf(prop) === shape.handlerKey
+    ) {
       handler = { func: prop as FunctionRoot, name: shape.handlerKey };
       continue;
     }
     if (!Node.isPropertyAssignment(prop)) {
       continue;
     }
-    const name = prop.getName();
+    const name = propertyNameOf(prop);
     const init = prop.getInitializer();
     if (init === undefined) {
       continue;

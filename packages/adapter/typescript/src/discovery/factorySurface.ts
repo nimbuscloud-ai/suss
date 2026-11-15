@@ -38,6 +38,7 @@
 import { Node, SyntaxKind } from "ts-morph";
 
 import { functionTargetOf } from "../resolve/functionBehind.js";
+import { memberNameOf } from "../walk/propertyName.js";
 import { peelParens } from "../walk/unwrap.js";
 import {
   objectLiteralOf,
@@ -92,7 +93,7 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
     if (method.hasModifier(SyntaxKind.PrivateKeyword)) {
       continue;
     }
-    const name = method.getName();
+    const name = memberNameOf(method);
     if (name.startsWith("#") || seen.has(name)) {
       continue;
     }
@@ -103,7 +104,7 @@ function surfaceClassMethods(cls: ClassDeclaration): SurfacedMethod[] {
     if (method.hasModifier(SyntaxKind.PrivateKeyword)) {
       continue;
     }
-    const name = method.getName();
+    const name = memberNameOf(method);
     if (name.startsWith("#") || seen.has(name)) {
       continue;
     }
