@@ -128,6 +128,18 @@ describe("the fact contract", () => {
     );
   });
 
+  it("catches a read at a computed key whose container leads to no table", async () => {
+    const failures = await checkFactContract(everyCase, () => {
+      const db = conformingFacts();
+      db.retract("choosesEntry", [["read:1", "f#TABLE"]]);
+      db.add("choosesEntry", ["read:1", "f#OTHER"]);
+      return db;
+    });
+    expect(failures.map((f) => f.problem).join(" ")).toContain(
+      "nothing leads from it to the table",
+    );
+  });
+
   it("catches a write into a table that is not keyed to it", async () => {
     const failures = await checkFactContract(everyCase, () => {
       const db = conformingFacts();
