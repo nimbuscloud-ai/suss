@@ -3,37 +3,21 @@
 // for top-level units that don't fit one of the data-driven
 // `DiscoveryMatch` variants.
 //
-// Sibling of `subUnitContext.ts` for the discovery layer. Packs that
-// use this hook (e.g. React's component-export heuristic) cast the
-// `ctx: unknown` argument to `TsDiscoveryContext`: same "I expect the
-// TypeScript adapter" contract `subUnits` follows.
+// Packs that use this hook cast the `ctx: unknown` argument to
+// `TsDiscoveryContext`, which ties the pack to the TypeScript adapter.
 //
 // Helpers stay narrow on purpose. They cover the cases real packs need
 // without exposing arbitrary ts-morph surface to pack authors.
 
-import { Node, type SourceFile, SyntaxKind } from "ts-morph";
+import { Node, type SourceFile } from "ts-morph";
 
 import { couldStillNameAFunction, toFunctionRoot } from "./discovery/shared.js";
 import { isWrittenAgain } from "./facts/assignments.js";
 import { ResolutionStore } from "./facts/store.js";
 import { exportedDeclarationsOf } from "./moduleExports.js";
-import { forEachDescendantWhere } from "./walk/rawDescent.js";
 import { peelValue } from "./walk/unwrap.js";
 
 import type { FunctionRoot } from "./conditions.js";
-
-/** The nested functions whose returns are their own output, not the component's. */
-const NESTED_FUNCTION_KINDS: ReadonlySet<SyntaxKind> = new Set([
-  SyntaxKind.FunctionDeclaration,
-  SyntaxKind.FunctionExpression,
-  SyntaxKind.ArrowFunction,
-  SyntaxKind.MethodDeclaration,
-]);
-
-const RETURNS_AND_FUNCTIONS: ReadonlySet<SyntaxKind> = new Set([
-  ...NESTED_FUNCTION_KINDS,
-  SyntaxKind.ReturnStatement,
-]);
 
 export interface TsDiscoveryContext {
   /**
@@ -61,18 +45,6 @@ export interface TsDiscoveryContext {
   exportedFunctions(
     sourceFile: SourceFile,
   ): Array<{ name: string; func: FunctionRoot; isDefault: boolean }>;
-
-  /**
-   * Walk a function's body for return statements whose value is a
-   * JSX element / fragment / self-closing tag. Returns true on the
-   * first match; false otherwise. Skips into nested function bodies
-   *: nested arrow returning JSX is its own component, not part of
-   * this function's output.
-   *
-   * Concise-arrow bodies (`() => <X/>`) are handled: the body IS
-   * the implicit return.
-   */
-  hasJsxReturn(func: FunctionRoot): boolean;
 }
 
 export function createTsDiscoveryContext(
@@ -84,7 +56,6 @@ export function createTsDiscoveryContext(
     resolution: store,
     getFilePath,
     exportedFunctions: (sourceFile) => exportedFunctions(sourceFile, store),
-    hasJsxReturn,
   };
 }
 
@@ -186,47 +157,4 @@ function resolveDeclarationToFunction(decl: Node): FunctionRoot | null {
     return init as FunctionRoot;
   }
   return null;
-}
-
-function hasJsxReturn(func: FunctionRoot): boolean {
-  if (Node.isArrowFunction(func)) {
-    const body = func.getBody();
-    if (Node.isExpression(body) && isJsxOrFragment(body)) {
-      return true;
-    }
-  }
-
-  const body = func.getBody?.();
-  if (body === undefined) {
-    return false;
-  }
-
-  let found = false;
-  forEachDescendantWhere(
-    body,
-    (raw) => !found && RETURNS_AND_FUNCTIONS.has(raw.kind),
-    (node) => {
-      // Deliberately stricter than isDescentStop: a JSX return inside a
-      // nested arrow (a render prop, a map callback) is that function's
-      // output, and descending would make its parent read as a component.
-      if (node !== func && NESTED_FUNCTION_KINDS.has(node.getKind())) {
-        return true;
-      }
-      if (Node.isReturnStatement(node)) {
-        const expr = node.getExpression();
-        found = expr !== undefined && isJsxOrFragment(expr);
-      }
-      return found;
-    },
-  );
-  return found;
-}
-
-function isJsxOrFragment(node: Node): boolean {
-  const current = peelValue(node);
-  return (
-    Node.isJsxElement(current) ||
-    Node.isJsxSelfClosingElement(current) ||
-    Node.isJsxFragment(current)
-  );
 }

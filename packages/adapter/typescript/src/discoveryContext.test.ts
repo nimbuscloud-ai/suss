@@ -43,46 +43,6 @@ describe("createTsDiscoveryContext", () => {
     expect(byName.default).toBe(true);
     expect(byName.Foo).toBe(false);
   });
-
-  it("detects a concise-arrow JSX body", () => {
-    const file = sourceFile("export const C = () => <div />;");
-    const fn = ctx().exportedFunctions(file)[0].func;
-    expect(ctx().hasJsxReturn(fn)).toBe(true);
-  });
-
-  it("detects a JSX return statement, unwrapping parentheses and fragments", () => {
-    const file = sourceFile("export function C() { return (<><span /></>); }");
-    const fn = ctx().exportedFunctions(file)[0].func;
-    expect(ctx().hasJsxReturn(fn)).toBe(true);
-  });
-
-  it("returns false when a function returns no JSX", () => {
-    const file = sourceFile("export function C() { return 42; }");
-    const fn = ctx().exportedFunctions(file)[0].func;
-    expect(ctx().hasJsxReturn(fn)).toBe(false);
-  });
-
-  it("ignores JSX returned only by a nested function", () => {
-    const file = sourceFile(
-      "export function C() { const inner = () => <div />; return inner; }",
-    );
-    const fn = ctx().exportedFunctions(file)[0].func;
-    expect(ctx().hasJsxReturn(fn)).toBe(false);
-  });
-
-  it("detects JSX returned under a cast, in a body and as an arrow's expression", () => {
-    const file = sourceFile(`
-      export function Body() { return (<b />) as JSX.Element; }
-      export const Expression = () => <i /> satisfies JSX.Element;
-    `);
-    const found = ctx()
-      .exportedFunctions(file)
-      .map((entry) => [entry.name, ctx().hasJsxReturn(entry.func)]);
-    expect(found).toEqual([
-      ["Body", true],
-      ["Expression", true],
-    ]);
-  });
 });
 
 describe("an export written under a cast", () => {
