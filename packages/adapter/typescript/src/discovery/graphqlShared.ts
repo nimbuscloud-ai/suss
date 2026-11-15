@@ -20,6 +20,7 @@ import { Node } from "ts-morph";
 
 import { resolveAliasedSymbol } from "../moduleExports.js";
 import { createProgramMemo } from "../programMemo.js";
+import { functionNameOf } from "../walk/propertyName.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import { stringValueOf } from "./resolveValue.js";
 
@@ -1401,7 +1402,7 @@ export function enclosingFunctionRoot(node: Node): FunctionRoot | null {
  */
 export function functionNameOrAnon(func: FunctionRoot): string {
   if (Node.isFunctionDeclaration(func) || Node.isMethodDeclaration(func)) {
-    return func.getName() ?? "<anon>";
+    return functionNameOf(func) ?? "<anon>";
   }
   const parent = func.getParent();
   if (parent !== undefined && Node.isVariableDeclaration(parent)) {

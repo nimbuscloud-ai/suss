@@ -131,6 +131,19 @@ describe("jsxElementRoute discovery", () => {
     expect(routesOf(file)).toEqual(["GET /", "GET /billing"]);
   });
 
+  it("reads route objects written with quoted keys", () => {
+    const file = makeFile(`
+      import { createRouter } from "router-lib";
+      function Home() { return <main />; }
+      function Billing() { return <aside />; }
+      export const router = createRouter([
+        { "path": "/", "element": <Home /> },
+        { "path": "/billing", "element": <Billing />, "children": [] },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual(["GET /", "GET /billing"]);
+  });
+
   it("reads routes nested under a route object, joining their paths onto its own", () => {
     const file = makeFile(`
       import { createRouter } from "router-lib";

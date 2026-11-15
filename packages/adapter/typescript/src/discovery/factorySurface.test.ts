@@ -64,6 +64,19 @@ describe("surfaceMethods: object-literal returns", () => {
     );
     expect(names).toEqual(["create", "get"]);
   });
+
+  it("surfaces a quoted method by the name it is written under, without its quotes", () => {
+    const names = surfacedNamesFromClass(
+      `
+      class ApiClient {
+        "get-user"() {}
+        static "make-one"() {}
+      }
+    `,
+      "ApiClient",
+    );
+    expect(names).toEqual(["get-user", "make-one"]);
+  });
 });
 
 describe("surfaceMethods: shorthand over inner functions", () => {

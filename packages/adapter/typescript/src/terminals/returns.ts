@@ -15,6 +15,7 @@ import { importedRootsOf, namedImportsOf } from "../discovery/importScan.js";
 import { endLineOf, startLineOf } from "../lines.js";
 import { parseConditionExpression } from "../predicates.js";
 import { extractShape } from "../shapes/shapes.js";
+import { propertyNameOf } from "../walk/propertyName.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import {
   declaredStatusCode,
@@ -240,13 +241,13 @@ function terminalFromReturnedObject(
 ): FoundTerminal | null {
   const required = match.requiredProperties;
   if (required !== undefined && required.length > 0) {
-    const presentNames = new Set<string>();
+    const presentNames = new Set<string | null>();
     for (const prop of obj.getProperties()) {
       if (
         Node.isPropertyAssignment(prop) ||
         Node.isShorthandPropertyAssignment(prop)
       ) {
-        presentNames.add(prop.getName());
+        presentNames.add(propertyNameOf(prop));
       }
     }
     for (const name of required) {

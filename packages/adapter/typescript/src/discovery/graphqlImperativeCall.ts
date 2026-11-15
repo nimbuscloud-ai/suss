@@ -5,6 +5,7 @@
 
 import { Node, type SourceFile } from "ts-morph";
 
+import { propertyWrittenAs } from "../walk/propertyName.js";
 import { clientReceiverCheckFor } from "./clientCall.js";
 import {
   enclosingFunctionRoot,
@@ -71,7 +72,7 @@ export function discoverGraphqlImperativeCalls(
       return;
     }
     const config = args[0];
-    const docProp = config.getProperty(spec.documentKey);
+    const docProp = propertyWrittenAs(config, spec.documentKey);
     if (docProp === undefined) {
       return;
     }

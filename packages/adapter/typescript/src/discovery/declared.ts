@@ -10,6 +10,7 @@ import { factModuleOps } from "@suss/recognize/ops";
 import { nodeId } from "../facts/extract.js";
 import { factSourceFor } from "../resolve/factSource.js";
 import { opsOverFacts } from "../resolve/opsOverFacts.js";
+import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
 import { discoveredUnitOf } from "./shared.js";
 
 import type { DeclaredDiscoveryMatch, ModuleOps } from "@suss/extractor";
@@ -119,13 +120,13 @@ function functionsIn(sourceFile: SourceFile): Node[] {
 /** A declaration's own name, or the variable or property a function written in place is assigned to. */
 function assignedNameOf(fn: Node): string | null {
   if (Node.isFunctionDeclaration(fn) || Node.isMethodDeclaration(fn)) {
-    return fn.getName() ?? null;
+    return functionNameOf(fn) ?? null;
   }
   const parent = fn.getParent();
-  if (
-    parent !== undefined &&
-    (Node.isVariableDeclaration(parent) || Node.isPropertyAssignment(parent))
-  ) {
+  if (parent !== undefined && Node.isPropertyAssignment(parent)) {
+    return memberNameOf(parent);
+  }
+  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
     return parent.getName();
   }
   return null;

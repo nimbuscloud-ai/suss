@@ -1627,7 +1627,7 @@ function initializerOf(
     if (
       (Node.isPropertyAssignment(written) ||
         Node.isShorthandPropertyAssignment(written)) &&
-      written.getName() === property
+      propertyNameOf(written) === property
     ) {
       return propertyValueOf(written);
     }

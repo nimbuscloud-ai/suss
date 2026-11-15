@@ -277,6 +277,41 @@ describe("what a class's bodies store on the receiver", () => {
     expect(stored[1]?.[0]).toBe("prime() { this.cache = warm(); }");
   });
 
+  it("records a quoted member under its key, without the quotes", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "export class Api {",
+        '  "get-user"() {}',
+        '  readonly "base-url" = "/users";',
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "holdsProperty").map((row) => row[1])).toEqual([
+      "get-user",
+      "base-url",
+    ]);
+  });
+
+  it("stores the value a local is given under a quoted field's key, without the quotes", () => {
+    const { db, table } = factsFor({
+      "/mod.ts": [
+        "declare function make(): string;",
+        "export function mount() {",
+        "  const app = make();",
+        '  class Holder { "my-app" = app }',
+        "  return Holder;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(rows(db, table, "storesProperty").map((row) => row[1])).toContain(
+      "my-app",
+    );
+  });
+
   it("gives the receiver a node of its own, which is one of the class", () => {
     const { db, table } = factsFor({
       "/mod.ts": [

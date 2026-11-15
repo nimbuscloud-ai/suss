@@ -65,6 +65,26 @@ describe("registrationLoop discovery", () => {
     expect(routes).toEqual(["GET /users", "POST /users"]);
   });
 
+  it("reads a route spec written with quoted keys and a quoted handler method", () => {
+    const file = makeFile(`
+      function getUsers() {}
+      const app: any = {};
+      for (const r of [
+        { "method": "get", "path": "/users", "handler": getUsers },
+        { method: "post", path: "/users", "handler"() {} },
+      ]) {
+        app[r.method](r.path, r.handler);
+      }
+    `);
+    const units = discoverUnits(file, [PATTERN], new ResolutionStore());
+    const routes = units
+      .map((u) => u.routeInfo)
+      .filter((r): r is { method: string; path: string } => r !== undefined)
+      .map((r) => `${r.method} ${r.path}`)
+      .sort();
+    expect(routes).toEqual(["GET /users", "POST /users"]);
+  });
+
   it("expands a for-of loop over a const-bound array literal", () => {
     const file = makeFile(`
       function listOrders() {}
