@@ -14,12 +14,14 @@ import path from "node:path";
 
 import { Node, Project, SyntaxKind } from "ts-morph";
 
+import { readTestFilesFrom } from "@suss/behavioral-ir/files";
 import { explainResolutionProof, renderExplanation } from "@suss/resolution";
 
 import {
   createProjectWithoutTsconfig,
   findNearestTsconfig,
 } from "../bootstrap/noTsconfigProject.js";
+import { workspaceRootFor } from "../summaryIdentity.js";
 import { ResolutionStore } from "./store.js";
 
 import type { PatternPack } from "@suss/extractor";
@@ -45,6 +47,11 @@ export class TypeScriptWhySession {
       tsconfig === null
         ? createProjectWithoutTsconfig(this.root).project
         : new Project({ tsConfigFilePath: tsconfig });
+    // An extract measures from this root too, so both read the same files as tests.
+    readTestFilesFrom(
+      this.project,
+      workspaceRootFor(tsconfig === null ? this.root : path.dirname(tsconfig)),
+    );
     this.store = ResolutionStore.forPacks(options.packs ?? []);
   }
 

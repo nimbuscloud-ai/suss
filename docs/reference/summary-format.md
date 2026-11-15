@@ -43,7 +43,7 @@ A reader replaces `{"$def":n,"$value":v}` with `v`, and `{"$ref":n}` with the `v
 |---|---|---|
 | `schemaVersion` | number, optional | The format version. Absent means 1. |
 | `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and twelve more. |
-| `location` | `SourceLocation` | File, line range, character span, export name, workspace, and the module when `suss.json` lists modules. |
+| `location` | `SourceLocation` | File, line range, character span, export name, workspace, and the module when `suss.json` lists modules. `inTests` is true when the unit is test code and the file's path does not show it, because the file's own project starts below the directory the path is measured from, as `packages/api/test/app.js` does in an extract of the whole repository. |
 | `identity` | `CodeUnitIdentity` | The name, the export path, the boundary binding, the deployed unit. |
 | `inputs` | `Input[]` | How values reach the unit, one per parameter, injection, hook return or closure. |
 | `transitions` | `Transition[]` | One per execution path. |

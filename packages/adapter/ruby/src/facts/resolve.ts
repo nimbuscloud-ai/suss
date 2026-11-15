@@ -4,7 +4,7 @@
  * the same shared rules.
  */
 
-import { isTestFile } from "@suss/behavioral-ir";
+import { isTestFileIn } from "@suss/behavioral-ir/files";
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 import {
   allocationSitesOf,
@@ -151,7 +151,7 @@ export function writtenValueOf(db: Database, key: string): string | null {
     key,
     (keys) => resolveValues(db, keys),
     undefined,
-    answersFromTestsLeftOut(key, isTestFile),
+    answersFromTestsLeftOut(key, (file) => isTestFileIn(db, file)),
   );
 }
 

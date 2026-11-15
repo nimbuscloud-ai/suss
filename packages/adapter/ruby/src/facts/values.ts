@@ -6,7 +6,7 @@
  * mixins recorded as `extends`, and instance variables as class properties.
  */
 
-import { isTestFile } from "@suss/behavioral-ir";
+import { isTestFileIn } from "@suss/behavioral-ir/files";
 import {
   type AddRow,
   addEntryRows,
@@ -2691,7 +2691,7 @@ export function emitValueFacts(
     enclosing: null,
     selfKey: null,
     insideMethod: false,
-    inTests: isTestFile(filePath),
+    inTests: isTestFileIn(db, filePath),
     selfRuns: "instanceMethods",
     classLocals: classLocalsOf(filePath, writes),
     instanceWrites: null,
