@@ -1,10 +1,12 @@
 /**
  * Binds each Ruby constant reference to the definition behind it. Ruby
  * has no imports, so a reference is bound directly to its definition. A
- * constant whose root no file in the run defines, such as
- * `Aws::SQS::Client`, comes from a library, and is stated as imported
- * from `GLOBAL_MODULE` under its path, the way TypeScript states a global
- * only library declarations declare.
+ * constant no file in the run defines, such as `Aws::SQS::Client`, comes
+ * from a library, and is stated as imported from `GLOBAL_MODULE` under
+ * its path, the way TypeScript states a global only library declarations
+ * declare. A project that reopens a library's module to add a member of
+ * its own, `module ActiveRecord` with a concern inside, still leaves the
+ * library's other members to the library.
  */
 
 import { GLOBAL_MODULE } from "@suss/resolution";
@@ -168,16 +170,22 @@ export function collectFileConstants(
   return { filePath, definitions, references, nestings };
 }
 
-/**
- * Whether a file in the run defines the constant a reference starts
- * from, `Aws` for `Aws::SQS::Client`, anywhere Ruby would look for it.
- */
-function definesRoot(
+/** Whether a reference reads a library's top-level constant: no file in the run defines its full path, and no module it is written inside has its first segment, which Ruby looks in first. */
+function readsLibraryConstant(
+  byName: ReadonlyMap<string, readonly ConstantDefinition[]>,
+  reference: ConstantReference,
+): boolean {
+  return (
+    !byName.has(reference.written) && !startsInsideNesting(byName, reference)
+  );
+}
+
+function startsInsideNesting(
   byName: ReadonlyMap<string, readonly ConstantDefinition[]>,
   reference: ConstantReference,
 ): boolean {
   const [root = reference.written] = reference.written.split("::");
-  for (let depth = reference.nesting.length; depth >= 0; depth--) {
+  for (let depth = reference.nesting.length; depth > 0; depth--) {
     if (byName.has(qualify(reference.nesting.slice(0, depth), root))) {
       return true;
     }
@@ -244,7 +252,7 @@ export function emitConstantBindings(
 
   for (const file of files) {
     for (const reference of file.references) {
-      if (!definesRoot(byName, reference)) {
+      if (readsLibraryConstant(byName, reference)) {
         db.add("imports", [reference.key, GLOBAL_MODULE, reference.written]);
       }
       bind(file.filePath, reference);

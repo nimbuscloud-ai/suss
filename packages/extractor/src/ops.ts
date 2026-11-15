@@ -1109,9 +1109,7 @@ export interface FactSource {
    */
   classBodyCalls?(key: string): readonly string[];
   /**
-   * Whether a base a class writes by name spells one of the spec's names
-   * inside one of its modules, as `ActiveRecord::Base`. A project that
-   * reopens the library's module states no import of the base to match.
+   * Whether a base a class writes by name spells the spec, as `ActiveRecord::Base`. A Ruby project that reopens the base class states no import of it.
    */
   spellsBase?(written: string, spec: Inherits): boolean;
   /**
