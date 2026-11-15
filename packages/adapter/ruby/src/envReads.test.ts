@@ -810,6 +810,19 @@ describe("a name handed to a project helper", () => {
     expect(fallbacksOf(found)).toEqual([["REDIS_URL", "redis://localhost"]]);
   });
 
+  it("counts an || after a blank-to-nil method around the call as a default", async () => {
+    const found = await projectEffects(
+      {
+        "settings.rb": SETTINGS,
+        "use.rb":
+          'URL = Settings.setting("REDIS_URL").presence || "redis://"\n',
+      },
+      ["presence"],
+    );
+    expect(readsOf(found)).toEqual([{ name: "REDIS_URL", defaulted: true }]);
+    expect(fallbacksOf(found)).toEqual([["REDIS_URL", "redis://"]]);
+  });
+
   it("reads a name a constant in the caller's file holds", async () => {
     expect(
       await projectReads({
