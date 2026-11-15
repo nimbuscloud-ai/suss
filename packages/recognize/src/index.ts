@@ -171,6 +171,7 @@ export type {
   CallsAndOptions,
   ClassOps,
   ConstructedFrom,
+  Declaration,
   DeclaredBy,
   Decoded,
   ElementOps,

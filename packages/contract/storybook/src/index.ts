@@ -12,20 +12,13 @@
 
 import path from "node:path";
 
-import {
-  Node as N,
-  type Node,
-  Project,
-  type Symbol as TsSymbol,
-} from "ts-morph";
+import { Project } from "ts-morph";
 
 import {
-  declarationsBehind,
   findNearestTsconfig,
   moduleOpsFor,
   projectPlaceOf,
   ResolutionStore,
-  symbolBehind,
 } from "@suss/adapter-typescript";
 import { functionCallBinding } from "@suss/behavioral-ir";
 import { defaultProjectRoot, pathInProject } from "@suss/behavioral-ir/files";
@@ -44,7 +37,6 @@ import type {
   EntryObjectMatch,
   ValueOps,
 } from "@suss/recognize";
-import type { AstCapableValueOps } from "@suss/recognize/ast";
 
 export interface StorybookStubOptions {
   /**
@@ -234,7 +226,7 @@ function metaOf(found: EntryObject, componentModules: boolean): MetaInfo {
   return {
     componentName,
     componentModule: componentModules
-      ? declaredModuleOf(nodeBehind(component))
+      ? declaredModuleOf(component, componentName)
       : undefined,
     componentImport: component.importedFrom?.() ?? undefined,
     argReaders: argReadersOf(meta),
@@ -245,84 +237,29 @@ function metaOf(found: EntryObject, componentModules: boolean): MetaInfo {
 /**
  * The file and name the component is declared under, followed through
  * imports and re-exports. The file is spelled from the root an extract of
- * that file's project measures from, so the two can be compared.
+ * that file's project measures from, so the two can be compared. A
+ * component declared with no name of its own, such as an anonymous
+ * default export, is named as the story spells it.
  */
-function declaredModuleOf(component: Node): ComponentModule | undefined {
-  const declaration = componentDeclarationOf(componentSymbolOf(component));
-  if (declaration === undefined) {
+function declaredModuleOf(
+  component: ValueOps,
+  spelling: string,
+): ComponentModule | undefined {
+  const declared = component.declaration?.() ?? null;
+  if (declared === null) {
     return undefined;
   }
-  const place = projectPlaceOf(declaration.getSourceFile().getFilePath());
+  const place = projectPlaceOf(declared.file);
   return {
     ...(place.workspace === null ? {} : { workspace: place.workspace }),
     file: place.file,
-    name: declaredNameOf(declaration) ?? component.getText(),
+    name: declared.name ?? spelling,
   };
-}
-
-/**
- * The symbol of a name, or of a member read off a whole module, such as
- * `Icons.Star` off `import * as Icons`. Any other object is not followed.
- */
-function componentSymbolOf(component: Node): TsSymbol | undefined {
-  if (N.isIdentifier(component)) {
-    return symbolBehind(component);
-  }
-  if (!N.isPropertyAccessExpression(component)) {
-    return undefined;
-  }
-  const namespace = component.getExpression();
-  const member = component.getNameNode();
-  const isNamespace =
-    N.isIdentifier(namespace) &&
-    declarationsBehind(symbolBehind(namespace)).some((declared) =>
-      N.isSourceFile(declared),
-    );
-  return isNamespace && N.isIdentifier(member)
-    ? symbolBehind(member)
-    : undefined;
-}
-
-/** An import whose module did not resolve leaves only the import itself. */
-function componentDeclarationOf(
-  symbol: TsSymbol | undefined,
-): Node | undefined {
-  return declarationsBehind(symbol).find(
-    (declaration) => !isImportBinding(declaration),
-  );
-}
-
-function isImportBinding(node: Node): boolean {
-  return (
-    N.isImportSpecifier(node) ||
-    N.isImportClause(node) ||
-    N.isNamespaceImport(node) ||
-    N.isImportEqualsDeclaration(node)
-  );
-}
-
-function declaredNameOf(declaration: Node): string | undefined {
-  if (
-    N.isVariableDeclaration(declaration) ||
-    N.isFunctionDeclaration(declaration) ||
-    N.isClassDeclaration(declaration)
-  ) {
-    return declaration.getName();
-  }
-  return undefined;
-}
-
-/**
- * The node a value was read at, for the one read the value ops cannot
- * make yet: the component's declaration, which takes the type checker.
- */
-function nodeBehind(value: ValueOps): Node {
-  return (value as AstCapableValueOps).ast() as Node;
 }
 
 /** The value as the story file writes it. */
 function textOf(value: ValueOps): string {
-  return value.source?.() ?? nodeBehind(value).getText();
+  return value.source?.() ?? "";
 }
 
 // ---------------------------------------------------------------------------

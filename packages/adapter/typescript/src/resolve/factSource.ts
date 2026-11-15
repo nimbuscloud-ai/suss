@@ -31,6 +31,7 @@ import {
   valueFormOf,
   writtenShapeOf,
 } from "./callOps.js";
+import { declarationBehind } from "./declarationBehind.js";
 import { deferredCallOps } from "./deferredCallOps.js";
 import { functionCalledAt } from "./functionBehind.js";
 import {
@@ -151,6 +152,8 @@ export function factSourceFor(
     textOf: (key) => at(key, "", (node) => node.getText()),
     lineOf: (key) => at(key, null, (node) => node.getStartLineNumber()),
     elementsOf: (func) => at(func, [], (node) => store.elementsWrittenIn(node)),
+    declarationOf: (key) =>
+      at(key, null, (node) => declarationBehind(node, store)),
     formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
     nameOf: (key, unsettled) =>
