@@ -19,11 +19,15 @@ import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  AstCapableValueOps,
+  DiscoveredSubUnitParent,
+  PatternPack,
+  SubUnitOpsCarrier,
+} from "@suss/extractor";
 import type { CallOps } from "@suss/recognize";
 import type { FunctionRoot } from "./conditions.js";
 import type { DiscoveredUnit } from "./discovery/index.js";
-import type { TsSubUnitContext } from "./subUnitContext.js";
 
 function restMethodOf(
   target:
@@ -6874,6 +6878,17 @@ const expressResPack: PatternPack = {
   },
 };
 
+/** The functions written in place as the first argument of each `defer` call the parent runs, read off the context's call ops. */
+function deferredIn(parent: DiscoveredSubUnitParent, ctx: unknown): unknown[] {
+  const calls = (ctx as SubUnitOpsCarrier).calls?.(parent) ?? [];
+  return calls.flatMap((call) => {
+    const value = call.calleeText() === "defer" ? call.valueAt(0) : null;
+    return value?.form?.() === "function"
+      ? [(value as AstCapableValueOps).ast()]
+      : [];
+  });
+}
+
 describe("walker descent", () => {
   it("(a) finds a handler's terminal produced inside a Promise executor", () => {
     const project = createTestProject();
@@ -6980,27 +6995,12 @@ describe("walker descent", () => {
     const deferPack: PatternPack = {
       ...expressResPack,
       name: "defer-pack",
-      subUnits: (parent, ctx) => {
-        const c = ctx as {
-          findCallExpressionsByName: (
-            f: unknown,
-            name: string,
-          ) => Array<unknown>;
-          getCallArgumentFunction: (call: unknown, position: number) => unknown;
-        };
-        const out: Array<{ func: unknown; kind: string; name: string }> = [];
-        for (const call of c.findCallExpressionsByName(parent.func, "defer")) {
-          const fn = c.getCallArgumentFunction(call, 0);
-          if (fn !== null) {
-            out.push({
-              func: fn,
-              kind: "handler",
-              name: `${parent.name}.defer`,
-            });
-          }
-        }
-        return out as never;
-      },
+      subUnits: (parent, ctx) =>
+        deferredIn(parent, ctx).map((func) => ({
+          func,
+          kind: "handler",
+          name: `${parent.name}.defer`,
+        })),
     };
 
     const project = createTestProject();
@@ -7040,24 +7040,12 @@ describe("walker descent", () => {
   const nestedDeferPack: PatternPack = {
     ...expressResPack,
     name: "nested-defer-pack",
-    subUnits: (parent, ctx) => {
-      const c = ctx as TsSubUnitContext;
-      const parentFunc = parent.func as FunctionRoot;
-      return c
-        .findCallExpressionsByName(parentFunc, "defer")
-        .flatMap((call, index) => {
-          const fn = c.getCallArgumentFunction(call, 0);
-          return fn === null
-            ? []
-            : [
-                {
-                  func: fn,
-                  kind: "handler" as const,
-                  name: `${parent.name}.defer#${index}`,
-                },
-              ];
-        });
-    },
+    subUnits: (parent, ctx) =>
+      deferredIn(parent, ctx).map((func, index) => ({
+        func,
+        kind: "handler",
+        name: `${parent.name}.defer#${index}`,
+      })),
   };
 
   it("notes a call it could not follow only on the sub-unit that makes it", async () => {

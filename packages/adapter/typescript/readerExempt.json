@@ -39,7 +39,6 @@
   "src/shapes/fieldAccesses.ts": "findResponseAccessor, prefixOfMemberExpr",
   "src/shapes/shapes.ts": "extractShapeInner, shapeFromArrayLiteral, shapeFromObjectLiteral, propertyName",
   "src/subjects.ts": "resolveThenParameter, resolveSubject",
-  "src/subUnitContext.ts": "findJsxAttributes, resolveAttributeValueFunction, readArrayLiteralText",
   "src/terminals/extract.ts": "statusFromProperty, extractStatusCodeFromRule, extractBody",
   "src/terminals/helperResolution.ts": "memoizedLocalHelper, declarationsFor, asFunctionLike, bindArguments",
   "src/terminals/jsx.ts": "collectJsxAttributes, and the parenthesis case of jsxToRenderNode and jsxExpressionToRenderNode, which recurse rather than loop",

@@ -1,6 +1,4 @@
-// subUnitContext.test.ts: the primitives packs use to walk a JSX
-// attribute back to the function its value refers to.
-
+import { Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
@@ -8,6 +6,7 @@ import { createTestProject } from "@suss/test-project";
 import { ResolutionStore } from "./facts/store.js";
 import { createTsSubUnitContext } from "./subUnitContext.js";
 
+import type { AstCapableValueOps } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
 
 function componentFunction(source: string): FunctionRoot {
@@ -20,10 +19,8 @@ function componentFunction(source: string): FunctionRoot {
   return fn;
 }
 
-describe("resolveAttributeValueFunction", () => {
-  it("follows a handler written as TS overload signatures to its implementation", () => {
-    // A signature declaration resolves to its implementation, not to
-    // itself: the earlier declaration has no body to walk.
+describe("elements", () => {
+  it("settles a handler written as overload signatures on the implementation, which has a body", () => {
     const parent = componentFunction(`
       function Form(props: { onSubmit: () => void }) {
         function handleSubmit(event: unknown): void;
@@ -33,46 +30,20 @@ describe("resolveAttributeValueFunction", () => {
         return <form onSubmit={handleSubmit} />;
       }
     `);
-    const ctx = createTsSubUnitContext();
-    const [attr] = ctx.findJsxAttributes(parent);
-    if (attr === undefined) {
-      throw new Error("No JSX attribute found in fixture");
-    }
+    const unit = { func: parent, name: "Form", kind: "component" };
+    const ctx = createTsSubUnitContext(new ResolutionStore());
+    const [onSubmit] = ctx.elements?.(unit)[0]?.attributes() ?? [];
+    const fn = onSubmit?.value.function?.() ?? null;
+    const node = (fn as Partial<AstCapableValueOps> | null)?.ast?.();
 
-    const resolved = ctx.resolveAttributeValueFunction(attr, parent);
-
-    expect(resolved).not.toBeNull();
-    expect(resolved?.localName).toBe("handleSubmit");
-    expect(resolved?.func.getBody()).toBeDefined();
+    expect(fn !== null && ctx.writes?.(unit, fn)).toBe(true);
+    expect(
+      node instanceof Node &&
+        Node.isFunctionDeclaration(node) &&
+        node.hasBody(),
+    ).toBe(true);
   });
-});
 
-describe("an effect's arguments", () => {
-  it("reads the callback and the dependency list through parentheses and casts", () => {
-    const parent = componentFunction(`
-      function Ticker(items: string[]) {
-        useEffect((() => {}), (items));
-        useEffect(function load() {} as () => void, [items] as const);
-        useEffect(sync, [...items, "k"]);
-      }
-    `);
-    const ctx = createTsSubUnitContext();
-    const read = ctx
-      .findCallExpressionsByName(parent, "useEffect")
-      .map((call) => [
-        ctx.getCallArgumentFunction(call, 0)?.getText() ?? null,
-        ctx.readArrayLiteralText(ctx.getCallArgument(call, 1)),
-      ]);
-
-    expect(read).toEqual([
-      ["() => {}", ["items"]],
-      ["function load() {}", ["items"]],
-      [null, ["...items", '"k"']],
-    ]);
-  });
-});
-
-describe("elements", () => {
   it("lists the elements a parent renders with their attributes, and says which functions the parent writes", () => {
     const parent = componentFunction(`
       function Panel() {

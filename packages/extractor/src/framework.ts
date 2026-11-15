@@ -1680,10 +1680,9 @@ export interface PatternPack {
    * discovered one and gets its own summary. Set `terminals` or
    * `inputMapping` on a sub-unit when it differs from the pack's defaults.
    *
-   * `ctx` is `unknown` because each adapter defines its own context type
-   * (`TsSubUnitContext` in `@suss/adapter-typescript`) with the primitives
-   * for walking the parent's syntax tree. A pack casts to the context it
-   * was written against, which ties the pack to that adapter.
+   * `ctx` is `unknown` because each adapter builds its own context. Each is
+   * a `SubUnitOpsCarrier`, which lists the calls and JSX elements the parent
+   * runs as ops; `TsSubUnitContext` adds the run's store.
    */
   subUnits?: (
     parent: DiscoveredSubUnitParent,
@@ -1933,8 +1932,7 @@ export type AccessRecognizer<TCtx = unknown> = (
 
 /**
  * The parent unit a `subUnits` hook works inside. `func` is opaque because
- * each adapter has its own function-root type; adapter context types such
- * as `TsSubUnitContext` narrow it.
+ * each adapter has its own function-root type.
  */
 export interface DiscoveredSubUnitParent {
   /** Handle to the parent's function body. Opaque at extractor level. */

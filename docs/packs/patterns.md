@@ -791,7 +791,9 @@ interface DiscoveredSubUnitParent {
 }
 ```
 
-`subUnits` returns extra units built from a parent's body. Use it when one construct the author wrote spawns several units that the runtime schedules: React event handlers on JSX elements, `useEffect` bodies, class-component lifecycle methods. A callback handed to a call, such as a Node `setTimeout` callback or a TanStack Query function, is declared with `callbacks(...).unitWhenInPlace(...)` in `@suss/recognize` instead, which compiles to this hook.
+`subUnits` returns extra units built from a parent's body. Use it when one construct the author wrote spawns several units that the runtime schedules, such as class-component lifecycle methods. A callback handed to a call, such as a Node `setTimeout` callback, a `useEffect` body or a TanStack Query function, is declared with `callbacks(...)` in `@suss/recognize` instead, and a function handed to a JSX attribute, such as a React event handler, with `renderedProps(...)`. Both compile to this hook.
+
+Each adapter passes a `SubUnitOpsCarrier` from `@suss/extractor` as `ctx`. Its `calls(parent)` lists the calls the parent runs, as the same `CallOps` a recognizer gets, and `elements(parent)` lists the JSX elements it renders with their attributes. `writes(parent, fn)` says whether the parent's body writes a function, and `mentions(parent, word)` says whether the parent's file contains a word. Python and Ruby set only `calls`. The TypeScript context sets all four and also has the run's store as `resolution`.
 
 Returned units go through the same pipeline top-level units do, and each becomes its own `BehavioralSummary`. Put per-unit `terminals` and `inputMapping` on the `DiscoveredSubUnit` when a sub-unit is written differently from the parent pack's defaults.
 
