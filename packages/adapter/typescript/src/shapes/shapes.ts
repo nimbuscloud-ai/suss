@@ -34,12 +34,13 @@ import {
 } from "ts-morph";
 
 import { resolveNodeFromAst } from "../resolve/astResolve.js";
+import { propertyNameOf } from "../walk/propertyName.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelSyntax } from "../walk/unwrap.js";
 import { shapeFromNodeType } from "./typeShapes.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
-import type { ArrayLiteralExpression, PropertyAssignment } from "ts-morph";
+import type { ArrayLiteralExpression } from "ts-morph";
 
 // Module-local recursion guard. `extractShape` and `resolveNodeFromAst`
 // can call each other transitively (extractShape → resolveNodeFromAst →
@@ -248,7 +249,7 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
   // matching JS semantics (`{ a: 1, ...x, a: 2 }` has `a === 2`).
   for (const prop of obj.getProperties()) {
     if (Node.isPropertyAssignment(prop)) {
-      const name = propertyName(prop);
+      const name = propertyNameOf(prop);
       if (name === null) {
         // Computed property key we can't resolve: nothing we can record on
         // the structured shape; skip rather than invent a name.
@@ -303,20 +304,6 @@ function shapeFromObjectLiteral(obj: ObjectLiteralExpression): TypeShape {
   return unresolvedSpreads.length > 0
     ? { type: "record", properties, spreads: unresolvedSpreads }
     : { type: "record", properties };
-}
-
-function propertyName(prop: PropertyAssignment): string | null {
-  const nameNode = prop.getNameNode();
-  if (
-    Node.isIdentifier(nameNode) ||
-    Node.isStringLiteral(nameNode) ||
-    Node.isNoSubstitutionTemplateLiteral(nameNode) ||
-    Node.isNumericLiteral(nameNode)
-  ) {
-    return nameNode.getText().replace(/^["']|["']$/g, "");
-  }
-  // Computed property name: skip, we can't emit a stable string for it.
-  return null;
 }
 
 /**

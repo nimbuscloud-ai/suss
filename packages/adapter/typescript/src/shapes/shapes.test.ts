@@ -226,6 +226,37 @@ describe("extractShape", () => {
         spreads: [{ sourceText: "base" }, { sourceText: "overrides" }],
       });
     });
+
+    describe("a key is the property it names", () => {
+      function keysOf(object: string): string[] {
+        const shape = extractShape(parseExpression(object));
+        if (shape?.type !== "record") {
+          throw new Error("expected a record shape");
+        }
+        return Object.keys(shape.properties).sort();
+      }
+
+      it("reads the escapes in a string key", () => {
+        expect(
+          keysOf(
+            String.raw`({ "a\"b": 1, 'it\'s': 2, "tab\there": 3, "A": 4 })`,
+          ),
+        ).toEqual(['a"b', "A", "it's", "tab\there"].sort());
+      });
+
+      it("reads a numeric key as the number JavaScript makes of it", () => {
+        expect(keysOf("({ 0x10: 1, 1_000: 2, 0b11: 3, 1.50: 4 })")).toEqual([
+          "1.5",
+          "1000",
+          "16",
+          "3",
+        ]);
+      });
+
+      it("skips a key the source computes, even from a template", () => {
+        expect(keysOf("({ [`a`]: 1, b: 2 })")).toEqual(["b"]);
+      });
+    });
   });
 
   describe("arrays", () => {
