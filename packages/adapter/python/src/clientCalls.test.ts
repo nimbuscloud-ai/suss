@@ -746,10 +746,67 @@ describe("a URL the constructor was given", () => {
     expect(paths(units)).toEqual(["/users"]);
   });
 
-  it("gives nothing when nothing constructs the class", async () => {
+  it("gives one client with no path when nothing constructs the class", async () => {
     const units = await unitsIn(RESOURCE.join("\n"));
 
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
+  });
+
+  it("leaves out a construction whose URL says nothing, when another one does", async () => {
+    const units = await unitsIn(
+      [
+        ...RESOURCE,
+        'users = Resource("/users")',
+        "def build(base):",
+        "    return Resource(base)",
+      ].join("\n"),
+    );
+
+    expect(paths(units)).toEqual(["/users"]);
+  });
+});
+
+describe("a URL that says nothing about where the request goes", () => {
+  /** The method, host and path of each unit in a file that imports the library. */
+  async function requestsIn(lines: string[]): Promise<string[]> {
+    const units = await unitsIn(["import httpclient", "", ...lines].join("\n"));
+    return units.map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      return semantics?.name === "rest"
+        ? `${semantics.method} ${semantics.host ?? ""}${semantics.path ?? "(no path)"}`
+        : "";
+    });
+  }
+
+  it("makes a client with no path for a URL the function was handed", async () => {
+    expect(
+      await requestsIn([
+        "def fetch(api_url):",
+        "    return httpclient.get(api_url)",
+      ]),
+    ).toEqual(["GET (no path)"]);
+  });
+
+  it("makes a client with no path for a URL made only of holes", async () => {
+    expect(
+      await requestsIn([
+        "def fetch(base_url, path):",
+        '    return httpclient.get(f"{base_url}{path}")',
+        "",
+        "def fetch_under(base_url, path):",
+        '    return httpclient.get(f"{base_url}/{path}")',
+      ]),
+    ).toEqual(["GET (no path)", "GET (no path)"]);
+  });
+
+  it("keeps a path made only of holes at a host suss read", async () => {
+    expect(
+      await requestsIn([
+        "def public_key(region, kid):",
+        '    return httpclient.get(f"https://keys.{region}.example.com/{kid}")',
+      ]),
+    ).toEqual(["GET keys.{region}.example.com/{kid}"]);
   });
 });
 

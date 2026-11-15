@@ -24,7 +24,7 @@ def fetch_order(order_id: str) -> dict:
 ## Where it stops
 
 - **`base_url` on a client is not read**, so a call on a client built with one is reported by its own path alone. The Faraday pack reads Faraday's `url:`, because Faraday puts a path there. httpx's `base_url` will be read the same way once a project needs it.
-- **A URL that cannot be settled** records nothing, so the pack never guesses. A call at module level records nothing either.
+- **A URL that cannot be settled** makes the function a client with no path, so the pack never guesses, and that binding pairs with nothing. A call at module level records nothing.
 - **The response**, meaning `raise_for_status()` and `response.status_code`, is not read yet.
 
 ## Usage

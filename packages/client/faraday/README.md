@@ -27,7 +27,7 @@ end
 
 ## Where it stops
 
-- **A URL that cannot be settled**, as in `Faraday.get(target)` where `target` is a parameter, records nothing, so the pack never guesses. The call stays an invocation effect like any other.
+- **A URL that cannot be settled**, as in `Faraday.get(target)` where `target` is a parameter, makes the method a client with no path, so the pack never guesses. A binding with no path pairs with nothing. A path made only of holes, as in `"#{base}#{path}"`, counts as no path, unless suss read the host.
 - **A connection built somewhere else**, in another method or in an initializer, is not followed. The assignment has to be in the method that makes the call, which is the same one-hop limit every other reader here has.
 - **A request configured in a block**, `conn.post("/orders") { |req| ... }`, is read for its path and method. What the block sets on the request is not read.
 - **What the caller does with the response**: the pack declares `status`, `success?` and `body`, and the caller's own tests on them become the paths of its summary. A caller that writes `return nil if response.status == 404` handles a 404, and `suss check` reports it when the route on the other side never sends one.

@@ -114,7 +114,7 @@ describe("a method that calls Faraday", () => {
     expect(units).toEqual([]);
   });
 
-  it("says nothing about a URL that does not settle on a string", async () => {
+  it("is a client with no path for a URL that does not settle on a string", async () => {
     const units = await unitsIn(
       [
         "class OrderClient",
@@ -125,7 +125,8 @@ describe("a method that calls Faraday", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
   });
 
   it("leaves a call written outside a method alone", async () => {

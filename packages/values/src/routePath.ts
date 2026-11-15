@@ -242,6 +242,39 @@ export function pathOf(value: Value): string | undefined {
 }
 
 /**
+ * A request's path, or undefined when the path says nothing about where
+ * the request goes. A path made only of holes and slashes, such as
+ * `{base}{path}`, says nothing unless suss read some of the host:
+ * `/{kid}` at `keys.example.com` goes to that host, and `/{kid}` at an
+ * unread host could be any route. Every adapter's client reader asks
+ * this, so a URL suss cannot read is a client with no path in each.
+ */
+export function statedRequestPath(
+  path: string | undefined,
+  host: string | undefined,
+): string | undefined {
+  if (path === undefined) {
+    return undefined;
+  }
+  const hostRead = host !== undefined && !onlyHolesAnd(host, HOST_SEPARATORS);
+  return pathIsOnlyHoles(path) && !hostRead ? undefined : path;
+}
+
+/** Whether a path is made of holes and slashes and nothing else, with at least one hole. */
+export function pathIsOnlyHoles(path: string): boolean {
+  return onlyHolesAnd(path, PATH_SEPARATORS);
+}
+
+const WRITTEN_HOLE = /\{[^{}]*\}/g;
+const PATH_SEPARATORS = /^\/*$/;
+const HOST_SEPARATORS = /^[.:]*$/;
+
+function onlyHolesAnd(text: string, separators: RegExp): boolean {
+  const written = text.replace(WRITTEN_HOLE, "");
+  return written !== text && separators.test(written);
+}
+
+/**
  * The host written in an absolute URL, with its port, as `api.example.com:8443`.
  * A piece of the authority the evaluator could not read is written
  * `{name}`, so a host suss read can be told from one it could not.
