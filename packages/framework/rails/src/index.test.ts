@@ -86,13 +86,13 @@ describe("railsFramework", () => {
     ]);
   });
 
-  it("declares the ActiveSupport calls whose block runs as part of the body", () => {
+  it("declares the ActiveSupport calls whose block runs as part of the body, and that concerning's block is a module's", () => {
     const pack = railsFramework({ configDirectory: "/repo" });
     expect(pack.bodyBlocks).toEqual([
       { name: "included", moduleOnly: true },
       { name: "prepended", moduleOnly: true },
       { name: "class_methods", moduleOnly: true, definesClassMethods: true },
-      { name: "concerning" },
+      { name: "concerning", moduleBody: true },
       { name: "with_options" },
     ]);
   });

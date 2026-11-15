@@ -500,6 +500,39 @@ describe("definesClassMethod", () => {
     expect(definesClassMethod(must(build), CONCERN_BLOCKS)).toBe(true);
     expect(definesClassMethod(must(pay), CONCERN_BLOCKS)).toBe(false);
   });
+
+  it("counts a def in a class-method block inside a block that makes a module, written in a class", async () => {
+    const [due] = await methodsIn(
+      [
+        "class Order",
+        "  concerning :Billing do",
+        "    class_methods do",
+        "      def due",
+        "      end",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const makesModule = bodyBlocksIn([
+      {
+        name: "test",
+        protocol: "http",
+        discovery: [],
+        bodyBlocks: [
+          {
+            name: "class_methods",
+            moduleOnly: true,
+            definesClassMethods: true,
+          },
+          { name: "concerning", moduleBody: true },
+        ],
+      },
+    ]);
+    expect(definesClassMethod(must(due), CONCERN_BLOCKS)).toBe(false);
+    expect(definesClassMethod(must(due), makesModule)).toBe(true);
+  });
 });
 
 describe("instanceMethodVisibility", () => {
