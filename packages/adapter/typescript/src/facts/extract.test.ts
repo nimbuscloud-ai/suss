@@ -16,6 +16,7 @@ import {
   environmentObjectsIn,
   extractFileFacts,
   importedModuleKeys,
+  importSpecifierOf,
 } from "./extract.js";
 
 import type { Node } from "ts-morph";
@@ -100,6 +101,40 @@ describe("the modules a file imports", () => {
     expect(modules).toContain("@acme/reports");
     expect(modules).toContain("node:timers/promises");
     expect(modules).not.toContain("node:timers");
+  });
+});
+
+describe("the specifier an import names", () => {
+  function specifiersOf(source: string): (string | null)[] {
+    const project = new Project({ useInMemoryFileSystem: true });
+    const file = project.createSourceFile("/mod.ts", source);
+    return file
+      .getDescendants()
+      .filter(
+        (node) =>
+          node.getKind() === SyntaxKind.ImportSpecifier ||
+          node.getKind() === SyntaxKind.ImportEqualsDeclaration,
+      )
+      .map(importSpecifierOf);
+  }
+
+  it("is the string the specifier holds, with its escapes read", () => {
+    expect(
+      specifiersOf(
+        [
+          'import Tracing = require("@acme/trac\\u0069ng");',
+          'import { report } from "@acme/rep\\u006frts";',
+          'import Quoted = require("it\\\'s");',
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual(["@acme/tracing", "@acme/reports", "it's"]);
+  });
+
+  it("is nothing for a require of something that is not a string", () => {
+    expect(specifiersOf("import Tracing = require(tracing);\n")).toEqual([
+      null,
+    ]);
   });
 });
 

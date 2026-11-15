@@ -403,15 +403,16 @@ function importedNameOf(declaration: Node): string {
 }
 
 /** The module specifier an import-shaped declaration names. */
-function importSpecifierOf(declaration: Node): string | null {
+export function importSpecifierOf(declaration: Node): string | null {
   if (Node.isImportSpecifier(declaration)) {
     return declaration.getImportDeclaration().getModuleSpecifierValue();
   }
   if (Node.isImportEqualsDeclaration(declaration)) {
     const reference = declaration.getModuleReference();
-    return Node.isExternalModuleReference(reference)
-      ? (reference.getExpression()?.getText().slice(1, -1) ?? null)
-      : null;
+    const specifier = Node.isExternalModuleReference(reference)
+      ? reference.getExpression()
+      : undefined;
+    return Node.isStringLiteral(specifier) ? specifier.getLiteralValue() : null;
   }
   const owner = Node.isNamespaceImport(declaration)
     ? declaration.getParent()
