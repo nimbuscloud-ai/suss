@@ -239,6 +239,7 @@ walk it:
 | `entries(unsettled)` | what an object states, as key and value per entry |
 | `items()` | what a list states, item by item |
 | `writtenItems()` | the text of each item of a list written at this spot, a spread as written, without following a name; null for anything else |
+| `listed()` | the list a value comes to through names, without following a call, as its key and each entry the source writes, a spread marked as one |
 | `property(name)` | what one named property states, as a value of its own |
 | `parts()` | the pieces of text the source wrote, with the holes left out |
 | `holes()` | what the source interpolated between those pieces, each as the call it was written as |
@@ -320,6 +321,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `member(name, singleton)` | `holdsProperty` on the value, or on what it `comesTo`, the last statement winning; a class's own member is spelled as `classMemberName` spells it |
 | `returns()`, `marked(word)` | `returnsValue(f, v)` and `marks(f, word)` on the function `function()` settles to |
 | `tag()` | `jsxElement(v, t)` on the value as written |
+| `attributes()` | `jsxAttribute(v, n, x)` on the value as written, ordered by where `x` is written, the first row of each `n` kept |
+| `elementsWithin()` | the `jsxParent(c, v)` rows on the value as written, each `c` in source order |
+| `listed()` | `writtenEntryAt(c, k, x, form)` on the value as written, in the order of `k`, when `shapeOf` says it is a list. The value as written follows a name and never a call, so a list a function returns is no list here, where `items()` reads it. A spread is an entry with the form `spread`, where `items()` leaves it out, and the list's own key says which list it is |
 | `elements(tag)` | the adapter's `elementsOf` on the function `function()` settles to, which states `writesElement` for every element written under it and the element's `jsxElement`, `jsxAttribute`, `jsxSpread` and `jsxChild` rows. It keeps the elements whose `jsxElement` tag the adapter's `textOf` spells as `tag`, in source order. Each element's `props()` are its `jsxAttribute` names, its `spreads()` the values of its `jsxSpread` rows, and `hasChildren()` says whether it has a `jsxChild` row. An adapter that writes no JSX leaves `elementsOf` unset, and the op gives nothing |
 | `declaration()` | the adapter's `declarationOf` where it has one. TypeScript reads the declaration a name `binds` to, and for an import binding follows `imports(d, m, n)` to what the store's export table gives for `m` under `n`, with each module stated only as far as its export statements; a variable, function or class gives its name, a name leads on to what it binds to, and anything else gives its file and no name. Without `declarationOf`, `imports(x, m, n)` on the value leads to the `exportsAs(m, n, v)` row, following `v` on when it is imported in turn, and otherwise the `exportsAs` row of the value or of what it `binds` to gives the file and the name, which is how Python states a module-level def and Ruby a top-level class or constant. When neither gives an answer and the value is a member read, `readsProperty(x, o, n)`, it is declared where `property(n)` of `o`'s `object()` is, so `Card.Root` with `Card = { Root: CardRoot }` is declared where `CardRoot` is. TypeScript asks this of the expression inside `Slider.Root<number>`. Null when nothing is behind it |
 | `parameterAt(fn)` | the position `k` of a `paramOf(f, k, p)` row on the function `fn` settles to, where `p` is the value itself (how Python and Ruby key a name for a parameter), what it `binds` to (how TypeScript does), or the parameter whose destructure has that declaration as its rest, `restOf(d, p)`. Null for none, or for two positions |
@@ -390,6 +394,8 @@ module ops from these facts:
 | `marked(word)` | `marks(file, word)`, once the adapter's `mentions(word)` says the file's text has the word |
 | `markedFunctions(word)` | `marks(f, word)` on each function the adapter lists in the file, since TypeScript states a function's facts only when something reads it. It asks `mentions(word)` first, since stating every function of every file to find a word most files never write costs more than the rest of a run |
 | `calls(scope)` | the calls the adapter lists outside every function body, or with `file` every call the file writes, each as the fact ops for it in source order |
+| `elements()` | the elements the adapter lists for the file through `ModuleWritten.elements`, which TypeScript states as `writesElement(file, v)` with their rows when asked, keeping those with no `jsxParent(v, p)` row. Python and Ruby write no JSX and leave it unset |
+| `importedNames(modules)` | the adapter's `importedNames`: the file's named imports of the modules in TypeScript, and its `from m import n as x` bindings at module scope in Python. Ruby imports no names, and leaves it unset |
 | `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
 
 `registeredFunction` with a global start and no method asks

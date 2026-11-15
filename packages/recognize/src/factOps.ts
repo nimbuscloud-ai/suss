@@ -48,6 +48,8 @@ import type {
   Imported,
   Inheriting,
   Inherits,
+  ListedEntry,
+  ListedValues,
   Loop,
   MarkedFunction,
   ModuleMember,
@@ -1049,6 +1051,47 @@ class FactValue implements ValueOps {
       : factValueOps(String(element[1]), this.facts);
   }
 
+  attributes(): readonly ValueEntry[] {
+    const named = new Set<string>();
+    return [...this.facts.db.lookup("jsxAttribute", 0, this.written())]
+      .sort((a, b) => bySourceOrder(String(a[2]), String(b[2])))
+      .flatMap((row) => {
+        const name = String(row[1]);
+        if (named.has(name)) {
+          return [];
+        }
+        named.add(name);
+        return [{ key: name, value: factValueOps(String(row[2]), this.facts) }];
+      });
+  }
+
+  elementsWithin(): readonly ValueOps[] {
+    return inSourceOrder(
+      this.facts.db
+        .lookup("jsxParent", 1, this.written())
+        .map((row) => String(row[0])),
+    ).map((element) => factValueOps(element, this.facts));
+  }
+
+  /** Read off the value a name was written as, never off what a call returns, so a list a function builds is not this one. */
+  listed(): ListedValues | null {
+    const list = this.written();
+    if (this.facts.shapeOf(list) !== "list") {
+      return null;
+    }
+    return {
+      key: list,
+      entries: [...this.facts.db.lookup("writtenEntryAt", 0, list)]
+        .sort((a, b) => Number(a[1]) - Number(b[1]))
+        .map(
+          (row): ListedEntry => ({
+            form: row[3] === "spread" ? "spread" : "value",
+            value: factValueOps(String(row[2]), this.facts),
+          }),
+        ),
+    };
+  }
+
   asClass(): ClassValueOps | null {
     const cls = classBehind(this.key, this.facts);
     return cls === null ? null : new FactClass(cls, this.facts);
@@ -1734,6 +1777,10 @@ export interface ModuleWritten {
   calls(scope: CallScope): readonly CallOps[];
   /** The keys of the classes and modules the file writes, nested ones included, in source order. Unset lists none. */
   classes?(): readonly string[];
+  /** The keys of every JSX element the file writes, in source order, with their rows stated. Unset where the language writes no JSX. */
+  elements?(): readonly string[];
+  /** The file's named imports of the modules, the name the file uses to the name the module exports. Unset lists none. */
+  importedNames?(modules: readonly string[]): ReadonlyMap<string, string>;
   /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
   functions?(): readonly {
     readonly key: string;
@@ -1831,6 +1878,16 @@ class FactModule implements ModuleOps {
       this.facts.read(key);
       return new FactClass(key, this.facts);
     });
+  }
+
+  elements(): readonly ValueOps[] {
+    return (this.written.elements?.() ?? [])
+      .filter((key) => this.facts.db.lookup("jsxParent", 0, key).length === 0)
+      .map((key) => factValueOps(key, this.facts));
+  }
+
+  importedNames(modules: readonly string[]): ReadonlyMap<string, string> {
+    return this.written.importedNames?.(modules) ?? new Map();
   }
 
   marked(word: string): boolean {

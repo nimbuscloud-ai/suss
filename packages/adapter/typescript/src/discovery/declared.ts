@@ -11,6 +11,7 @@ import { nodeId } from "../facts/extract.js";
 import { factSourceFor } from "../resolve/factSource.js";
 import { opsOverFacts } from "../resolve/opsOverFacts.js";
 import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
+import { importedNamesOf } from "./importScan.js";
 import { discoveredUnitOf } from "./shared.js";
 
 import type {
@@ -63,6 +64,8 @@ export function moduleOpsFor(
           access.state(cls);
           return nodeId(cls);
         }),
+      elements: () => store.elementsWrittenIn(sourceFile),
+      importedNames: (modules) => importedNamesOf(sourceFile, modules),
       functions: () =>
         functionsIn(sourceFile).map((fn) => {
           access.state(fn);
