@@ -1,6 +1,14 @@
 // @suss/recognize: write a pack as data, and let any adapter run it.
 
 export { callbacks } from "./callbacks.js";
+export {
+  association,
+  callback,
+  classBody,
+  declareClassBodies,
+  declareClassBody,
+  definesMethod,
+} from "./classBody.js";
 export { compile } from "./compile.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared, discoverEntryObject } from "./discovery.js";
@@ -41,6 +49,7 @@ export { unitInvokes } from "./unitInvokes.js";
 // A declared pack imports its whole surface from here, including the
 // type the adapters load it as.
 export type {
+  ClassBodyDeclaration,
   DeclaredMatch,
   EntryMember,
   EntryObject,
@@ -155,6 +164,7 @@ export type {
   WriteMeaning,
   WritesLink,
 } from "./chain.js";
+export type { AssociationTarget, ClassDeclaration } from "./classBody.js";
 export type { CompileOptions } from "./compile.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit } from "./discovery.js";

@@ -1409,6 +1409,71 @@ export interface ParameterSupplier {
 }
 
 /**
+ * What a library reads out of a class body: calls written there outside
+ * every method, and fields assigned from a call. `in` limits the reading
+ * to classes whose ancestry reaches a library base, and every module is
+ * read either way, since a mixin has no ancestry of its own. Without it
+ * every class and module body is read.
+ */
+export interface ClassBodyDeclaration {
+  readonly in?: Inherits;
+  /** What each call does, by the name it is written under with no receiver. */
+  readonly calls: Readonly<Record<string, ClassBodyMeaning>>;
+  readonly fields: ClassBodyFields;
+}
+
+/** One argument a class body call passes, by its position or by its keyword. */
+export type ClassBodyArgument =
+  | { readonly at: number }
+  | { readonly keyword: string };
+
+/** Every positional argument a class body call passes from one position on. */
+export interface ClassBodyArguments {
+  readonly from: number;
+}
+
+export type ClassBodyMeaning =
+  | AssociationMeaning
+  | CallbackMeaning
+  | DefinesMethodMeaning;
+
+/** The call declares that instances reach another model under `name`. */
+export interface AssociationMeaning {
+  readonly declares: "association";
+  readonly name: ClassBodyArgument;
+  /** Where the call writes the target's class name, when it does. Without one written, the name is inflected. */
+  readonly target?: ClassBodyArgument;
+  /** The name is written in the plural, so the inflection singularises it. */
+  readonly plural?: boolean;
+}
+
+/** The call registers the class's own methods to run on the library's events. */
+export interface CallbackMeaning {
+  readonly declares: "callback";
+  readonly methods: ClassBodyArguments;
+  readonly events: readonly string[];
+  /** The argument that narrows the events to the ones it lists, as `on: :create` or `on: %i(create update)`. */
+  readonly narrowedBy?: ClassBodyArgument;
+}
+
+/** The call defines a method on the class from a function it is handed, as `scope :recent, -> { ... }`. */
+export interface DefinesMethodMeaning {
+  readonly declares: "method";
+  readonly name: ClassBodyArgument;
+  readonly body: ClassBodyArgument;
+}
+
+/** What a field assigned from a call declares, by what made the call. */
+export interface ClassBodyFields {
+  /** A field assigned from a call of this origin declares an association under the field's name. */
+  readonly association?: FieldMeaning;
+}
+
+export interface FieldMeaning {
+  readonly madeBy: ReceiverOrigin;
+}
+
+/**
  * A command-line parser a runtime or library provides, and where its
  * settings say which flags a command takes. `parseArgs({ args, options })`
  * from `node:util` is one: its options object lists every flag, and
@@ -1629,6 +1694,11 @@ export interface PatternPack {
    * the decorator it came from.
    */
   parameterSuppliers?: ParameterSupplier[];
+  /**
+   * What the library reads out of a class body, such as an ORM's
+   * association calls. The adapter states the facts each one gives.
+   */
+  classBodies?: ClassBodyDeclaration[];
   /**
    * Objects whose properties are the process environment, written as
    * the dotted path the code spells, e.g. `"process.env"`. The adapter

@@ -141,6 +141,31 @@ describe("a declared discovery pattern", () => {
     ]);
   });
 
+  it("lists a class's static block calls as its body's, and the calls its fields are given", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/account.ts",
+      [
+        "export class Account {",
+        '  static items = links("Item");',
+        "  static {",
+        '    runs("sync");',
+        '    if (dev) runs("audit");',
+        "  }",
+        "  save() { touch(); }",
+        "}",
+      ].join("\n"),
+    );
+    const [account] = moduleOpsFor(file, new ResolutionStore()).classes();
+    expect(account?.bodyCalls().map((call) => call.calleeText())).toEqual([
+      "runs",
+      "runs",
+    ]);
+    expect(
+      account?.fieldCalls().map(({ name, call }) => [name, call.calleeText()]),
+    ).toEqual([["items", "links"]]);
+  });
+
   it("reads a registration the module body runs, and none written inside a function", async () => {
     expect(
       await unitsFor(

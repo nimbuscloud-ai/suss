@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  activeRecordClassBodies,
   activeRecordFramework,
   activeRecordRawSql,
   activeRecordStorage,
@@ -53,16 +54,33 @@ describe("the ActiveRecord pack", () => {
     const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
     expect(pattern?.callbacks?.eventOf.create).toEqual(["create"]);
     expect(pattern?.callbacks?.eventOf.save).toEqual(["create", "update"]);
-    expect(pattern?.callbacks?.registeredBy.after_commit).toEqual([
-      "create",
-      "update",
-      "destroy",
-    ]);
-    expect(pattern?.callbacks?.registeredBy.before_save).toEqual([
-      "create",
-      "update",
-    ]);
-    expect(pattern?.callbacks?.eventKeyword).toBe("on");
+    const [body] = activeRecordClassBodies();
+    expect(body?.calls.after_commit).toEqual({
+      declares: "callback",
+      methods: { from: 0 },
+      events: ["create", "update", "destroy"],
+      narrowedBy: { keyword: "on" },
+    });
+    expect(body?.calls.before_save).toMatchObject({
+      events: ["create", "update"],
+    });
+  });
+
+  it("declares the association calls and the scope call a model body writes", () => {
+    const [body] = activeRecordClassBodies();
+    expect(body?.calls.has_many).toEqual({
+      declares: "association",
+      name: { at: 0 },
+      target: { keyword: "class_name" },
+      plural: true,
+    });
+    expect(body?.calls.belongs_to).toMatchObject({ declares: "association" });
+    expect(body?.calls.belongs_to).not.toHaveProperty("plural");
+    expect(body?.calls.scope).toEqual({
+      declares: "method",
+      name: { at: 0 },
+      body: { at: 1 },
+    });
   });
 
   it("leaves the bulk writers out, since ActiveRecord runs no callback for them", () => {

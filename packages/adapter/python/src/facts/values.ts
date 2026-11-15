@@ -1491,7 +1491,7 @@ function callStatementsIn(statements: readonly PyNode[]): PyNode[] {
   });
 }
 
-/** `bodyCallAt` for each call written as a statement among `statements`, which the function or module at `ownerKey` runs in that order. */
+/** `bodyCallAt` for each call written as a statement among `statements`, which the function, class or module at `ownerKey` runs in that order. */
 function emitBodyCallPositions(
   emitter: Emitter,
   ownerKey: string,
@@ -2035,6 +2035,7 @@ function emitClassFacts(emitter: Emitter, cls: PyNode): string {
       }
     }
   }
+  emitBodyCallPositions(emitter, classKey, statements);
 
   return classKey;
 }

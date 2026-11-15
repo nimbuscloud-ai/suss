@@ -1,35 +1,78 @@
+// What a model's class body declares, read through a pack's class-body
+// declaration and stated as the facts the rules read.
+
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import {
+  association,
+  callback,
+  classBody,
+  definesMethod,
+} from "@suss/recognize";
+import { classMemberName } from "@suss/resolution";
 
-import { parseRuby } from "../parser.js";
-import { collectFileConstants, emitConstantBindings } from "./constants.js";
-import { emitValueFacts } from "./values.js";
+import {
+  collectFileConstants,
+  emitConstantBindings,
+} from "./facts/constants.js";
+import { emitValueFacts } from "./facts/values.js";
+import { parseRuby } from "./parser.js";
+import { RunFacts } from "./project.js";
 
-import type { RbAssociationCalls, RbInflections } from "../pack.js";
+import type { RbBodyBlock, RbInflections, RubyPack } from "./pack.js";
 
-/** ActiveRecord's own four calls, as the pack declares them. */
-const ACTIVE_RECORD: RbAssociationCalls = {
-  singular: ["has_one", "belongs_to"],
-  plural: ["has_many", "has_and_belongs_to_many"],
-  classNameKeyword: "class_name",
-};
+const CLASS_NAME = { keyword: "class_name" };
+
+/** ActiveRecord's own four association calls, `after_commit`, and `scope`, as the pack declares them. */
+const ACTIVE_RECORD = classBody({
+  calls: {
+    has_one: association({ name: { at: 0 }, target: CLASS_NAME }),
+    belongs_to: association({ name: { at: 0 }, target: CLASS_NAME }),
+    has_many: association({
+      name: { at: 0 },
+      target: CLASS_NAME,
+      plural: true,
+    }),
+    has_and_belongs_to_many: association({
+      name: { at: 0 },
+      target: CLASS_NAME,
+      plural: true,
+    }),
+    after_commit: callback({
+      methods: { from: 0 },
+      events: ["create", "update", "destroy"],
+      narrowedBy: { keyword: "on" },
+    }),
+    scope: definesMethod({ name: { at: 0 }, body: { at: 1 } }),
+  },
+});
+
+/** The blocks Rails runs as part of the body around them. */
+const RAILS_BODY_BLOCKS: RbBodyBlock[] = [
+  { name: "included", moduleOnly: true },
+  { name: "with_options" },
+];
 
 async function factsFor(
   files: Record<string, string>,
   inflections?: RbInflections,
-) {
-  const db = new Database();
-  const constants = [];
+  bodyBlocks: RbBodyBlock[] = [],
+): Promise<Database> {
+  const pack: RubyPack = {
+    name: "models",
+    protocol: "postgresql",
+    discovery: [],
+    classBodies: [ACTIVE_RECORD],
+    bodyBlocks,
+    ...(inflections === undefined ? {} : { inflections }),
+  };
+  const facts = new RunFacts(new Database(), [pack]);
   for (const [file, source] of Object.entries(files)) {
-    const tree = await parseRuby(source);
-    emitValueFacts(db, file, tree.rootNode);
-    constants.push(
-      collectFileConstants(file, tree.rootNode, [ACTIVE_RECORD], inflections),
-    );
+    facts.addFile(file, (await parseRuby(source)).rootNode);
   }
-  emitConstantBindings(db, constants);
-  return db;
+  facts.finish();
+  return facts.db;
 }
 
 /** Every association a run declares, as `name -> the qualified name its target binds to`. */
@@ -169,6 +212,29 @@ describe("an association ActiveRecord declares", () => {
     expect(targetsOf(db)).toEqual({ statuses: "Status" });
   });
 
+  it("is read inside a block the pack says runs as part of the body", async () => {
+    const db = await factsFor(
+      {
+        "models.rb": [
+          "class Status; end",
+          "",
+          "module Account::Associations",
+          "  included do",
+          "    with_options dependent: :destroy do",
+          "      has_many :statuses",
+          "    end",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      },
+      undefined,
+      RAILS_BODY_BLOCKS,
+    );
+
+    expect(targetsOf(db)).toEqual({ statuses: "Status" });
+  });
+
   it("belongs to the class whose body writes it, not a class nested in it", async () => {
     const db = await factsFor({
       "models.rb": [
@@ -255,5 +321,87 @@ describe("an association ActiveRecord declares", () => {
     ]);
 
     expect(db.size("declaresAssociation")).toBe(0);
+  });
+});
+
+/** Each `classCallback` row, as `event method`. */
+function callbacksOf(db: Database): string[] {
+  return db
+    .facts("classCallback")
+    .map((row) => `${String(row[1])} ${String(row[2])}`);
+}
+
+describe("a callback ActiveRecord registers", () => {
+  it("runs on every event its call covers, for each method it lists", async () => {
+    const db = await factsFor({
+      "models.rb": "class Account\n  after_commit :sync, :index\nend\n",
+    });
+
+    expect(callbacksOf(db)).toEqual([
+      "create sync",
+      "create index",
+      "update sync",
+      "update index",
+      "destroy sync",
+      "destroy index",
+    ]);
+  });
+
+  it("runs on the one event `on:` names", async () => {
+    const db = await factsFor({
+      "models.rb": "class Account\n  after_commit :sync, on: :create\nend\n",
+    });
+
+    expect(callbacksOf(db)).toEqual(["create sync"]);
+  });
+
+  it("runs on each event an `on:` list names", async () => {
+    const db = await factsFor({
+      "models.rb":
+        "class Account\n  after_commit :sync, on: %i(create update)\nend\n",
+    });
+
+    expect(callbacksOf(db)).toEqual(["create sync", "update sync"]);
+  });
+});
+
+describe("a scope ActiveRecord defines", () => {
+  const RECENT = classMemberName("recent");
+
+  /** Each class method a lambda is held under, as `method -> lambda source`. */
+  async function scopesOf(source: string): Promise<Record<string, string>> {
+    const tree = await parseRuby(source);
+    const db = await factsFor({ "models.rb": source });
+    const found: Record<string, string> = {};
+    for (const row of db.facts("holdsProperty")) {
+      const [start, end] = String(row[2]).split(":").at(-1)?.split("-") ?? [];
+      const text = tree.rootNode.text.slice(Number(start), Number(end));
+      if (text.startsWith("->")) {
+        found[String(row[1])] = text;
+      }
+    }
+    return found;
+  }
+
+  it("holds the lambda on the class under the class method's name", async () => {
+    expect(
+      await scopesOf(
+        "class Account\n  scope :recent, -> { order(:id) }\nend\n",
+      ),
+    ).toEqual({ [RECENT]: "-> { order(:id) }" });
+  });
+
+  it("is read inside a block no pack declares, as Ruby runs that block with the body", async () => {
+    expect(
+      await scopesOf(
+        "class Account\n  [1].each do\n    scope :recent, -> { order(:id) }\n  end\nend\n",
+      ),
+    ).toEqual({ [RECENT]: "-> { order(:id) }" });
+  });
+
+  it("defines nothing when the second argument is not a lambda", async () => {
+    expect(
+      await scopesOf("class Account\n  scope :recent, order(:id)\nend\n"),
+    ).toEqual({});
   });
 });

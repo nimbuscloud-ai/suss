@@ -2097,6 +2097,13 @@ function emitClassFacts(
   for (const parameter of parameterProperties(declaration)) {
     emitFieldStores(db, table, id, parameter.getName(), parameter);
   }
+
+  emitBodyCallPositions(
+    db,
+    table,
+    id,
+    declaration.getStaticBlocks().flatMap((block) => block.getStatements()),
+  );
 }
 
 /**

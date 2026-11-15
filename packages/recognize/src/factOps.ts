@@ -16,6 +16,7 @@
 import { byOrigin, lastValueWins } from "@suss/extractor";
 import {
   boundByImport,
+  bySourceOrder,
   classMemberName,
   classMemberOf,
   fileOfKey,
@@ -39,6 +40,7 @@ import type {
   ElementOps,
   Encoded,
   FactSource,
+  FieldCall,
   Global,
   HandedBy,
   Imported,
@@ -1596,8 +1598,32 @@ class FactClass implements ClassValueOps {
     );
   }
 
+  /** `classBodyCall` through the adapter, which asks the rules, or the body's own statements without it. */
   bodyCalls(): readonly CallOps[] {
-    return bodyCallsOf(this.key, this.facts);
+    const asked = this.facts.classBodyCalls?.(this.key);
+    if (asked === undefined) {
+      return bodyCallsOf(this.key, this.facts);
+    }
+    return asked.flatMap((key) => {
+      const ops = factCallOps(key, this.facts);
+      return ops === null ? [] : [ops];
+    });
+  }
+
+  /** The `holdsProperty` and `declaresDefault` rows on the class whose value is a call. */
+  fieldCalls(): readonly FieldCall[] {
+    const { db } = this.facts;
+    const assigned = [
+      ...db.lookup("holdsProperty", 0, this.key),
+      ...db.lookup("declaresDefault", 0, this.key),
+    ].sort((a, b) => bySourceOrder(String(a[2]), String(b[2])));
+    return assigned.flatMap((row) => {
+      const call = factCallOps(String(row[2]), this.facts);
+      const stated = String(row[1]);
+      return call === null
+        ? []
+        : [{ name: classMemberOf(stated) ?? stated, call }];
+    });
   }
 }
 
@@ -2240,7 +2266,7 @@ function keysReadOff(key: string, source: FactSource): string[] {
         source.db.lookup("call", 1, site).length === 0 &&
         source.db.lookup("assigns", 0, site).length === 0,
     )
-    .sort(bySourceOrder)
+    .sort(sitesByFileAndStart)
     .flatMap((site) =>
       [...propertiesReadAt(site, source), ...entriesReadAt(site, source)].map(
         (read) => read.name,
@@ -2275,8 +2301,11 @@ function boundTo(key: string, source: FactSource): string[] {
   return source.db.lookup("binds", 1, key).map((row) => String(row[0]));
 }
 
-/** Two node keys in the order the source writes them. */
-function bySourceOrder(a: string, b: string): number {
+/**
+ * Two read sites in the order the source writes them, file by file. A
+ * site with no span keeps the place the adapter listed it in.
+ */
+function sitesByFileAndStart(a: string, b: string): number {
   const first = spanOfKey(a);
   const second = spanOfKey(b);
   if (first === null || second === null) {

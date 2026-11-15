@@ -8,10 +8,12 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
+  sqlalchemyClassBodies,
   sqlalchemyModels,
   sqlalchemyRawSql,
   sqlalchemyStorage,
 } from "@suss/framework-sqlalchemy";
+import { classBody, imported } from "@suss/recognize";
 
 import type {
   PyModelQueries,
@@ -19,6 +21,7 @@ import type {
   RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
+import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 /**
@@ -121,11 +124,21 @@ export function sqlmodelModels(): PyModelQueries[] {
       ...model.entryFunctions,
       { module: "sqlmodel", name: "select", argument: 0 },
     ],
-    relationships: [
-      ...(model.relationships ?? []),
-      { module: "sqlmodel", name: "Relationship" },
-    ],
   }));
+}
+
+/** SQLAlchemy's `relationship` field, and SQLModel's own `Relationship`. */
+export function sqlmodelClassBodies(): ClassBodyDeclaration[] {
+  return [
+    ...sqlalchemyClassBodies(),
+    classBody({
+      fields: {
+        association: {
+          madeBy: imported({ from: ["sqlmodel"], named: ["Relationship"] }),
+        },
+      },
+    }),
+  ];
 }
 
 /** SQLModel re-exports `text`, so a project may import it from either package. */
@@ -153,6 +166,7 @@ export function withSqlmodel(
     ...pack,
     storage: [...(pack.storage ?? []), ...sqlmodelStorage(options)],
     models: [...(pack.models ?? []), ...sqlmodelModels()],
+    classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
     rawSql: [...(pack.rawSql ?? []), ...sqlmodelRawSql(options)],
   };
 }
@@ -171,6 +185,7 @@ export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
     discovery: [],
     storage: sqlmodelStorage(options),
     models: sqlmodelModels(),
+    classBodies: sqlmodelClassBodies(),
     rawSql: sqlmodelRawSql(options),
   };
 }

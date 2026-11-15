@@ -10,13 +10,11 @@
 import { GLOBAL_MODULE } from "@suss/resolution";
 
 import { children, field, NESTING_TYPES } from "../ast.js";
-import { associationsDeclaredIn } from "./associations.js";
 import { nodeId } from "./values.js";
 
 import type { Database } from "@suss/datalog";
-import type { RbAssociationCalls, RbInflections } from "../pack.js";
+import type { DeclaredAssociation } from "../classBodies.js";
 import type { RbNode } from "../parser.js";
-import type { AssociationDeclaration } from "./associations.js";
 
 /** A constant definition, which every file in the run can see, under its qualified name. */
 export interface ConstantDefinition {
@@ -39,8 +37,20 @@ export interface FileConstants {
   readonly filePath: string;
   readonly definitions: readonly ConstantDefinition[];
   readonly references: readonly ConstantReference[];
-  /** Empty unless a pack in the run declares association calls. */
-  readonly associations: readonly AssociationDeclaration[];
+  /** The nesting each class or module body is written inside, by the class's key, its own name last. */
+  readonly nestings: ReadonlyMap<string, readonly string[]>;
+}
+
+/** A reference read from the nesting it is written in, unless `::Status` pins it to the top level. */
+function targetReference(
+  key: string,
+  written: string,
+  nesting: readonly string[],
+): ConstantReference {
+  if (written.startsWith("::")) {
+    return { key, written: written.slice(2), nesting: [] };
+  }
+  return { key, written, nesting };
 }
 
 /** The name a constant or a `scope_resolution` is written as, `Types::Order` included. */
@@ -81,21 +91,14 @@ function isDeclaration(node: RbNode, parent: RbNode | null): boolean {
   return parent.type === "scope_resolution";
 }
 
-/**
- * Every constant this file defines and every one it reads, in one walk
- * that tracks the nesting as it goes. An association's target is
- * collected here too, because the inflected name has no node in the
- * source and only the nesting says which class it means.
- */
+/** Every constant this file defines and every one it reads, tracking the nesting as it goes. */
 export function collectFileConstants(
   filePath: string,
   root: RbNode,
-  associationCalls: readonly RbAssociationCalls[] = [],
-  inflections?: RbInflections,
 ): FileConstants {
   const definitions: ConstantDefinition[] = [];
   const references: ConstantReference[] = [];
-  const associations: AssociationDeclaration[] = [];
+  const nestings = new Map<string, readonly string[]>();
 
   const walk = (
     node: RbNode,
@@ -117,16 +120,7 @@ export function collectFileConstants(
           kind: "declaration",
         });
         const inside = qualifiedName.split("::");
-        for (const declared of associationsDeclaredIn(
-          node,
-          classKey,
-          inside,
-          associationCalls,
-          inflections,
-        )) {
-          associations.push(declared);
-          references.push(declared.target);
-        }
+        nestings.set(classKey, inside);
         for (const child of children(node)) {
           walk(child, node, inside);
         }
@@ -171,7 +165,7 @@ export function collectFileConstants(
   };
 
   walk(root, null, []);
-  return { filePath, definitions, references, associations };
+  return { filePath, definitions, references, nestings };
 }
 
 /**
@@ -192,21 +186,13 @@ function definesRoot(
 }
 
 /**
- * Binds every constant read anywhere in the run to its definition,
- * looking outwards from the nesting it was read inside, the way Ruby
- * does.
- *
- * `binds(refKey, defKey)` records the binding. `importsFile(from, to)`
- * records the same link between the two files, since reading a constant
- * another file defines is the nearest thing Ruby has to an import.
- *
- * `declaresAssociation` is emitted here too, because an association's
- * target is one of these references and the shared rules join the two.
+ * Binds every constant read in the run to its definition, looking outwards
+ * from its nesting as Ruby does, and a file's reading of one to the file.
  */
 export function emitConstantBindings(
   db: Database,
   perFile: Iterable<FileConstants>,
-): void {
+): AssociationBinder {
   const byName = new Map<string, ConstantDefinition[]>();
   const fileOfDefinition = new Map<string, string>();
   const files = [...perFile];
@@ -238,38 +224,66 @@ export function emitConstantBindings(
     return found.length === 1 ? (found[0] as ConstantDefinition).key : null;
   };
 
-  for (const file of files) {
-    for (const declared of file.associations) {
-      db.add("declaresAssociation", [
-        declared.classKey,
-        declared.name,
-        declared.target.key,
-      ]);
+  const bind = (filePath: string, reference: ConstantReference): void => {
+    for (let depth = reference.nesting.length; depth >= 0; depth--) {
+      const candidate = qualify(
+        reference.nesting.slice(0, depth),
+        reference.written,
+      );
+      const key = settles(candidate);
+      if (key !== null) {
+        db.add("binds", [reference.key, key]);
+        const definedIn = fileOfDefinition.get(key);
+        if (definedIn !== undefined && definedIn !== filePath) {
+          db.add("importsFile", [filePath, definedIn]);
+        }
+        return;
+      }
     }
-    // An association's target is a name inflected from a symbol, which
-    // the source never writes as a constant.
-    const inflected = new Set(
-      file.associations.map((declared) => declared.target.key),
-    );
+  };
+
+  for (const file of files) {
     for (const reference of file.references) {
-      if (!inflected.has(reference.key) && !definesRoot(byName, reference)) {
+      if (!definesRoot(byName, reference)) {
         db.add("imports", [reference.key, GLOBAL_MODULE, reference.written]);
       }
-      for (let depth = reference.nesting.length; depth >= 0; depth--) {
-        const candidate = qualify(
-          reference.nesting.slice(0, depth),
-          reference.written,
-        );
-        const key = settles(candidate);
-        if (key !== null) {
-          db.add("binds", [reference.key, key]);
-          const definedIn = fileOfDefinition.get(key);
-          if (definedIn !== undefined && definedIn !== file.filePath) {
-            db.add("importsFile", [file.filePath, definedIn]);
-          }
-          break;
-        }
-      }
+      bind(file.filePath, reference);
     }
   }
+
+  const nestingsByFile = new Map(
+    files.map((file) => [file.filePath, file.nestings]),
+  );
+  return {
+    bindAssociations: (filePath, declared) => {
+      const nestings = nestingsByFile.get(filePath);
+      for (const [classKey, associations] of declared) {
+        const nesting = nestings?.get(classKey);
+        if (nesting === undefined) {
+          continue;
+        }
+        for (const { name, written } of associations) {
+          const target = targetReference(
+            `${classKey}#association:${name}`,
+            written,
+            nesting,
+          );
+          db.add("declaresAssociation", [classKey, name, target.key]);
+          bind(filePath, target);
+        }
+      }
+    },
+  };
+}
+
+/**
+ * Binds an association's target as one more constant the class reads.
+ * The target is a name inflected from a symbol, which the source never
+ * writes, so it is never read as a library's constant.
+ */
+export interface AssociationBinder {
+  bindAssociations(
+    filePath: string,
+    declared: ReadonlyMap<string, readonly DeclaredAssociation[]>,
+  ): void;
 }

@@ -121,10 +121,12 @@ import type {
   PackTally,
   PartialPlan,
   RawCodeStructure,
+  ReceiverOrigin,
   Timer,
   TimingReport,
 } from "@suss/extractor";
 import type {
+  AssociationConstructor,
   Dependencies,
   StoredDependencies,
   StoredFacts,
@@ -294,8 +296,10 @@ export function packWordsOf(packs: readonly PythonPack[]): PackWords {
       ),
     ),
     givesBackOneOfImport: models.flatMap((model) => model.entryFunctions),
-    associationConstructor: models.flatMap(
-      (model) => model.relationships ?? [],
+    associationConstructor: packs.flatMap((pack) =>
+      (pack.classBodies ?? []).flatMap((body) =>
+        constructorsOf(body.fields.association?.madeBy),
+      ),
     ),
     entersAsSelf: packs.flatMap((pack) =>
       (pack.contextManagers ?? []).flatMap((manager) =>
@@ -304,6 +308,23 @@ export function packWordsOf(packs: readonly PythonPack[]): PackWords {
     ),
     unwrapsByName: packs.flatMap((pack) => pack.transparentWrappers ?? []),
   };
+}
+
+/**
+ * The callables a field is assigned from to declare an association, as
+ * the rule that joins `fieldCall` to the import reads them. Only an
+ * import says which callable, so any other origin gives none.
+ */
+function constructorsOf(
+  origin: ReceiverOrigin | undefined,
+): AssociationConstructor[] {
+  if (origin?.origin !== "imported") {
+    return [];
+  }
+  const { importedFrom, named = [] } = origin;
+  return importedFrom.flatMap((module) =>
+    named.map((name) => ({ module, name })),
+  );
 }
 
 /** One parsed file and the packs a run over it would load. */

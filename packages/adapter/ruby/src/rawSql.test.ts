@@ -77,7 +77,7 @@ async function factsFor(files: Record<string, string>) {
   for (const [file, source] of Object.entries(files)) {
     const tree = await parseRuby(source);
     emitValueFacts(db, file, tree.rootNode);
-    constants.push(collectFileConstants(file, tree.rootNode, []));
+    constants.push(collectFileConstants(file, tree.rootNode));
     parsed.push({ file, root: tree.rootNode });
   }
   emitConstantBindings(db, constants);
