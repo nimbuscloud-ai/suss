@@ -419,10 +419,19 @@ export interface RbClientCall {
   verbMethodNames: Record<string, string>;
   /** Where a call states the URL. */
   url: { position: number; keyword?: string };
+  /**
+   * Methods on the constant that take a host, a path and a port in place
+   * of a URL when the argument at `path` reads as a string, as
+   * `Net::HTTP.get(host, path, port)` does. Ruby makes the same choice:
+   * a hash there is the headers of a call that takes a URL first.
+   */
+  hostThenPath?: RbHostArguments & { methods: string[]; path: number };
   /** Methods on the constant that build a value taking the same calls, `new` for a Faraday connection. */
   receiverBuilders?: string[];
   /** The keyword a builder takes its base URL under. The base URL goes in front of the path of each call on the built value. */
   builderUrlKeyword?: string;
+  /** Where a builder takes a host and a port in place of a base URL, as `Net::HTTP.new(host, port)` does. */
+  builderHost?: RbHostArguments;
   /** The members of the response object, so a test on one of them counts as a test on the status. */
   response?: RbClientResponse;
   /** A call that sends a request object built separately. Net::HTTP sends any request with a body this way. */
@@ -434,6 +443,12 @@ export interface RbClientCall {
     /** Where the request class takes the URL. */
     urlPosition: number;
   };
+}
+
+/** The positions a call takes a host and its port at, when it takes them as two arguments. */
+export interface RbHostArguments {
+  host: number;
+  port: number;
 }
 
 /**

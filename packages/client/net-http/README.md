@@ -24,7 +24,9 @@ end
 
 `fetch` comes back as a client of `GET /orders/{id}`, and `create` as a client of `POST /orders`.
 
-- **The module methods that send a request directly**: `get`, `get_response`, `post`, `post_form`, `put`, `patch`, `delete`, `head` and `options`.
+- **The module methods that send a request directly**: `get`, `get_response`, `get_print`, `post`, `post_form`, `put`, `patch`, `delete`, `head` and `options`.
+- **A host and a path given apart**: `Net::HTTP.get("api.example.com", "/orders", 8080)` is a client of `GET /orders` at `api.example.com:8080`. The three get methods take this form when their second argument is a path, the same test Ruby makes. When it is a hash, it is the headers, and the first argument is the URL.
+- **A connection built on a host**: `Net::HTTP.new("api.example.com", 8080)` takes a host and a port, so `http.get("/orders")` on it goes to `/orders` at that host. A port of 80 is left out of the host, the way a URL leaves out its default port.
 - **The request classes**: `Net::HTTP::Get` and its six siblings give the method, and the URL is the argument the class was built with. The request can be built in the call itself, or assigned to a name earlier in the same method.
 - **The URL**: `URI(...)` and `URI.parse(...)` are part of Ruby itself, so the adapter's own value tables read them and this pack does not declare them. A URI written in the call and one kept in a local are read the same way, and an interpolated path resolves to the path parameter in it.
 
