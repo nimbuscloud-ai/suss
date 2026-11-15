@@ -2124,3 +2124,75 @@ describe("the JSX a function writes and the parameter a value is, over the facts
     expect(factValueOps("render", withoutJsx).elements?.("Chip")).toEqual([]);
   });
 });
+
+/**
+ * The facts for, as Python keys them:
+ *
+ *   # chip.py
+ *   def Chip(): ...
+ *   # barrel.py
+ *   from chip import Chip as Badge
+ *   # use.py
+ *   from barrel import Badge
+ *   from missing import Gone
+ *   def local(): ...
+ *   loop = loop   # a name that binds back to itself
+ */
+function declared(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("exportsAs", "chip.py", "Chip", "chip.py:0-20");
+  add("imports", "barrel.py#Badge", "chip.py", "Chip");
+  add("exportsAs", "barrel.py", "Badge", "barrel.py#Badge");
+  add("imports", "use.py#Badge", "barrel.py", "Badge");
+  add("imports", "use.py#Gone", "missing", "Gone");
+  add("binds", "use.py#local", "use.py:40-60");
+  add("exportsAs", "use.py", "local", "use.py:40-60");
+  add("binds", "use.py#loop", "use.py#loop");
+  // ring_a.py and ring_b.py each import Ring from the other.
+  add("imports", "use.py#Ring", "ring_a.py", "Ring");
+  add("exportsAs", "ring_a.py", "Ring", "ring_a.py#Ring");
+  add("imports", "ring_a.py#Ring", "ring_b.py", "Ring");
+  add("exportsAs", "ring_b.py", "Ring", "ring_b.py#Ring");
+  add("imports", "ring_b.py#Ring", "ring_a.py", "Ring");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+  };
+}
+
+describe("where a value is declared, over the facts", () => {
+  it("follows an import through a module that imports it in turn, to the module that writes it", () => {
+    const facts = declared();
+    const at = (key: string) => factValueOps(key, facts).declaration?.();
+
+    expect(at("use.py#Badge")).toEqual({ file: "chip.py", name: "Chip" });
+    expect(at("use.py#local")).toEqual({ file: "use.py", name: "local" });
+    expect(at("use.py#Gone")).toBeNull();
+    expect(at("use.py#loop")).toBeNull();
+    expect(at("use.py#Ring")).toBeNull();
+  });
+
+  it("asks the adapter instead when it reads declarations its own way", () => {
+    const facts: FactSource = {
+      ...declared(),
+      declarationOf: (key) =>
+        key === "use.py#Badge" ? { file: "elsewhere.ts", name: null } : null,
+    };
+
+    expect(factValueOps("use.py#Badge", facts).declaration?.()).toEqual({
+      file: "elsewhere.ts",
+      name: null,
+    });
+    expect(factValueOps("use.py#local", facts).declaration?.()).toBeNull();
+  });
+});

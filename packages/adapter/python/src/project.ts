@@ -312,6 +312,8 @@ export interface FileFactsOptions {
   root: PyNode;
   module: ModuleBinding;
   packs: readonly PythonPack[];
+  /** Directories an import is resolved against. Without them no import leads to a file. */
+  roots?: readonly string[];
 }
 
 /**
@@ -324,7 +326,9 @@ export interface FileFactsOptions {
  */
 export function factsForFile(options: FileFactsOptions): Database {
   const db = new Database();
-  emitModuleImportFacts(db, options.file, options.module, { roots: [] });
+  emitModuleImportFacts(db, options.file, options.module, {
+    roots: [...(options.roots ?? [])],
+  });
   emitValueFacts(db, options.file, options.root);
   const definitions = new Map<string, PyNode>();
   indexDefinitions(definitions, options.file, options.root);

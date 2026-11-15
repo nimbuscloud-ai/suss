@@ -69,6 +69,7 @@ import {
   emitValue,
   environmentObjectsIn,
   extractCallFacts,
+  extractExportFacts,
   extractFileFacts,
   factKeyOf,
   importedModuleKeys,
@@ -320,6 +321,8 @@ export class ResolutionStore {
   private readonly db = new Database();
   private readonly table: NodeTable;
   private readonly fullyExtracted = new Set<string>();
+  /** Files whose export statements alone are stated, for `declarationExportedAs`. */
+  private readonly exportsStated = new Set<string>();
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<
     string,
@@ -2175,7 +2178,11 @@ export class ResolutionStore {
    * alone, so its answer does not depend on what an earlier question
    * left in the store.
    */
-  private extractDemanded(seeds: readonly SourceFile[]): void {
+  private extractDemanded(
+    seeds: readonly SourceFile[],
+    state: (sourceFile: SourceFile) => void = (sourceFile) =>
+      this.extractFile(sourceFile),
+  ): void {
     const project = seeds[0]?.getProject();
     if (project === undefined) {
       return;
@@ -2203,7 +2210,7 @@ export class ResolutionStore {
         // there was nothing to find, so a change to any of them can
         // change the answer.
         recordFileDependency(filePath);
-        this.extractFile(sourceFile);
+        state(sourceFile);
       }
       this.derive();
 
@@ -2547,6 +2554,31 @@ export class ResolutionStore {
     }
   }
 
+  /**
+   * What a module exports under one name, through re-exports. Each file
+   * the question reads is stated only as far as its export statements,
+   * since where a value is declared needs nothing from the value itself.
+   * Nothing in an extraction asks this, so the export rows it leaves
+   * ahead of a file's values reach no other reader.
+   */
+  declarationExportedAs(sourceFile: SourceFile, name: string): Node[] {
+    const filePath = sourceFile.getFilePath();
+    try {
+      this.wantExportsOf(filePath);
+      this.extractDemanded([sourceFile], (file) => this.stateExports(file));
+      this.rederiveExportsOf(filePath);
+      return this.db
+        .lookup("wantedModuleExport", 0, filePath)
+        .filter((row) => row[1] === name)
+        .flatMap((row) => {
+          const node = this.table.byId.get(String(row[2]));
+          return node === undefined ? [] : [node];
+        });
+    } finally {
+      this.forgetQuery();
+    }
+  }
+
   private collectExports(sourceFile: SourceFile): Map<string, Node[]> {
     const filePath = sourceFile.getFilePath();
     this.wantExportsOf(filePath);
@@ -2613,6 +2645,19 @@ export class ResolutionStore {
     return this.db
       .lookup(relation, 0, value)
       .map((tuple) => tupleKey([String(tuple[1]), String(tuple[2])]));
+  }
+
+  private stateExports(sourceFile: SourceFile): void {
+    const filePath = sourceFile.getFilePath();
+    if (this.fullyExtracted.has(filePath) || this.exportsStated.has(filePath)) {
+      return;
+    }
+    this.exportsStated.add(filePath);
+    if (!checkerReads(sourceFile.getProject(), filePath)) {
+      return;
+    }
+    this.stale = true;
+    extractExportFacts(this.db, this.table, sourceFile);
   }
 
   private extractFile(sourceFile: SourceFile): void {

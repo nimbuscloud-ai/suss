@@ -2768,12 +2768,46 @@ export function extractFileFacts(
     fact(db, "marks", filePath, word);
   }
 
+  emitExports(db, table, sourceFile, emitExportedValue);
+  emitTopLevelStatements(db, table, sourceFile);
+}
+
+/**
+ * A file's export statements alone: its re-exports, and an `exportsAs`
+ * row for each value it exports, under the same key the full facts give
+ * it, with none of the value's own facts. A later full read of the file
+ * states the same rows again beside the values.
+ */
+export function extractExportFacts(
+  db: Database,
+  table: NodeTable,
+  sourceFile: SourceFile,
+): void {
+  extractReExportFacts(db, sourceFile);
+  emitExports(db, table, sourceFile, emitExportedKey);
+}
+
+/** What states one value a file exports, with or without the value's own facts. */
+type ExportEmitter = (
+  db: Database,
+  table: NodeTable,
+  filePath: string,
+  name: string,
+  spelling: Node,
+) => void;
+
+function emitExports(
+  db: Database,
+  table: NodeTable,
+  sourceFile: SourceFile,
+  emitExport: ExportEmitter,
+): void {
+  const filePath = sourceFile.getFilePath();
   for (const [name, spelling] of directExportsOf(sourceFile)) {
-    emitExportedValue(db, table, filePath, name, spelling);
+    emitExport(db, table, filePath, name, spelling);
   }
 
-  emitLocalExportLists(db, table, sourceFile, filePath);
-  emitTopLevelStatements(db, table, sourceFile);
+  emitLocalExportLists(db, table, sourceFile, filePath, emitExport);
 }
 
 /** The nodes `extractCallFacts` states: every function, every class, and every call. */
@@ -2908,6 +2942,7 @@ function emitLocalExportLists(
   table: NodeTable,
   sourceFile: SourceFile,
   filePath: string,
+  emitExport: ExportEmitter,
 ): void {
   for (const exportDecl of statementsOfKind(
     sourceFile,
@@ -2919,7 +2954,14 @@ function emitLocalExportLists(
     for (const named of exportDecl.getNamedExports()) {
       const alias = named.getAliasNode()?.getText() ?? named.getName();
       for (const declaration of named.getLocalTargetDeclarations()) {
-        emitExportedDeclaration(db, table, filePath, alias, declaration);
+        emitExportedDeclaration(
+          db,
+          table,
+          filePath,
+          alias,
+          declaration,
+          emitExport,
+        );
       }
     }
   }
@@ -2942,12 +2984,26 @@ function emitLocalExportLists(
     for (const declaration of declarations) {
       if (Node.isVariableDeclaration(declaration)) {
         if (!isWrittenAgain(declaration)) {
-          emitExportedDeclaration(db, table, filePath, "default", declaration);
+          emitExportedDeclaration(
+            db,
+            table,
+            filePath,
+            "default",
+            declaration,
+            emitExport,
+          );
         }
 
         continue;
       }
-      emitExportedDeclaration(db, table, filePath, "default", declaration);
+      emitExportedDeclaration(
+        db,
+        table,
+        filePath,
+        "default",
+        declaration,
+        emitExport,
+      );
     }
   }
 }
@@ -2963,6 +3019,7 @@ function emitExportedDeclaration(
   filePath: string,
   alias: string,
   declaration: Node,
+  emitExport: ExportEmitter,
 ): void {
   const specifier = importSpecifierOf(declaration);
   if (specifier !== null) {
@@ -2984,9 +3041,10 @@ function emitExportedDeclaration(
     return;
   }
 
-  emitExportedValue(db, table, filePath, alias, declaration);
+  emitExport(db, table, filePath, alias, declaration);
 }
 
+/** The exported value's own facts, and its `exportsAs` row. */
 function emitExportedValue(
   db: Database,
   table: NodeTable,
@@ -2994,40 +3052,76 @@ function emitExportedValue(
   name: string,
   spelling: Node,
 ): void {
+  const exported = exportedValueOf(spelling);
+  if (exported === null) {
+    return;
+  }
+  // A variable's row has always been stated before its value's facts.
+  if (Node.isVariableDeclaration(exported)) {
+    emitExportedKey(db, table, filePath, name, exported);
+    emitBindingValues(db, table, exported);
+    return;
+  }
+  stateExportedValue(db, table, exported);
+  emitExportedKey(db, table, filePath, name, exported);
+}
+
+/** The `exportsAs` row alone. */
+function emitExportedKey(
+  db: Database,
+  table: NodeTable,
+  filePath: string,
+  name: string,
+  spelling: Node,
+): void {
+  const exported = exportedValueOf(spelling);
+  if (exported === null) {
+    return;
+  }
+  const id = nodeId(exported);
+  table.byId.set(id, exported);
+  fact(db, "exportsAs", filePath, name, id);
+}
+
+/**
+ * The node an export's `exportsAs` row is keyed on: the function, class,
+ * variable or binding element declared, or the expression a default
+ * export writes. Anything else states no row.
+ */
+function exportedValueOf(spelling: Node): Node | null {
   const declaration = declarationCarryingTheBody(spelling);
-  if (isFunctionRoot(declaration)) {
-    const id = emitFunctionDeclaration(db, table, declaration);
-    fact(db, "exportsAs", filePath, name, id);
+  if (
+    isFunctionRoot(declaration) ||
+    Node.isClassDeclaration(declaration) ||
+    Node.isVariableDeclaration(declaration) ||
+    Node.isBindingElement(declaration)
+  ) {
+    return declaration;
+  }
+  return Node.isExpression(declaration) ? peelValue(declaration) : null;
+}
+
+function stateExportedValue(
+  db: Database,
+  table: NodeTable,
+  exported: Node,
+): void {
+  if (isFunctionRoot(exported)) {
+    emitFunctionDeclaration(db, table, exported);
     return;
   }
 
-  if (Node.isClassDeclaration(declaration)) {
-    emitClassFacts(db, table, declaration);
-    fact(db, "exportsAs", filePath, name, nodeId(declaration));
+  if (Node.isClassDeclaration(exported)) {
+    emitClassFacts(db, table, exported);
     return;
   }
 
-  if (Node.isVariableDeclaration(declaration)) {
-    const declarationId = nodeId(declaration);
-    table.byId.set(declarationId, declaration);
-    fact(db, "exportsAs", filePath, name, declarationId);
-    emitBindingValues(db, table, declaration);
+  if (Node.isBindingElement(exported)) {
+    emitBindingElementFacts(db, table, exported);
     return;
   }
 
-  if (Node.isBindingElement(declaration)) {
-    fact(
-      db,
-      "exportsAs",
-      filePath,
-      name,
-      emitBindingElementFacts(db, table, declaration),
-    );
-    return;
-  }
-
-  if (Node.isExpression(declaration)) {
-    // `export default <expression>`.
-    fact(db, "exportsAs", filePath, name, emitValue(db, table, declaration));
+  if (Node.isExpression(exported)) {
+    emitValue(db, table, exported);
   }
 }
