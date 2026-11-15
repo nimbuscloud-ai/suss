@@ -503,6 +503,19 @@ export function methodsDefinedAt(stmt: RbNode): RbNode[] {
 }
 
 /**
+ * The methods a statement of a class body defines under a condition, as
+ * `if Rails.env.development?` with a `def` inside does, through any
+ * number of branches. Ruby defines them when the branch runs, so they are
+ * the class's methods as much as one written at the top of the body.
+ */
+export function methodsDefinedInBranches(stmt: RbNode): RbNode[] {
+  return nestedStatements(stmt).flatMap((inner) => [
+    ...methodsDefinedAt(inner),
+    ...methodsDefinedInBranches(inner),
+  ]);
+}
+
+/**
  * The `def`s a statement writes: the statement itself, or each `def` it
  * passes to a call, as in `private def name` or `private memoize def
  * name`. Ruby evaluates an argument before it runs the call, so the

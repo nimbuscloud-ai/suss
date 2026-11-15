@@ -39,6 +39,7 @@ import {
   LAMBDA_TYPE,
   METHOD_TYPES,
   methodsDefinedAt,
+  methodsDefinedInBranches,
   NESTING_TYPES,
   NO_BODY_BLOCKS,
   NodeSet,
@@ -2619,10 +2620,11 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
           left.text,
           valueKey(emitter, right),
         );
-        // The right side runs in the class body, so a bare call in it is
-        // looked up on the class.
-        emitExpressionFacts(within, statement);
       }
+      // Both sides run in the class body, `config.force_ssl = ENV[...]`
+      // as much as a constant's, so a bare call in them is looked up on
+      // the class.
+      emitExpressionFacts(within, statement);
       continue;
     }
     if (NESTING_TYPES.has(statement.type)) {
@@ -2640,7 +2642,10 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
       // `Settings.filters.each do ... end` gets the same facts as in a method.
       emitStatementFacts(within, statement);
     }
-    for (const method of methodsDefinedAt(statement)) {
+    for (const method of [
+      ...methodsDefinedAt(statement),
+      ...methodsDefinedInBranches(statement),
+    ]) {
       emitMethodOfClass(within, classKey, method, offeredOnClass);
     }
   }
