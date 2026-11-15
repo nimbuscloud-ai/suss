@@ -19,13 +19,28 @@ import {
   isRaiseCall,
   readAsType,
   readCallArgs,
+  stringLiteralValue,
 } from "./ast.js";
-import { envSpellingAt, isEnv, isSameName } from "./envSpellings.js";
 import { ownerOfName } from "./facts/locals.js";
 import { readKey } from "./facts/values.js";
+import {
+  environmentReadAt,
+  spellsEnvironment,
+} from "./stdlib/environmentRead.js";
 
-import type { EnvSpelling } from "./envSpellings.js";
+import type { SiteRead } from "@suss/recognize";
+import type { RubyFactSource } from "./factSource.js";
 import type { RbNode } from "./parser.js";
+
+/**
+ * An environment read as the environment chain reads it, and the facts
+ * to ask the chain about another expression, so a test that writes the
+ * read another way still counts.
+ */
+export interface VariableRead {
+  readonly site: SiteRead;
+  readonly source: RubyFactSource;
+}
 
 /**
  * What a presence test can be about. For an environment read it is the
@@ -33,7 +48,7 @@ import type { RbNode } from "./parser.js";
  * be a local the read initializes, or for any other read, its source text.
  */
 type ReadSubject =
-  | { kind: "variable"; spelling: EnvSpelling }
+  | { kind: "variable"; read: VariableRead }
   | { kind: "local"; local: Local }
   | { kind: "spelling"; text: string };
 
@@ -44,21 +59,21 @@ type ReadSubject =
  */
 export function isDefaultedAt(
   read: RbNode,
-  variable?: EnvSpelling,
+  variable?: VariableRead,
   /** Methods a pack says give back nil for a blank value, as ActiveSupport's `presence`. */
   blankToNil: ReadonlySet<string> = new Set(),
 ): boolean {
   const subject: ReadSubject =
     variable === undefined
       ? { kind: "spelling", text: read.text }
-      : { kind: "variable", spelling: variable };
+      : { kind: "variable", read: variable };
   if (
     hasFallbackOperand(pastNilPreservingCalls(read, blankToNil)) ||
     isPresentAt(read, subject)
   ) {
     return true;
   }
-  if (variable?.raises === true) {
+  if (variable?.site.raises === true) {
     return false;
   }
   if (isPresenceTest(read, subject)) {
@@ -76,14 +91,21 @@ function isSubject(subject: ReadSubject, expression: RbNode): boolean {
     return refersTo(expression, subject.local);
   }
   if (subject.kind === "variable") {
-    return readsVariable(expression, subject.spelling);
+    return readsVariable(expression, subject.read);
   }
   return expression.text === subject.text;
 }
 
-function readsVariable(expression: RbNode, spelling: EnvSpelling): boolean {
-  const other = envSpellingAt(expression);
-  return other !== null && isSameName(other.name, spelling.name);
+function readsVariable(expression: RbNode, read: VariableRead): boolean {
+  const other = environmentReadAt(expression, read.source);
+  return other !== null && isSameKey(other, read.site);
+}
+
+/** Two reads of one written-out entry, or of one computed key written the same way. */
+function isSameKey(one: SiteRead, other: SiteRead): boolean {
+  return one.entry === null
+    ? other.entry === null && one.keySource === other.keySource
+    : one.entry === other.entry;
 }
 
 /** Only an environment read has a key that `ENV.key?("X")` asks about. */
@@ -92,11 +114,17 @@ function isKeyOfSubject(
   key: RbNode,
   container: RbNode,
 ): boolean {
-  return (
-    subject.kind === "variable" &&
-    isEnv(container) &&
-    isSameName(key, subject.spelling.name)
-  );
+  if (
+    subject.kind !== "variable" ||
+    !spellsEnvironment(container, subject.read.source)
+  ) {
+    return false;
+  }
+  const { site } = subject.read;
+  const written = stringLiteralValue(key);
+  return written === null
+    ? site.entry === null && key.text === site.keySource
+    : written === site.entry;
 }
 
 /**

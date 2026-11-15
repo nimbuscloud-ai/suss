@@ -84,13 +84,14 @@ import {
 import { createFileCache, discoverUnits, routingGapUnit } from "./discovery.js";
 import {
   emitBlankToNilFacts,
+  emitDefaultReadFacts,
   emitEnvFacts,
-  envReadEffects,
   settleNamedParameters,
+  type WrittenDefault,
 } from "./envReads.js";
 import { rubyInErbTemplate } from "./erbTemplate.js";
 import { exitSites, markExitCodeFunctions } from "./exits.js";
-import { rubyFactSource } from "./factSource.js";
+import { factSourceOf, rubyFactSource } from "./factSource.js";
 import {
   type AssociationBinder,
   collectFileConstants,
@@ -126,6 +127,7 @@ import {
   watchFileCache,
   watchReachContext,
 } from "./reuse.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
 import { pooledStorage } from "./storage.js";
 import { startSubUnits, subUnitSummaries } from "./subUnits.js";
 import {
@@ -296,6 +298,7 @@ export class RunFacts {
   private readonly definitions = new Map<string, RbNode>();
   private readonly constants: FileConstants[] = [];
   private readonly testFiles: PatternedFile[] = [];
+  private readonly parameterDefaults: WrittenDefault[] = [];
   /** The shared groups the run's test files define, once every file is in. Undefined when no pack reads tests. */
   sharedGroups: SharedGroupIndex | undefined;
 
@@ -320,7 +323,7 @@ export class RunFacts {
       emitGroupFacts(this.db, file, root, testPattern);
       this.testFiles.push({ file, root, pattern: testPattern });
     }
-    emitEnvFacts(this.db, file, root);
+    this.parameterDefaults.push(...emitEnvFacts(this.db, file, root));
     for (const [key, method] of methodDefinitionsIn(file, root)) {
       this.definitions.set(key, method);
     }
@@ -371,6 +374,8 @@ export class RunFacts {
     // Whether a class reaches a pack's base is known only once every
     // constant is bound, so class bodies are read last.
     this.stateClassBodies(associations);
+    // The environment chain reads a default only once `ENV` is bound.
+    emitDefaultReadFacts(factSourceOf(this.db), this.parameterDefaults);
   }
 
   /** States what each class body declares, in file order, the way the classes' facts expect it. */
@@ -994,7 +999,7 @@ async function runRuby(
     seedKeys.add(moduleKey);
     seeds.push(moduleSeed);
     const readLoadTime = () => ({
-      reads: envReadEffects(root, { db, file }).map((one) => one.effect),
+      reads: stdlibReads(root, db).map((one) => one.effect),
       calls: moduleScopeInvocationEffects(
         root,
         inheritedMethods,

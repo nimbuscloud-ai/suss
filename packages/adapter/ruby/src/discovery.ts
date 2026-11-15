@@ -47,7 +47,6 @@ import {
 import { claimedIn } from "./claims.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
-import { envReadEffects } from "./envReads.js";
 import { ExceptionReader } from "./exceptionClasses.js";
 import { nodeId, readKey } from "./facts/values.js";
 import {
@@ -102,6 +101,7 @@ import {
   graphqlTypeNameFromQualified,
   walkDefinitions,
 } from "./scope.js";
+import { stdlibReads } from "./stdlib/dispatch.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { streamWriteEffects } from "./streamWrites.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
@@ -217,7 +217,7 @@ export interface BodyReadOptions {
    */
   readonly claimsIn?: Database | undefined;
   /**
-   * The run's facts, which the environment reader reads a body's reads
+   * The run's facts, which the environment chain reads a body's reads
    * over. The reach walk reads a body without `facts` and sets this instead.
    */
   readonly environmentIn?: Database | undefined;
@@ -228,7 +228,7 @@ export function claimsFactsOf(read: BodyReadOptions): Database | undefined {
   return read.facts ?? read.claimsIn;
 }
 
-/** The facts the environment reader reads a body's reads over. */
+/** The facts the environment chain reads a body's reads over. */
 function environmentFactsOf(
   read: Pick<BodyReadOptions, "facts" | "environmentIn">,
 ): Database | undefined {
@@ -1299,11 +1299,9 @@ export function effectsBesidesCalls(
   const { root, method, file, claimed } = body;
   const environment = environmentFactsOf(bodyRead);
   return [
-    ...envReadEffects(
-      root,
-      environment === undefined ? undefined : { db: environment, file },
-      claimed,
-    ),
+    ...(environment === undefined
+      ? []
+      : stdlibReads(root, environment, claimed)),
     ...database,
     ...jobEnqueueEffects(root, file, bodyRead.jobs, claimed, method),
     ...streamWriteEffects(root, claimed),

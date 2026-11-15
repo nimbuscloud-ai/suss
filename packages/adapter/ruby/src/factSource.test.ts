@@ -245,17 +245,13 @@ describe("the Ruby fact source's read members", () => {
   async function readsFor() {
     const tree = await parseRuby(READS);
     const db = factsForFile({ file: FILE, root: tree.rootNode, packs: [] });
-    emitEnvFacts(db, FILE, tree.rootNode);
     const source = rubyFactSource(db);
     const keys = ["readsEntry", "readsKeyed", "call"].flatMap((relation) =>
       db.facts(relation).map((row) => String(row[0])),
     );
     const at = (text: string): string =>
       keys.find((key) => source.textOf(key) === text) ?? "";
-    const parameter = String(
-      db.facts("paramOf").find((row) => String(row[2]).endsWith("#name"))?.[2],
-    );
-    return { source, at, parameter };
+    return { source, at };
   }
 
   it("says whether a read copes with a missing value, and what it falls back to", async () => {
@@ -272,12 +268,20 @@ describe("the Ruby fact source's read members", () => {
     expect(source.fallbackOf?.("nowhere")).toBeNull();
   });
 
-  it("gives the sites a parameter supplies the key of", async () => {
-    const { source, parameter } = await readsFor();
+  it("gives the argument of a call that supplies a read's key, and the sites it reaches", async () => {
+    const { source, at } = await readsFor();
+    const supplied = (text: string) =>
+      (
+        source.keysSupplied?.(at(text), { origin: "global", paths: ["ENV"] }) ??
+        []
+      ).map((key) => [
+        key.at,
+        factValueOps(key.value, source).evaluated?.(),
+        key.sites.map((site) => source.textOf(site)),
+      ]);
 
-    expect(
-      source.sitesNaming?.(parameter)?.map((site) => source.textOf(site)),
-    ).toEqual(["ENV[name]"]);
+    expect(supplied('need("G")')).toEqual([[0, "G", ["ENV[name]"]]]);
+    expect(supplied('ENV["A"]')).toEqual([]);
   });
 });
 

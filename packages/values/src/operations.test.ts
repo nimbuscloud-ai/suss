@@ -5,6 +5,7 @@ import {
   appended,
   caseRows,
   environmentRead,
+  environmentRows,
   equals,
   extended,
   fallback,
@@ -297,6 +298,41 @@ describe("environmentRead", () => {
     expect(environmentRead([text("PREFIX")])).toEqual(hole("PREFIX"));
     expect(environmentRead([hole("name")])).toEqual(hole("value"));
     expect(environmentRead([])).toEqual(hole("value"));
+  });
+});
+
+describe("environmentRows", () => {
+  const rows = environmentRows({
+    paths: ["ENV"],
+    getters: {
+      fetch: { key: { at: 0 }, fallback: [{ block: true }, { at: 1 }] },
+    },
+    functions: { "os.getenv": { key: { at: 1 }, fallback: { at: 0 } } },
+  });
+  const call = (row: (typeof rows)[number] | undefined, args: Value[]) =>
+    row?.kind === "callee"
+      ? row.apply({ receiver: null, args, contentOf: (value) => value })
+      : null;
+
+  it("makes a row for each function, off its module, and for each getter off each path", () => {
+    expect(
+      rows.map((row) => (row.kind === "callee" ? row.origin : null)),
+    ).toEqual([
+      { module: "os", name: "getenv" },
+      { module: "ENV", name: "fetch" },
+    ]);
+  });
+
+  it("reads the key and the fallback at the getter's own positions, and no block", () => {
+    const [getenv, fetch] = rows;
+    expect(call(getenv, [text("/api"), text("PREFIX")])).toEqual({
+      result: text("/api"),
+    });
+    expect(call(fetch, [text("PREFIX"), text("/api")])).toEqual({
+      result: text("/api"),
+    });
+    expect(call(fetch, [text("PREFIX")])).toEqual({ result: hole("PREFIX") });
+    expect(call(fetch, [])).toEqual({ result: hole("value") });
   });
 });
 
