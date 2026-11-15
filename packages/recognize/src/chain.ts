@@ -371,6 +371,37 @@ export interface UnitWhenInPlaceLink {
   readonly countedAs?: string;
   /** What the unit's summary records about the call that made it, when the pack says. */
   readonly metadata?: ClaimMetadata;
+  /** The parameters the runtime fills when it runs the unit, each with its role. None when unset. */
+  readonly inputs?: ClaimInputs;
+}
+
+/** The parameters a claimed function is handed when it runs, by position, each with the role it plays. */
+export type ClaimInputs = readonly {
+  readonly position: number;
+  readonly role: string;
+}[];
+
+/**
+ * Where a chain over elements starts: every JSX element the parent
+ * renders, keeping the attributes whose name the pattern matches, such
+ * as `^on[A-Z]` for React's event handlers.
+ */
+export interface RenderedPropsLink {
+  readonly asks: "renderedProps";
+  readonly matching: string;
+}
+
+/**
+ * What a function handed over by name becomes, when the parent's body
+ * writes it: `onClick={save}` over `const save = () => ...` in the
+ * component.
+ */
+export interface UnitWhenNamedInParentLink {
+  readonly asks: "unitWhenNamedInParent";
+  readonly kind: CodeUnitKind;
+  readonly name: readonly SubUnitNamePart[];
+  readonly metadata?: ClaimMetadata;
+  readonly inputs?: ClaimInputs;
 }
 
 /**
@@ -408,7 +439,11 @@ export type SubUnitNamePart =
   | "parent"
   | "callee"
   | "countPerCallee"
-  | "countInParent";
+  | "countInParent"
+  | ElementNamePart;
+
+/** The parts an element's claim adds: the attribute, the name handed over, and `#N` when two names come out the same. */
+export type ElementNamePart = "prop" | "written" | "countOnCollision";
 
 /** Text the pack writes as it is. */
 export interface TextLeaf {
@@ -451,6 +486,8 @@ export type Link<TMeaning> =
   | RelationsLink
   | InterpolatesLink
   | UnitWhenInPlaceLink
+  | RenderedPropsLink
+  | UnitWhenNamedInParentLink
   | OffLink
   | EntriesLink
   | GettersLink

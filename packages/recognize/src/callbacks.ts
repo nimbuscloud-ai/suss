@@ -16,6 +16,7 @@ import type { CodeUnitKind } from "@suss/behavioral-ir";
 import type {
   CallbackMethod,
   Chain,
+  ClaimInputs,
   ClaimMetadata,
   Link,
   ScheduleUnread,
@@ -51,6 +52,7 @@ export interface Callbacks {
     name: readonly SubUnitNamePart[];
     countedAs?: string;
     metadata?: ClaimMetadata;
+    inputs?: ClaimInputs;
   }): Callbacks;
   /** A line of code this matches, which the pack's tests run. */
   example(code: string): Callbacks;
@@ -85,13 +87,14 @@ function chainFrom(declared: Chain<CallbackMethod>): Callbacks {
         ...declared,
         ending: { yields: "schedule", via, unread },
       }),
-    unitWhenInPlace: ({ kind, name, countedAs, metadata }) =>
+    unitWhenInPlace: ({ kind, name, countedAs, metadata, inputs }) =>
       adding({
         asks: "unitWhenInPlace",
         kind,
         name,
         ...(countedAs === undefined ? {} : { countedAs }),
         ...(metadata === undefined ? {} : { metadata }),
+        ...(inputs === undefined ? {} : { inputs }),
       }),
     example: (code) => chainFrom({ ...declared, example: code }),
   };

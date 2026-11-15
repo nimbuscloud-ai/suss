@@ -1389,6 +1389,7 @@ export type {
   Declaration,
   DeclaredBy,
   Decoded,
+  ElementAttribute,
   ElementOps,
   Encoded,
   FactRows,

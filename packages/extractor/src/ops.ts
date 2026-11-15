@@ -478,12 +478,22 @@ export interface Declaration {
 
 /** A JSX element a function writes, as a reader asks which props it passes. */
 export interface ElementOps {
+  /** The tag as the source writes it: `button`, `motion.div`. Empty when nothing states one. */
+  tag(): string;
+  /** The attributes the element writes, in source order, each with its value. */
+  attributes(): readonly ElementAttribute[];
   /** The attributes the element writes, by name, in source order. */
   props(): readonly string[];
   /** The values the element spreads into its props, in source order. */
   spreads(): readonly ValueOps[];
   /** Whether anything between its tags reaches it as children. */
   hasChildren(): boolean;
+}
+
+/** One attribute an element writes. One written with no value is its own value. */
+export interface ElementAttribute {
+  readonly name: string;
+  readonly value: ValueOps;
 }
 
 /**
@@ -1260,6 +1270,14 @@ export interface SubUnitOpsCarrier {
    * nothing of the store. Undefined means the adapter cannot say.
    */
   mentions?(parent: DiscoveredSubUnitParent, word: string): boolean;
+  /**
+   * The JSX elements the parent renders, the ones written in functions it
+   * runs inline included, in the order the source writes them. Unset in a
+   * language that writes no JSX.
+   */
+  elements?(parent: DiscoveredSubUnitParent): readonly ElementOps[];
+  /** Whether the parent's body writes the function, at any depth. Unset where nothing can say. */
+  writes?(parent: DiscoveredSubUnitParent, fn: ValueOps): boolean;
 }
 
 /**
