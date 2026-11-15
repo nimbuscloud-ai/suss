@@ -638,7 +638,7 @@ function readsAtCall(
   call: RbNode,
   args: readonly NamingArgument[],
 ): EnvRead[] {
-  const defaultedAtCall = isDefaultedAt(call);
+  const defaultedAtCall = isDefaultedAt(call, undefined, blankToNilIn(db));
   const byName = new Map<string, boolean>();
   for (const { sites, argument } of args) {
     const name = stringLiteralValue(argument) ?? stringValueOf(argument, db);
