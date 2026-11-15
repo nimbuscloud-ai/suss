@@ -14,7 +14,7 @@
 
 import { runtimeConfigBinding } from "@suss/behavioral-ir";
 import { SKIP_CHILDREN, walkDescendants } from "@suss/extractor";
-import { answersFor, noteLookup } from "@suss/resolution";
+import { answersFor, classMemberOf, noteLookup } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
 import {
@@ -29,7 +29,12 @@ import {
 import { isClaimed } from "./claims.js";
 import { fallbackOperandOf, isDefaultedAt } from "./defaulted.js";
 import { envSpellingAt, isEnv } from "./envSpellings.js";
-import { CONSTRUCTOR } from "./facts/languageWords.js";
+import {
+  CONSTRUCTOR,
+  INITIALIZE_METHOD,
+  INVOKE_METHOD,
+  SENDING_METHODS,
+} from "./facts/languageWords.js";
 import { parametersOf } from "./facts/locals.js";
 import {
   resolvedFunctions,
@@ -208,7 +213,7 @@ function sitesNamedBy(
  * charged for every file's reads.
  */
 export function settleNamedParameters(db: Database): void {
-  namedParameters(db);
+  helperNames(db);
 }
 
 /**
@@ -232,7 +237,85 @@ export function envLookupAgain(db: Database, id: string): string | null {
       db.lookup(DEFAULT_READ, 0, id.slice(DEFAULT_PARAMETER.length)),
     );
   }
+  if (id === HELPER_NAMES) {
+    return describeNames(helperNames(db));
+  }
   return null;
+}
+
+const HELPER_NAMES = "envHelperNames";
+
+const describeNames = (names: ReadonlySet<string>): string =>
+  [...names].sort().join(",");
+
+/** The answer, kept per run, since it covers every helper in the project. */
+const helperNamesByDb = new WeakMap<Database, ReadonlySet<string>>();
+
+/**
+ * The names a call can come to a helper by. A helper is a method with a
+ * parameter whose value becomes a variable's name, or with a default
+ * that reads the environment. A call by any other name never runs one,
+ * so the reader leaves its callee unresolved.
+ */
+function helperNames(db: Database): ReadonlySet<string> {
+  const memo = helperNamesByDb.get(db);
+  if (memo !== undefined) {
+    return memo;
+  }
+  const parameters = new Set([
+    ...namedParameters(db).keys(),
+    ...db.facts(DEFAULT_READ).map((row) => String(row[0])),
+  ]);
+  const names = new Set<string>();
+  for (const parameter of parameters) {
+    for (const func of functionsTaking(db, parameter)) {
+      for (const name of namesOfFunction(db, func)) {
+        names.add(name);
+      }
+    }
+  }
+  if (names.has(INITIALIZE_METHOD)) {
+    names.add(CONSTRUCTOR);
+  }
+  helperNamesByDb.set(db, names);
+  return names;
+}
+
+function functionsTaking(db: Database, parameter: string): string[] {
+  return ["paramOf", "paramNamed"].flatMap((relation) =>
+    db.lookup(relation, 2, parameter).map((row) => String(row[0])),
+  );
+}
+
+/** The name a class stores a function under, and the name its `def` gives it. */
+function namesOfFunction(db: Database, func: string): string[] {
+  const held = db
+    .lookup("holdsProperty", 2, func)
+    .map((row) => String(row[1]))
+    .map((name) => classMemberOf(name) ?? name);
+  const node = nodeOfResolutionKey(func, db);
+  const written =
+    node === null || !METHOD_TYPES.has(node.type)
+      ? null
+      : (field(node, "name")?.text ?? null);
+  return written === null ? held : [...held, written];
+}
+
+const METHOD_TYPES = new Set(["method", "singleton_method"]);
+
+/**
+ * Whether a call can come to a helper, by the name it is written with.
+ * `call`, a send and a call written with no name can run a function of
+ * any name.
+ */
+function mayRunHelper(call: RbNode, names: ReadonlySet<string>): boolean {
+  const method = field(call, "method")?.text;
+  return (
+    method === undefined ||
+    method === INVOKE_METHOD ||
+    SENDING_METHODS.has(method) ||
+    names.has(method)
+  );
 }
 
 /** The answer, kept per run, since the question covers the whole project. */
@@ -561,8 +644,13 @@ function callReads(
   defaults: boolean,
 ): NodeMap<EnvRead[]> {
   const { db, file } = facts;
+  const names = helperNames(db);
+  noteLookup(db, HELPER_NAMES, describeNames(names));
   const callees = new NodeMap<string[]>();
   for (const call of calls) {
+    if (!mayRunHelper(call, names)) {
+      continue;
+    }
     const enclosing = enclosingDefinition(call);
     const keys = [
       calleeKeyOf(file, call, enclosing),

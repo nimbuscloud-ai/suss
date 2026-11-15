@@ -602,6 +602,26 @@ describe("extractRubyProject's on-disk cache", () => {
       expect(cached).toBe(cold);
     });
 
+    it("gives what a run without the cache gives after a method a body calls starts reading the environment", async () => {
+      const { files, packs } = shopProject();
+      const settings = (label: string) =>
+        `module Settings\n  def self.setting(name)\n    ENV.fetch(name)\n  end\n\n  def self.label(name)\n    ${label}\n  end\nend\n`;
+      write("app/lib/settings.rb", settings("name"));
+      write(
+        "app/controllers/items_controller.rb",
+        'class ItemsController < ApplicationController\n  def index\n    Settings.label("PAGE_SIZE")\n    Item.all\n  end\nend\n',
+      );
+      const diagnostics: CacheDiagnostic[] = [];
+      const before = await bothRuns(files(), packs, diagnostics);
+      write("app/lib/settings.rb", settings("ENV[name]"));
+
+      const { cached, cold } = await bothRuns(files(), packs, diagnostics);
+
+      expect(before.cold).not.toContain('"name":"PAGE_SIZE"');
+      expect(cold).toContain('"name":"PAGE_SIZE"');
+      expect(cached).toBe(cold);
+    });
+
     it("gives what a run without the cache gives after the names a class defines at load time change", async () => {
       const { files, packs } = shopProject();
       const dynamicOrder = (states: string) =>
