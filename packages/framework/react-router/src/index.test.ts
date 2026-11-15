@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -276,6 +277,95 @@ describe("reactRouterFramework: declared route trees", () => {
     expect(spread?.gaps.map((g) => g.description)).toContain(
       "A spread stands in for routes declared elsewhere in this array, and they are not read here, so no path is claimed for any of them",
     );
+  });
+
+  const unitIn = (name: string, file: string): BehavioralSummary | undefined =>
+    routed.find(
+      (s) =>
+        s.kind === "component" &&
+        s.identity.name === name &&
+        s.location.file.endsWith(`/${file}`),
+    );
+
+  const unreadOf = (name: string, file: string): string[] =>
+    unitIn(name, file)?.gaps.map((g) => g.description) ?? [];
+
+  it("reads a route whose element is in parentheses as a boundary named by its path", () => {
+    expect(unitIn("profile", "parenthesizedElements.tsx")).toBeDefined();
+    expect(routeOf("profile")).toBe("/profile");
+    expect(routeOf("audit")).toBe("/audit");
+    expect(routeOf("Profile")).toBeNull();
+    expect(routeOf("PageLoader")).toBeNull();
+  });
+
+  it("labels a parenthesized element under a path it cannot read as a declaration", () => {
+    expect(unreadOf("declaration", "parenthesizedElements.tsx")).toContainEqual(
+      expect.stringContaining("not written as a string literal"),
+    );
+  });
+
+  it("gives a route that says index={false} its parent's path, as it does a bare index", () => {
+    expect(routeOf("ProjectList")).toBe("/projects");
+    expect(routeOf("ProjectBoard")).toBe("/projects");
+    expect(routeOf("BoardColumns")).toBe("/projects/board");
+  });
+
+  it("names a router argument it cannot read under a cast by its syntax kind", () => {
+    expect(unreadOf("AsExpression", "castRouter.tsx")).toContainEqual(
+      expect.stringContaining("not written as an array literal"),
+    );
+  });
+
+  it("announces a spread among a route's children at the spread element", () => {
+    const source = fs.readFileSync(
+      path.join(fixturesDir, "spreadChildren.tsx"),
+      "utf8",
+    );
+    const spread = unitIn("adminRoutes", "spreadChildren.tsx");
+    expect(spread?.location.span?.start).toBe(source.indexOf("...adminRoutes"));
+    expect(spread?.gaps.map((g) => g.description)).toContainEqual(
+      expect.stringContaining("A spread stands in for routes"),
+    );
+    expect(routeOf("AdminShell")).toBe("/admin");
+    expect(routeOf("AdminHome")).toBe("/admin");
+    expect(routeOf("AuditLog")).toBeNull();
+  });
+
+  it("claims no path for routes a function returns, as a router's list or a route's children", () => {
+    expect(unreadOf("embedRoutes", "builtRoutes.tsx")).toContainEqual(
+      expect.stringContaining("this router is created from"),
+    );
+    expect(unreadOf("preferenceRoutes", "builtRoutes.tsx")).toContainEqual(
+      expect.stringContaining("nested under this one"),
+    );
+    expect(routeOf("Calendar")).toBe("/calendar");
+    expect(routeOf("PreferencesShell")).toBe("/preferences");
+    expect(routeOf("NotificationSettings")).toBeNull();
+    expect(routeOf("EmbedWidget")).toBeNull();
+  });
+
+  it("nests a route written in another route's element under it, when that route is written with children", () => {
+    expect(routeOf("InboxLayout")).toBe("/inbox");
+    expect(routeOf("Compose")).toBe("/inbox/compose");
+    expect(routeOf("Thread")).toBe("/inbox/:threadId");
+  });
+
+  it("claims a route written in a self-closing route's element from the top", () => {
+    expect(routeOf("HelpLayout")).toBe("/help/*");
+    expect(routeOf("HelpArticles")).toBe("/articles");
+  });
+
+  it("nests routes written behind a condition and inside a fragment", () => {
+    expect(routeOf("Dashboard")).toBe("/dashboard");
+    expect(routeOf("Labs")).toBe("/dashboard/labs");
+    expect(routeOf("LabsBeta")).toBe("/dashboard/labs/beta");
+  });
+
+  it("claims no path for a route mapped from a list, whose path is the item's", () => {
+    expect(unreadOf("Report", "conditionalRoutes.tsx")).toContainEqual(
+      expect.stringContaining("not written as a string literal"),
+    );
+    expect(routeOf("DailyReport")).toBeNull();
   });
 
   it("pairs the discovered routes against callers of the same URLs", () => {
