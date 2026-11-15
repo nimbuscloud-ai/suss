@@ -174,7 +174,7 @@ export function findTerminals(
         }
         found = tryMatchReturnStatement(node, pattern, func, patterns);
       } else if (pattern.match.type === "jsxReturn") {
-        found = tryMatchJsxReturn(node, pattern);
+        found = tryMatchJsxReturn(node, pattern, resolution);
       } else if (pattern.match.type === "throwExpression") {
         found = tryMatchThrowExpression(
           node,
@@ -235,7 +235,7 @@ export function findTerminals(
         if (pattern.match.type === "returnStatement") {
           found = tryMatchReturnStatement(func, pattern, func, patterns);
         } else if (pattern.match.type === "jsxReturn") {
-          found = tryMatchJsxReturn(func, pattern);
+          found = tryMatchJsxReturn(func, pattern, resolution);
         }
         if (found !== null) {
           results.push(found);

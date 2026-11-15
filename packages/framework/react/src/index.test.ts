@@ -975,6 +975,121 @@ describe("reactFramework, the exports that are components", () => {
   });
 });
 
+describe("reactFramework, where a rendered component is declared", () => {
+  /** The target of each element `Page` renders, by its tag. */
+  async function targetsOf(
+    files: Record<string, string>,
+  ): Promise<Record<string, unknown>> {
+    const summaries = await summariesOf(files);
+    const page = summaries.find((summary) => summary.identity.name === "Page");
+    const output = page?.transitions[0]?.output;
+    const root = output?.type === "render" ? output.root : undefined;
+    const children = root?.type === "element" ? root.children : [];
+    return Object.fromEntries(
+      children.flatMap((child) =>
+        child.type === "element" ? [[child.tag, child.target ?? null]] : [],
+      ),
+    );
+  }
+
+  it("follows a tag through forwardRef and memo to the function, under the name the wrapper is declared as", async () => {
+    expect(
+      await targetsOf({
+        "/src/fields.tsx": `
+          import { forwardRef, memo } from "react";
+          function TextInputInner(props: { label: string }, ref: unknown) {
+            return <input aria-label={props.label} />;
+          }
+          export const TextInput = forwardRef(TextInputInner);
+          export const Divider = memo(() => <hr />);
+        `,
+        "/src/page.tsx": `
+          import { TextInput as Field, Divider } from "./fields";
+          export function Page() {
+            return <form><Field label="Name" /><Divider /></form>;
+          }
+        `,
+      }),
+    ).toEqual({
+      Field: { file: "/src/fields.tsx", name: "TextInput" },
+      Divider: { file: "/src/fields.tsx", name: "Divider" },
+    });
+  });
+
+  it("gives a target in a component written as an arrow that returns its JSX directly", async () => {
+    expect(
+      await targetsOf({
+        "/src/page.tsx": `
+          const Toggle = ({ label }: { label: string }) => <label>{label}</label>;
+          export const Page = () => (
+            <div><Toggle label="Dark mode" /></div>
+          );
+        `,
+      }),
+    ).toEqual({ Toggle: { file: "/src/page.tsx", name: "Toggle" } });
+  });
+
+  it("names a component declared with no name of its own by the tag", async () => {
+    expect(
+      await targetsOf({
+        "/src/banner.tsx": "export default function () { return <p />; }",
+        "/src/page.tsx": `
+          import Banner from "./banner";
+          export function Page() {
+            return <main><Banner /></main>;
+          }
+        `,
+      }),
+    ).toEqual({ Banner: { file: "/src/banner.tsx", name: "Banner" } });
+  });
+
+  it("gives no target for a component with no body or one a library declares", async () => {
+    expect(
+      await targetsOf({
+        "/src/page.tsx": `
+          import { Tooltip } from "some-ui-library";
+          declare function Shell(props: { title: string }): JSX.Element;
+          export function Page() {
+            return <main><Tooltip /><Shell title="x" /><div /></main>;
+          }
+        `,
+      }),
+    ).toEqual({ Tooltip: null, Shell: null, div: null });
+  });
+
+  it("gives each element its own binding's target when two files declare a component of the same name", async () => {
+    const summaries = await summariesOf({
+      "/src/left.tsx": `
+        const Badge = () => <b />;
+        export function Left() {
+          return <div><Badge /><Badge /></div>;
+        }
+      `,
+      "/src/right.tsx": `
+        function Badge() { return <i />; }
+        export function Right() {
+          return <div><Badge /></div>;
+        }
+      `,
+    });
+    const targets = (name: string) => {
+      const output = summaries.find((s) => s.identity.name === name)
+        ?.transitions[0]?.output;
+      const root = output?.type === "render" ? output.root : undefined;
+      return (root?.type === "element" ? root.children : []).map((child) =>
+        child.type === "element" ? child.target : undefined,
+      );
+    };
+    expect(targets("Left")).toEqual([
+      { file: "/src/left.tsx", name: "Badge" },
+      { file: "/src/left.tsx", name: "Badge" },
+    ]);
+    expect(targets("Right")).toEqual([
+      { file: "/src/right.tsx", name: "Badge" },
+    ]);
+  });
+});
+
 describe("destructured prop roles", () => {
   it("keeps the passed name as the role through a rename and marks a rest", async () => {
     const project = createTestProject();
