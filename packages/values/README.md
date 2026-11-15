@@ -118,9 +118,9 @@ scope or inside another function, because the engine does not know when
 that function runs. A name bound in another file is read through the
 lowering's `writtenTo`.
 
-Evaluation is demand driven. An outer name or an unknown call is a
-`deferred` value until something forces it, so a run that never asks
-about a name never resolves it.
+Evaluation is demand driven. An outer name, an unknown call, or a call
+whose arguments reach nothing in the heap is `deferred` until something
+forces it. Every statement after a call sees what it allocated.
 
 ## More
 

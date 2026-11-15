@@ -3751,6 +3751,39 @@ describe("consumer extraction", () => {
     ]);
   });
 
+  it("reads the method off an options object a project function returns, bound to a name first", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      export const optionsFor = (token: string | undefined) => {
+        const options = {
+          headers: { Authorization: \`Bearer \${token}\` },
+          method: "DELETE",
+        };
+        return options;
+      };
+      export async function removeSubscription(id: string, token: string) {
+        const options = optionsFor(token);
+        return fetch(\`https://api.example.com/subscriptions/\${id}\`, options);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [fetchPack],
+    });
+    const summaries = await adapter.extractAll();
+    const paths = summaries
+      .map((s) => {
+        const sem = s.identity.boundaryBinding?.semantics;
+        return sem?.name === "rest" ? `${sem.method} ${sem.path}` : null;
+      })
+      .filter((path) => path !== null);
+    expect(paths).toEqual(["DELETE /subscriptions/{id}"]);
+  });
+
   it("reads a path joined with + the way it reads the same template", async () => {
     const project = createTestProject();
     project.createSourceFile(
