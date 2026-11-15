@@ -485,6 +485,46 @@ describe("a status a handler returns as a name another module writes", () => {
       ),
     ).toEqual([{ type: "literal", value: 201 }]);
   });
+
+  it.each(["from myapp import http", "import myapp.http as http"])(
+    "reads the number a member of the whole module was written as, after %s",
+    async (importLine) => {
+      write(
+        "myapp/wrappers/restx.py",
+        "from flask_restx import Namespace\n\napi = Namespace('app')\n\n\ndef route(path):\n    return api.route(path)\n",
+      );
+      const http = write("myapp/http.py", "HTTP_201 = 201\n");
+      const todos = write(
+        "myapp/routes/todos.py",
+        [
+          "from myapp.wrappers.restx import route",
+          importLine,
+          "",
+          "",
+          '@route("/todos")',
+          "class TodoList:",
+          "    def post(self):",
+          '        return {"a": 1}, http.HTTP_201',
+          "",
+        ].join("\n"),
+      );
+
+      const { summaries } = await extractPythonProject({
+        files: [http, todos],
+        roots: [tmpDir],
+        packs: [flaskRestxWithReturnStatus],
+        workspaceRoot: tmpDir,
+      });
+      const route = summaries.find((s) => s.kind === "handler");
+      expect(
+        route?.transitions.map((transition) =>
+          transition.output.type === "response"
+            ? transition.output.statusCode
+            : null,
+        ),
+      ).toEqual([{ type: "literal", value: 201 }]);
+    },
+  );
 });
 
 describe("environment reads on a summary", () => {
