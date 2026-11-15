@@ -83,7 +83,15 @@ import {
   storedPathsOfRun,
   type TerminalPattern,
 } from "@suss/extractor";
-import { force, hostOf, literalOf, pathOf, type Value } from "@suss/values";
+import {
+  force,
+  hostOf,
+  literalOf,
+  pathIsOnlyHoles,
+  pathOf,
+  statedRequestPath,
+  type Value,
+} from "@suss/values";
 
 import {
   bodyContentOf,
@@ -1112,13 +1120,18 @@ function extractConsumerBinding(
   // An absolute URL replaces the client's base, the way axios sends it.
   const ownHost = extractBindingHost(binding, callSite, resolution);
   const call = callSite.callExpression;
-  // The base goes on after a path made only of holes has already been
-  // dropped, so a forwarding wrapper still states no route of its own.
+  const host =
+    ownHost ?? clientBaseHost(call, pattern.match, resolution, callSite.under);
+  // The base goes on after a path that says nothing has been dropped, so
+  // a forwarding wrapper still states no route of its own.
   const path = underBasePath(
     ownHost === undefined
       ? clientBasePath(call, pattern.match, resolution, callSite.under)
       : undefined,
-    statedPath(extractBindingPath(binding, callSite, pack, resolution)),
+    statedRequestPath(
+      extractBindingPath(binding, callSite, pack, resolution),
+      host,
+    ),
   );
 
   // Wrapper expansion looks for a null `path` to spot a forwarding
@@ -1127,9 +1140,7 @@ function extractConsumerBinding(
     transport: pack.protocol,
     method: method ?? null,
     path: path ?? null,
-    host:
-      ownHost ??
-      clientBaseHost(call, pattern.match, resolution, callSite.under),
+    host,
     recognition: pack.name,
   });
 }
@@ -2235,8 +2246,10 @@ function sinkReading(
   resolution: ResolutionStore,
 ): SinkReading | null {
   const url = sinkUrl(sink, bindings, resolution);
-  const path = url === undefined ? undefined : statedPath(pathOf(url));
-  if (url === undefined || path === undefined) {
+  const path = url === undefined ? undefined : pathOf(url);
+  // A path of holes still waits on a caller's literal, even at a host
+  // suss read, so the expansion goes on outward.
+  if (url === undefined || path === undefined || pathIsOnlyHoles(path)) {
     return null;
   }
   const method = sinkMethod(sink, bindings, resolution);
@@ -2312,18 +2325,6 @@ function sinkMethod(
     return record.open ? undefined : m.default;
   }
   return literalOf(value) ?? undefined;
-}
-
-/**
- * A path built out of holes and separators says nothing about where the
- * request went, so it is no path at all.
- */
-function statedPath(path: string | undefined): string | undefined {
-  if (path === undefined) {
-    return undefined;
-  }
-  const written = path.replace(/\{[^}]*\}/g, "");
-  return written === path || /[^/]/.test(written) ? path : undefined;
 }
 
 /** Reads a caller's body as a unit with the given terminals. */

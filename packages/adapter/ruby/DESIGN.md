@@ -263,9 +263,11 @@ Net::HTTP also takes a host on its own. `Net::HTTP.get(host, path, port)` passes
 
 For a library that sends a request object built separately, the pack fills in `requestObject`: the method that sends the request, each request class with the request method it sends, and where the class takes its URL. The adapter reads a request built inside the call and one assigned to a name in the same method.
 
-A library that takes a URL object in place of a string needs nothing extra from the pack. `URI("...")` and `URI.parse("...")` are part of Ruby, so they have rows in the value tables next to `File.join`, and every reader of a path looks through them. A URL passed in whole evaluates to a path with no text of its own. That path does not match any route and stays unbound.
+A library that takes a URL object in place of a string needs nothing extra from the pack. `URI("...")` and `URI.parse("...")` are part of Ruby, so they have rows in the value tables next to `File.join`, and every reader of a path looks through them.
 
-The enclosing method becomes a `client` unit bound to that request method and path. A method that makes two calls is a client of both. A call written outside any method produces nothing, and neither does a call whose URL does not settle on a string.
+The enclosing method becomes a `client` unit bound to that request method and path. A method that makes two calls is a client of both. A call written outside any method produces nothing.
+
+A URL that says nothing about where the request goes still makes a request, so its method is a client with no path. That covers a URL passed in whole, a URL suss cannot read at all, and a path made only of holes and slashes, such as `"#{base_url}#{path}"`, unless suss read some of the host, from the call or from the connection's base. `statedRequestPath` in `@suss/values` makes that call for the Python and TypeScript readers too. The base's path does not go in front of a path that says nothing, and a binding with no path pairs with nothing. When the URL comes from `initialize`, each construction is tried first, and the client with no path is what is left when none of them says where the request goes.
 
 The pack also lists which members of the response give the status, the success flag and the body. Those names go on the summary. The method's body is walked the way an action's body is, so a test on one of those members becomes a path whose condition records which member it read. `suss check` then reports a caller that handles a status the other side never sends.
 

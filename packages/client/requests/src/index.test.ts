@@ -133,7 +133,7 @@ describe("a function that calls requests", () => {
     expect(units).toEqual([]);
   });
 
-  it("says nothing about a URL that does not settle on a string", async () => {
+  it("is a client with no path for a URL that does not settle on a string", async () => {
     const units = await unitsIn(
       [
         "import requests",
@@ -143,7 +143,8 @@ describe("a function that calls requests", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(units).toHaveLength(1);
+    expect(boundary(units)).toEqual({ method: "GET", path: null });
   });
 });
 

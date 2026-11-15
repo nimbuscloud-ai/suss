@@ -5449,6 +5449,80 @@ describe("the base an instance sends every request under", () => {
       listPets: "/api/v3/pet/findByStatus",
     });
   });
+
+  it("keeps a path of holes at a host it read, and still reads each caller's request", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      import axios from "axios";
+      const keys = axios.create({ baseURL: "https://keys.example.com/v1" });
+
+      export async function getKey(kid: string) {
+        const { data } = await keys.get(\`/\${kid}\`);
+        return data;
+      }
+
+      export async function getMirrored(kid: string) {
+        const { data } = await axios.get(\`https://mirror.example.com/\${kid}\`);
+        return data;
+      }
+
+      export async function getAnywhere(base: string, kid: string) {
+        const { data } = await axios.get(\`\${base}/\${kid}\`);
+        return data;
+      }
+    `,
+    );
+    project.createSourceFile(
+      "client.ts",
+      `
+      import { getKey, getMirrored } from "./api";
+
+      export async function first() {
+        return getKey("one");
+      }
+
+      export async function second() {
+        return getKey("two");
+      }
+
+      export async function mirrored() {
+        return getMirrored("one");
+      }
+
+      export async function mirroredAgain() {
+        return getMirrored("two");
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [basedPack],
+    });
+    const summaries = await adapter.extractAll();
+    const request = (name: string): string[] =>
+      summaries
+        .filter((s) => s.identity.name === name)
+        .map((s) => {
+          const semantics = s.identity.boundaryBinding?.semantics;
+          return semantics?.name === "rest"
+            ? `${semantics.host ?? ""}${semantics.path ?? "(no path)"}`
+            : "";
+        });
+
+    expect(request("getKey")).toEqual(["keys.example.com/v1/{kid}"]);
+    expect(request("getMirrored")).toEqual(["mirror.example.com/{kid}"]);
+    expect(request("getAnywhere")).toEqual(["(no path)"]);
+    expect([...request("first"), ...request("second")]).toEqual([
+      "keys.example.com/v1/one",
+      "keys.example.com/v1/two",
+    ]);
+    expect([...request("mirrored"), ...request("mirroredAgain")]).toEqual([
+      "mirror.example.com/one",
+      "mirror.example.com/two",
+    ]);
+  });
 });
 
 describe("wrapper expansion", () => {
