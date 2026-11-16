@@ -16,7 +16,7 @@ import { hasNameHole } from "@suss/behavioral-ir";
 import { redirectDeliveryWhenSet } from "@suss/extractor";
 import { statedRequestPath } from "@suss/values";
 
-import { statedValue } from "./compile.js";
+import { NOTHING_STATED, statedValue } from "./compile.js";
 import { linkIn } from "./compileReads.js";
 import { modulesOf, opsIn } from "./ops.js";
 
@@ -269,18 +269,7 @@ function urlArgument(ops: CallOps, pick: OneArgument): ValueOps | null {
 }
 
 /** A URL argument a splat fills, which reads as no URL at all. */
-const SPLATTED: ValueOps = {
-  text: () => null,
-  name: () => null,
-  flag: () => null,
-  entries: () => [],
-  items: () => [],
-  property: () => null,
-  asArg: () => null,
-  parts: () => null,
-  holes: () => [],
-  url: () => NOWHERE,
-};
+const SPLATTED: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
 
 function withUrl(
   method: string | null,
