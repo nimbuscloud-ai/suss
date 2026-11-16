@@ -1898,15 +1898,20 @@ function marks(scope: string, word: string, source: FactSource): boolean {
  */
 function classBehind(key: string, source: FactSource): string | null {
   for (const candidate of [key, ...(source.comesTo?.(key) ?? [])]) {
-    if (
-      source.db.lookup("objectValue", 0, candidate).length > 0 &&
-      source.shapeOf(candidate) === null &&
-      !isFunction(candidate, source)
-    ) {
+    if (isClassWritten(candidate, source)) {
       return candidate;
     }
   }
   return null;
+}
+
+/** An object with no written shape that is no function is a class, since every adapter states a class as an `objectValue`. */
+function isClassWritten(key: string, source: FactSource): boolean {
+  return (
+    source.db.lookup("objectValue", 0, key).length > 0 &&
+    source.shapeOf(key) === null &&
+    !isFunction(key, source)
+  );
 }
 
 /** The string the class at the key assigns to the attribute in its body, for an adapter that names a class outside a chain. */
@@ -1943,6 +1948,15 @@ class FactClass implements ClassValueOps {
         ? []
         : [memberAt(name, held, this.facts)];
     });
+  }
+
+  /** The `holdsProperty` rows whose value is a class written at that spot, as a nested class statement states one. */
+  classes(): readonly ModuleMember[] {
+    return this.facts.db
+      .lookup("holdsProperty", 0, this.key)
+      .filter((row) => isClassWritten(String(row[2]), this.facts))
+      .sort((a, b) => bySourceOrder(String(a[2]), String(b[2])))
+      .map((row) => memberAt(String(row[1]), String(row[2]), this.facts));
   }
 
   /** The string the `holdsProperty` rows under the name state, shared or the class's own, when they agree on one. */

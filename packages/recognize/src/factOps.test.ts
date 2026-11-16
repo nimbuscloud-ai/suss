@@ -1631,6 +1631,53 @@ describe("the value members over the facts", () => {
 });
 
 /**
+ * The facts for a class whose body writes, in source order, a method, a
+ * dict, a name for another class and two classes, the second stated first
+ * the way a walk that states each nested class before its parent's row can.
+ */
+function nesting(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("objectValue", "t.py:0-200");
+  add("func", "t.py:10-20");
+  add("holdsProperty", "t.py:0-200", "helper", "t.py:10-20");
+  add("objectValue", "t.py:30-40");
+  add("holdsProperty", "t.py:0-200", "TABLE", "t.py:30-40");
+  add("holdsProperty", "t.py:0-200", "Alias", "t.py:45-50");
+  add("objectValue", "t.py:120-180");
+  add("objectValue", "t.py:60-110");
+  add("holdsProperty", "t.py:0-200", "TestLast", "t.py:120-180");
+  add("holdsProperty", "t.py:0-200", "TestFirst", "t.py:60-110");
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: (key) => (key === "t.py:30-40" ? "object" : null),
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: (key) => ({ kind: "identifier", name: key }),
+    comesTo: (key) => (key === "t.py:45-50" ? ["t.py:60-110"] : []),
+  };
+}
+
+describe("the classes a class body writes, over the facts", () => {
+  it("gives each class held under a name in source order, leaving out a method, an object written out and a name for a class", () => {
+    const outer = factValueOps("t.py:0-200", nesting()).asClass?.();
+
+    expect(
+      outer?.classes().map((nested) => [nested.name, nested.value.source?.()]),
+    ).toEqual([
+      ["TestFirst", "t.py:60-110"],
+      ["TestLast", "t.py:120-180"],
+    ]);
+  });
+});
+
+/**
  * The facts for, in `/app/models.ts`:
  *
  *   const db = new Client();
