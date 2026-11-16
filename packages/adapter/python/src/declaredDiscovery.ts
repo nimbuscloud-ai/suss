@@ -18,6 +18,7 @@ import { discoverDeclared } from "@suss/recognize";
 import { factCallOps, factModuleOps } from "@suss/recognize/ops";
 import { stateHandedIn } from "@suss/resolution";
 
+import { stripDecorators } from "./ast.js";
 import { pythonFactSource } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
 import { libraryUnit } from "./reach/closure.js";
@@ -115,7 +116,25 @@ export function pythonModuleOps(
     calls: (scope) => callsWritten(file, source, scope),
     classes: () => classesIn(file),
     importedNames: (modules) => importedNamesOf(file, modules),
+    decorated: () => decoratedIn(file),
   });
+}
+
+/** Every function and class the module writes under a decorator, however deep, in source order. */
+function decoratedIn(file: BoundPythonFile): string[] {
+  const found: string[] = [];
+  const visit = (node: PyNode): void => {
+    if (node.type === "decorated_definition") {
+      found.push(nodeId(file.file, stripDecorators(node).definition));
+    }
+    for (const child of node.namedChildren) {
+      if (child !== null) {
+        visit(child);
+      }
+    }
+  };
+  visit(file.root);
+  return found;
 }
 
 /**

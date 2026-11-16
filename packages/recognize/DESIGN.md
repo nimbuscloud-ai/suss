@@ -402,6 +402,7 @@ module ops from these facts:
 | `calls(scope)` | the calls the adapter lists outside every function body, or with `file` every call the file writes, each as the fact ops for it in source order |
 | `elements()` | the elements the adapter lists for the file through `ModuleWritten.elements`, which TypeScript states as `writesElement(file, v)` with their rows when asked, keeping those with no `jsxParent(v, p)` row. Python and Ruby write no JSX and leave it unset |
 | `importedNames(modules)` | the adapter's `importedNames`: the file's named imports of the modules in TypeScript, and its `from m import n as x` bindings at module scope in Python. Ruby imports no names, and leaves it unset |
+| `decorated()` | `decoratedWith(x, d)` for each function and class the adapter lists through `ModuleWritten.decorated`, with the decorators in source order. A decorator that is a call comes back as its call ops, and any other as its value ops. TypeScript lists the classes and methods written under a decorator, Python every decorated function and class. Ruby writes no decorators and leaves it unset |
 | `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
 
 `registeredFunction` with a global start and no method asks

@@ -70,6 +70,7 @@ import {
   dottedPathOf,
   emitAssignedValue,
   emitBindingElementFacts,
+  emitClassFacts,
   emitFunctionDeclaration,
   emitValue,
   environmentObjectsIn,
@@ -111,7 +112,12 @@ import type {
   PatternPack,
   TransparentWrapper,
 } from "@suss/extractor";
-import type { Project, SourceFile, VariableDeclaration } from "ts-morph";
+import type {
+  ClassDeclaration,
+  Project,
+  SourceFile,
+  VariableDeclaration,
+} from "ts-morph";
 
 const RESOLUTION_PROGRAM: OnDemandRules = resolutionProgram();
 
@@ -2505,6 +2511,8 @@ export class ResolutionStore {
     db: Database;
     nodeOf(key: string): Node | undefined;
     state(node: Node): void;
+    /** A class's facts, its methods' and decorators' among them, which no value a file exports may seed. */
+    stateClass(declaration: ClassDeclaration): void;
   } {
     return {
       db: this.db,
@@ -2512,6 +2520,14 @@ export class ResolutionStore {
       state: (node) => {
         this.extractFile(node.getSourceFile());
         this.seedValue(node);
+      },
+      stateClass: (declaration) => {
+        this.extractFile(declaration.getSourceFile());
+        const before = this.sourceFactCount();
+        emitClassFacts(this.db, this.table, declaration);
+        if (this.sourceFactCount() !== before) {
+          this.stale = true;
+        }
       },
     };
   }

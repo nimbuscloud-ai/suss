@@ -1757,6 +1757,29 @@ describe("the class a call is handed", () => {
   it("gives nothing for an argument that is not a class", () => {
     expect(classHanded("export const Order = 1;")).toBeNull();
   });
+
+  it("gives the decorator of a class the file declares without exporting it", () => {
+    const project = withLibrary();
+    const file = project.createSourceFile(
+      "/repo.ts",
+      `
+        import { tape } from "tapedeck";
+        @tape("hidden")
+        class Hidden {}
+        export const labelled = tape(Hidden);
+      `,
+    );
+    const [, call] = file.getDescendantsOfKind(SyntaxKind.CallExpression);
+    if (call === undefined) {
+      throw new Error("the fixture contains no call");
+    }
+    const store = new ResolutionStore();
+    const hidden = callOpsFor(call, {
+      resolve: (value) => store.resolveWrittenValue(value),
+      resolution: store,
+    }).classAt?.(0);
+    expect(hidden?.decorator(LABEL)?.nameAt(0, "nothing")).toBe("hidden");
+  });
 });
 
 describe("a receiver typed as a library's type, and a value the file imported", () => {

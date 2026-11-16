@@ -2128,6 +2128,7 @@ describe("a parameter a decorator supplies", () => {
    */
   const INJECTED: Array<[string, ...string[]]> = [
     ["binds", "repoRef", "repo"],
+    ["paramOf", "Service", "0", "repo"],
     ["decoratedWith", "repo", "inject"],
     ["writtenValue", "inject"],
     ["call", "inject", "injectCallee"],
@@ -2142,6 +2143,23 @@ describe("a parameter a decorator supplies", () => {
         "repoRef",
       ),
     ).toEqual(["inject"]);
+  });
+
+  it("does not write a method as the decorator call it is written under", () => {
+    expect(
+      writtenAsOf(
+        [
+          ["binds", "handlerRef", "handler"],
+          ["func", "handler"],
+          ["decoratedWith", "handler", "inject"],
+          ["writtenValue", "inject"],
+          ["call", "inject", "injectCallee"],
+          ["suppliesParameter", "orm", "InjectRepository"],
+          ["imports", "injectCallee", "orm", "InjectRepository"],
+        ],
+        "handlerRef",
+      ),
+    ).toEqual([]);
   });
 
   it("ignores a decorator no word names", () => {

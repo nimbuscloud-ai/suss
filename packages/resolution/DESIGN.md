@@ -203,8 +203,18 @@ handedIn(p, n)              the platform fills the parameter p with an
                             spec lists the parameter. The read ops in
                             @suss/recognize/ops read it, and so does the
                             runtimeObject rule
-decoratedWith(p, d)         the constructor parameter p is written with
-                            the decorator call d (TypeScript)
+decoratedWith(x, d)         x is written under the decorator whose
+                            expression is the value d. TypeScript states
+                            it for a class, a method, and a constructor
+                            parameter whose decorator is a call. Python
+                            states it for every decorator of a function
+                            or a class, beside the call each decorator
+                            makes. Ruby writes no decorators and states
+                            none. The order is the decorators' source
+                            order, read off d's key. The module ops'
+                            decorated() reads it, and so does the rule
+                            that fills a parameter from its decorator
+                            (TypeScript, Python)
 restOf(x, p)                x is the rest element of the object
                             destructure written as the parameter p,
                             ...rest in ({ a, ...rest }) =>. Stated with
@@ -631,9 +641,11 @@ to the call. `this.repo` is then written as `InjectRepository(Order)`,
 and a pack reads the entity off that call the way the Mongoose pack
 reads a model off `model("User", schema)`. The rule matches the
 decorator by the module it came from, as the declared wrapper does. The
-adapter states `decoratedWith` for constructor parameters only, since a
-method parameter's decorator, such as `@Body()`, describes a request
-and not an object the container built.
+adapter states `decoratedWith` for a constructor parameter and not for a
+method's, since a method parameter's decorator, such as `@Body()`,
+describes a request and not an object the container built. The rule
+also requires a `paramOf` row, so a class or a method written under the
+same decorator never becomes that decorator's call.
 
 Every fact a pack declares goes in through `addPackWords`, which takes
 the declarations in one format for every language. Each adapter

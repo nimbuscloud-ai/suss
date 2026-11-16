@@ -2,7 +2,7 @@
 // this adapter's facts. The reader is in @suss/recognize; this file hands
 // it the module ops for one file and widens what it finds.
 
-import { Node, type SourceFile } from "ts-morph";
+import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
 import { discoverDeclared } from "@suss/recognize";
 import { factModuleOps } from "@suss/recognize/ops";
@@ -71,9 +71,33 @@ export function moduleOpsFor(
           access.state(fn);
           return { key: nodeId(fn), assignedName: assignedNameOf(fn) };
         }),
+      decorated: () =>
+        decoratedIn(sourceFile).map((node) => {
+          const declaration = Node.isClassDeclaration(node)
+            ? node
+            : node.getParentIfKind(SyntaxKind.ClassDeclaration);
+          if (declaration !== undefined) {
+            access.stateClass(declaration);
+          }
+          return nodeId(node);
+        }),
       mentions: (word) => sourceFile.getFullText().includes(word),
     },
   );
+}
+
+/** Every declared class and method the file writes under a decorator, in source order. */
+function decoratedIn(sourceFile: SourceFile): Node[] {
+  const found: Node[] = [];
+  sourceFile.forEachDescendant((node) => {
+    if (
+      (Node.isClassDeclaration(node) || Node.isMethodDeclaration(node)) &&
+      node.getDecorators().length > 0
+    ) {
+      found.push(node);
+    }
+  });
+  return found;
 }
 
 type Called = Parameters<typeof opsOverFacts>[0];

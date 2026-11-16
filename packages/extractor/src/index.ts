@@ -1420,6 +1420,8 @@ export type {
   Declaration,
   DeclaredBy,
   Decoded,
+  DecoratedDefinition,
+  Decorator,
   ElementAttribute,
   ElementOps,
   Encoded,
