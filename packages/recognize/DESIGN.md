@@ -209,6 +209,7 @@ recognizer context under `ops`.
 | `nameAt(index, unsettled)` | the name that argument gives, with the hole policy applied |
 | `calleeText()` | the callee, as the source writes it |
 | `receiver()` | the call the receiver is, as ops of its own |
+| `receiverValue()` | the value the method is called on as the source writes it, `db` in `db.query(User)` and `Orders.query()` in `Orders.query().first()`, with no name followed (optional) |
 | `chainedOn()` | the call made on what this call returns, `.set(v)` for `db.update(t)` in `db.update(t).set(v)`, or null when the result is stored, returned or passed instead (optional) |
 | `member()` | the member read the call is made on, `db.user` in `db.user.findMany()`, as ops whose method is the member's name (optional) |
 | `file()` | the path of the file the call is in (optional) |
@@ -248,6 +249,8 @@ walk it:
 | `encoded()` | the value a call of one of the language's encoders was handed, and the encoding: `x` under `json` for `JSON.stringify(x)`, `json.dumps(x)`, `JSON.generate(x)` or `x.to_json`. Null for any other value |
 | `shape()` | the shape the source writes the value in at this spot, without following a name |
 | `readsOff(object)` | the properties the value reads off `object`, through the calls, comparisons, entries and template holes it is written from, each once in source order. A function written in the value, or a helper that built it, is not entered |
+| `comparisons()` | the operands the value compares when it is a comparison, one entry for each pair of neighbouring operands with the operator between them: `User.id == x` is `User.id`, `==`, `x`. Empty for any other value |
+| `className(notFrom)` | the name of the class the value is, or is one of, as the adapter reads it. A value declared as a type from one of `notFrom`'s modules gives null |
 | `runtimePath(object)` | the path among a runtime object's that the value is: the one it is spelled as, or the object's first path when the rules followed the object into it. Undefined when it is not the object |
 | `mentions({ calls, options })` | whether the value is written with a call to one of `calls` or sets one of `options`, through its receivers, arguments, entries and fallback branches. A function written in the value is not entered |
 
@@ -300,6 +303,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `encoded()` | the adapter's `encodedOf`, asked of the value a name was written as, the way `asArg()` is, so an encoding kept in a name is still read. Python and Ruby find the encoded value through `call`, `readsProperty` and `callArg` |
 | `decodes()` | the adapter's `decodedOf` on the call, over a `DECODERS` table beside its encoders: `JSON.parse` in TypeScript, `json.loads` in Python, `JSON.parse` and `JSON.load` in Ruby. What the call gives back is the value at the call's own key |
 | `read()` | `readsProperty(x, o, n)` or `readsEntry(x, o, n)` at the value, with `memberName` as `member()` reads it. A name is followed through one declaration by `binds`, the way `member()` follows one, and gives the one read among what it is bound to, so `const text = record.body` reads as `record.body` |
+| `memberRead()` | the same rows at the value's own key, with no name followed. Where the adapter says `readsMembersAsCalls`, as Ruby does, a `call(x, c)` with no `callArg`, `callKeywordArg` or `callBlock` rows reads as the read its callee `c` is, so `Entry.id` is `id` off `Entry` |
 | `element()` | `elementOf(x, over)` on the value, or on what its one `binds` row takes it to, which is how TypeScript keys a loop's or a callback's variable through its declaration |
 | `typed(origin)` | the adapter's `valueTypedAs` on the value. Where an adapter has none, as in Ruby, the construction the value was written as, checked the way `constructed` is |
 | `keysRead()` | the read sites the adapter's `readSitesOf` lists, which TypeScript states as it is asked. Otherwise the `readsProperty` and `readsEntry` rows off the value, off each name `binds` takes to it, and off each reference `binds` takes to that name, with the adapter's `readsOff` on each. A site that is the callee of a `call` row, or has an `assigns` row, is left out, and the keys come in the order the sites are written, from the span in each key |
@@ -314,6 +318,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `isFrom`, `receiverIsFrom` with `handedBy` | the receiver, or the declaration it `binds` to, as a `paramOf(f, k, p)` at the asked position, or as the block variable the adapter's `parameterOf` places, since Ruby states no `paramOf` for a block. Then the call that passes `f` as `callArg(r, 0, f)`, directly or through a name `binds` to it, or that is written with it as `callBlock(r, f)`, asked whether its method is the one asked and its receiver is from `on` |
 | `member()` | the object of the callee's `readsProperty`, as ops over that member read when it is one itself, or as the call it is when that call passes no arguments. A name is followed through one declaration by `binds`, two rows in TypeScript (reference to declaration to value) and one in Python and Ruby, and counts when the value is read off something: `const users = db.users` reads as `db.users`, and `const db = new Client()` gives no member |
 | `chainedOn()` | the `readsProperty(c, r, m)` whose object is the call, then the `call(r2, c)` whose callee is that read: one hop of the `chainedCall` rule. A result kept in a name has none |
+| `receiverValue()` | the object of the callee's `readsProperty`, as written, with no name followed |
+| `comparisons()` | the `comparesWith(c, l, o, r)` rows on the value's own key, in the order stated, which Python and Ruby state for their comparison operators and TypeScript does not |
+| `className(notFrom)` | the adapter's `classNameOf`, which Python reads the way its storage reader reads a model: a CapWords name is its own class, a variable is the class its annotation or the call it is assigned from gives, an attribute is its CapWords member or what it is read off, and a call is its callee's class or its first argument's. Elsewhere the name of the class `asClass()` settles the value to |
 | `readsOff(object)` | a closure from the value's own key, with no name followed: each `readsProperty(x, o, n)` gives `n` when `o` is a name the adapter's `writtenAs` settles to what `object` settles to, or when neither settles and the adapter's `textOf` spells both the same, and goes on into `o`; `call`, `callArg`, `callKeywordArg`, `callBlock`, `compares`, `holeAt`, `conditionalBranch`, `fallbackBranch` and `writtenEntryAt` go on into what they state. A function's body has no row the closure follows, so it is not entered |
 | `file()` | the file in the call's key, which every adapter writes first |
 | `isFrom`, `receiverIsFrom` with `imported` | the adapter's `importedAs` on the callee or the receiver: `comesFrom(x, m, n)` over `imports`, `exportsAs` and `reExports`, so an alias and a project barrel read as the export. A value that only calls into an import does not count |
@@ -742,7 +749,10 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "member", named: "query" }` | the same, when the member is read under that name |
 | `{ to: "chained", method: "where" }` | the nearest call to `where` made out along what the call returns, `.where(c)` from `db.update(t)` in `db.update(t).set(v).where(c)` |
 | `{ to: "chained" }` | the call made directly on what the call returns |
-| `{ to: "receiver", every: true }` | every call up the receivers, in the order the walk meets them; with `method` or `origin`, every one of those it accepts |
+| `{ to: "receiver", every: true }` | every call up the receivers, in the order the walk meets them; with `method` or `origin`, every one of those it accepts. `method` can list several methods |
+| `{ to: "receiver", every: true, inPlace: true, until: session }` | every call up the receivers the source writes in place, stopping before the chain's first call on the session: the calls after `db.query(User)` in `db.query(User).filter(c).first()` |
+| `{ to: "chainStart", except: ["execute"] }` | the first call of the chain the source writes in place, `db.query(User)` above, or the call itself when its receiver is no call written in place; nothing when that call makes one of the methods `except` lists |
+| `{ to: "chained", fromItself: true, every: true }` | the call itself and every call out along what it returns |
 | `{ to: "chained", every: true, except: ["values"] }` | every call out along what the call returns, passing over the calls to `values` |
 | `{ to: "passedTo", at: 0 }` | the call this call's result is passed to in place as its first argument, `session.execute(text(sql), params)` from `text(sql)`; with `method`, only a call to that method |
 | `{ to: "builder", method: "object", from: ["zod"] }` | the call a library's builder made the value with, this call included, through up to eight methods chained on its result: `z.object({ ... })` from `z.object({ ... }).strict()` |
@@ -778,6 +788,31 @@ reaches each one, so `filter(a).filter(b)` picks rows at both filters.
 `except` lists the methods whose calls the walk passes over without
 reaching them, as a query's `values` call supplies values rather than
 picking rows. The walk stops the same way either way.
+
+`inPlace` keeps the walk to the chain the source writes: it takes a
+receiver only when the call it came from is the one `chainedOn()` says
+is made on it, so `q.first()` after `q = db.query(User)` does not
+reach the query. `until` stops the walk before the chain's first call
+on its origin, which is the first call the origin accepts. When that
+call is made on a call written in place, as `.first()` in
+`Orders.query().first()` is made on the query `Orders.query()` gives
+back, the chain starts at the start of that call's own chain. A walk
+from the chain's first call reaches nothing.
+
+A session chain's start is `[{ to: "chainStart", except }, { to:
+"chained", fromItself: true, every: true }]`: the chain's first call and
+every call out from it, one of which is made on the session. That is
+the first call itself for `db.add(order)` and `db.query(User)`, and the
+call after it for `Orders.query().first()`. `except` lists the methods
+a chain may not start with, so `db.execute(stmt).scalars().all()`
+reads nothing while `db.query(User).scalar()` reads.
+
+A pick over the calls a step reaches can take `itself: true`, which
+adds the call the pick starts from after them, when the first step
+would have kept it: its method, `except`, origin and `until` apply to
+it as to the others. `.first()` comes after `.filter(c)`, and
+`db.query(User)` read alone adds nothing, since it is the chain's first
+call.
 
 A `passedTo` step reaches the call that takes this call's result as an
 argument, through `passedTo()`, one hop like `chainedOn()`. A result
@@ -1044,7 +1079,60 @@ A chain built with `{ outermost: true }` reads a call only when nothing
 is chained on what it returns, so `db.query(User).filter(c).first()` is
 read once, at `.first()`, and `db.query(User)` alone at itself. It asks
 `chainedOn()` before anything else, and an adapter that cannot say
-reads every call.
+reads every call. Its hook says `claimsChainStart`, since the call
+it claims is the one that starts the chain, the call into the library,
+and the Python adapter marks that call as read so the reach walk does
+not report it as lost.
+
+A method whose `kind` is `nothing` matches and records no access, so
+the call still counts as the client's. A session's chain that starts
+with `execute` is one: a chain about its first call, `.about({ to:
+"chainStart" })`, lists those methods with `kind: "nothing"`, and
+`db.execute(stmt).scalars().all()` is claimed without an access.
+
+## A query that compares columns of a class
+
+An ORM query says which table it reads by the class it is passed, and
+picks rows by the columns of that class it compares:
+
+```python
+db.query(User).filter(User.id == user_id, User.age > 18).first()
+```
+
+The container is a class pick, `{ class, notFrom }`: the first value
+one of the sources reaches whose `className(notFrom)` is not null. A
+source is an argument pick, or `{ of, receiver: true }` for the value
+a reached call is made on, so the class of `Orders.query().first()` is
+`Orders`.
+The picks that read columns state the class the same way, through
+`ofClass`, and a column is a value `memberRead()` gives as a read off a
+value of that class, so Ruby's `Entry.id` is one as well as Python's.
+
+```ts
+const START: CallStep = { to: "chainStart" };
+const LATER: ToReceiver = { to: "receiver", every: true, inPlace: true, until: SESSION };
+const MODEL: ClassPick = {
+  class: [{ of: [START], at: 0 }, { of: [{ ...LATER, method: ["select_from", "join"] }], itself: true, at: 0 }, { of: [START], receiver: true }],
+  notFrom: ["sqlalchemy"],
+};
+fields: [{ columns: { of: [START], from: 0 }, ofClass: MODEL }, { keywordsOf: { of: [START] } }],
+selector: { conditions: { of: [LATER], itself: true }, ofClass: MODEL, combinedBy: ["and_", "or_", "not_"], pinnedBy: ["and_"], equality: ["=="] },
+```
+
+`columns` gives the arguments from a position on that are columns of
+the class, so `select(User.id, User.name)` reads `id` and `name` and
+`func.count(User.id)` reads nothing. `conditions` reads each call in
+turn: its keywords, then the columns of the class it compares under an
+`equality` operator in a comparison of two operands, looking inside
+`pinnedBy` calls only. Each of those states the value it is compared
+with as its slot. Then it reads every call again for every column that
+is an operand of any comparison, looking inside `combinedBy` calls.
+Each name comes once, so the query above picks by `id`, with
+`user_id` as its value, and by `age`.
+
+A list of picks reads each pick in turn and keeps each name once, so
+`fields` above gives the columns the first call is passed, then its
+keywords.
 
 A select states its table on `.from`, which every select chain has
 once, and the operation is the call `.from` is made on. The chain is

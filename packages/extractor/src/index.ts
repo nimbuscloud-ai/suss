@@ -1422,6 +1422,7 @@ export type {
   CallsAndOptions,
   ClassOps,
   ClassValueOps,
+  Comparison,
   ConstructedFrom,
   Declaration,
   DeclaredBy,

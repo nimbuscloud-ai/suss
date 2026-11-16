@@ -33,7 +33,13 @@ import {
 import { createTestProject } from "@suss/test-project";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
-import type { InputRule, OneArgument } from "@suss/recognize";
+import type {
+  CallStep,
+  ClassPick,
+  InputRule,
+  NamePick,
+  OneArgument,
+} from "@suss/recognize";
 
 // Ruby has no imports, so a client comes from a library through the
 // library's own constant, which each origin lists beside the module.
@@ -295,8 +301,56 @@ const BUILDER_PICKS = storageCalls({
   .slots("none")
   .example("builder.pick(t, t.id, t.name)");
 
+// A journal's chains, read from the first call on the journal: the class
+// it is passed, the columns and keywords it states as fields, and the
+// columns the calls after it compare. `close` reads nothing.
+const JOURNAL = typed({ from: ["journal", "Journal"], named: ["Journal"] });
+const START: CallStep = { to: "chainStart" };
+const ENTRY: ClassPick = {
+  class: { of: [START], at: 0 },
+  notFrom: ["journal", "Journal"],
+};
+const ENTRY_FIELDS: NamePick[] = [
+  { columns: { of: [START], from: 1 }, ofClass: ENTRY },
+  { keywordsOf: { of: [START] } },
+];
+
+const JOURNAL_CALLS = storageCalls(
+  {
+    system: "journal",
+    client: JOURNAL,
+    clientAt: [
+      { to: "chainStart", except: ["close"] },
+      { to: "chained", fromItself: true, every: true },
+    ],
+    unsettledName: "nothing",
+  },
+  { outermost: true },
+)
+  .methods({ add: { kind: "write", fields: ENTRY_FIELDS } })
+  .otherwise({
+    kind: "read",
+    fields: ENTRY_FIELDS,
+    selector: {
+      conditions: {
+        of: [{ to: "receiver", every: true, inPlace: true, until: JOURNAL }],
+        itself: true,
+      },
+      ofClass: ENTRY,
+      combinedBy: [],
+      pinnedBy: [],
+      equality: ["=="],
+    },
+  })
+  .container(ENTRY)
+  .example("journal.rows(Entry, Entry.id).where(Entry.id == 1).take()");
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-journal", [JOURNAL_CALLS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-vault", [VAULT_CALLS, SIFTED_CALLS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -355,6 +409,12 @@ const TYPESCRIPT = `
   import { Warehouse } from "depot";
   import { Client } from "rows";
   import { Vault } from "vault";
+  import { Journal } from "journal";
+
+  export class Entry {
+    static id = 0;
+    static n = 0;
+  }
 
   const cache = new Cache();
   const db = new Pool();
@@ -430,6 +490,12 @@ const TYPESCRIPT = `
     const t = table("users");
     builder.pick(t, t.id, t.name);
   }
+
+  export function audit(journal: Journal, id: number) {
+    journal.rows(Entry).where(Entry.id === id, Entry.n > 2).take();
+    journal.add(Entry);
+    journal.close();
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -442,6 +508,13 @@ from qb import Qb, eq, table
 from depot import Warehouse
 from rows import Client
 from vault import Vault
+from journal import Journal
+
+
+class Entry:
+    id = 0
+    n = 0
+
 
 cache = Cache()
 db = Pool()
@@ -523,9 +596,18 @@ def choose():
     builder = Qb()
     t = table("users")
     builder.pick(t, t.id, t.name)
+
+
+def audit(journal: Journal, id):
+    journal.rows(Entry, Entry.id, kind="x").where(Entry.id == id, Entry.n > 2).take()
+    journal.add(Entry)
+    journal.close()
 `;
 
-const RUBY = `module Store
+const RUBY = `class Entry
+end
+
+module Store
   def self.load
     cache = Kvcache::Cache.new
     db = Sqldb::Pool.new
@@ -603,6 +685,17 @@ const RUBY = `module Store
     t = Qb.table("users")
     builder.pick(t, t.id, t.name)
   end
+
+  def self.open_journal
+    Journal::Journal.new
+  end
+
+  def self.audit(id)
+    journal = open_journal
+    journal.rows(Entry, Entry.id, kind: "x").where(Entry.id == id, Entry.n > 2).take
+    journal.add(Entry)
+    journal.close
+  end
 end
 `;
 
@@ -644,6 +737,17 @@ const LIBRARIES: Record<string, string> = {
     }
   `,
   rows: "export declare class Client { read(table: string): any; }",
+  journal: `
+    export declare class Rows {
+      where(...conditions: unknown[]): Rows;
+      take(): unknown;
+    }
+    export declare class Journal {
+      rows(table: unknown, ...columns: unknown[]): Rows;
+      add(row: unknown): unknown;
+      close(): void;
+    }
+  `,
   vault: `
     export declare class Sifted {
       mark(spec: unknown): Sifted;
@@ -1007,6 +1111,42 @@ describe("a pack that reads the columns off every argument from a position", () 
     expect((await rubyEffects("choose")).map(placeless)).toEqual(
       fromTypeScript,
     );
+  });
+});
+
+describe("a pack that reads a chain from the first call on its client", () => {
+  it("reads the class that call is passed, and nothing of a chain that starts with a method the start leaves out, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("audit").map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["take", "default", "Entry"],
+      ["add", "default", "Entry"],
+    ]);
+    expect((await pythonEffects("audit")).map(addressOf)).toEqual(
+      fromTypeScript.map(addressOf),
+    );
+    expect((await rubyEffects("audit")).map(addressOf)).toEqual(
+      fromTypeScript.map(addressOf),
+    );
+  });
+
+  it("reads the columns and keywords the first call states as fields, and the columns compared after it, in Python and Ruby, which writes `Entry.id` as a call", async () => {
+    const fromPython = (await pythonEffects("audit")).map(placeless);
+
+    expect(fromPython.map(columnsOf)).toEqual([
+      ["read", ["id", "kind"], ["id", "n"]],
+      ["write", [], []],
+    ]);
+    expect((await rubyEffects("audit")).map(columnsOf)).toEqual(
+      fromPython.map(columnsOf),
+    );
+  });
+
+  it("reads no keywords and no comparisons in TypeScript, which states neither", () => {
+    expect(typescriptEffects("audit").map(columnsOf)).toEqual([
+      ["read", [], []],
+      ["write", [], []],
+    ]);
   });
 });
 
