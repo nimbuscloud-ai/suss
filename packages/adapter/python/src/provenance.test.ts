@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject } from "./project.js";
@@ -52,8 +53,7 @@ const flaskLike: PythonPack = {
     {
       type: "decoratedClassRoute",
       importModule: ["myapp.restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET" },
+      routes: flaskRestxTestRoutes(["myapp.restx"], ["get"]),
     },
   ],
   requestObjects: [{ module: "flask", name: "request" }],

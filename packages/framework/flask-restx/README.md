@@ -22,13 +22,13 @@ class Order(Resource):
 
 ## Namespace paths
 
-A resource declared on a namespace is served under the namespace's own path, and its decorator gives only the part after it. The pack joins the two, so `Namespace(path="/orders")` with `@ns.route("/<int:order_id>")` comes out as `/orders/{order_id}`, and `@ns.route("")` comes out as `/orders`. A parameter written into the namespace's path becomes a path parameter like any other.
+A resource declared on a namespace is served under the namespace's own path, and its decorator gives only the part after it. The pack declares flask-restx's `Api`, its namespaces and the Flask blueprint an `Api` is built from as a route table, which puts the blueprint's `url_prefix`, the `Api`'s `prefix` and the namespace's `path` in front of the route's own, in that order. So `Namespace(path="/orders")` with `@ns.route("/<int:order_id>")` comes out as `/orders/{order_id}`, and `@ns.route("")` comes out as `/orders`. A parameter written into the namespace's path becomes a path parameter like any other.
 
-The join only works when the namespace is constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` call that sets no `path` of its own. A route on a namespace written any other way is still discovered, under its name, with no path and a recorded reason. It does not pair with anything, because a guessed path could pair it with the wrong route.
+The table follows a namespace however a file gets to it: imported from another module, kept on a field, mounted in a function or a loop over a list. A route still gets no path, under its name and with a recorded reason, when the namespace states no `path` of its own, when the `add_namespace` call sets a `path` that replaces it, when nothing mounts it, or when the blueprint is registered with a prefix of the registration's own, inside another blueprint, or twice. It does not pair with anything then, because a guessed path could pair it with the wrong route. The Python adapter's DESIGN.md has a table for each place a prefix is written.
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline. It has no analysis logic of its own.
+The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, and on `@suss/extractor` for the route table's types. It has no analysis logic of its own.
 
 ## A module that re-exports flask-restx
 

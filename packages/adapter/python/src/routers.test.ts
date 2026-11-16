@@ -4,21 +4,17 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestPattern } from "./__fixtures__/flaskRestxPattern.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
-import { buildRouterIndex } from "./routers.js";
 import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
-import type {
-  DecoratedClassRoute,
-  PythonPack,
-  RouterComposition,
-} from "./pack.js";
+import type { DecoratedClassRoute, PythonPack } from "./pack.js";
 
 /** Every gap description on a unit's summary, joined into one string to match against. */
 function unreadTextOf(unit: RawCodeStructure | undefined): string {
@@ -42,22 +38,7 @@ const fastapiLike: PythonPack = {
   ],
 };
 
-const namespaceClassRoute: DecoratedClassRoute = {
-  type: "decoratedClassRoute",
-  importModule: ["flask_restx"],
-  decoratorName: "route",
-  verbMethodNames: { get: "GET", post: "POST" },
-  pathParamSyntax: "flaskConverters",
-  routerComposition: {
-    routerConstructorName: "Namespace",
-    includeMethodName: "add_namespace",
-    prefixKeyword: "path",
-    mountPrefixEffect: "replaces",
-    constructorPrefixRequired: true,
-    constructorPrefixTrailingSlash: "trimmed",
-    noValuePrefix: "unstated",
-  },
-};
+const namespaceClassRoute: DecoratedClassRoute = flaskRestxTestPattern();
 
 const namespaceLike: PythonPack = {
   name: "flask-restx-test",
@@ -66,9 +47,9 @@ const namespaceLike: PythonPack = {
 };
 
 /**
- * The router index, the route tables and the facts behind them, built the
- * way a project run builds them, since every construction a mount reads
- * comes back through the resolution rules.
+ * The route tables and the facts behind them, built the way a project
+ * run builds them, since every construction a mount reads comes back
+ * through the resolution rules.
  */
 async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
   const tree = await parsePython(source);
@@ -82,13 +63,11 @@ async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
     definitions: new Map(),
   });
   const bound = [{ file, displayPath: "main.py", root: tree.rootNode, module }];
-  const routerIndex = buildRouterIndex(bound, packs, { roots: [], facts });
   return discoverUnits(tree.rootNode, module, {
     packs,
     filePath: "main.py",
     absoluteFile: file,
     facts,
-    routerIndex,
     routes: buildRouteTables(bound, packs, facts),
   });
 }
@@ -803,34 +782,6 @@ describe("router prefix composition: abstentions", () => {
     expect(reason).toContain(
       "is never mounted through a single variable binding",
     );
-  });
-
-  it("answers notRouter for a pattern that declared no composition", async () => {
-    const tree = await parsePython(
-      "from fastapi import APIRouter\n\nrouter = APIRouter()\n",
-    );
-    const module = bindModule(tree.rootNode);
-    const routerIndex = buildRouterIndex(
-      [
-        {
-          file: "/proj/m.py",
-          displayPath: "m.py",
-          root: tree.rootNode,
-          module,
-        },
-      ],
-      [fastapiLike],
-      { roots: [] },
-    );
-    const bare: DecoratedClassRoute = {
-      type: "decoratedClassRoute",
-      importModule: ["fastapi"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET" },
-    };
-    expect(routerIndex.resolve(bare, module, "router")).toEqual({
-      kind: "notRouter",
-    });
   });
 
   it("ignores a same-named mount method on an object nobody constructed from the module", async () => {
@@ -1825,46 +1776,26 @@ describe("mounts written where the binder keeps no names", () => {
     expect(pathOf(units, "read_item")).toBeNull();
   });
 });
+
 describe("prefix composition through the object a mount is called on", () => {
-  const blueprintComposition: RouterComposition = {
-    routerConstructorName: "Namespace",
-    includeMethodName: "add_namespace",
-    prefixKeyword: "path",
-    mountPrefixEffect: "replaces",
-    constructorPrefixRequired: true,
-    constructorPrefixTrailingSlash: "trimmed",
-    noValuePrefix: "unstated",
-    mountObjectPrefix: {
-      prefixKeyword: "prefix",
-      carrier: {
-        importModule: ["flask"],
-        constructorName: "Blueprint",
-        argumentIndex: 0,
-        prefixKeyword: "url_prefix",
-        handoffMethodName: "init_app",
-        registerMethodName: "register_blueprint",
-      },
-    },
-  };
-
-  const blueprintClassRoute: DecoratedClassRoute = {
-    ...namespaceClassRoute,
-    pathRepeatedSlashes: "merged",
-    routerComposition: blueprintComposition,
-  };
-
   const blueprintLike: PythonPack = {
     name: "flask-restx-blueprint-test",
     protocol: "http",
-    discovery: [blueprintClassRoute],
+    discovery: [namespaceClassRoute],
   };
 
-  /** The same composition on a pack that says nothing about repeated slashes. */
+  /** The same table for a library that joins its paths as written, leaving repeated slashes. */
   const keptSlashesLike: PythonPack = {
     name: "flask-restx-kept-slashes-test",
     protocol: "http",
     discovery: [
-      { ...namespaceClassRoute, routerComposition: blueprintComposition },
+      {
+        ...namespaceClassRoute,
+        routes: {
+          ...namespaceClassRoute.routes,
+          table: { ...namespaceClassRoute.routes.table, joins: "asWritten" },
+        },
+      },
     ],
   };
 
@@ -2157,14 +2088,29 @@ describe("prefix composition through the object a mount is called on", () => {
     );
   });
 
-  it("abstains when the blueprint's name holds a second construction", async () => {
+  it("reads the blueprint a name was last assigned before the Api is built", async () => {
     expect(
-      await reasonFor([
+      await pathFor([
         'bp = Blueprint("a", __name__, url_prefix="/api/v1")',
         'bp = Blueprint("b", __name__, url_prefix="/api/v2")',
         "app = Flask(__name__)",
         "api = Api(bp)",
         "app.register_blueprint(bp)",
+      ]),
+    ).toBe("/api/v2/orders/{order_id}");
+  });
+
+  it("abstains when the blueprint's name holds a second construction", async () => {
+    expect(
+      await reasonFor([
+        "import os",
+        "",
+        'if os.environ.get("V2"):',
+        '    bp = Blueprint("b", __name__, url_prefix="/api/v2")',
+        "else:",
+        '    bp = Blueprint("a", __name__, url_prefix="/api/v1")',
+        "app = Flask(__name__)",
+        "api = Api(bp)",
       ]),
     ).toContain(
       "is mounted on an object that is built from one whose variable name holds a second construction",
@@ -2221,29 +2167,7 @@ describe("a blueprint prefix and the site the mount is written at", () => {
   const blueprintLike: PythonPack = {
     name: "flask-restx-blueprint-site-test",
     protocol: "http",
-    discovery: [
-      {
-        ...namespaceClassRoute,
-        pathRepeatedSlashes: "merged",
-        routerComposition: {
-          ...namespaceClassRoute.routerComposition,
-          routerConstructorName: "Namespace",
-          includeMethodName: "add_namespace",
-          prefixKeyword: "path",
-          mountObjectPrefix: {
-            prefixKeyword: "prefix",
-            carrier: {
-              importModule: ["flask"],
-              constructorName: "Blueprint",
-              argumentIndex: 0,
-              prefixKeyword: "url_prefix",
-              handoffMethodName: "init_app",
-              registerMethodName: "register_blueprint",
-            },
-          },
-        },
-      },
-    ],
+    discovery: [namespaceClassRoute],
   };
 
   /** An app whose namespace and resource are fixed, with the lines that build and mount left to the caller. */

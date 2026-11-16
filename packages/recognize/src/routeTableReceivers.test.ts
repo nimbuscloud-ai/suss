@@ -10,6 +10,7 @@ import { readRouteTable } from "./routeTableDiscovery.js";
 import type {
   AstCapableOps,
   CallOps,
+  CarrierRule,
   DecoratedDefinition,
   ModuleOps,
   RouteOutcome,
@@ -39,6 +40,8 @@ interface ValueSpec {
   readonly nothing?: boolean;
   /** The call a name or a field was written as. */
   readonly built?: CallOps;
+  /** The calls a name assigned more than one is written as. */
+  readonly writtenAs?: readonly CallOps[];
   /** The collection a loop variable takes its elements from. */
   readonly element?: ValueOps;
   /** The collection a loop takes each element of apart, with this value one of the parts. */
@@ -59,6 +62,7 @@ function value(spec: ValueSpec): ValueOps {
     nothing: () => spec.nothing ?? false,
     asCall: (how?: { follow: string }) =>
       how === undefined ? null : (spec.built ?? null),
+    asCalls: () => spec.writtenAs ?? [],
     element: () => spec.element ?? null,
     elementPart: () => spec.elementPart ?? null,
     returnedItems: () => spec.returned ?? null,
@@ -1248,5 +1252,407 @@ describe("the files a table whose entries are made on a value reads", () => {
       "decorators: get post route",
       "calls: add handle include listed",
     ]);
+  });
+});
+
+describe("a decorator written as the library's own name", () => {
+  const OWN = { ...IMPORTS, get: "get" };
+
+  it("serves at its own path, made on no value, ahead of a project wrapper it may also be", () => {
+    const root = app();
+    expect(
+      said(
+        compose([
+          {
+            path: MAIN,
+            calls: [root],
+            imports: OWN,
+            decorated: [
+              under(
+                fn("own"),
+                call({
+                  name: "get",
+                  args: [path("/own")],
+                  returns: get(root, "/wrapped"),
+                }),
+              ),
+            ],
+          },
+        ]),
+      ),
+    ).toEqual(["GET /own own"]);
+  });
+
+  it("reads one the file does not import from the table's modules as the call its project wrapper returns", () => {
+    const root = app();
+    const outcomes = compose([
+      {
+        path: MAIN,
+        calls: [root],
+        decorated: [
+          under(
+            fn("wrapped"),
+            call({
+              name: "api_get",
+              args: [path("/x")],
+              returns: call({ name: "get", on: root, args: [path("/x")] }),
+            }),
+          ),
+        ],
+      },
+    ]);
+    expect(said(outcomes)).toEqual(["GET /x wrapped"]);
+    expect(
+      outcomes.map((outcome) =>
+        "made" in outcome ? outcome.made?.method() : null,
+      ),
+    ).toEqual(["get"]);
+  });
+
+  it("reads one called off a module imported whole as the library's own", () => {
+    expect(
+      said(
+        compose([
+          {
+            path: MAIN,
+            whole: ["lib"],
+            decorated: [
+              under(
+                fn("off"),
+                call({ name: "get", onModule: "lib", args: [path("/off")] }),
+              ),
+            ],
+          },
+        ]),
+      ),
+    ).toEqual(["GET /off off"]);
+  });
+});
+
+describe("a root with a path of its own and a carrier", () => {
+  const CARRIED: RouteTableDeclaration = {
+    ...TABLE,
+    joins: "merged",
+    roots: {
+      ...TABLE.roots,
+      path: [{ keyword: "prefix" }],
+      noValue: "unstated",
+      carrier: {
+        at: { at: 0 },
+        handedBy: "hand",
+        from: ["web"],
+        paths: { Group: [{ keyword: "url_prefix" }] },
+        noValue: "unstated",
+        registeredBy: {
+          method: "register",
+          at: { at: 0 },
+          path: [{ keyword: "url_prefix" }],
+        },
+      },
+    },
+  };
+
+  const WEB = { ...IMPORTS, Group: "Group", Web: "Web" };
+
+  const group = (prefix: ValueOps = path("/api/"), file = MAIN) =>
+    call({ name: "Group", keywords: { url_prefix: prefix }, file });
+
+  const namespace = () =>
+    call({ name: "Namespace", keywords: { path: path("/orders") } });
+
+  /** One resource on a namespace the root mounts, and one on the root itself, with the root and what it is built within left to the caller. */
+  function served(root: CallOps, setup: readonly CallOps[]): string[] {
+    const ns = namespace();
+    return said(
+      compose(
+        [
+          {
+            path: MAIN,
+            calls: [...setup, root, ns, add(root, ref(ns, "ns"))],
+            imports: WEB,
+            decorated: [
+              under(
+                cls("Order", "get"),
+                call({ name: "route", on: ns, args: [path("/<id>")] }),
+              ),
+              under(
+                cls("Health", "get"),
+                call({ name: "route", on: root, args: [path("/health")] }),
+              ),
+            ],
+          },
+        ],
+        CARRIED,
+      ),
+    );
+  }
+
+  it("serves under the carrier's path, then the root's, then the namespace's, with repeated slashes merged", () => {
+    const bp = group();
+    expect(
+      served(
+        app({ args: [ref(bp, "bp")], keywords: { prefix: path("/v1/") } }),
+        [bp],
+      ),
+    ).toEqual([
+      "GET /api/v1/orders/<id> Order.get",
+      "GET /api/v1/health Health.get",
+    ]);
+  });
+
+  it("reads a carrier the root is handed after it is built", () => {
+    const bp = group();
+    const root = app();
+    expect(
+      served(root, [
+        bp,
+        call({ name: "hand", on: root, args: [ref(bp, "bp")] }),
+      ]),
+    ).toEqual(["GET /api/orders/<id> Order.get", "GET /api/health Health.get"]);
+  });
+
+  it("puts nothing in front for a carrier its modules build with no path, nor for a root built with none", () => {
+    const web = call({ name: "Web" });
+    expect(served(app({ args: [ref(web, "app")] }), [web])).toEqual([
+      "GET /orders/<id> Order.get",
+      "GET /health Health.get",
+    ]);
+    expect(served(app(), [])).toEqual([
+      "GET /orders/<id> Order.get",
+      "GET /health Health.get",
+    ]);
+  });
+
+  it("reads a carrier built off a module its file imports whole, and reads no registration when the table says of none", () => {
+    const { registeredBy: _none, ...unregistered } = CARRIED.roots
+      .carrier as CarrierRule;
+    const table: RouteTableDeclaration = {
+      ...CARRIED,
+      roots: { ...CARRIED.roots, carrier: unregistered },
+    };
+    const bp = call({
+      name: "Group",
+      onModule: "web",
+      keywords: { url_prefix: path("/api") },
+    });
+    const root = app({ args: [ref(bp, "bp")] });
+    const web = call({ name: "Web" });
+    expect(
+      said(
+        compose(
+          [
+            {
+              path: MAIN,
+              calls: [
+                bp,
+                root,
+                web,
+                call({ name: "register", on: web, args: [ref(bp, "bp")] }),
+                call({ name: "register", on: web, args: [ref(bp, "bp")] }),
+              ],
+              imports: WEB,
+              whole: ["web"],
+              decorated: [
+                under(
+                  cls("Health", "get"),
+                  call({ name: "route", on: root, args: [path("/health")] }),
+                ),
+              ],
+            },
+          ],
+          table,
+        ),
+      ),
+    ).toEqual(["GET /api/health Health.get"]);
+  });
+
+  /** Each way a root or its carrier gives the routes under it no path. */
+  const unread: ReadonlyArray<
+    readonly [string, () => { root: CallOps; setup: CallOps[] }]
+  > = [
+    [
+      "rootPrefixUnread",
+      () => ({
+        root: app({ keywords: { prefix: opaque("computed()") } }),
+        setup: [],
+      }),
+    ],
+    [
+      "carrierSeveral",
+      () => {
+        const [a, b] = [group(), group(path("/other"))];
+        const root = app({ args: [ref(a, "a")] });
+        return {
+          root,
+          setup: [a, b, call({ name: "hand", on: root, args: [ref(b, "b")] })],
+        };
+      },
+    ],
+    [
+      "carrierUnfollowed",
+      () => ({ root: app({ args: [opaque("make()")] }), setup: [] }),
+    ],
+    [
+      "carrierUnfollowed",
+      () => {
+        const other = call({ name: "Other" });
+        return { root: app({ args: [ref(other, "other")] }), setup: [other] };
+      },
+    ],
+    [
+      "carrierUnfollowed",
+      () => {
+        const outside = group(path("/api"), ELSEWHERE);
+        return { root: app({ args: [ref(outside, "bp")] }), setup: [] };
+      },
+    ],
+    [
+      "carrierShared",
+      () => {
+        const [a, b] = [group(), group(path("/other"))];
+        return {
+          root: app({ args: [value({ source: "bp", writtenAs: [a, b] })] }),
+          setup: [a, b],
+        };
+      },
+    ],
+    [
+      "carrierPrefixUnread",
+      () => {
+        const bp = group(opaque("computed()"));
+        return { root: app({ args: [ref(bp, "bp")] }), setup: [bp] };
+      },
+    ],
+    [
+      "carrierRepathed",
+      () => {
+        const [bp, web] = [group(), call({ name: "Web" })];
+        return {
+          root: app({ args: [ref(bp, "bp")] }),
+          setup: [
+            bp,
+            web,
+            call({
+              name: "register",
+              on: web,
+              args: [ref(bp, "bp")],
+              keywords: { url_prefix: opaque("None") },
+            }),
+          ],
+        };
+      },
+    ],
+    [
+      "carrierNested",
+      () => {
+        const [bp, outer] = [group(), group(path("/outer"))];
+        return {
+          root: app({ args: [ref(bp, "bp")] }),
+          setup: [
+            bp,
+            outer,
+            call({ name: "register", on: outer, args: [ref(bp, "bp")] }),
+          ],
+        };
+      },
+    ],
+    [
+      "carrierRegisteredTwice",
+      () => {
+        const [bp, web] = [group(), call({ name: "Web" })];
+        const register = () =>
+          call({ name: "register", on: web, args: [ref(bp, "bp")] });
+        return {
+          root: app({ args: [ref(bp, "bp")] }),
+          setup: [bp, web, register(), register()],
+        };
+      },
+    ],
+  ];
+
+  it.each(unread)(
+    "leaves every route under the root unread for %s, about the root",
+    (reason, setUp) => {
+      const { root, setup } = setUp();
+      const ns = namespace();
+      const outcomes = compose(
+        [
+          {
+            path: MAIN,
+            calls: [...setup, root, ns, add(root, ref(ns, "ns"))],
+            imports: WEB,
+            decorated: [
+              under(
+                cls("Order", "get"),
+                call({ name: "route", on: ns, args: [path("/<id>")] }),
+              ),
+            ],
+          },
+        ],
+        CARRIED,
+      );
+      expect(said(outcomes)).toEqual([`${reason} Order.get`]);
+      expect(
+        outcomes.map((outcome) =>
+          "router" in outcome ? outcome.router?.site?.() : null,
+        ),
+      ).toEqual([root.site?.()]);
+    },
+  );
+
+  it("says a namespace's own missing path ahead of a reason about the root", () => {
+    const ns = call({ name: "Namespace" });
+    const root = app({ keywords: { prefix: opaque("computed()") } });
+    expect(
+      said(
+        compose(
+          [
+            {
+              path: MAIN,
+              calls: [root, ns, add(root, ref(ns, "ns"))],
+              imports: WEB,
+              decorated: [
+                under(
+                  cls("Order", "get"),
+                  call({ name: "route", on: ns, args: [path("/<id>")] }),
+                ),
+              ],
+            },
+          ],
+          CARRIED,
+        ),
+      ),
+    ).toEqual(["prefixUnstated Order.get"]);
+  });
+
+  it("serves an entry on a name assigned two roots under the path both put in front, and leaves it unread when they disagree", () => {
+    const outcomesWith = (a: CallOps, b: CallOps) =>
+      said(
+        compose(
+          [
+            {
+              path: MAIN,
+              calls: [a, b],
+              imports: WEB,
+              decorated: [
+                under(fn("either"), get(null, "/x", { shared: [a, b] })),
+              ],
+            },
+          ],
+          CARRIED,
+        ),
+      );
+    expect(
+      outcomesWith(
+        app({ keywords: { prefix: path("/v1") } }),
+        app({ keywords: { prefix: path("/v1") } }),
+      ),
+    ).toEqual(["GET /v1/x either"]);
+    expect(
+      outcomesWith(
+        app({ keywords: { prefix: path("/v1") } }),
+        app({ keywords: { prefix: path("/v2") } }),
+      ),
+    ).toEqual(["unreached either"]);
   });
 });

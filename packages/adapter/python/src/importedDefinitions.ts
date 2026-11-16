@@ -15,8 +15,8 @@ import { originsOf } from "./facts/resolve.js";
 import { moduleScopeOf } from "./scope.js";
 
 import type { Database } from "@suss/datalog";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyNode } from "./parser.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { Binding, Scope } from "./scope.js";
 
 export interface ImportedDefinition {

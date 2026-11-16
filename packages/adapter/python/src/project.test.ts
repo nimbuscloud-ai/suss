@@ -10,6 +10,7 @@ import { classBody, imported } from "@suss/recognize";
 import { addPackWords } from "@suss/resolution";
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { resolveCalls, resolvedFunctions } from "./facts/resolve.js";
 import { parsePython } from "./parser.js";
@@ -31,8 +32,7 @@ const flaskRestxLike: PythonPack = {
     {
       type: "decoratedClassRoute",
       importModule: ["myapp.wrappers.restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET", post: "POST" },
+      routes: flaskRestxTestRoutes(["myapp.wrappers.restx"]),
     },
   ],
 };

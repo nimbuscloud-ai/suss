@@ -1330,6 +1330,15 @@ class FactValue implements ValueOps {
     return factCallOps(key, this.facts);
   }
 
+  asCalls(): readonly CallOps[] {
+    if (this.asCall({ follow: "namesAndFields" }) !== null) {
+      return [];
+    }
+    return (this.facts.writtenAsEach?.(this.key) ?? []).flatMap(
+      (key) => factCallOps(key, this.facts) ?? [],
+    );
+  }
+
   nothing(): boolean {
     return this.facts.writesNothing?.(this.key) ?? false;
   }

@@ -337,12 +337,6 @@ export interface RouteConventions {
    * nothing for such a parameter either.
    */
   injectedParameterTypes?: string[];
-  /**
-   * What the library serves when a composed path has repeated slashes.
-   * Werkzeug serves the merged path and redirects the written one, so Flask
-   * needs "merged". The default, "kept", matches Starlette.
-   */
-  pathRepeatedSlashes?: PathRepeatedSlashes;
   /** The status the library returns for a declared response when the route does not set one. */
   defaultStatusCode?: number;
   /**
@@ -474,20 +468,17 @@ export interface PyStatusCall {
 }
 
 /**
- * A route written as a class whose decorator takes the route path as its
- * first argument. Each method in the class named after an HTTP verb becomes
- * its own unit, with the verb taken from the method name.
+ * A route written as a class decorated with `@ns.route(path)` on a
+ * namespace or an API, which the route table in `routes` finds. Each
+ * method of the class the table serves becomes its own unit, under the
+ * prefixes of what the namespace is mounted on. The decorator's first
+ * argument is the route's own path.
  */
 export interface DecoratedClassRoute extends RouteConventions {
   type: "decoratedClassRoute";
   /** The library's own module, plus any wrapper module the person configuring the pack lists alongside it. */
   importModule: string[];
-  /** The decorator's name as the library exports it, "route" for flask-restx's `Namespace.route`. */
-  decoratorName: string;
-  /** Method name written in the class body, mapped to the HTTP verb it dispatches. */
-  verbMethodNames: Record<string, string>;
-  /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
-  routerComposition?: RouterComposition;
+  routes: DeclaredRoutes;
 }
 
 /**
@@ -548,92 +539,37 @@ export interface RouterUnreadWords {
   ontoPrefixUnread: string;
   /** The router it is mounted onto, or one above that, gives it no path. */
   chain: string;
+  /** It states no prefix, where its library makes one up. Unset says it with `chain`, for a library whose routers never lack one. */
+  prefixUnstated?: string;
+  /** Its mount states a prefix that replaces its own. Unset says it with `chain`. */
+  prefixReplaced?: string;
+  /** Why the root the route is served from gives it no path. Unset says it with `chain`, for a library whose roots state no path. */
+  root?: RootUnreadWords;
 }
 
 /**
- * The names a library gives the parts of router mounting, so a route's
- * served path can be built from the prefixes written along the way: the
- * router constructor's, the one on the call that mounts it, and, where the
- * pack declares it, the one on the object the mount is called on. DESIGN.md
- * has the tables for what each way of writing a prefix means and when a
- * route abstains.
+ * Why the root a route is served from gives it no path, from its own
+ * prefix or from the value it is built within, each worded to follow
+ * "The router this route is declared on" for a route declared on the
+ * root. For a route on a router mounted onto the root, each is said
+ * through `mountedOn`, with the reason in place of `{reason}`.
  */
-export interface RouterComposition {
-  /** Constructor whose call builds a mountable router, flask-restx's `Namespace`. */
-  routerConstructorName: string;
-  /** Method that mounts a router onto the app, flask-restx's `add_namespace`. */
-  includeMethodName: string;
-  /** The prefix keyword, the same at the constructor and the mount. A library that uses two different keywords would need two fields here. */
-  prefixKeyword: string;
-  /** Whether a prefix written at the mount goes in front of the constructor's ("prefixes") or replaces it ("replaces"). Default "prefixes". */
-  mountPrefixEffect?: MountPrefixEffect;
-  /** Set it when the library makes up a path of its own for a router constructed with no prefix. The adapter cannot work that path out, so such routes abstain. */
-  constructorPrefixRequired?: boolean;
-  /** What a prefix written as `""`, `None`, `False` or `0` means: no prefix ("unstated"), or one the route has to abstain on ("unreadable"). Default "unreadable", at the constructor and the mount alike. */
-  noValuePrefix?: NoValuePrefix;
-  /** Whether the library trims trailing slashes off a constructor's prefix. Default "kept". */
-  constructorPrefixTrailingSlash?: PrefixTrailingSlash;
-  /**
-   * Where the object the mount is called on states a prefix of its own,
-   * in front of everything the constructor and the mount state. Unset
-   * means it states none, and an app serves a mounted router exactly
-   * where the two prefixes put it.
-   */
-  mountObjectPrefix?: MountObjectPrefix;
+export interface RootUnreadWords {
+  mountedOn: string;
+  /** The root's own prefix does not read. */
+  rootPrefixUnread: string;
+  /** The root is built within one value and handed another, or handed two. */
+  carrierSeveral: string;
+  /** The value it is built within comes to no construction the table reads. */
+  carrierUnfollowed: string;
+  /** That value is written as a name assigned more than one construction. */
+  carrierShared: string;
+  /** That value's prefix does not read. */
+  carrierPrefixUnread: string;
+  /** That value is registered with a prefix of the registration's own. */
+  carrierRepathed: string;
+  /** That value is registered on another of its kind. */
+  carrierNested: string;
+  /** That value is registered more than once. */
+  carrierRegisteredTwice: string;
 }
-
-/**
- * Where the object a mount is called on states its prefix. flask-restx
- * needs both fields: `Api(prefix=...)` states one on the object itself,
- * and the Flask blueprint the `Api` was built from states another with
- * `Blueprint(name, __name__, url_prefix=...)`. A route is served under
- * the blueprint's prefix, then the `Api`'s, then the namespace's path and
- * the route's own.
- */
-export interface MountObjectPrefix {
-  /** Keyword stating a prefix on the mount object's own construction (flask-restx's `Api(prefix=...)`). */
-  prefixKeyword?: string;
-  /** The object handed to that construction which states a prefix of its own. */
-  carrier?: MountObjectCarrier;
-}
-
-/**
- * An object passed to the mount object's constructor that has a prefix of
- * its own, such as the Flask blueprint an `Api` is built from. Declaring
- * its constructor lets the adapter tell it apart from the plain app, which
- * is passed in the same argument position and has no prefix.
- */
-export interface MountObjectCarrier {
-  /** Modules the carrier's constructor is imported from (Flask's `flask`). */
-  importModule: string[];
-  /** Constructor building the carrier, as its library exports it (Flask's `Blueprint`). */
-  constructorName: string;
-  /** Position of the carrier among the mount object's constructor arguments. */
-  argumentIndex: number;
-  /** The keyword for the carrier's prefix, at its construction and its registration alike (Flask's `url_prefix`). */
-  prefixKeyword: string;
-  /**
-   * Method that passes the carrier to a mount object already built, as
-   * flask-restx's `init_app` does in an application factory in place of
-   * `Api(blueprint)`. Unset means the constructor argument is the only
-   * way to pass one.
-   */
-  handoffMethodName?: string;
-  /**
-   * Method that registers the carrier somewhere else (Flask's
-   * `register_blueprint`). The adapter reads it only to decide when to
-   * abstain. A registration that restates the prefix, registers the
-   * carrier inside another carrier, or registers it twice serves the
-   * routes somewhere other than where the carrier's construction says.
-   */
-  registerMethodName: string;
-}
-
-export type MountPrefixEffect = "prefixes" | "replaces";
-
-export type PrefixTrailingSlash = "kept" | "trimmed";
-
-export type NoValuePrefix = "unstated" | "unreadable";
-
-/** Werkzeug merges repeated slashes, so Flask needs "merged". Starlette does not, so FastAPI keeps "kept". */
-export type PathRepeatedSlashes = "kept" | "merged";

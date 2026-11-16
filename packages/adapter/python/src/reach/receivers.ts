@@ -22,8 +22,8 @@ import { nodeId, readKey } from "../facts/values.js";
 
 import type { ReceiverOf } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { BoundPythonFile } from "../boundFiles.js";
 import type { PyNode } from "../parser.js";
-import type { BoundPythonFile } from "../routers.js";
 
 /** The object a method call is made on, `repo` in `repo.get_one(1)`, or null for a call written as a name. */
 export function receiverOf(call: PyNode): PyNode | null {

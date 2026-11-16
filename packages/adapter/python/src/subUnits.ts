@@ -42,10 +42,10 @@ import type {
   RawCodeStructure,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { LambdaClaims, NamedClaim } from "./lambdaClaims.js";
 import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { StorageLookup } from "./storage.js";
 
 /** A pack's `subUnits` hook, beside the pack's name. */

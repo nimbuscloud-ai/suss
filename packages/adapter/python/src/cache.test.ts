@@ -26,6 +26,7 @@ vi.mock("./version.js", async (importOriginal) => {
 });
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
@@ -39,8 +40,7 @@ const flaskRestxLike: PythonPack = {
     {
       type: "decoratedClassRoute",
       importModule: ["myapp.wrappers.restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET", post: "POST" },
+      routes: flaskRestxTestRoutes(["myapp.wrappers.restx"]),
     },
   ],
 };
@@ -153,13 +153,7 @@ describe("extractPythonProject's on-disk cache", () => {
           {
             type: "decoratedClassRoute",
             importModule: ["flask_restx"],
-            decoratorName: "route",
-            verbMethodNames: { get: "GET" },
-            routerComposition: {
-              routerConstructorName: "Namespace",
-              includeMethodName: "add_namespace",
-              prefixKeyword: "path",
-            },
+            routes: flaskRestxTestRoutes(["flask_restx"], ["get"]),
           },
         ],
       },

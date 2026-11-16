@@ -46,7 +46,6 @@ export {
   keptPythonParses,
   parsePythonAhead,
 } from "./project.js";
-export { buildRouterIndex } from "./routers.js";
 export { bindModule, resolveName } from "./scope.js";
 export { pythonSourceRoots, readTomlFile, tableAt } from "./sourceRoots.js";
 // The environment chain this adapter runs on every body, and the reads
@@ -57,6 +56,7 @@ export { pythonImportEvidence } from "./stubEvidence.js";
 export { ADAPTER_VERSION } from "./version.js";
 
 export type { AnnotationContext } from "./annotations.js";
+export type { BoundPythonFile } from "./boundFiles.js";
 export type { DecoratorArg, DecoratorClassification } from "./decorators.js";
 export type { DiscoveryOptions } from "./discovery.js";
 export type {
@@ -72,13 +72,7 @@ export type {
   DeclaredRoutes,
   DecoratedClassRoute,
   DecoratedFunctionRoute,
-  MountObjectCarrier,
-  MountObjectPrefix,
-  MountPrefixEffect,
-  NoValuePrefix,
   ParameterSource,
-  PathRepeatedSlashes,
-  PrefixTrailingSlash,
   PyCallArgument,
   PyDefaultTaskName,
   PyEnqueueMethod,
@@ -92,8 +86,8 @@ export type {
   PythonDiscoveryPattern,
   PythonPack,
   RequestObject,
+  RootUnreadWords,
   RouteConventions,
-  RouterComposition,
   RouterUnreadWords,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
@@ -103,11 +97,6 @@ export type {
   FileFactsOptions,
   KeptPythonParses,
 } from "./project.js";
-export type {
-  BoundPythonFile,
-  RoutePrefixResolution,
-  RouterIndex,
-} from "./routers.js";
 export type { Binding, ModuleBinding, Scope, ScopeKind } from "./scope.js";
 export type {
   PythonSourceRoots,

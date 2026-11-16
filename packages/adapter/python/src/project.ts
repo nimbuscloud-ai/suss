@@ -90,10 +90,8 @@ import {
   pythonEntryReuse,
   storedFunction,
   WalkReplay,
-  watchRouterIndex,
   watchRouteTables,
 } from "./reuse.js";
-import { buildRouterIndex, routerCompositionOf } from "./routers.js";
 import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
@@ -126,6 +124,7 @@ import type {
   StoredDependencies,
   StoredFacts,
 } from "@suss/resolution";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
@@ -137,7 +136,6 @@ import type {
   StoredRegistration,
   StoredUnit,
 } from "./reuse.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { ModuleBinding } from "./scope.js";
 import type { UnreadManifest } from "./sourceRoots.js";
 import type { StorageLookup } from "./storage.js";
@@ -565,12 +563,7 @@ async function runPython(
 
   // Every body's environment reads go through the read chains, which ask
   // the value facts, so those are emitted once here for the whole run.
-  // Discovery, router mounting and the packs' hooks ask them too.
-  const mountsRouters = options.packs.some((pack) =>
-    pack.discovery.some(
-      (pattern) => routerCompositionOf(pattern) !== undefined,
-    ),
-  );
+  // Discovery, the route tables and the packs' hooks ask them too.
   const declaredHooks = packRecognizers(options.packs, tallies);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);
@@ -612,22 +605,7 @@ async function runPython(
   reportUnresolvedProjectModules(options.packs, roots, db);
   const subUnits = subUnitClaims(db, options.packs, tallies);
 
-  const plainRouterIndex = timer.time("discover", () =>
-    buildRouterIndex(bound, options.packs, {
-      roots,
-      ...(mountsRouters ? { facts: db } : {}),
-    }),
-  );
   const positions = new PackPositions(options.packs);
-  const routerIndex =
-    ledger === null
-      ? plainRouterIndex
-      : watchRouterIndex(
-          plainRouterIndex,
-          db,
-          positions,
-          new Map(bound.map((one) => [one.module, one.file])),
-        );
   const plainRoutes = timer.time("discover", () =>
     buildRouteTables(bound, options.packs, db),
   );
@@ -677,7 +655,6 @@ async function runPython(
             log,
             lookAgain: lookAgainIn({
               db,
-              routerIndex: plainRouterIndex,
               routes: plainRoutes,
               wrapperIndex,
               positions,
@@ -730,7 +707,6 @@ async function runPython(
         packs: options.packs,
         filePath: displayPathOf(file),
         absoluteFile: file,
-        routerIndex,
         routes,
         gapHandling,
         wrappers: wrapperIndex,

@@ -287,7 +287,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `receiver()` | a name or a field followed to what it was written as, through the adapter's `writtenAs`, and then through a call into a project function to what it returns |
 | `callee()`, `argument(k)` | a name followed to what it was written as, through the adapter's `writtenAs`. A field is not followed, since the readers of a command object rely on reading a name alone |
 | `returnedCall()` | the one `returnsValue(f, x)` row of the function the callee comes to, when `x` is a call whose `callArg` rows are `f`'s parameters at their own positions and nothing else |
-| `dropped(owned)` | the adapter's `dropped`: Python asks the shared `passedOn` rules about the one local the call's value is written to, the way its router index asks about a dropped app. TypeScript and Ruby drop nothing |
+| `dropped(owned)` | the adapter's `dropped`: Python asks the shared `passedOn` rules about the one local the call's value is written to. TypeScript and Ruby drop nothing |
 | `callerSite()` | the `makesCall(f, r)` row on the call, or null for a call at the top of a file |
 | `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read off `computedKeyAt` at the entry's position through `nameOf`. A call into a project function is read as the one value it returns, through `writtenAs` on the call, and a library call or a construction stays as written. An object's spread is read in its place, its name or project call followed the same way, or failing that through `comesTo`, and a key written twice keeps its first place and takes the later value. A list built by mapping is one item, read off `eachElement`: what the function a call hands over returns, from its one `returnsValue` row, or the element a comprehension writes. A list's spread is left out |
 | `object()` | the value itself when it is an object written out, or else the one object among the adapter's `comesTo` answers, any function among them left out. `comesTo(x, z)` follows names and calls that return their argument, and never a factory call |
@@ -673,18 +673,27 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   adapter that asks the rules once per question can ask once per file.
   A receiver written as two values, a name assigned two routers, comes
   to none, and `receiverCalls()` lists both: an entry on two roots
-  serves at its own path, since a root adds none, and one on two
-  routers is `unreached` with `shared` set.
+  serves under the path both put in front of it, and is `unreached` with
+  `shared` set when they put different ones there, as an entry on two
+  routers is.
 - A module the file imports whole, `import fastapi`, which the module
-  ops list through `importedWhole`, names each root and scope under its
-  own name, so `fastapi.APIRouter(...)` is a router.
+  ops list through `importedWhole`, names each root, scope and decorated
+  serves role under its own name, so `fastapi.APIRouter(...)` is a
+  router.
+- A decorator written as a name the file imports from the table's
+  modules, `@route("/x")` after `from wrapper import route` with
+  `wrapper` among `from`, is the library's own decorator. It is made on
+  no value and serves at its own path. It is read that way ahead of
+  `throughWrappers`, so a module a project says re-exports the library
+  gives its users the library's names.
 - `methods: { members }` serves each method of a decorated class whose
   name the list has, upper-cased, with the method as the handler and the
   class as the outcome's `owner`, which is how flask-restx writes a
   resource.
 - `throughWrappers` reads a decorator written as a call to a project
   function as the library call that function returns, through
-  `returnedCall()`, with the decorator's own arguments.
+  `returnedCall()`, with the decorator's own arguments. The outcome
+  gives that call as `made`, so a reader can find what it is made on.
 - A mount role with `prefix` mounts a value. Its table pick is read
   with `asCall({ follow: "namesAndFields" })`, so `users.router` is the
   `APIRouter(...)` the module assigns, and the call that built it is
@@ -708,7 +717,9 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   built with.
 - `joins` puts a prefix and a path together as strings: `asWritten`
   writes one after the other, as FastAPI does, and `merged` then merges
-  repeated slashes, as Werkzeug serves a path.
+  repeated slashes, as Werkzeug serves a path. A reader that reads an
+  entry's own path itself puts it after the outcome's `prefix` through
+  `joinedTablePath`, the same join.
 - `unlessDropped` leaves out a root its function drops, as
   `CallOps.dropped` says, with every entry made on it, and a value a
   root would mount that its function drops the same way. It takes the
@@ -716,6 +727,36 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   because FastAPI's middleware and exception handler decorators are
   registrations that are no role of the table, and an app that only
   has those called on it is still dropped.
+
+flask-restx serves an `Api`'s routes under a path the `Api` states and
+one the Flask blueprint it is built within states:
+
+```ts
+roots: {
+  kinds: { Api: 0 }, children: { in: "receiver" }, in: "file",
+  path: [{ keyword: "prefix" }], noValue: "unstated",
+  carrier: {
+    at: { at: 0 }, handedBy: "init_app", from: ["flask"],
+    paths: { Blueprint: [{ keyword: "url_prefix" }] }, noValue: "unstated",
+    registeredBy: { method: "register_blueprint", at: { at: 0 }, path: [{ keyword: "url_prefix" }] },
+  },
+},
+```
+
+- A root's `path` goes in front of every route under it, read the way
+  a scopes role with `noValue` reads its own.
+- A root's `carrier` is the value it is built within: the one its
+  construction states at `at`, or one a `handedBy` call made on it
+  states there later. A construction of a name in `paths`, imported
+  from the carrier's `from`, puts its path in front of the root's. Any
+  other construction from those modules, such as the Flask app,
+  puts nothing there. The carrier is read with `asCall({ follow:
+  "namesAndFields" })`, and a name written as two values is told apart
+  through `asCalls()`.
+- A carrier's registrations, the `registeredBy` calls whose `at` comes
+  to it, are read only for whether they move it somewhere its own path
+  no longer says: a registration that states a path at all, one made on
+  another carrier with a path, or a second registration.
 
 What such a table cannot claim a path for comes back as an outcome
 with a `ReceiverUnread` reason. A `routeTable` pattern says a sentence
@@ -732,6 +773,18 @@ with no path where to look, so each cause has its own.
 | `prefixUnstated` | a scope above it states no path where its library makes one up, as flask-restx does for a namespace, so the path served is one the source never states |
 | `prefixReplaced` | a mount above it states a path that replaces the scope's own, which flask-restx does and the table does not follow |
 | `cycle` | a mount above it leads back into a value the walk is already inside. The value's entries are walked once more with no path claimed, so every route on the cycle, and under it, is unread, since the cycle gives it no one path |
+| `rootPrefixUnread` | the path its root states does not read |
+| `carrierSeveral` | its root is built within one carrier and handed another, or handed two |
+| `carrierUnfollowed` | its root's carrier comes to no construction from the carrier's modules |
+| `carrierShared` | its root's carrier is a name assigned more than one value |
+| `carrierPrefixUnread` | the path its root's carrier states does not read |
+| `carrierRepathed` | its root's carrier is registered with a path of the registration's own, which Flask reads three ways depending on what it is |
+| `carrierNested` | its root's carrier is registered on another carrier, which the table does not follow |
+| `carrierRegisteredTwice` | its root's carrier is registered more than once |
+
+A reason about a root or its carrier is said before any reason about
+what is mounted under it, except a scope's own path, since a router is
+built with its prefix whatever it is mounted on.
 
 An outcome also says where it is, so a reader can word the reason the
 way the library's users would and run what is registered on the way.
@@ -740,9 +793,10 @@ the walk came down, outermost first, each the mount call and the value
 it mounts, and the `prefix` in front of its own path. An unread one
 has `on`, the value it is made on, and `router`, the value its reason
 is about: the scope whose path did not read, the value a mount that
-did not read or that a loop rivals mounts, or the value a cycle leads
-back into. A decorated entry's unread outcome has its `method`, one
-for each method it would serve.
+did not read or that a loop rivals mounts, the value a cycle leads
+back into, or the root for a reason about the root or its carrier. A
+decorated entry's unread outcome has its `method`, one for each method
+it would serve.
 
 An entry no walk reaches is read the way a walk would have read it, in
 the order a library stops serving a route: its value's own prefix,

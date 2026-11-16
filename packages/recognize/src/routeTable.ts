@@ -19,6 +19,7 @@ import { constructedFrom } from "./ops.js";
 import type {
   BaseRole,
   CallOps,
+  CarrierRule,
   ChildrenIn,
   DefaultsRole,
   EntryPick,
@@ -48,6 +49,7 @@ import type {
 
 export type {
   BaseRole,
+  CarrierRule,
   ChildrenIn,
   DefaultsRole,
   EntryPick,
@@ -100,6 +102,8 @@ interface ReceiverEntry {
   readonly value: CallOps | null;
   /** When the receiver comes to no one call, each call it is written as, such as a name assigned two routers. */
   readonly shared: readonly CallOps[];
+  /** Set for a decorator written as a name the file imports from the table's modules, which is made on no value and serves at its own path. */
+  readonly bare?: true;
 }
 
 interface ReceiverItem {
@@ -131,6 +135,12 @@ interface Receivers {
   readonly mountedBy: ReadonlyMap<string, readonly ReceiverEntry[]>;
   /** The names each file imports from the table's modules, by its path, so a value built in another file is named the way that file names it. */
   readonly names: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /** By the site of a root, each call that hands it a carrier after it is built. */
+  readonly handed: ReadonlyMap<string, readonly CallOps[]>;
+  /** By the site of the call that built a carrier, each call that registers it. */
+  readonly registered: ReadonlyMap<string, readonly CallOps[]>;
+  /** Each file read, by its path, so a carrier's constructor is read under the name its own file imports it as. */
+  readonly modules: ReadonlyMap<string, ModuleOps>;
 }
 
 /** Why an entry whose handler is a value gave no route, with the loops that may mount it and the value the reason is about. */
@@ -196,6 +206,8 @@ interface Entry {
   readonly decorated?: ValueOps | null;
   /** For an entry made on a value, the call that built it. */
   readonly on?: CallOps | null;
+  /** For a decorator written as a call to a project wrapper, the library call the wrapper returns. */
+  readonly made?: CallOps;
 }
 
 interface Walk {
@@ -229,10 +241,14 @@ interface Walk {
   readonly dropped: Set<string>;
   /** By site, whether a value a root would mount is kept by its function, once asked. */
   readonly kept: Map<string, boolean>;
+  /** By site, the scope a root's entries walk under, once read. */
+  readonly rootScopes: Map<string, Scope>;
 }
 
 interface Root {
   readonly kind: string;
+  /** The root call, or null for a file's elements walked in place. */
+  readonly call: CallOps | null;
   readonly children: Children;
   readonly displayPath: string;
   readonly names: ReadonlyMap<string, string>;
@@ -296,6 +312,7 @@ export function composeRoutes(
     cycled: new Set(),
     dropped: new Set(),
     kept: new Map(),
+    rootScopes: new Map(),
   };
   const appRoots: Root[] = [];
   for (const { module, displayPath } of sources.files) {
@@ -321,7 +338,11 @@ export function composeRoutes(
   for (const { root } of ordered) {
     walk.names = root.names;
     inFile(walk, root.displayPath, () => {
-      walkChildren(root.children, EMPTY_SCOPE, walk);
+      walkChildren(
+        root.children,
+        root.call === null ? EMPTY_SCOPE : rootScope(root.call, walk),
+        walk,
+      );
     });
   }
   sayUnreached(walk);
@@ -349,12 +370,17 @@ function namesImported(
   if (table.from === undefined) {
     return new Map();
   }
-  if (!table.from.some((name) => module.mentions(name))) {
+  // `from pkg import mod` writes only the module's last part.
+  if (
+    !table.from.some((name) =>
+      module.mentions(name.slice(name.lastIndexOf(".") + 1)),
+    )
+  ) {
     return null;
   }
   const names = new Map(module.importedNames(table.from));
   for (const alias of module.importedWhole?.(table.from) ?? []) {
-    for (const name of builtNames(table)) {
+    for (const name of namesUnderModule(table)) {
       names.set(`${alias}.${name}`, name);
     }
   }
@@ -365,12 +391,18 @@ function namesImported(
   return [...names.values()].some((name) => read.has(name)) ? names : null;
 }
 
-/** The names of the calls a root or a scope is built by, which a walk reads by the call rather than through a receiver. */
-function builtNames(table: RouteTableDeclaration): string[] {
+/**
+ * The names a module imported whole is read under: the calls a root or
+ * a scope is built by, which a walk reads by the call rather than through
+ * a receiver, and the decorators a serves role reads as the library's own.
+ */
+function namesUnderModule(table: RouteTableDeclaration): string[] {
   return [
     ...Object.keys(table.roots.kinds),
     ...Object.entries(table.roles)
-      .filter(([, role]) => role.role === "scopes")
+      .filter(
+        ([, role]) => role.role === "scopes" || foundBy(role) === "decorator",
+      )
       .map(([name]) => name),
   ];
 }
@@ -384,7 +416,13 @@ function elementRoot(
   const entries = module
     .elements()
     .map((value): EntrySource => ({ form: "element", value }));
-  return { kind: "", children: { entries, list: null }, displayPath, names };
+  return {
+    kind: "",
+    call: null,
+    children: { entries, list: null },
+    displayPath,
+    names,
+  };
 }
 
 function collectRoot(
@@ -493,6 +531,7 @@ function asRoot(
     owner,
     root: {
       kind,
+      call,
       children: rootListAt(children, call),
       displayPath,
       names: walk.names,
@@ -537,6 +576,195 @@ function rootListAt(children: Children, call: CallOps): Children {
           : entry,
     ),
   };
+}
+
+/**
+ * The scope a root's entries walk under: the path its carrier puts in
+ * front, then the root's own, or no path claimed when either does not
+ * read, read once for each root.
+ */
+function rootScope(root: CallOps, walk: Walk): Scope {
+  const site = root.site?.() ?? "";
+  const known = walk.rootScopes.get(site);
+  if (known !== undefined) {
+    return known;
+  }
+  const scope = scopeOfRoot(root, walk);
+  walk.rootScopes.set(site, scope);
+  return scope;
+}
+
+function scopeOfRoot(root: CallOps, walk: Walk): Scope {
+  const rule = walk.table.roots;
+  if (rule.path === undefined && rule.carrier === undefined) {
+    return EMPTY_SCOPE;
+  }
+  const own = prefixRead(
+    pickedFrom(root, rule.path ?? []),
+    rule.noValue ?? "unreadable",
+    EMPTY_SCOPE,
+  );
+  if (own.kind === "unreadable") {
+    return {
+      ...EMPTY_SCOPE,
+      unread: { reason: "rootPrefixUnread", router: root },
+    };
+  }
+  const carried =
+    rule.carrier === undefined
+      ? NO_CARRIER
+      : carriedPath(root, rule.carrier, walk);
+  if (carried.kind === "unread") {
+    return { ...EMPTY_SCOPE, unread: { reason: carried.reason, router: root } };
+  }
+  return {
+    ...EMPTY_SCOPE,
+    pathPrefix:
+      own.kind === "stated"
+        ? joinTablePath(walk, carried.path, own.value)
+        : carried.path,
+  };
+}
+
+/** The reasons a carrier gives a root no path. */
+type CarrierUnread = Extract<
+  ReceiverUnread,
+  | "carrierSeveral"
+  | "carrierUnfollowed"
+  | "carrierShared"
+  | "carrierPrefixUnread"
+  | "carrierRepathed"
+  | "carrierNested"
+  | "carrierRegisteredTwice"
+>;
+
+/** What a root's carrier puts in front of the root's own path, or why it gives the root no path. */
+type Carried =
+  | { readonly kind: "path"; readonly path: string }
+  | { readonly kind: "unread"; readonly reason: CarrierUnread };
+
+const NO_CARRIER: Carried = { kind: "path", path: "" };
+
+/**
+ * What the value a root is built within, or is handed later, puts in
+ * front of the root's path: the path its construction states, nothing
+ * for a construction from the carrier's modules that states none, or
+ * why it gives the root no path. A registration is read only for whether
+ * it moves the carrier somewhere its own path no longer says.
+ */
+function carriedPath(root: CallOps, rule: CarrierRule, walk: Walk): Carried {
+  const handed =
+    rule.handedBy === undefined
+      ? []
+      : (receiversOf(walk).handed.get(root.site?.() ?? "") ?? []);
+  const candidates = [root, ...handed].flatMap(
+    (call) => pickedFrom(call, [rule.at]) ?? [],
+  );
+  if (candidates.length > 1) {
+    return { kind: "unread", reason: "carrierSeveral" };
+  }
+  const [candidate] = candidates;
+  if (candidate === undefined) {
+    return NO_CARRIER;
+  }
+  const built = candidate.asCall?.({ follow: "namesAndFields" }) ?? null;
+  if (built === null) {
+    const shared = (candidate.asCalls?.() ?? []).length > 0;
+    return {
+      kind: "unread",
+      reason: shared ? "carrierShared" : "carrierUnfollowed",
+    };
+  }
+  const name = carrierName(built, rule, walk);
+  if (name === null) {
+    return { kind: "unread", reason: "carrierUnfollowed" };
+  }
+  if (!Object.hasOwn(rule.paths, name)) {
+    return NO_CARRIER;
+  }
+  const registered = registrationUnread(built, rule, walk);
+  if (registered !== null) {
+    return { kind: "unread", reason: registered };
+  }
+  const path = prefixRead(
+    pickedFrom(built, rule.paths[name] ?? []),
+    rule.noValue ?? "unreadable",
+    EMPTY_SCOPE,
+  );
+  if (path.kind === "unreadable") {
+    return { kind: "unread", reason: "carrierPrefixUnread" };
+  }
+  return { kind: "path", path: path.kind === "stated" ? path.value : "" };
+}
+
+/**
+ * Why the registrations of a carrier leave it somewhere its own path no
+ * longer says, or null when they do not: a second registration, one that
+ * states a path of its own, whatever it states, or one made on another
+ * carrier with a path.
+ */
+function registrationUnread(
+  carrier: CallOps,
+  rule: CarrierRule,
+  walk: Walk,
+): CarrierUnread | null {
+  const registration = rule.registeredBy;
+  if (registration === undefined) {
+    return null;
+  }
+  const made = receiversOf(walk).registered.get(carrier.site?.() ?? "") ?? [];
+  if (made.length > 1) {
+    return "carrierRegisteredTwice";
+  }
+  const [only] = made;
+  if (only === undefined) {
+    return null;
+  }
+  if (pickedFrom(only, registration.path) !== undefined) {
+    return "carrierRepathed";
+  }
+  const onto = only.receiver();
+  const ontoName = onto === null ? null : carrierName(onto, rule, walk);
+  return ontoName !== null && Object.hasOwn(rule.paths, ontoName)
+    ? "carrierNested"
+    : null;
+}
+
+/**
+ * The name a carrier's construction is imported under from the carrier's
+ * modules, read the way its own file imports it, as a name or off a
+ * module it imports whole. Null for a construction from anywhere else.
+ */
+function carrierName(
+  built: CallOps,
+  rule: CarrierRule,
+  walk: Walk,
+): string | null {
+  const module = receiversOf(walk).modules.get(built.file?.() ?? "");
+  if (module === undefined) {
+    return null;
+  }
+  const written = built.calleeText();
+  const named = module.importedNames(rule.from).get(written);
+  if (named !== undefined) {
+    return named;
+  }
+  const dot = written.indexOf(".");
+  const whole = module.importedWhole?.(rule.from) ?? new Set<string>();
+  return dot > 0 && whole.has(written.slice(0, dot))
+    ? written.slice(dot + 1)
+    : null;
+}
+
+/** The value the first pick that gives one reads off a call, with only the keywords those picks name read. */
+function pickedFrom(
+  call: CallOps,
+  picks: readonly EntryPick[],
+): ValueOps | undefined {
+  const keywords = picks.flatMap((pick) =>
+    "keyword" in pick ? [pick.keyword] : [],
+  );
+  return firstPicked(callArgs(call, keywords, {}), picks);
 }
 
 /**
@@ -764,27 +992,44 @@ function receiversOf(walk: Walk): Receivers {
  * Every entry made on a value in the files read, by the value its
  * receiver comes to: the decorators of a serves role whose handler is
  * decorated, and the calls of the other serves and mount roles. Each
- * mount written in a loop the table cannot list is kept as well.
+ * mount written in a loop the table cannot list is kept as well, and so
+ * is each call that hands a root a carrier or registers one.
  */
 function indexReceivers(walk: Walk): Receivers {
   const decoratedRoles = rolesFoundBy("decorator", walk.table);
   const calledRoles = rolesFoundBy("call", walk.table);
+  const carrier = carrierMethods(walk.table.roots.carrier);
   const byValue = new Map<string, ReceiverEntry[]>();
   const decorated: ReceiverEntry[] = [];
   const unlisted: ReceiverEntry[] = [];
   const mountedBy = new Map<string, ReceiverEntry[]>();
   const names = new Map<string, ReadonlyMap<string, string>>();
+  const handed = new Map<string, CallOps[]>();
+  const registered = new Map<string, CallOps[]>();
+  const modules = new Map<string, ModuleOps>();
   for (const { module } of walk.sources.files) {
+    modules.set(module.path(), module);
     const imported = namesImported(module, walk.table);
     if (imported !== null) {
       names.set(module.path(), imported);
     }
+    const decoratedInFile = decoratedEntries(
+      module,
+      decoratedRoles,
+      imported,
+      walk,
+    );
+    const called = callsTo(module, new Set([...calledRoles, ...carrier]));
     const inFile = [
-      ...decoratedEntries(module, decoratedRoles, walk),
-      ...calledEntries(module, calledRoles),
+      ...decoratedInFile,
+      ...calledEntries(called, calledRoles),
     ].sort((a, b) =>
       bySourceOrder(a.call.site?.() ?? "", b.call.site?.() ?? ""),
     );
+    indexCarrierCalls(called, walk.table.roots.carrier, {
+      handed,
+      registered,
+    });
     for (const entry of inFile) {
       const value = entry.value?.site?.();
       if (value !== undefined) {
@@ -802,7 +1047,57 @@ function indexReceivers(walk: Walk): Receivers {
       }
     }
   }
-  return { byValue, decorated, unlisted, mountedBy, names };
+  return {
+    byValue,
+    decorated,
+    unlisted,
+    mountedBy,
+    names,
+    handed,
+    registered,
+    modules,
+  };
+}
+
+/** The methods a carrier is handed to a root or registered with. */
+function carrierMethods(rule: CarrierRule | undefined): string[] {
+  return [
+    ...(rule?.handedBy === undefined ? [] : [rule.handedBy]),
+    ...(rule?.registeredBy === undefined ? [] : [rule.registeredBy.method]),
+  ];
+}
+
+/** Each call that hands a root its carrier, by the root its receiver comes to, and each that registers a carrier, by the carrier it registers. */
+function indexCarrierCalls(
+  calls: readonly CallOps[],
+  rule: CarrierRule | undefined,
+  into: {
+    readonly handed: Map<string, CallOps[]>;
+    readonly registered: Map<string, CallOps[]>;
+  },
+): void {
+  if (rule === undefined) {
+    return;
+  }
+  for (const call of calls) {
+    const method = call.method();
+    if (method !== null && method === rule.handedBy) {
+      const root = call.receiver()?.site?.();
+      if (root !== undefined) {
+        pushTo(into.handed, root, call);
+      }
+      continue;
+    }
+
+    if (method !== null && method === rule.registeredBy?.method) {
+      const carrier = pickedFrom(call, [rule.registeredBy.at])
+        ?.asCall?.({ follow: "namesAndFields" })
+        ?.site?.();
+      if (carrier !== undefined) {
+        pushTo(into.registered, carrier, call);
+      }
+    }
+  }
 }
 
 function pushTo<V>(map: Map<string, V[]>, key: string, value: V): void {
@@ -830,10 +1125,11 @@ function foundBy(role: RouteRole): "decorator" | "call" | null {
   return role.role === "mount" ? "call" : null;
 }
 
-/** The decorators that call one of the roles' methods on a value, each with the definition under it. */
+/** The decorators that call one of the roles' methods on a value, or call one the library exports, each with the definition under it. */
 function decoratedEntries(
   module: ModuleOps,
   roles: ReadonlySet<string>,
+  names: ReadonlyMap<string, string> | null,
   walk: Walk,
 ): ReceiverEntry[] {
   if (roles.size === 0) {
@@ -845,21 +1141,37 @@ function decoratedEntries(
       if (decorator.form !== "call") {
         return [];
       }
-      const made = madeOn(decorator.call, walk);
-      const name = made?.method() ?? null;
-      return made !== null && name !== null && roles.has(name)
-        ? [
-            {
-              name,
-              call: decorator.call,
-              made,
-              decorated: definition,
-              ...receiverOf(made),
-            },
-          ]
-        : [];
+      const entry = decoratedEntry(decorator.call, roles, names, walk);
+      return entry === null ? [] : [{ ...entry, decorated: definition }];
     }),
   );
+}
+
+/**
+ * The entry a decorator call is, without its definition. One written as
+ * a name the file imports from the table's modules is the library's own
+ * and is made on no value, ahead of reading it as a call made on one or
+ * through a project wrapper, as a module that re-exports the library
+ * gives its users the library's names.
+ */
+function decoratedEntry(
+  call: CallOps,
+  roles: ReadonlySet<string>,
+  names: ReadonlyMap<string, string> | null,
+  walk: Walk,
+): Omit<ReceiverEntry, "decorated"> | null {
+  const own =
+    names === null || walk.table.from === undefined
+      ? null
+      : callNameIn(call, names, walk.table);
+  if (own !== null && roles.has(own)) {
+    return { name: own, call, made: call, value: null, shared: [], bare: true };
+  }
+  const made = madeOn(call, walk);
+  const name = made?.method() ?? null;
+  return made !== null && name !== null && roles.has(name)
+    ? { name, call, made, ...receiverOf(made) }
+    : null;
 }
 
 /** The call a decorator makes on a value: itself, or the library call a project wrapper it calls returns. */
@@ -872,17 +1184,25 @@ function madeOn(call: CallOps, walk: Walk): CallOps | null {
     : null;
 }
 
-/** The calls the file writes to one of the roles' methods. */
-function calledEntries(
-  module: ModuleOps,
-  roles: ReadonlySet<string>,
-): ReceiverEntry[] {
+/** The calls the file writes to one of the methods, with their receivers asked about in one round. */
+function callsTo(module: ModuleOps, methods: ReadonlySet<string>): CallOps[] {
   // Listing a file's calls costs more than asking its text for a name.
-  if (![...roles].some((name) => module.mentions(name))) {
+  if (![...methods].some((name) => module.mentions(name))) {
     return [];
   }
-  module.readingReceivers?.(roles, "calls");
-  return module.calls("file").flatMap((call) => {
+  module.readingReceivers?.(methods, "calls");
+  return module.calls("file").filter((call) => {
+    const name = call.method();
+    return name !== null && methods.has(name);
+  });
+}
+
+/** The entries among the calls, each a call to one of the roles' methods. */
+function calledEntries(
+  calls: readonly CallOps[],
+  roles: ReadonlySet<string>,
+): ReceiverEntry[] {
+  return calls.flatMap((call) => {
     const name = call.method();
     return name !== null && roles.has(name)
       ? [{ name, call, made: call, decorated: null, ...receiverOf(call) }]
@@ -1107,10 +1427,23 @@ const STRING_JOINS: Readonly<
 };
 
 function joinTablePath(walk: Walk, prefix: string, segment: string): string {
-  if (walk.table.joins !== undefined) {
-    return STRING_JOINS[walk.table.joins](prefix, segment);
+  return joinedTablePath(walk.table, prefix, segment);
+}
+
+/**
+ * A path after the prefix in front of it, the way the table joins the
+ * two, for a reader that reads an entry's own path itself and serves it
+ * under the outcome's `prefix`.
+ */
+export function joinedTablePath(
+  table: RouteTableDeclaration,
+  prefix: string,
+  segment: string,
+): string {
+  if (table.joins !== undefined) {
+    return STRING_JOINS[table.joins](prefix, segment);
   }
-  return walk.table.absolutePaths === "standAlone"
+  return table.absolutePaths === "standAlone"
     ? joinStandAlone(prefix, segment)
     : joinRoutePath(prefix, segment);
 }
@@ -1269,10 +1602,16 @@ function readReceiverEntry(
       args: callArgs(found.call, walk.keywords, scope.defaults),
       decorated: found.decorated,
       on: found.value,
+      ...madeBy(found),
     },
     scope,
     walk,
   );
+}
+
+/** The library call a project wrapper the entry calls returns, when that is what is made on the value rather than the entry itself. */
+function madeBy(found: ReceiverEntry): { made?: CallOps } {
+  return found.made === found.call ? {} : { made: found.made };
 }
 
 function readAs(role: RouteRole, entry: Entry, scope: Scope, walk: Walk): void {
@@ -1488,6 +1827,7 @@ function readServesDecorated(
     return;
   }
   const served = servedBy(role, definition, entry.args, scope, walk);
+  const made = entry.made === undefined ? {} : { made: entry.made };
   const unread = unreadAt(scope, own);
   if (unread !== null) {
     const prefix = scope.unread === null ? { prefix: scope.pathPrefix } : {};
@@ -1499,6 +1839,7 @@ function readServesDecorated(
         }),
         method: one.method,
         ...prefix,
+        ...made,
       });
     }
     return;
@@ -1514,6 +1855,7 @@ function readServesDecorated(
       ...(one.owner === undefined ? {} : { owner: one.owner }),
       mounts: scope.mounts,
       prefix: scope.pathPrefix,
+      ...made,
     });
   }
 }
@@ -2427,17 +2769,26 @@ function sayUnreached(walk: Walk): void {
   }
   const receivers = receiversOf(walk);
   for (const found of receivers.decorated) {
-    if (walk.read.has(found) || !onTableValue(found, walk)) {
+    if (walk.read.has(found)) {
       continue;
     }
 
-    // A root adds no path, so whichever of the roots a name is assigned
-    // runs serves the entry at its own path.
-    if (
-      found.shared.length > 0 &&
-      found.shared.every((one) => isRoot(one, walk))
-    ) {
+    // The library's own decorator is made on no value, so nothing puts a
+    // path in front of the entry's.
+    if (found.bare === true) {
       readReceiverEntry(found, EMPTY_SCOPE, walk);
+      continue;
+    }
+
+    if (!onTableValue(found, walk)) {
+      continue;
+    }
+
+    // Whichever of the roots a name is assigned runs, the entry is served
+    // under the path they all put in front of it.
+    const roots = sharedRootScope(found, walk);
+    if (roots !== null) {
+      readReceiverEntry(found, roots, walk);
       continue;
     }
 
@@ -2458,9 +2809,33 @@ function sayUnreached(walk: Walk): void {
           { on: found.value },
         ),
         method: one.method,
+        ...madeBy(found),
       });
     }
   }
+}
+
+/**
+ * The scope an entry on a name assigned only roots walks under: the one
+ * every such root's entries walk under, when they agree on it, or null
+ * when the name is assigned anything else or the roots disagree.
+ */
+function sharedRootScope(found: ReceiverEntry, walk: Walk): Scope | null {
+  if (
+    found.shared.length === 0 ||
+    !found.shared.every((one) => isRoot(one, walk))
+  ) {
+    return null;
+  }
+  const scopes = found.shared.map((one) => rootScope(one, walk));
+  const [first] = scopes;
+  return first !== undefined &&
+    first.unread === null &&
+    scopes.every(
+      (one) => one.unread === null && one.pathPrefix === first.pathPrefix,
+    )
+    ? first
+    : null;
 }
 
 /**

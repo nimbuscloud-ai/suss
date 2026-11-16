@@ -95,6 +95,48 @@ export interface RootRule {
    * `owned`, the library's own registrations that are no role.
    */
   readonly unlessDropped?: { readonly owned: readonly string[] };
+  /**
+   * Where a root states a path in front of every route under it, as
+   * flask-restx's `Api(prefix=)` does, read the way `noValue` says. A
+   * path that does not read leaves every route under the root unread.
+   */
+  readonly path?: readonly EntryPick[];
+  /** What a path written as no value means at the root, as `ScopesRole.noValue` says. Unset reads it as `unreadable`. */
+  readonly noValue?: "unstated" | "unreadable";
+  /** The value a root is built within, whose path goes in front of the root's own. */
+  readonly carrier?: CarrierRule;
+}
+
+/**
+ * The value a root is built within, such as the Flask blueprint that
+ * flask-restx's `Api(bp)` is built from, whose path goes in front of the
+ * root's. The root is handed it where it is built, or later through a
+ * method called on it, as `api.init_app(bp)` does. A carrier is read for
+ * its path alone, so one registered somewhere its own path no longer
+ * says leaves every route under the root unread: a registration that
+ * states a path, one made on another carrier, or a second registration.
+ */
+export interface CarrierRule {
+  /** Where the root's construction, and a hand-off, states the carrier. */
+  readonly at: EntryPick;
+  /** The method called on a root that hands it a carrier after it is built. */
+  readonly handedBy?: string;
+  /** The modules a carrier's construction is imported from. A carrier built by anything else is one the table cannot follow. */
+  readonly from: readonly string[];
+  /**
+   * Where each construction with a path of its own states it, by the
+   * name its module exports it under. Any other construction from those
+   * modules, such as the app itself, puts no path in front.
+   */
+  readonly paths: Readonly<Record<string, readonly EntryPick[]>>;
+  /** What a path written as no value means, as `ScopesRole.noValue` says. Unset reads it as `unreadable`. */
+  readonly noValue?: "unstated" | "unreadable";
+  /** The method that registers a carrier, where it states the carrier, and where it states a path of its own. */
+  readonly registeredBy?: {
+    readonly method: string;
+    readonly at: EntryPick;
+    readonly path: readonly EntryPick[];
+  };
 }
 
 /**
@@ -407,7 +449,23 @@ export type ReceiverUnread =
   /** A mount above it states a path that replaces the scope's own. */
   | "prefixReplaced"
   /** A mount above it leads back into a value the walk is already inside. */
-  | "cycle";
+  | "cycle"
+  /** The path the root states does not read. */
+  | "rootPrefixUnread"
+  /** The root is handed more than one carrier. */
+  | "carrierSeveral"
+  /** The root's carrier comes to no construction from the carrier's modules. */
+  | "carrierUnfollowed"
+  /** The root's carrier is written as a name assigned more than one value. */
+  | "carrierShared"
+  /** The path the root's carrier states does not read. */
+  | "carrierPrefixUnread"
+  /** The root's carrier is registered with a path of the registration's own. */
+  | "carrierRepathed"
+  /** The root's carrier is registered on another carrier, which the table does not follow. */
+  | "carrierNested"
+  /** The root's carrier is registered more than once. */
+  | "carrierRegisteredTwice";
 
 /** One mount a walk went through on its way down from a root: the mount call, and the call that built the value it mounts. */
 export interface MountHop {
@@ -429,6 +487,8 @@ export type RouteOutcome =
       readonly mounts?: readonly MountHop[];
       /** For a decorated entry, the path in front of its own, so a reader that reads the entry's path its own way can serve it. */
       readonly prefix?: string;
+      /** For a decorator written as a call to a project wrapper, the library call the wrapper returns. */
+      readonly made?: CallOps;
     }
   | {
       readonly kind: "unread";
@@ -445,6 +505,8 @@ export type RouteOutcome =
       readonly mounts?: readonly MountHop[];
       /** For a decorated entry whose own path is what did not read, the path in front of it. */
       readonly prefix?: string;
+      /** For a decorator written as a call to a project wrapper, the library call the wrapper returns. */
+      readonly made?: CallOps;
       /** For an entry found through a receiver, the call that built the value it is made on, when its receiver comes to one. */
       readonly on?: CallOps;
       /** For `unreached`, set when the receiver is written as more than one value, so no one of them is the one the entry is made on. */
@@ -453,8 +515,8 @@ export type RouteOutcome =
        * The value the reason is about, for a reader that says which one:
        * the scope whose path did not read, the value a mount that did not
        * read or that a loop rivals mounts, the value a cycle leads back
-       * into, and for `unreached`, the value a mount no walk reached
-       * mounts it onto. An entry no walk reached has no mounts, so a
+       * into, the root for a reason about the root or its carrier, and
+       * for `unreached`, the value a mount no walk reached mounts it onto. An entry no walk reached has no mounts, so a
        * reason about a value other than `on` is about the value it is
        * mounted onto.
        */
