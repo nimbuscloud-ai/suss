@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { discoverUnits, factsForFile, parseRuby } from "@suss/adapter-ruby";
+import {
+  createConstantFileCache,
+  discoverUnits,
+  factsForFile,
+  parseRuby,
+} from "@suss/adapter-ruby";
 
 import { faradayClient } from "./index.js";
 
@@ -15,7 +20,10 @@ async function unitsIn(source: string): Promise<RawCodeStructure[]> {
   return discoverUnits(tree.rootNode, {
     packs,
     filePath: FILE,
-    cache: { get: async () => null },
+    cache: {
+      get: async () => null,
+      constantFiles: createConstantFileCache(),
+    },
     facts: factsForFile({ file: FILE, root: tree.rootNode, packs }),
   });
 }
