@@ -4,7 +4,7 @@ import { Database } from "@suss/datalog";
 
 import { bodyBlocksIn } from "../pack.js";
 import { parseRuby } from "../parser.js";
-import { RUBY_PROGRAM } from "./resolve.js";
+import { RUBY_PROGRAM, resolveValues, settledFunction } from "./resolve.js";
 import { emitValueFacts } from "./values.js";
 
 import type { BodyBlocks } from "../ast.js";
@@ -2226,5 +2226,54 @@ describe("the calls a body writes as statements, and the pairs a call passes", (
       ),
     );
     expect(read.has("callPairArg")).toBe(false);
+  });
+});
+
+describe("an endless method", () => {
+  it("states the library call its body is, as the body's one statement and its return", async () => {
+    const source = 'class A\n  def fetch = Faraday.get("/a")\nend\n';
+    const db = await factsFor(source);
+    const fetch = keyOf(source, 'def fetch = Faraday.get("/a")');
+    const call = keyOf(source, 'Faraday.get("/a")');
+    expect(rows(db, "call").map((row) => row[0])).toContain(call);
+    expect(rows(db, "callArg")).toContainEqual([
+      call,
+      "0",
+      keyOf(source, '"/a"'),
+    ]);
+    expect(rows(db, "bodyCallAt")).toEqual([[fetch, "0", call]]);
+    expect(rows(db, "returnsValue")).toContainEqual([fetch, call]);
+  });
+
+  it("states a call of the project's own method, which the rules settle on that method", async () => {
+    const source =
+      "class A\n  def total = add(2, 3)\n  def add(x, y) = x + y\nend\n";
+    const db = await factsFor(source);
+    const call = keyOf(source, "add(2, 3)");
+    const [callee] = db
+      .lookup("call", 0, `f.rb${call}`)
+      .map((row) => String(row[1]));
+    expect(callee).toBeDefined();
+    resolveValues(db, [callee as string]);
+    expect(settledFunction(db, callee as string)).toBe(
+      `f.rb${keyOf(source, "def add(x, y) = x + y")}`,
+    );
+  });
+
+  it("states the arguments its call passes, its parameters among them", async () => {
+    const source = "def total(a, b) = Calculator.add(a, b, scale: 2)\n";
+    const db = await factsFor(source);
+    const total = keyOf(source, source.trimEnd());
+    const call = keyOf(source, "Calculator.add(a, b, scale: 2)");
+    expect(rows(db, "callArg").filter((row) => row[0] === call)).toEqual([
+      [call, "0", `${total}#a`],
+      [call, "1", `${total}#b`],
+    ]);
+    const scale = source.indexOf("2)");
+    expect(rows(db, "callKeywordArg")).toContainEqual([
+      call,
+      "scale",
+      `:${scale}-${scale + 1}`,
+    ]);
   });
 });

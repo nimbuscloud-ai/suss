@@ -29,8 +29,9 @@ import {
 import {
   bareCallArgumentGroups,
   bodyBlockCalls,
+  bodyStatements,
   bodyStatementsRun,
-  callStatementsOf,
+  callStatementsIn,
   children,
   definesClassMethod,
   field,
@@ -1154,20 +1155,31 @@ function walkExpressions(
   blocks: OpenBlocks | null = null,
 ): void {
   for (const child of children(node)) {
-    const type = readAsType(child, node);
-    if (OWN_BODY_TYPES.has(type)) {
-      nested?.push(child);
-      continue;
-    }
-    visit(child, type, node);
-    const opens = blocks !== null && isHandedBlock(type, node);
-    if (opens) {
-      blocks.keys.push(nodeId(blocks.filePath, child));
-    }
-    walkExpressions(child, visit, nested, blocks);
-    if (opens) {
-      blocks.keys.pop();
-    }
+    walkExpression(child, node, visit, nested, blocks);
+  }
+}
+
+/** Visits one expression written in `parent`, and every expression under it, as `walkExpressions` visits each child. */
+function walkExpression(
+  node: RbNode,
+  parent: RbNode,
+  visit: ExpressionVisit,
+  nested: RbNode[] | null,
+  blocks: OpenBlocks | null,
+): void {
+  const type = readAsType(node, parent);
+  if (OWN_BODY_TYPES.has(type)) {
+    nested?.push(node);
+    return;
+  }
+  visit(node, type, parent);
+  const opens = blocks !== null && isHandedBlock(type, parent);
+  if (opens) {
+    blocks.keys.push(nodeId(blocks.filePath, node));
+  }
+  walkExpressions(node, visit, nested, blocks);
+  if (opens) {
+    blocks.keys.pop();
   }
 }
 
@@ -1214,17 +1226,27 @@ function emitBodyCallPositions(
   ownerKey: string,
   body: RbNode | null,
 ): void {
-  if (body === null) {
-    return;
+  if (body !== null) {
+    emitCallPositions(emitter, ownerKey, bodyStatements(body));
   }
+}
+
+/** `emitBodyCallPositions` for the statements a body runs, given as a list. */
+function emitCallPositions(
+  emitter: Emitter,
+  ownerKey: string,
+  statements: readonly RbNode[],
+): void {
   const runsAsMethod = (name: RbNode) => isBareCall(name, emitter.enclosing);
-  callStatementsOf(body, runsAsMethod).forEach(({ call, nested }, position) => {
-    const callKey = nodeId(emitter.filePath, call);
-    add(emitter, "bodyCallAt", ownerKey, String(position), callKey);
-    if (nested) {
-      add(emitter, "nestedBodyCall", callKey);
-    }
-  });
+  callStatementsIn(statements, runsAsMethod).forEach(
+    ({ call, nested }, position) => {
+      const callKey = nodeId(emitter.filePath, call);
+      add(emitter, "bodyCallAt", ownerKey, String(position), callKey);
+      if (nested) {
+        add(emitter, "nestedBodyCall", callKey);
+      }
+    },
+  );
 }
 
 /**
@@ -2156,7 +2178,12 @@ function emitInstanceStores(
 
 /** The last expression of a body, which Ruby returns when the body ends without a `return`. */
 export function implicitReturn(body: RbNode): RbNode | null {
-  const statements = children(body).filter(
+  return implicitReturnOf(children(body));
+}
+
+/** `implicitReturn` for a body's statements given as a list. */
+function implicitReturnOf(written: readonly RbNode[]): RbNode | null {
+  const statements = written.filter(
     (child) => child.type !== "rescue" && child.type !== "ensure",
   );
   const last = statements[statements.length - 1];
@@ -2196,6 +2223,16 @@ function emitLambdasIn(emitter: Emitter, body: RbNode): void {
     }
     emitLambdasIn(emitter, child);
   }
+}
+
+/**
+ * The expression an endless `def name = expr` is. It is the whole body,
+ * so it runs as a statement of its own. Null for a body of statements.
+ */
+function endlessExpression(definition: RbNode, body: RbNode): RbNode | null {
+  return METHOD_TYPES.has(definition.type) && body.type !== "body_statement"
+    ? body
+    : null;
 }
 
 /** A lambda's statements are inside a block, one level deeper than a method's. */
@@ -2272,17 +2309,19 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   const expressionFacts = new RowBuffer();
   const collecting: Emitter = { ...inside, heldRows: expressionFacts };
   const blocks: OpenBlocks = { filePath: emitter.filePath, keys: [] };
-  walkExpressions(
-    body,
-    (child, type, parent) => {
-      const site = callSiteAt(inside, child, type, parent);
-      emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
-      emitExpressionFact(collecting, child, type, parent, site);
-      emitBlockCalls(collecting, blocks, type, site);
-    },
-    nested,
-    blocks,
-  );
+  const visit: ExpressionVisit = (child, type, parent) => {
+    const site = callSiteAt(inside, child, type, parent);
+    emitBodyFact(bodyFacts, inside, funcKey, child, type, site);
+    emitExpressionFact(collecting, child, type, parent, site);
+    emitBlockCalls(collecting, blocks, type, site);
+  };
+  const endless = endlessExpression(method, body);
+  if (endless === null) {
+    walkExpressions(body, visit, nested, blocks);
+  } else {
+    walkExpression(endless, method, visit, nested, blocks);
+  }
+  const statements = endless === null ? bodyStatements(body) : [endless];
 
   for (const definition of nested) {
     const definitionKey = nodeId(emitter.filePath, definition);
@@ -2295,8 +2334,8 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
   }
   bodyFacts.flushInto(emitter.db);
   // The method's own scope, so a local or a parameter read as a statement is no call.
-  emitBodyCallPositions(inside, funcKey, body);
-  const implicit = implicitReturn(body);
+  emitCallPositions(inside, funcKey, statements);
+  const implicit = implicitReturnOf(statements);
   if (implicit !== null) {
     add(inside, "returnsValue", funcKey, valueKey(inside, implicit));
   }
