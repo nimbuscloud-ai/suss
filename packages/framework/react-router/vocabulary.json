@@ -11,7 +11,6 @@
   "path": "react-router: the Route prop holding a route's path pattern",
   "index": "react-router: the Route prop marking a route that answers its parent's path",
   "children": "react-router: the route-object key holding the routes nested under one",
-  "createBrowserRouter": "react-router: the factory taking an array of route objects",
   "createRoutesFromElements": "react-router: the factory turning route elements into route objects",
   "BadRequest": "http-errors: error class for status 400",
   "Unauthorized": "http-errors: error class for status 401",

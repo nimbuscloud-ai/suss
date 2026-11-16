@@ -3,14 +3,25 @@ import path from "node:path";
 
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { createTypeScriptAdapter } from "@suss/adapter-typescript";
+import {
+  createTypeScriptAdapter,
+  discoverUnits,
+  ResolutionStore,
+} from "@suss/adapter-typescript";
 import { restBinding } from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
+import { declaredMatchOf, JSX_ROUTE_UNREAD } from "@suss/extractor";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { reactRouterFramework } from "./index.js";
+import { REACT_ROUTER_ROUTES, reactRouterFramework } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { Project, SourceFile } from "ts-morph";
+
+/** The pack's route table pattern, the one discovery entry that reads routes. */
+const ROUTE_PATTERNS = reactRouterFramework().discovery.filter(
+  (d) => d.match.type === "routeTable",
+);
 
 const fixturesDir = path.resolve(
   __dirname,
@@ -78,23 +89,32 @@ describe("reactRouterFramework: pack shape", () => {
     expect(pack.contractReading).toBeUndefined();
   });
 
-  it("reads route declarations from the names react-router exports", () => {
-    const pack = reactRouterFramework();
-    const routes = pack.discovery.find(
-      (d) => d.match.type === "jsxElementRoute",
-    );
+  it("declares the route table a jsxElementRoute match with the router's names is read as", () => {
+    const routes = ROUTE_PATTERNS[0];
     expect(routes?.match).toEqual({
-      type: "jsxElementRoute",
-      importModule: ["react-router", "react-router-dom"],
-      routeElement: "Route",
-      pathAttribute: "path",
-      elementAttribute: "element",
-      indexAttribute: "index",
-      childrenAttribute: "children",
-      routeObjectFactories: ["createBrowserRouter"],
-      elementsFactories: ["createRoutesFromElements"],
-      method: "GET",
+      type: "routeTable",
+      table: REACT_ROUTER_ROUTES,
+      through: "element",
+      unread: JSX_ROUTE_UNREAD,
     });
+    expect(routes?.requiresImport).toEqual([
+      "react-router",
+      "react-router-dom",
+    ]);
+    expect(
+      declaredMatchOf({
+        type: "jsxElementRoute",
+        importModule: ["react-router", "react-router-dom"],
+        routeElement: "Route",
+        pathAttribute: "path",
+        elementAttribute: "element",
+        indexAttribute: "index",
+        childrenAttribute: "children",
+        routeObjectFactories: ["createBrowserRouter"],
+        elementsFactories: ["createRoutesFromElements"],
+        method: "GET",
+      }),
+    ).toEqual(routes?.match);
   });
 
   it("declares a render terminal, so a routed component's JSX is read", () => {
@@ -385,6 +405,472 @@ describe("reactRouterFramework: declared route trees", () => {
       "loadBilling<->Shell",
       "loadUser<->UserDetail",
     ]);
+  });
+});
+
+describe("reactRouterFramework: each way a route is written", () => {
+  function makeFile(source: string, project = createTestProject()): SourceFile {
+    return project.createSourceFile("routes.tsx", source);
+  }
+
+  function unitsOf(file: SourceFile) {
+    return discoverUnits(file, ROUTE_PATTERNS, new ResolutionStore());
+  }
+
+  function routesOf(file: SourceFile): string[] {
+    return unitsOf(file)
+      .map((u) =>
+        u.routeInfo === undefined
+          ? `${u.name} (no route)`
+          : `${u.routeInfo.method} ${u.routeInfo.path}`,
+      )
+      .sort();
+  }
+
+  it("reads a route element's path and the component it renders", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { Route } from "react-router-dom";
+        function Users() { return <ul />; }
+        export const tree = <Route path="/users" element={<Users />} />;
+      `),
+    );
+    expect(unit.routeInfo).toEqual({ method: "GET", path: "/users" });
+    expect(unit.name).toBe("Users");
+    expect(unit.func).not.toBeNull();
+  });
+
+  it("reads a route element's path from a name imported from another module", () => {
+    const project: Project = createTestProject();
+    project.createSourceFile("paths.ts", 'export const USERS_PATH = "/users";');
+    const [unit] = unitsOf(
+      makeFile(
+        `
+        import { Route } from "react-router-dom";
+        import { USERS_PATH } from "./paths.js";
+        function Users() { return <ul />; }
+        export const tree = <Route path={USERS_PATH} element={<Users />} />;
+      `,
+        project,
+      ),
+    );
+    expect(unit.routeInfo).toEqual({ method: "GET", path: "/users" });
+  });
+
+  it("joins a nested route's path onto its parent's, and gives an index route the parent's path", () => {
+    const file = makeFile(`
+      import { Route } from "react-router-dom";
+      function List() { return <ul />; }
+      function Detail() { return <li />; }
+      export const tree = (
+        <Route path="/users">
+          <Route index element={<List />} />
+          <Route path=":id" element={<Detail />} />
+        </Route>
+      );
+    `);
+    expect(routesOf(file)).toEqual(["GET /users", "GET /users/:id"]);
+  });
+
+  it("lets a nested route with an absolute path stand alone", () => {
+    const file = makeFile(`
+      import { Route } from "react-router-dom";
+      function Help() { return <p />; }
+      export const tree = (
+        <Route path="/users">
+          <Route path="/help" element={<Help />} />
+        </Route>
+      );
+    `);
+    expect(routesOf(file)).toEqual(["GET /help"]);
+  });
+
+  it("matches a route element imported under another name", () => {
+    const file = makeFile(`
+      import { Route as Screen } from "react-router-dom";
+      function Home() { return <main />; }
+      export const tree = <Screen path="/" element={<Home />} />;
+    `);
+    expect(routesOf(file)).toEqual(["GET /"]);
+  });
+
+  it("ignores an element of the same name that came from somewhere else", () => {
+    const file = makeFile(`
+      import { Route } from "some-other-lib";
+      function Home() { return <main />; }
+      export const tree = <Route path="/" element={<Home />} />;
+    `);
+    expect(routesOf(file)).toEqual([]);
+  });
+
+  it("reads route objects from an array bound to a name above the call", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Home() { return <main />; }
+      function Billing() { return <aside />; }
+      const routes = [
+        { path: "/", element: <Home /> },
+        { path: "/billing", element: <Billing /> },
+      ];
+      export const router = createBrowserRouter(routes);
+    `);
+    expect(routesOf(file)).toEqual(["GET /", "GET /billing"]);
+  });
+
+  it("reads route objects written with quoted keys", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Home() { return <main />; }
+      function Billing() { return <aside />; }
+      export const router = createBrowserRouter([
+        { "path": "/", "element": <Home /> },
+        { "path": "/billing", "element": <Billing />, "children": [] },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual(["GET /", "GET /billing"]);
+  });
+
+  it("reads routes nested under a route object, joining their paths onto its own", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Shell() { return <div />; }
+      function Overview() { return <p />; }
+      function Invoice() { return <dl />; }
+      function Lines() { return <tbody />; }
+      export const router = createBrowserRouter([
+        {
+          path: "/billing",
+          element: <Shell />,
+          children: [
+            { index: true, element: <Overview /> },
+            {
+              path: "invoices",
+              element: <Invoice />,
+              children: [{ path: ":id", element: <Lines /> }],
+            },
+          ],
+        },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual([
+      "GET /billing",
+      "GET /billing",
+      "GET /billing/invoices",
+      "GET /billing/invoices/:id",
+    ]);
+  });
+
+  it("composes a nested route object's path the same way the element tree does", () => {
+    const project = createTestProject();
+    const objects = project.createSourceFile(
+      "objects.tsx",
+      `
+      import { createBrowserRouter } from "react-router-dom";
+      function Detail() { return <li />; }
+      export const router = createBrowserRouter([
+        { path: "/users", children: [{ path: ":id", element: <Detail /> }] },
+      ]);
+    `,
+    );
+    const elements = project.createSourceFile(
+      "elements.tsx",
+      `
+      import { Route } from "react-router-dom";
+      function Detail() { return <li />; }
+      export const tree = (
+        <Route path="/users">
+          <Route path=":id" element={<Detail />} />
+        </Route>
+      );
+    `,
+    );
+    expect(routesOf(objects)).toEqual(routesOf(elements));
+    expect(routesOf(objects)).toEqual(["GET /users/:id"]);
+  });
+
+  it("lets a nested route object with an absolute path stand alone", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Help() { return <p />; }
+      export const router = createBrowserRouter([
+        { path: "/users", children: [{ path: "/help", element: <Help /> }] },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual(["GET /help"]);
+  });
+
+  it("abstains on every route nested under a path built at runtime", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        function Detail() { return <li />; }
+        const base = "/tenants/" + String(Math.random());
+        export const router = createBrowserRouter([
+          { path: base, children: [{ path: ":id", element: <Detail /> }] },
+        ]);
+      `),
+    );
+    expect(units.map((u) => u.routeInfo)).toEqual([undefined]);
+    expect(units[0].unreadBinding).toContain("nested under");
+  });
+
+  it("abstains on a children array it cannot read, keeping the route above it", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { childRoutes } from "./children";
+        function Shell() { return <div />; }
+        export const router = createBrowserRouter([
+          { path: "/billing", element: <Shell />, children: childRoutes },
+        ]);
+      `),
+    );
+    expect(units.map((u) => u.routeInfo?.path)).toEqual([
+      "/billing",
+      undefined,
+    ]);
+    expect(units[1].unreadBinding).toContain("nested under this one");
+  });
+
+  it("abstains on a spread inside a children array", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { more } from "./more";
+        function Shell() { return <div />; }
+        function Overview() { return <p />; }
+        export const router = createBrowserRouter([
+          {
+            path: "/billing",
+            element: <Shell />,
+            children: [{ index: true, element: <Overview /> }, ...more],
+          },
+        ]);
+      `),
+    );
+    expect(units.map((u) => u.routeInfo?.path)).toEqual([
+      "/billing",
+      "/billing",
+      undefined,
+    ]);
+    expect(units[2].unreadBinding).toContain("A spread stands in for routes");
+  });
+
+  it("reads one array of routes under each route that nests it", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Shell() { return <div />; }
+      function Overview() { return <p />; }
+      const shared = [{ path: "overview", element: <Overview /> }];
+      export const router = createBrowserRouter([
+        { path: "/billing", element: <Shell />, children: shared },
+        { path: "/admin", element: <Shell />, children: shared },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual([
+      "GET /admin",
+      "GET /admin/overview",
+      "GET /billing",
+      "GET /billing/overview",
+    ]);
+  });
+
+  it("abstains on a path built at runtime, saying what it could not read", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { Route } from "react-router-dom";
+        function Settings() { return <form />; }
+        const where = "/settings/" + String(Math.random());
+        export const tree = <Route path={where} element={<Settings />} />;
+      `),
+    );
+    expect(unit.routeInfo).toBeUndefined();
+    expect(unit.unreadBinding).toContain("not written as a string literal");
+  });
+
+  it("abstains on every route a nested tree hangs under an unreadable path", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { Route } from "react-router-dom";
+        function Detail() { return <li />; }
+        const base = "/tenants/" + String(Math.random());
+        export const tree = (
+          <Route path={base}>
+            <Route path=":id" element={<Detail />} />
+          </Route>
+        );
+      `),
+    );
+    expect(units.map((u) => u.routeInfo)).toEqual([undefined]);
+    expect(units[0].unreadBinding).toContain("nested under");
+  });
+
+  it("abstains on a spread standing in for routes declared elsewhere", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { extra } from "./extra";
+        function Home() { return <main />; }
+        export const router = createBrowserRouter([
+          { path: "/", element: <Home /> },
+          ...extra,
+        ]);
+      `),
+    );
+    const spread = units.find((u) => u.unreadBinding !== undefined);
+    expect(spread?.unreadBinding).toContain("A spread stands in for routes");
+    expect(units.some((u) => u.routeInfo?.path === "/")).toBe(true);
+  });
+
+  it("abstains on a route object a call builds", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { buildRoute } from "./build";
+        export const router = createBrowserRouter([buildRoute("/x")]);
+      `),
+    );
+    expect(unit.routeInfo).toBeUndefined();
+    expect(unit.unreadBinding).toContain("built by a call");
+  });
+
+  it("abstains when the routes a router is created from are not an array here", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { routes } from "./routes-elsewhere";
+        export const router = createBrowserRouter(routes);
+      `),
+    );
+    expect(unit.unreadBinding).toContain("not written as an array literal");
+  });
+
+  it("says nothing extra about route elements handed to the router through createRoutesFromElements", () => {
+    const file = makeFile(`
+      import { createBrowserRouter, createRoutesFromElements, Route } from "react-router-dom";
+      function Home() { return <main />; }
+      export const router = createBrowserRouter(
+        createRoutesFromElements(<Route path="/" element={<Home />} />),
+      );
+    `);
+    expect(routesOf(file)).toEqual(["GET /"]);
+  });
+
+  it("reports a route whose element is computed as a boundary with nothing behind it", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { Route } from "react-router-dom";
+        import { pick } from "./pick";
+        export const tree = <Route path="/x" element={pick()} />;
+      `),
+    );
+    expect(unit.routeInfo).toEqual({ method: "GET", path: "/x" });
+    expect(unit.func).toBeNull();
+    expect(unit.announcedAt).toBeDefined();
+  });
+
+  it("produces nothing for a route that renders nothing", () => {
+    const file = makeFile(`
+      import { Route } from "react-router-dom";
+      export const tree = <Route path="/x" />;
+    `);
+    expect(unitsOf(file)).toEqual([]);
+  });
+
+  it("reads the component a route renders through parentheses and casts", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter, Route } from "react-router-dom";
+        function Profile() { return <form />; }
+        function Audit() { return <table />; }
+        export const tree = <Route path="/profile" element={(<Profile />)} />;
+        export const router = createBrowserRouter([
+          { path: "/audit", element: (<Audit />) as unknown },
+        ]);
+      `),
+    );
+    expect(units.map((u) => `${u.name} ${u.routeInfo?.path}`).sort()).toEqual([
+      "Audit /audit",
+      "Profile /profile",
+    ]);
+    expect(units.every((u) => u.func !== null)).toBe(true);
+  });
+
+  it("names an abstention after the component a route renders in parentheses", () => {
+    const [unit] = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        function Team() { return <ul />; }
+        const where = "/team/" + String(Math.random());
+        export const router = createBrowserRouter([{ path: where, element: (<Team />) }]);
+      `),
+    );
+    expect(unit.name).toBe("Team");
+    expect(unit.unreadBinding).toContain("not written as a string literal");
+  });
+
+  it("serves nothing for a route whose index reads false, and keeps the routes inside it", () => {
+    const file = makeFile(`
+      import { Route } from "react-router-dom";
+      function List() { return <ul />; }
+      function Board() { return <section />; }
+      function Columns() { return <ol />; }
+      export const tree = (
+        <Route path="/projects">
+          <Route index={true} element={<List />} />
+          <Route index={false} element={<Board />}>
+            <Route path="board" element={<Columns />} />
+          </Route>
+        </Route>
+      );
+    `);
+    expect(routesOf(file)).toEqual(["GET /projects", "GET /projects/board"]);
+  });
+
+  it("reads a route object's index flag through a cast", () => {
+    const file = makeFile(`
+      import { createBrowserRouter } from "react-router-dom";
+      function Overview() { return <p />; }
+      function Draft() { return <p />; }
+      export const router = createBrowserRouter([
+        {
+          path: "/billing",
+          children: [
+            { index: true as const, element: <Overview /> },
+            { index: false, element: <Draft /> },
+          ],
+        },
+      ]);
+    `);
+    expect(routesOf(file)).toEqual(["GET /billing"]);
+  });
+
+  it("announces a spread where the collection it unpacks is written, through a cast", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { extra, more } from "./extra";
+        export const router = createBrowserRouter([...extra, ...(more as never[])]);
+      `),
+    );
+    expect(units.map((u) => [u.name, u.announcedAt?.getText()])).toEqual([
+      ["extra", "extra"],
+      ["more", "more"],
+    ]);
+  });
+
+  it("labels a value it cannot read by the name under a cast, or else by its source text", () => {
+    const units = unitsOf(
+      makeFile(`
+        import { createBrowserRouter } from "react-router-dom";
+        import { routes, settings } from "./elsewhere";
+        export const one = createBrowserRouter(routes as never);
+        export const two = createBrowserRouter([
+          { path: "/settings", children: settings.routes },
+        ]);
+      `),
+    );
+    expect(units.map((u) => u.name)).toEqual(["routes", "settings.routes"]);
   });
 });
 
