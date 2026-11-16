@@ -2382,22 +2382,36 @@ const SOURCE_READS = [
 ];
 
 /**
- * The questions a caller asks, written as rules. Two facts say somebody
- * is asking: `wanted(x)` for what a value is, and `wantedOrigin(x)` for
- * where a name came from. Each answer relation contains the pairs for the
- * values somebody asked about, keyed by the value asked about, which is
- * the key the caller looks up by anyway.
- *
- * Written down rather than left to each caller because the engine reads
- * them. `deriveOnDemand` follows a chain only as far as one of these
- * questions reaches it, and a caller that answered its own questions by
- * scanning a relation would give the engine nothing to work from.
- *
- * The two asking facts are kept apart because they pull on different
- * rules. Following a name back to its library goes through every call
- * the value's function makes, so a caller that only wants to know what a
- * handler resolves to should not pay for that.
+ * Where a name came from, for the values `asking` lists: the import it
+ * comes from, what a project barrel forwards that import to, and what
+ * the name comes to.
  */
+function originAnswers(asking: string): Rule[] {
+  return [
+    rule(
+      "wantedComesTo",
+      [v("x"), v("z")],
+      [lit(asking, v("x")), lit("comesTo", v("x"), v("z"))],
+    ),
+    rule(
+      "wantedComesFrom",
+      [v("x"), v("m"), v("n")],
+      [lit(asking, v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
+    ),
+    // TypeScript states the module behind a barrel's import only when the
+    // package is installed, and `reExports` either way.
+    rule(
+      "wantedComesFrom",
+      [v("x"), v("m2"), v("n2")],
+      [
+        lit(asking, v("x")),
+        lit("comesFrom", v("x"), v("m"), v("n")),
+        lit("moduleForwards", v("m"), v("n"), v("m2"), v("n2")),
+      ],
+    ),
+  ];
+}
+
 /**
  * For a call asked about, every return of the function it runs, and the
  * returns the rules read as something. The reader takes the call's
@@ -2460,6 +2474,18 @@ function writtenAnswers(asking: string): Rule[] {
   ];
 }
 
+/**
+ * The questions a caller asks, written as rules. A fact says somebody is
+ * asking, such as `wanted(x)` for what a value is, and each answer
+ * relation is keyed by the value asked about. They are written down
+ * because `deriveOnDemand` follows a chain only as far as one of these
+ * questions reaches it.
+ *
+ * The asking facts are kept apart because they pull on different rules.
+ * `wantedOrigin` also walks every call the value's function makes, which
+ * only TypeScript reads, so a caller that wants only where a name came
+ * from asks `wantedNameOrigin` and does not pay for that walk.
+ */
 export const RESOLUTION_QUESTIONS = [
   rule(
     "wantedResolves",
@@ -2471,11 +2497,11 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("z")],
     [lit("wanted", v("x")), lit("comesTo", v("x"), v("z"))],
   ),
-  rule(
-    "wantedComesTo",
-    [v("x"), v("z")],
-    [lit("wantedOrigin", v("x")), lit("comesTo", v("x"), v("z"))],
-  ),
+  ...originAnswers("wantedOrigin"),
+  // A reader that wants only where a name came from asks this way, and
+  // the walk through every call the value's function makes is never
+  // derived.
+  ...originAnswers("wantedNameOrigin"),
   ...writtenAnswers("wanted"),
   // A caller that reads only what a value is written as asks this way,
   // and the walks behind every other `wanted` answer are never derived.
@@ -2836,23 +2862,6 @@ export const RESOLUTION_QUESTIONS = [
       lit("refersToParam", v("o"), v("p")),
       lit("passesArgument", v("r"), v("p"), v("a")),
       lit("refersToParam", v("a"), v("q")),
-    ],
-  ),
-  rule(
-    "wantedComesFrom",
-    [v("x"), v("m"), v("n")],
-    [lit("wantedOrigin", v("x")), lit("comesFrom", v("x"), v("m"), v("n"))],
-  ),
-  // A name imported from a project barrel also comes from what the
-  // barrel forwards. TypeScript states that module behind the import only
-  // when the package is installed, and `reExports` either way.
-  rule(
-    "wantedComesFrom",
-    [v("x"), v("m2"), v("n2")],
-    [
-      lit("wantedOrigin", v("x")),
-      lit("comesFrom", v("x"), v("m"), v("n")),
-      lit("moduleForwards", v("m"), v("n"), v("m2"), v("n2")),
     ],
   ),
 

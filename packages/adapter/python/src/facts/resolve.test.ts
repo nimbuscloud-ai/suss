@@ -89,6 +89,34 @@ describe("a module-level name bound to an import", () => {
   });
 });
 
+describe("where a name came from", () => {
+  it("answers without walking the library calls the name's function makes", async () => {
+    const { facts, dir } = await factsFor({
+      "lib.py": "def connect():\n    return 1\n",
+      "helpers.py":
+        "from lib import connect\n\n\ndef open_db():\n    return connect()\n",
+      "app.py": "from helpers import open_db\nopen_db()\n",
+    });
+    const openDb = `${path.join(dir, "app.py")}#open_db`;
+
+    const { result, profile } = profileEvaluation(() =>
+      originsOf(facts, openDb),
+    );
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        { module: path.join(dir, "helpers.py"), name: "open_db" },
+        { module: "helpers", name: "open_db" },
+      ]),
+    );
+    expect(
+      profile.rules
+        .map((one) => one.head)
+        .filter((head) => head.includes("callsInto")),
+    ).toEqual([]);
+  });
+});
+
 describe("resolving a value across files", () => {
   it("follows a call into the list the function in another file returns", async () => {
     const { facts, dir } = await factsFor({
