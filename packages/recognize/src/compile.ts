@@ -57,11 +57,13 @@ import type {
   ChannelPart,
   ClaimMetadata,
   ClaimMetadataLeaf,
+  ClassNaming,
   ClassPick,
   ClassSource,
   ColumnsPick,
   ConditionsPick,
   ContainerArgument,
+  ContainerClass,
   ContainerLink,
   ContainerMember,
   ContainersLink,
@@ -209,9 +211,24 @@ export function compile(
     }
     return null;
   };
-  return outermost
+  const claimed = outermost
     ? Object.assign(hook, { claimsChainStart: true as const })
     : hook;
+  const attributes = containerAttributes(chain);
+  return attributes.length === 0
+    ? claimed
+    : Object.assign(claimed, { containerAttributes: attributes });
+}
+
+/** The attributes a class container names its class by before the class's own name, for an adapter that names a class outside the chain. */
+function containerAttributes(chain: Chain<MethodMeaning>): string[] {
+  const link = linkIn(chain, "container");
+  if (link === null || !("class" in link)) {
+    return [];
+  }
+  return (link.named ?? []).flatMap((naming) =>
+    naming === "className" ? [] : [naming.attribute],
+  );
 }
 
 /**
@@ -2108,7 +2125,7 @@ function containerOf(
     return link.from(selector, subject);
   }
   if ("class" in link) {
-    return classNamed(subject, link);
+    return classContainer(subject, link);
   }
   if ("of" in link) {
     return memberNamed(subject, link);
@@ -2468,11 +2485,47 @@ function columnsWritten(subject: CallOps, pick: ColumnsPick): string[] {
  */
 const classesFound = new WeakMap<
   CallOps,
-  Map<ClassPick["class"], Map<readonly string[], string | null>>
+  Map<ClassPick["class"], Map<readonly string[], FoundClass | null>>
 >();
 
-/** The first class a source of the pick reaches, in the order the pick lists them. */
+/** The class a pick found: the value it was read off, and the class's name. */
+interface FoundClass {
+  readonly value: ValueOps;
+  readonly name: string;
+}
+
+/** The name of the first class a source of the pick reaches, in the order the pick lists them. */
 function classNamed(subject: CallOps, pick: ClassPick): string | null {
+  return classFound(subject, pick)?.name ?? null;
+}
+
+/** The container's name for the class the pick found, the first of its namings that gives one. */
+function classContainer(subject: CallOps, link: ContainerClass): string | null {
+  const found = classFound(subject, link);
+  if (found === null) {
+    return null;
+  }
+  for (const naming of link.named ?? ["className"]) {
+    const name = namedAs(found, naming, link.notFrom);
+    if (name !== null) {
+      return name;
+    }
+  }
+  return null;
+}
+
+function namedAs(
+  found: FoundClass,
+  naming: ClassNaming,
+  notFrom: readonly string[],
+): string | null {
+  if (naming === "className") {
+    return found.name;
+  }
+  return found.value.classAttribute?.(naming.attribute, notFrom) ?? null;
+}
+
+function classFound(subject: CallOps, pick: ClassPick): FoundClass | null {
   let bySources = classesFound.get(subject);
   if (bySources === undefined) {
     bySources = new Map();
@@ -2487,17 +2540,17 @@ function classNamed(subject: CallOps, pick: ClassPick): string | null {
   if (asked !== undefined) {
     return asked;
   }
-  const named = firstClassIn(subject, pick);
-  byModules.set(pick.notFrom, named);
-  return named;
+  const found = firstClassIn(subject, pick);
+  byModules.set(pick.notFrom, found);
+  return found;
 }
 
-function firstClassIn(subject: CallOps, pick: ClassPick): string | null {
+function firstClassIn(subject: CallOps, pick: ClassPick): FoundClass | null {
   for (const source of inOrder(pick.class)) {
     for (const value of sourceValues(subject, source)) {
-      const named = value.className?.(pick.notFrom) ?? null;
-      if (named !== null) {
-        return named;
+      const name = value.className?.(pick.notFrom) ?? null;
+      if (name !== null) {
+        return { value, name };
       }
     }
   }

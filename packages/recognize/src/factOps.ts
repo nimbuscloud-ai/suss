@@ -1069,6 +1069,18 @@ class FactValue implements ValueOps {
     return this.asClass()?.name() ?? null;
   }
 
+  /** Read off the class the adapter's `classKeyOf` gives where it has one, so it is the class `className` read. */
+  classAttribute(attribute: string, notFrom: readonly string[]): string | null {
+    const adapters = this.facts.classKeyOf;
+    if (adapters === undefined) {
+      return this.asClass()?.attribute(attribute) ?? null;
+    }
+    const cls = adapters(this.key, notFrom);
+    return cls === null
+      ? null
+      : new FactClass(cls, this.facts).attribute(attribute);
+  }
+
   /** Asked of the settled value, as `asArg` is, so an encoding kept in a name is still read. */
   encoded(): Encoded | null {
     const found = this.facts.encodedOf?.(this.written()) ?? null;
@@ -1202,7 +1214,7 @@ class FactValue implements ValueOps {
     };
   }
 
-  asClass(): ClassValueOps | null {
+  asClass(): FactClass | null {
     const cls = classBehind(this.key, this.facts);
     return cls === null ? null : new FactClass(cls, this.facts);
   }
@@ -1807,6 +1819,15 @@ function classBehind(key: string, source: FactSource): string | null {
   return null;
 }
 
+/** The string the class at the key assigns to the attribute in its body, for an adapter that names a class outside a chain. */
+export function classAttributeAt(
+  classKey: string,
+  attribute: string,
+  facts: FactSource,
+): string | null {
+  return new FactClass(classKey, facts).attribute(attribute);
+}
+
 class FactClass implements ClassValueOps {
   constructor(
     private readonly key: string,
@@ -1832,6 +1853,22 @@ class FactClass implements ClassValueOps {
         ? []
         : [memberAt(name, held, this.facts)];
     });
+  }
+
+  /** The string the `holdsProperty` rows under the name state, shared or the class's own, when they agree on one. */
+  attribute(name: string): string | null {
+    const strings = new Set(
+      this.facts.db
+        .lookup("holdsProperty", 0, this.key)
+        .filter((row) => {
+          const stated = String(row[1]);
+          return stated === name || classMemberOf(stated) === name;
+        })
+        .map((row) => this.facts.literalOf(String(row[2])))
+        .flatMap((literal) => (typeof literal === "string" ? [literal] : [])),
+    );
+    const [one] = strings;
+    return strings.size === 1 && one !== undefined ? one : null;
   }
 
   /** `rbConstantName` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere. */

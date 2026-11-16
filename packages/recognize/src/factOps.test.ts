@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { classMemberName } from "@suss/resolution";
 
 import {
+  classAttributeAt,
   type FactSource,
   factCallOps,
   factElementOps,
@@ -1999,6 +2001,54 @@ describe("the comparisons, the class and the receiver a query reads, over the fa
 
     expect(factValueOps("Orders", from).className?.([])).toBe("Orders");
     expect(factValueOps("tpl", from).className?.([])).toBeNull();
+  });
+
+  it("reads the string a class body assigns, shared or the class's own, off the class the adapter says a value names", () => {
+    const db = new Database();
+    db.add("holdsProperty", ["OrdersClass", "__tablename__", "ordersText"]);
+    db.add("holdsProperty", ["NotesClass", "__tablename__", "notesMethod"]);
+    db.add("holdsProperty", [
+      "TagsClass",
+      classMemberName("table"),
+      "tagsText",
+    ]);
+    const from = source({
+      db,
+      classKeyOf: (key) => `${key}Class`,
+      literalOf: (key) =>
+        ({ ordersText: "orders", tagsText: "tags" })[key] ?? null,
+    });
+
+    expect(
+      factValueOps("Orders", from).classAttribute?.("__tablename__", []),
+    ).toBe("orders");
+    expect(factValueOps("Tags", from).classAttribute?.("table", [])).toBe(
+      "tags",
+    );
+    expect(
+      factValueOps("Notes", from).classAttribute?.("__tablename__", []),
+    ).toBeNull();
+    expect(classAttributeAt("OrdersClass", "__tablename__", from)).toBe(
+      "orders",
+    );
+  });
+
+  it("reads the string off the class the facts settle a value to when the adapter says nothing", () => {
+    const db = new Database();
+    db.add("objectValue", ["Orders"]);
+    db.add("exportsAs", ["models.py", "Orders", "Orders"]);
+    db.add("holdsProperty", ["Orders", "__tablename__", "ordersText"]);
+    const from = source({
+      db,
+      literalOf: (key) => (key === "ordersText" ? "orders" : null),
+    });
+
+    expect(
+      factValueOps("Orders", from).classAttribute?.("__tablename__", []),
+    ).toBe("orders");
+    expect(
+      factValueOps("tpl", from).classAttribute?.("__tablename__", []),
+    ).toBeNull();
   });
 
   it("reads a member written in place, and a call with no arguments as one only where the language writes members that way", () => {

@@ -91,6 +91,8 @@ export type {
   ClaimMetadata,
   ClaimMetadataLeaf,
   ClaimsEnding,
+  ClassContainer,
+  ClassNaming,
   ClassPick,
   ClassSource,
   ColumnsPick,

@@ -9,11 +9,11 @@
  */
 
 import { runPackRecognizer } from "@suss/extractor";
-import { factCallOps, SlotsHeard } from "@suss/recognize/ops";
+import { classAttributeAt, factCallOps, SlotsHeard } from "@suss/recognize/ops";
 
 import { children, enclosingFunction, field, rangeOf } from "./ast.js";
 import {
-  classesNamed,
+  classesAt,
   classNameOf,
   constructionRef,
   fieldArguments,
@@ -27,7 +27,7 @@ import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { PackRecognizer } from "@suss/extractor";
+import type { FactSource, PackRecognizer } from "@suss/extractor";
 import type { HeardSlot } from "@suss/recognize/ops";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
@@ -46,6 +46,7 @@ const STORAGE_RECOGNITION = "python-storage";
 function containerByConstruction(
   root: PyNode,
   options: ConstructionLookup,
+  attributes: readonly string[],
 ): Record<string, string> | null {
   const files = options.files;
   const model = receiverFieldModel(root, options);
@@ -56,21 +57,34 @@ function containerByConstruction(
   }
   const sites = constructionSitesOf(model, options.facts);
   const argumentKeys = fieldArguments(name, sites, options.facts, files);
-  const classes = classesNamed(
-    [...argumentKeys.values()],
-    options.facts,
-    files,
-  );
+  const classes = classesAt([...argumentKeys.values()], options.facts, files);
+  const source = pythonFactSource(options.facts);
   const found: Record<string, string> = {};
   for (const [site, key] of argumentKeys) {
     const cls = classes.get(key);
-    const className = cls === undefined ? null : classNameOf(cls);
+    const container =
+      cls === undefined ? null : containerOfClass(cls, attributes, source);
     const ref = constructionRef(site, files);
-    if (className !== null && ref !== null) {
-      found[ref] = className;
+    if (container !== null && ref !== null) {
+      found[ref] = container;
     }
   }
   return Object.keys(found).length === 0 ? null : found;
+}
+
+/** The first of the attributes the class assigns a string to, as the chain names its container, or else the class's name. */
+function containerOfClass(
+  cls: { node: PyNode; key: string },
+  attributes: readonly string[],
+  source: FactSource,
+): string | null {
+  for (const attribute of attributes) {
+    const named = classAttributeAt(cls.key, attribute, source);
+    if (named !== null) {
+      return named;
+    }
+  }
+  return classNameOf(cls.node);
 }
 
 /** What naming a model by the constructions of a method's class reads. */
@@ -240,10 +254,10 @@ function declaredStorage(
     ...(lookup.files === undefined ? {} : { files: lookup.files }),
   };
   for (const { call, effects, heard } of declaredReads(calls, lookup, true)) {
-    for (const effect of effects) {
+    for (const { effect, attributes } of effects) {
       const located = { ...effect, location: rangeOf(call) };
       const byConstruction = withoutContainer(located)
-        ? containerByConstruction(rootOf(call), constructions)
+        ? containerByConstruction(rootOf(call), constructions, attributes)
         : null;
       if (located.type === "interaction" && byConstruction !== null) {
         located.containerByConstruction = byConstruction;
@@ -290,7 +304,8 @@ export function declaredCallIds(
 /** What the declared hooks made of one call. */
 interface DeclaredRead {
   readonly call: PyNode;
-  readonly effects: Effect[];
+  /** Each effect, with the attributes its hook names a class container by. */
+  readonly effects: { effect: Effect; attributes: readonly string[] }[];
   readonly heard: SlotsHeard;
   /** The calls the hooks that matched claim. */
   readonly claims: PyNode[];
@@ -334,7 +349,12 @@ function declaredReads(
     return [
       {
         call,
-        effects: read.flatMap(({ made }) => made),
+        effects: read.flatMap(({ hook, made }) =>
+          made.map((effect) => ({
+            effect,
+            attributes: hook.recognize.containerAttributes ?? [],
+          })),
+        ),
         heard,
         claims: [...new Map(claims.map((one) => [one.id, one])).values()],
       },

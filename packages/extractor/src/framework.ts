@@ -1907,7 +1907,11 @@ export interface DeclaredMatch {
 export type InvocationRecognizer<TCtx = unknown> = ((
   call: unknown,
   ctx: TCtx,
-) => Effect[] | null) & { readonly claimsChainStart?: true };
+) => Effect[] | null) & {
+  readonly claimsChainStart?: true;
+  /** The attributes the hook's class container names its class by first. */
+  readonly containerAttributes?: readonly string[];
+};
 
 /**
  * Per-access recognizer hook. `PatternPack.accessRecognizers` says when

@@ -301,9 +301,21 @@ export type ContainerLink =
   | ContainerClass;
 
 /** The class a pick finds, as the container: `User` for `db.query(User)`. */
-export interface ContainerClass extends ClassPick {
+export interface ContainerClass extends ClassContainer {
   readonly asks: "container";
 }
+
+/** A class pick as a container, with the ways to name the class it finds. */
+export interface ClassContainer extends ClassPick {
+  /**
+   * Tried in order on the class the pick found, until one gives a name.
+   * Unset names the class by its own name.
+   */
+  readonly named?: readonly ClassNaming[];
+}
+
+/** A class's own name, or the string its body assigns to an attribute: `__tablename__ = "recipes"`. */
+export type ClassNaming = "className" | { readonly attribute: string };
 
 /**
  * The member the steps reach, as a container. Prisma lowercases a model's

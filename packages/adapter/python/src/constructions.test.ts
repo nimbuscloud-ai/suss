@@ -98,7 +98,7 @@ function readIn(
 }
 
 describe("a method every repository shares, read once per construction", () => {
-  it("lists the table each construction passes, a subclass's own included", async () => {
+  it("lists the table each construction passes, by the __tablename__ its class writes, a subclass's own included", async () => {
     const { semantics, byConstruction } = readIn(
       await extract(fixture),
       fixture,
@@ -106,13 +106,13 @@ describe("a method every repository shares, read once per construction", () => {
 
     expect(semantics).toMatchObject({ name: "storage", container: null });
     expect(byConstruction).toEqual({
-      "app/main.py:12:12": "Tool",
-      "app/main.py:17:12": "Tool",
-      "app/main.py:37:29": "Tool",
-      "app/main.py:38:25": "Tag",
-      "app/main.py:43:25": "Tool",
-      "app/repos.py:31:16": "Tool",
-      "app/repos.py:35:16": "Tag",
+      "app/main.py:12:12": "tools",
+      "app/main.py:17:12": "tools",
+      "app/main.py:37:29": "tools",
+      "app/main.py:38:25": "tags",
+      "app/main.py:43:25": "tools",
+      "app/repos.py:31:16": "tools",
+      "app/repos.py:35:16": "tags",
     });
   });
 
@@ -254,10 +254,10 @@ describe("where a construction's model comes from", () => {
     const { byConstruction } = readIn(await extract(tmpDir), tmpDir);
 
     expect(byConstruction).toEqual({
-      "app/main.py:12:12": "Tool",
-      "app/main.py:16:12": "Tag",
-      "app/main.py:20:12": "Tool",
-      "app/main.py:32:12": "Tag",
+      "app/main.py:12:12": "tools",
+      "app/main.py:16:12": "tags",
+      "app/main.py:20:12": "tools",
+      "app/main.py:32:12": "tags",
     });
   });
 
@@ -357,6 +357,6 @@ describe("where a construction's model comes from", () => {
 
     const { byConstruction } = readIn(await extract(tmpDir), tmpDir);
 
-    expect(byConstruction).toEqual({ "app/main.py:11:12": "Tool" });
+    expect(byConstruction).toEqual({ "app/main.py:11:12": "tools" });
   });
 });
