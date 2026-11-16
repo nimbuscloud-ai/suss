@@ -538,6 +538,70 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("reads a session annotated as the class a module inside the pattern's module defines", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.orm.session import Session",
+        "",
+        "def create(db: Session):",
+        "    db.commit()",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "write", operation: "commit" },
+    ]);
+  });
+
+  it("says nothing about a session from a package whose name only starts with the pattern's module", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy_utils import Session",
+        "",
+        "def create(db: Session):",
+        "    db.commit()",
+        "",
+      ].join("\n"),
+      BASE,
+      "create",
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("reads a statement built from a function a module inside the pattern's module exports", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy.sql import select",
+        "",
+        "found = select(User.id).where(User.id == 1)",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "read", operation: "select" },
+    ]);
+  });
+
+  it("reads a query a project method returns when its file imports the type from a module inside the pattern's module", async () => {
+    const effects = await effectsFor(
+      "found = Orders.query().first()\n",
+      [
+        "from sqlalchemy.orm.query import Query",
+        "",
+        "class Base:",
+        "    @classmethod",
+        "    def query(cls) -> Query:",
+        "        return session()",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map(accessOf)).toMatchObject([
+      { kind: "read", operation: "first" },
+    ]);
+  });
+
   it("reads a session through an Annotated alias another module exports", async () => {
     const effects = await effectsFor(
       [

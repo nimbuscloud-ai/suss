@@ -398,7 +398,7 @@ function moduleImportedAs(db: Database, key: string): string | null {
 }
 
 /** Whether a module is the one asked for or one inside it. */
-function inModule(found: string, module: string): boolean {
+export function inModule(found: string, module: string): boolean {
   return found === module || found.startsWith(`${module}.`);
 }
 
