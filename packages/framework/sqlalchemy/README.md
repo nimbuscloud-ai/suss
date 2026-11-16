@@ -85,9 +85,12 @@ annotated `-> User | None`. A parameter annotated with an alias, such as
 Depends(get_current_user)]` in this module or another, is read as a `User`.
 The pack tells a class from a variable by its case, `User` against `user`,
 so a model written in lowercase is not read. `db.commit()` does not work on
-a table of its own, and comes out with no container name.
+a table of its own, and comes out with no container name. A read whose table
+the pack cannot name records nothing, since no other side could pair with
+it. That covers `.all()` on a query a project function returns, whose
+model is inside the function.
 
-A 2.0 statement's operation comes from its constructor. `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. `select(User.id)` puts the column in `fields`. Only a column read off the model the chain works on counts, so `token.sub` in `session.get(User, token.sub)` is a value and stays out. A keyword the chain selects rows by, such as `id` in `filter_by(id=1)`, goes in `selector`. So does a column of the model compared in a `where` or `filter`, `id` in `where(User.id == 1)`, inside `and_`, `or_` and `not_` too.
+A 2.0 statement's operation comes from its constructor. `update(User).where(...).values(name="x")` is an update whose `fields` are the `values` keywords. Only a `values` call's keywords are fields: a session method's keywords are its options, and a project function's are its parameters. `select(User.id)` puts the column in `fields`. Only a column read off the model the chain works on counts, so `token.sub` in `session.get(User, token.sub)` is a value and stays out. A keyword the chain selects rows by, such as `id` in `filter_by(id=1)`, goes in `selector`. So does a column of the model compared in a `where` or `filter`, `id` in `where(User.id == 1)`, inside `and_`, `or_` and `not_` too.
 
 Raw SQL passed to `text("...")` is read as its own effect, with the kind
 and the table taken from the statement.

@@ -296,16 +296,16 @@ export function queryCalls(
     notFrom: libraries,
   };
   const values = types.values ?? [];
+  // A keyword is a column only in a call that supplies values, the
+  // chain's first call included. A session method's keywords are its
+  // options, and a project function's are its parameters.
+  const valuesKeywords: NamePick[] = [
+    { keywordsOf: { of: [{ to: "chainStart", method: values }] } },
+    { keywordsOf: { of: [{ ...later, method: values }], itself: true } },
+  ];
   const fields: NamePick[] = [
     { columns: { of: [start], from: 0 }, ofClass: model },
-    { keywordsOf: { of: [start] } },
-    ...(values.length === 0
-      ? []
-      : [
-          {
-            keywordsOf: { of: [{ ...later, method: values }], itself: true },
-          } as const,
-        ]),
+    ...(values.length === 0 ? [] : valuesKeywords),
   ];
   const selector: ConditionsPick = {
     conditions: {

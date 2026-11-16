@@ -226,10 +226,12 @@ function fieldsOf(
 ): string[] {
   const args = field(chain.root, "arguments");
   const named: string[] = [];
+  // A keyword is a column only in a call that supplies values.
+  const supplies = valueMethods.includes(calledName(chain.root));
   for (const argument of args === null ? [] : children(args)) {
     if (argument.type === "keyword_argument") {
       const name = field(argument, "name");
-      if (name !== null) {
+      if (name !== null && supplies) {
         named.push(name.text);
       }
       continue;
@@ -284,10 +286,9 @@ function slotsOf(
   model: string | null,
 ): SlotValue[] {
   const later = laterCalls(chain);
-  const written = [
-    chain.root,
-    ...later.filter((call) => valueMethods.includes(calledName(call))),
-  ].flatMap(keywordValues);
+  const written = [chain.root, ...later]
+    .filter((call) => valueMethods.includes(calledName(call)))
+    .flatMap(keywordValues);
   const picked = later
     .filter((call) => !valueMethods.includes(calledName(call)))
     .flatMap((call) => pickedBy(call, model));
@@ -845,13 +846,32 @@ export function callStorage(
   const declaredHere = declared.effects.filter(({ effect }) =>
     readHere(effect),
   );
+  const found = [
+    ...inCallOrder([...effects, ...declaredHere], calls).filter(
+      ({ effect }) => !readsNoTable(effect),
+    ),
+    ...declared.effects.filter(({ effect }) => !readHere(effect)),
+  ];
+  const kept = new Set(found.map(({ effect }) => effect));
   return {
-    effects: [
-      ...inCallOrder([...effects, ...declaredHere], calls),
-      ...declared.effects.filter(({ effect }) => !readHere(effect)),
-    ],
-    slots: [...slots, ...declared.slots],
+    effects: found,
+    slots: [...slots, ...declared.slots].filter((one) => kept.has(one.effect)),
   };
+}
+
+/**
+ * Whether the effect is a read with no table, not even one per
+ * construction of its method's class. Nothing could pair with it, and
+ * the columns it lists belong to no table.
+ */
+function readsNoTable(effect: Effect): boolean {
+  return (
+    withoutContainer(effect) &&
+    effect.type === "interaction" &&
+    effect.interaction.class === "storage-access" &&
+    effect.interaction.kind === "read" &&
+    effect.containerByConstruction === undefined
+  );
 }
 
 /**

@@ -72,7 +72,9 @@ writes. `session.exec(stmt)` records nothing itself, since the statement
 it runs is its own chain. `begin`, `rollback` and `close` record nothing
 either.
 
-A statement's operation comes from its constructor. `update(Item).where(...).values(title="x")` is an update whose `fields` are the `values` keywords. `select(Item.id)` puts the column in `fields`. Only a column read off the model the chain works on counts, so `token.sub` in `session.get(User, token.sub)` is a value and stays out. A keyword the chain selects rows by goes in `selector`. So does a column of the model compared in a `where` or `filter`, `id` in `where(Item.id == 1)`, inside `and_`, `or_` and `not_` too.
+A statement's operation comes from its constructor. `update(Item).where(...).values(title="x")` is an update whose `fields` are the `values` keywords. Only a `values` call's keywords are fields: a session method's keywords are its options, and a project function's are its parameters. `select(Item.id)` puts the column in `fields`. Only a column read off the model the chain works on counts, so `token.sub` in `session.get(User, token.sub)` is a value and stays out. A keyword the chain selects rows by goes in `selector`. So does a column of the model compared in a `where` or `filter`, `id` in `where(Item.id == 1)`, inside `and_`, `or_` and `not_` too.
+
+A read whose table the pack cannot name records nothing, since no other side could pair with it. That covers `.all()` on a query a project function returns, whose model is inside the function.
 
 Raw SQL passed to `text("...")` is read as its own effect, with the kind
 and the table taken from the statement.
