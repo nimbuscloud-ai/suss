@@ -23,7 +23,9 @@ import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
 import { hasNameHole } from "@suss/behavioral-ir";
 
+import { requestTargetAt } from "../resolve/clientBasePath.js";
 import {
+  hostFromArgument,
   pathFromArgument,
   pathFromProperty,
   statesLocalUrl,
@@ -39,6 +41,7 @@ import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
 import type { CallExpression, NewExpression } from "ts-morph";
 import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
+import type { RequestTarget } from "../resolve/clientBasePath.js";
 
 const CALL_KIND: ReadonlySet<SyntaxKind> = new Set([SyntaxKind.CallExpression]);
 
@@ -86,7 +89,7 @@ export function discoverClientCalls(
       continue;
     }
 
-    for (const under of sitesToReadUnder(call, binding, resolution)) {
+    for (const under of sitesToReadUnder(call, match, binding, resolution)) {
       results.push({
         func: enclosingFunc,
         kind,
@@ -251,13 +254,17 @@ function clientsBuiltAtTopLevel(
 
 /**
  * Which construction of the surrounding class to read this call under.
- * One entry of `undefined` is the ordinary case: the call says what it
- * reaches wherever the instance came from. A class that takes a piece
- * of the request in its constructor says something different per
- * construction, so each of those becomes a call of its own.
+ * One entry of `undefined` is the ordinary case: the call says where it
+ * goes wherever the instance came from. A class that takes a piece of
+ * the URL in its constructor can send the call somewhere different for
+ * each construction, so each construction that gives the call a path
+ * becomes a call of its own. When none does, the call keeps its own
+ * reading, so a path the call states is not lost to constructions that
+ * state less.
  */
 function sitesToReadUnder(
   call: CallExpression,
+  match: ClientCallMatch,
   binding: BindingExtraction | undefined,
   resolution: ResolutionStore | undefined,
 ): Array<string | undefined> {
@@ -265,107 +272,81 @@ function sitesToReadUnder(
   if (binding === undefined || resolution === undefined || cls === undefined) {
     return [undefined];
   }
-  const plain = requestStatedBy(call, binding, resolution, undefined);
-  if (plain.settled) {
+  const plain = targetUnder(call, match, binding, resolution, undefined);
+  if (plain === null || pathSettled(plain)) {
     return [undefined];
   }
 
-  // Two constructions that state the same request are one call, since
-  // nothing about the crossing tells them apart.
-  const bySignature = new Map<string, string>();
+  // Two constructions that send the call to the same place are one call,
+  // since nothing about the crossing tells them apart.
+  const byTarget = new Map<string, string>();
   for (const site of resolution.constructionSitesOf(cls)) {
-    const stated = requestStatedBy(call, binding, resolution, site);
-    if (stated.signature === plain.signature) {
+    const stated = targetUnder(call, match, binding, resolution, site);
+    if (stated?.path === undefined) {
       continue;
     }
-    if (!bySignature.has(stated.signature)) {
-      bySignature.set(stated.signature, site);
+    const method = methodStated(call, binding, resolution, site) ?? "";
+    const key = `${method} ${stated.host ?? ""} ${stated.path}`;
+    if (!byTarget.has(key)) {
+      byTarget.set(key, site);
     }
   }
-  return bySignature.size === 0 ? [undefined] : [...bySignature.values()];
+  return byTarget.size === 0 ? [undefined] : [...byTarget.values()];
 }
 
-/** One reading of what a call says about the boundary it reaches. */
-interface StatedRequest {
-  /** Both halves as one string, for telling two readings apart. */
-  signature: string;
-  /** Whether every half the call itself writes came out with nothing left open. */
-  settled: boolean;
-}
-
-function requestStatedBy(
-  call: CallExpression,
-  binding: BindingExtraction,
-  resolution: ResolutionStore,
-  site: string | undefined,
-): StatedRequest {
-  const path = pathStated(call, binding, resolution, site);
-  const method = methodStated(call, binding, resolution, site);
-  return {
-    signature: `${method.text ?? ""}|${path.text ?? ""}`,
-    settled: settled(path) && settled(method),
-  };
+/** Whether the reading gives a path with no part the program works out at runtime. */
+function pathSettled(target: RequestTarget): boolean {
+  return target.path !== undefined && !hasNameHole(target.path);
 }
 
 /**
- * One half of the request as one read of it came out. `fromCall` says
- * the pack takes it from the call rather than from the pack's own
- * words, which is what makes an unreadable one worth a second look.
+ * Where the call sends its request under the construction at `site`, as
+ * the unit's binding reads it, or null when the pattern reads the path
+ * off something other than an argument the call passes.
  */
-interface StatedHalf {
-  text: string | undefined;
-  fromCall: boolean;
-}
-
-const NOT_FROM_THE_CALL: StatedHalf = { text: undefined, fromCall: false };
-
-/** A half the pack takes from the call has to come out with nothing left open. */
-function settled(half: StatedHalf): boolean {
-  if (!half.fromCall) {
-    return true;
-  }
-  return half.text !== undefined && !hasNameHole(half.text);
-}
-
-function pathStated(
+function targetUnder(
   call: CallExpression,
+  match: ClientCallMatch,
   binding: BindingExtraction,
   resolution: ResolutionStore,
   site: string | undefined,
-): StatedHalf {
+): RequestTarget | null {
   const p = binding.path;
   if (p.type !== "fromArgument" && p.type !== "fromArgumentProperty") {
-    return NOT_FROM_THE_CALL;
+    return null;
   }
   const arg = call.getArguments()[p.position];
   if (arg === undefined) {
-    return NOT_FROM_THE_CALL;
+    return null;
   }
-  return {
-    fromCall: true,
-    text:
-      p.type === "fromArgument"
+  const property = p.type === "fromArgumentProperty" ? p.property : undefined;
+  const own: RequestTarget = {
+    path:
+      property === undefined
         ? pathFromArgument(arg, resolution, site)
-        : pathFromProperty(arg, p.property, resolution, site),
+        : pathFromProperty(arg, property, resolution, site),
+    host: hostFromArgument(arg, property, resolution, site),
   };
+  return requestTargetAt(call, match, own, resolution, site);
 }
 
+/** The method the call sends under the construction at `site`, when the pattern reads it off the call. */
 function methodStated(
   call: CallExpression,
   binding: BindingExtraction,
   resolution: ResolutionStore,
   site: string | undefined,
-): StatedHalf {
+): string | undefined {
   const m = binding.method;
   if (m.type !== "fromArgumentProperty") {
-    return NOT_FROM_THE_CALL;
+    return undefined;
   }
   const arg = call.getArguments()[m.position];
   const stated =
     arg === undefined
       ? null
       : stringPropertyOf(arg, m.property, resolution, site);
-  return { fromCall: true, text: stated ?? m.default };
+  return stated ?? m.default;
 }
 
 /**

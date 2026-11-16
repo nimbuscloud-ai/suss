@@ -90,7 +90,6 @@ import {
   literalOf,
   pathIsOnlyHoles,
   pathOf,
-  statedRequestPath,
   type Value,
 } from "@suss/values";
 
@@ -197,6 +196,7 @@ import { createReferenceIndex } from "./referencedFiles.js";
 import {
   clientBaseHost,
   clientBasePath,
+  requestTargetAt,
   underBasePath,
 } from "./resolve/clientBasePath.js";
 import {
@@ -1113,21 +1113,13 @@ function extractConsumerBinding(
   }
 
   const method = extractBindingMethod(binding, callSite, pack, resolution);
-  // An absolute URL replaces the client's base, the way axios sends it.
-  const ownHost = extractBindingHost(binding, callSite, resolution);
-  const call = callSite.callExpression;
-  const host =
-    ownHost ?? clientBaseHost(call, pattern.match, resolution, callSite.under);
-  // The base goes on after a path that says nothing has been dropped, so
-  // a forwarding wrapper still states no route of its own.
-  const path = underBasePath(
-    ownHost === undefined
-      ? clientBasePath(call, pattern.match, resolution, callSite.under)
-      : undefined,
-    statedRequestPath(
-      extractBindingPath(binding, callSite, pack, resolution),
-      host,
-    ),
+  const host = extractBindingHost(binding, callSite, resolution);
+  const target = requestTargetAt(
+    callSite.callExpression,
+    pattern.match,
+    { path: extractBindingPath(binding, callSite, pack, resolution), host },
+    resolution,
+    callSite.under,
   );
 
   // Wrapper expansion looks for a null `path` to spot a forwarding
@@ -1135,8 +1127,8 @@ function extractConsumerBinding(
   return restBinding({
     transport: pack.protocol,
     method: method ?? null,
-    path: path ?? null,
-    host,
+    path: target.path ?? null,
+    host: target.host,
     recognition: pack.name,
   });
 }

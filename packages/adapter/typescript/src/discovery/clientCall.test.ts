@@ -191,12 +191,12 @@ describe("a path a constructor argument states", () => {
       }
   `;
 
-  function pathsUnder(source: string): string[] {
+  function pathsUnder(source: string, name = "list"): string[] {
     const project = createTestProject();
     const file = project.createSourceFile("/consumer.ts", source);
     const store = new ResolutionStore();
     return discoverClientCalls(file, match, "client", store, binding)
-      .filter((unit) => unit.name === "list")
+      .filter((unit) => unit.name === name)
       .map((unit) =>
         pathFromArgument(
           unit.callSite?.callExpression.getArguments()[0] as Node,
@@ -236,6 +236,47 @@ describe("a path a constructor argument states", () => {
       export const same = new Resource("/users");
       `),
     ).toEqual(["/users"]);
+  });
+
+  it("keeps a construction whose argument it cannot read, beside one it can", () => {
+    expect(
+      pathsUnder(`
+      export class Versioned {
+        constructor(private base: string) {}
+        list() { return fetch(\`/v1\${this.base}\`); }
+      }
+      export const users = new Versioned("/users");
+      export const configured = new Versioned(\`/\${process.env.KIND}\`);
+      `),
+    ).toEqual(["/v1/users", "/v1/{KIND}"]);
+  });
+
+  it("keeps the call's own path when no construction gives it one", () => {
+    expect(
+      pathsUnder(
+        `
+        import logger from "./logger";
+        const HOST = "api.example.com";
+        class Mailer {
+          private url = \`https://\${HOST}/v1\`;
+          private log: unknown;
+          private auth: { token: string };
+          constructor(private key: string) {
+            this.auth = this.authFor(key);
+            this.log = logger.child(key);
+          }
+          private authFor = (key: string) => ({ token: key });
+          send(endpoint: string) {
+            return fetch(\`\${this.url}\${endpoint}\`, { method: "GET" });
+          }
+        }
+        export default function build(key: string) {
+          return new Mailer(key);
+        }
+        `,
+        "send",
+      ),
+    ).toEqual(["/v1{endpoint}"]);
   });
 
   it("asks nothing under a site for a path written out at the call", () => {
