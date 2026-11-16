@@ -72,4 +72,36 @@ describe("a Python file as module ops", () => {
     expect(classes).toHaveLength(3);
     expect(classes[0]?.name()).toBe("Outer");
   });
+
+  it("lists the functions and classes it writes under decorators, a method and one inside a function included, in source order", async () => {
+    const ops = await opsOf(
+      "@app.get('/x')\n" +
+        "def read():\n" +
+        "    @wraps(read)\n" +
+        "    def inner():\n" +
+        "        pass\n" +
+        "\n" +
+        "@ns.route('/y')\n" +
+        "class Item:\n" +
+        "    @staticmethod\n" +
+        "    def get():\n" +
+        "        pass\n" +
+        "\n" +
+        "def plain():\n" +
+        "    pass\n",
+    );
+    expect(
+      ops
+        .decorated()
+        .map(({ definition, decorators }) => [
+          definition.source?.().split("\n")[0],
+          decorators.length,
+        ]),
+    ).toEqual([
+      ["def read():", 1],
+      ["def inner():", 1],
+      ["class Item:", 1],
+      ["def get():", 1],
+    ]);
+  });
 });

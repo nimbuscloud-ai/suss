@@ -617,12 +617,29 @@ export interface ModuleOps {
   /** The functions the file writes whose body opens with the directive, in source order. */
   markedFunctions(word: string): readonly MarkedFunction[];
   /**
+   * The functions and classes the file writes under decorators, nested
+   * ones included, in source order. Empty in a language that writes no
+   * decorators.
+   */
+  decorated(): readonly DecoratedDefinition[];
+  /**
    * Whether the file's text has the word anywhere. A file whose adapter
    * cannot answer from the text says yes, so a reader that asks first
    * only ever skips a file that cannot match.
    */
   mentions(word: string): boolean;
 }
+
+/** A function or class written under decorators, with each decorator in source order, the top one first. */
+export interface DecoratedDefinition {
+  readonly definition: ValueOps;
+  readonly decorators: readonly Decorator[];
+}
+
+/** A decorator as the source writes it: a call, `@router.get("/x")`, or any other value, `@staticmethod`. */
+export type Decorator =
+  | { readonly form: "call"; readonly call: CallOps }
+  | { readonly form: "value"; readonly value: ValueOps };
 
 /**
  * Which calls a module's ops list: the ones the module body runs, outside
