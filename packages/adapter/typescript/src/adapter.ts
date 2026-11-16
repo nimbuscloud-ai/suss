@@ -76,6 +76,7 @@ import {
   runPackHook,
   runRootOf,
   type SettledModule,
+  type SubUnitOpsCarrier,
   splitAtHandOffs,
   stampClaimMetadata,
   stampModuleImports,
@@ -149,7 +150,6 @@ import {
 } from "./discovery/helperIndex.js";
 import {
   type DiscoveredUnit,
-  discoveredUnitOf,
   discoverUnits,
   unitDedupKey,
 } from "./discovery/index.js";
@@ -168,7 +168,6 @@ import {
   buildWrapperIndex,
   type WrapperIndex,
 } from "./discovery/wrapperIndex.js";
-import { createTsDiscoveryContext } from "./discoveryContext.js";
 import {
   type EveryUnitDeclarations,
   everyUnitDeclarationsOf,
@@ -227,10 +226,7 @@ import {
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import { stableTypeText } from "./shapes/typeText.js";
-import {
-  createTsSubUnitContext,
-  type TsSubUnitContext,
-} from "./subUnitContext.js";
+import { createTsSubUnitContext } from "./subUnitContext.js";
 import {
   nameSummaries,
   workspaceNameFor,
@@ -1359,7 +1355,7 @@ function bodyRecognizersOf(
 function computeSubUnitBarriers(
   unit: DiscoveredUnit,
   packs: ReadonlyArray<PatternPack>,
-  ctx: TsSubUnitContext,
+  ctx: SubUnitOpsCarrier,
   tallies: Map<string, PackTally> | undefined,
   file: string,
 ): DescentBarriers {
@@ -1387,7 +1383,7 @@ function computeSubUnitBarriers(
 function subUnitsOrReport(
   pack: PatternPack,
   parent: DiscoveredSubUnitParent,
-  ctx: TsSubUnitContext,
+  ctx: SubUnitOpsCarrier,
   at: { tally: PackTally | undefined; file: string },
 ): DiscoveredSubUnit[] {
   return runPackHook(
@@ -1482,23 +1478,6 @@ function extractFromSourceFile(
     units.push(
       ...(wrappers?.unitsIn(sourceFile.getFilePath(), pack.name) ?? []),
     );
-
-    // A pack no DiscoveryMatch variant fits does its own walking.
-    const customUnits = runPackHook(
-      tally,
-      {
-        pack: pack.name,
-        hook: "discoverUnits",
-        file: sourceFile.getFilePath(),
-      },
-      () =>
-        pack.discoverUnits?.(
-          sourceFile,
-          createTsDiscoveryContext(resolution),
-        ) ?? [],
-      [],
-    );
-    units.push(...customUnits.map(discoveredUnitOf));
 
     for (const unit of units) {
       const claimKey = unitDedupKey(unit);
@@ -2117,7 +2096,7 @@ function readCallerBody(
   pack: PatternPack,
   wrapperPack: PatternPack,
   reading: CallerReading,
-  subUnitCtx: TsSubUnitContext,
+  subUnitCtx: SubUnitOpsCarrier,
 ): RawCodeStructure {
   const file = unit.func?.getSourceFile();
   const packs = (file === undefined

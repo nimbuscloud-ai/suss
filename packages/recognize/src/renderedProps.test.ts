@@ -135,7 +135,6 @@ describe("a chain over the elements a parent renders", () => {
 
   it("claims nothing where the adapter lists no elements, as Python and Ruby leave it", () => {
     expect(subUnitsOf([HANDLERS])(parent, {})).toEqual([]);
-    expect(subUnitsOf([HANDLERS])(parent, null)).toEqual([]);
   });
 
   it("comes before a call chain's claims, and goes by its claims in the pack health report", () => {

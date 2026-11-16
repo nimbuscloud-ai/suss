@@ -15,7 +15,6 @@ export {
   TSCONFIG_NAMES,
 } from "./bootstrap/noTsconfigProject.js";
 export { collectAncestorBranches } from "./conditions.js";
-export { rootIdentifier } from "./configuredCall.js";
 export { readContract, readContractForClientCall } from "./contract.js";
 // One file as the module ops a declared reader asks, for a test that
 // asks the same questions of each language.
@@ -55,7 +54,6 @@ export {
   parameterNamedBy,
   toFunctionRoot,
 } from "./discovery/shared.js";
-export { createTsDiscoveryContext } from "./discoveryContext.js";
 export { boundInProgram, dottedPathOf } from "./facts/extract.js";
 // The store behind the recognizer context's `resolveWrittenValue`.
 // Exported so a pack's test harness can give recognizers the same
@@ -80,7 +78,7 @@ export {
 export { parseConditionExpression } from "./predicates.js";
 // The executor ops a declared pack runs on. Exported so a pack's test
 // harness can build the same context the adapter threads through.
-export { callOpsFor } from "./resolve/callOps.js";
+export { callOpsFor, rootIdentifier } from "./resolve/callOps.js";
 export {
   factSourceFor,
   readOpsAt,
@@ -163,14 +161,9 @@ export type {
   PackFunnel,
 } from "./diagnostics.js";
 export type { ClientCallSite, DiscoveredUnit } from "./discovery/index.js";
-export type { TsDiscoveryContext } from "./discoveryContext.js";
 export type {
   TsAccessRecognizerContext,
   TsInvocationRecognizerContext,
 } from "./resolve/invocationEffects.js";
-export type {
-  TsJsxAttributeLocation,
-  TsSubUnitContext,
-} from "./subUnitContext.js";
 export type { FoundTerminal } from "./terminals/index.js";
 export type { Timer, TimingReport } from "./timing.js";

@@ -196,7 +196,7 @@ export function buildExtractionReport(args: {
     return {
       pack: pack.name,
       version: pack.version ?? null,
-      discovers: pack.discovery.length > 0 || pack.discoverUnits !== undefined,
+      discovers: pack.discovery.length > 0,
       recognizes:
         (pack.invocationRecognizers?.length ?? 0) > 0 ||
         (pack.accessRecognizers?.length ?? 0) > 0,

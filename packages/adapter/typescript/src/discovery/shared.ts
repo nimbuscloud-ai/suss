@@ -68,8 +68,8 @@ export interface DiscoveredUnit {
   /** The discovery pattern that produced this unit. Set by discoverUnits. */
   pattern?: DiscoveryPattern;
   /**
-   * Terminal patterns for this unit's body, when a discoverUnits
-   * callback attached them (`DiscoveredCustomUnit.terminals`). A pack
+   * Terminal patterns for this unit's body, when a declared pattern
+   * attached them (`DiscoveredCustomUnit.terminals`). A pack
    * whose units follow more than one output convention declares the
    * common one at pack level and attaches the other per unit.
    * `extractCodeStructure` falls back to the pack-level `terminals`
@@ -77,8 +77,8 @@ export interface DiscoveredUnit {
    */
   terminals?: TerminalPattern[];
   /**
-   * Input mapping for this unit, when a discoverUnits callback attached
-   * one (`DiscoveredCustomUnit.inputMapping`). Falls back to the
+   * Input mapping for this unit, when a declared pattern attached one
+   * (`DiscoveredCustomUnit.inputMapping`). Falls back to the
    * pack-level `inputMapping` when unset.
    */
   inputMapping?: InputMappingPattern;
@@ -189,7 +189,7 @@ export interface DiscoveredUnit {
   /** Statuses the route's own decorators list as possible responses. */
   declaredStatuses?: number[];
   /**
-   * Populated by a pack's `discoverUnits` callback for a message-bus
+   * Set by a declared pattern for a message-bus
    * consumer whose channel the code gives (a handler factory whose
    * config includes the expected subject). The adapter uses it to build
    * a `message-bus` binding directly, which pairs with producers
@@ -201,7 +201,7 @@ export interface DiscoveredUnit {
     channel: string | null;
   };
   /**
-   * Populated by a pack's `discoverUnits` callback for a deployed unit
+   * Set by a declared pattern for a deployed unit
    * nothing else routes to, which is reached by being invoked by name.
    * The adapter builds a `unit-invocation` binding from it, which pairs
    * with the calls that name the same unit.
@@ -219,9 +219,8 @@ export interface DiscoveredUnit {
   handedIn?: readonly HandedInParameter[];
   /**
    * Metadata merged onto the assembled summary's `metadata` field.
-   * Populated when a pack's `discoverUnits` callback stamps provenance
-   * on the units it returns (the discovery-layer sibling of the
-   * per-sub-unit `metadata` the `subUnits` hook returns).
+   * Set when a declared pattern stamps provenance on the units it
+   * finds, as the `subUnits` hook does on each sub-unit.
    */
   metadata?: Record<string, unknown>;
   /**
@@ -262,8 +261,8 @@ export interface DiscoveredUnit {
 }
 
 /**
- * A unit a pack found outside this adapter's own handlers, through its
- * `discoverUnits` hook or a declared pattern, as this adapter's unit.
+ * A unit a pack's declared pattern found outside this adapter's own
+ * handlers, as this adapter's unit.
  */
 export function discoveredUnitOf(found: DiscoveredCustomUnit): DiscoveredUnit {
   return {
@@ -323,8 +322,8 @@ export function unitNode(unit: DiscoveredUnit): Node | null {
  *
  * One identity for two dedup passes over overlapping populations.
  * Discovery dedups the units its patterns matched. The adapter claims
- * over those plus the ones a pack's `discoverUnits` callback returned,
- * which never went through discovery at all. Both passes are asking
+ * over those plus the ones the wrapper index adds, which never went
+ * through discovery at all. Both passes are asking
  * whether they have seen this unit already, so both ask it the same
  * way.
  *
