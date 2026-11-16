@@ -620,6 +620,20 @@ const STATED_RULES = [
     "import",
   ),
 
+  // A member read off a whole-module import steps to what the module
+  // exports under that name, so after `import settings`,
+  // `settings.TIMEOUT` is whatever the settings module binds to it.
+  rule(
+    "hop",
+    [v("x"), v("value"), VALUE_STEP],
+    [
+      lit("readsProperty", v("x"), v("ns"), v("n")),
+      lit("imports", v("ns"), v("m"), NAMESPACE_IMPORT),
+      lit("moduleExport", v("m"), v("n"), v("value")),
+    ],
+    "namespace member value",
+  ),
+
   // A parameter steps to what a call passes it. A function called from
   // several places leaves its parameter with more than one value, and a
   // caller that needs those apart asks `passesArgument`, which keeps the call.

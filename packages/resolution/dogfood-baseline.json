@@ -2,6 +2,6 @@
   "name": "@suss/resolution",
   "exports": 110,
   "internal": 99,
-  "consumers": 206,
+  "consumers": 207,
   "unfollowedCalls": 36
 }

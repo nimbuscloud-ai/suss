@@ -1044,13 +1044,14 @@ projects measured when the name steps moved to `nameHop`, because the
 chains stopped listing the hops one by one.
 
 A value step goes to the value x is written as: a name to its
-declaration, an import to what the module exports, a parameter to what a
-call passes it, a property read to what the object contains under that
-name, a construction to the class, a transparent wrapper to the argument
-it wraps. A result step goes the other way, from a call to what the
-function it invokes returns. A walk counts as a result walk once it has
-run a call anywhere along it, which keeps a factory call out of the
-results that stop at a value.
+declaration, an import to what the module exports, a member read off a
+whole-module import to what the module exports under that name, a
+parameter to what a call passes it, a property read to what the object
+contains under that name, a construction to the class, a transparent
+wrapper to the argument it wraps. A result step goes the other way,
+from a call to what the function it invokes returns. A walk counts as a
+result walk once it has run a call anywhere along it, which keeps a
+factory call out of the results that stop at a value.
 
 A hop that only one language has is written as a step too. JavaScript's
 `.bind` and Ruby's `Const.new` are one rule each, and every question

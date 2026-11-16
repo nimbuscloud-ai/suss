@@ -443,6 +443,29 @@ describe("explainResolutionProof", () => {
     );
   });
 
+  it("says a member read off a module imported whole steps to what the module exports", () => {
+    const db = evaluated([
+      ["func", "handlerFn"],
+      ["exportsAs", "impl", "handler", "handlerFn"],
+      ["reExports", "routes", "handler", "impl", "handler"],
+      ["imports", "ns", "routes", "*"],
+      ["readsProperty", "member", "ns", "handler"],
+    ]);
+
+    const proof = proofOf(db, "resolves", ["member", "handlerFn"]);
+    const explained = explainResolutionProof(proof, { describe: say });
+
+    expect(explained?.steps.map((step) => step.rule)).toEqual([
+      "namespace member value",
+    ]);
+    expect(explained?.steps[0].reason).toBe(
+      "member reads handler off ns, which imports routes whole, and routes exports handlerFn under that name",
+    );
+    expect(explained?.steps[0].notes).toEqual([
+      "routes takes handler from impl, where it is called handler",
+    ]);
+  });
+
   it("says a barrel forwards everything another module exports", () => {
     const db = evaluated([
       ["func", "daoFn"],
