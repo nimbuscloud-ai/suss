@@ -23,6 +23,8 @@ import type {
   CallOps,
   ClassValueOps,
   DeclaredDiscoveryMatch,
+  DecoratedMatch,
+  Decorator,
   DiscoveredCustomUnit,
   EntryMember,
   EntryObject,
@@ -44,10 +46,23 @@ import type {
  * A unit a declared pattern found. `foundAt` is the path of names from
  * the top of the file to the function, the export and then each member,
  * which Python and Ruby give a unit as its export path. Null for a
- * function no export leads to.
+ * function no export leads to. A `decorated` pattern says which decorator
+ * it found the unit under in `decoratedBy`.
  */
 export interface DeclaredUnit extends DiscoveredCustomUnit {
   readonly foundAt: readonly string[] | null;
+  readonly decoratedBy?: DecoratedBy;
+}
+
+/** The decorator a `decorated` pattern found a unit under. */
+export interface DecoratedBy {
+  /** The decorator's method, `middleware` in `@app.middleware("http")`. */
+  readonly method: string;
+  readonly decorator: Decorator;
+  /** The value the method is called on, as the source writes it: `app`. */
+  readonly receiver: ValueOps;
+  /** The call that value was written as, which the pattern's `on` accepted: `FastAPI()`. */
+  readonly on: CallOps;
 }
 
 /** The units a declared pattern finds in one module. `kind` is the pattern's own, for a unit the match builds without a spec. */
@@ -129,6 +144,7 @@ const READERS: {
   subclassOf: readSubclasses,
   marked: readMarked,
   registeredFunction: readRegistrations,
+  decorated: readDecorated,
   routeTable: readRouteTable,
 };
 
@@ -369,6 +385,65 @@ function readRegistrations(
     const spec = name === null ? undefined : match.nameAt.named[name];
     return spec === undefined ? [] : [built(spec, func, null)];
   });
+}
+
+/**
+ * Each function written under one of the decorators the pattern lists,
+ * in the order the file writes them. A decorator has to write its
+ * method's name, so a file whose text has none of them is not read.
+ */
+function readDecorated(
+  match: DecoratedMatch,
+  _kind: string,
+  module: ModuleOps,
+): DeclaredUnit[] {
+  const methods = new Set(Object.keys(match.named));
+  if (![...methods].some((method) => module.mentions(method))) {
+    return [];
+  }
+  module.readingReceivers?.(methods, "decorators");
+  return module.decorated().flatMap(({ definition, name, decorators }) => {
+    const func = nodeOfFunction(definition);
+    if (func === null || name === null) {
+      return [];
+    }
+    return decorators.flatMap((decorator) => {
+      const by = decoratedBy(decorator, methods);
+      const spec = by === null ? undefined : match.named[by.method];
+      return by === null || spec === undefined || !by.on.isFrom(match.on)
+        ? []
+        : [{ func, ...spec, name, foundAt: null, decoratedBy: by }];
+    });
+  });
+}
+
+/**
+ * The method a decorator calls and what it is called on: the receiver of
+ * a decorator written as a call, `@app.middleware("http")`, or the object
+ * of one written as a member read, `@app.before_request`. Null for any
+ * other decorator, and for one whose value was not written as a call.
+ */
+function decoratedBy(
+  decorator: Decorator,
+  methods: ReadonlySet<string>,
+): DecoratedBy | null {
+  if (decorator.form === "call") {
+    const { call } = decorator;
+    const method = call.method();
+    const receiver = call.receiverValue?.() ?? null;
+    const on = method !== null && methods.has(method) ? call.receiver() : null;
+    return method === null || receiver === null || on === null
+      ? null
+      : { method, decorator, receiver, on };
+  }
+  const read = decorator.value.memberRead?.() ?? null;
+  const on =
+    read !== null && methods.has(read.key)
+      ? (read.object.asCall?.({ follow: "namesAndFields" }) ?? null)
+      : null;
+  return read === null || on === null
+    ? null
+    : { method: read.key, decorator, receiver: read.object, on };
 }
 
 /**

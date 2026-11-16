@@ -52,6 +52,7 @@ export type DiscoveryMatch =
       registrationChain: string[]; // e.g. [".router"]
     }
   | RegisteredFunctionMatch
+  | DecoratedMatch
   | ManifestMatch
   | SubclassOfMatch
   | MarkedMatch
@@ -528,6 +529,30 @@ export interface RegisteredFunctionMatch {
 }
 
 /**
+ * A function written under a decorator a library gives as a method of
+ * something it made: `@app.middleware("http")` on a FastAPI app, or
+ * `@app.before_request` on a Flask one. Every adapter reads it through
+ * the module ops' `decorated()`, so a function written inside another
+ * function or a class counts. The unit is the function, under the name
+ * it is declared with, once for each decorator the pattern takes. A class
+ * under the decorator gives none, since a unit is read off a function.
+ */
+export interface DecoratedMatch {
+  type: "decorated";
+  /**
+   * What made the value the decorator's method is called on, asked of
+   * the call that value was written as: `FastAPI()` for `app` after `app
+   * = FastAPI()`.
+   */
+  on: ReceiverOrigin;
+  /** The decorator's method names, each with the unit the function under it is. */
+  named: Readonly<Record<string, DecoratedUnitSpec>>;
+}
+
+/** A unit a `decorated` pattern builds, which takes the name of the function it is on. */
+export type DecoratedUnitSpec = Omit<UnitSpec, "name">;
+
+/**
  * The functions a deploy manifest beside the project says the platform
  * calls in a file. The pack reads the manifest, since reading a file is
  * the pack's business, and the adapter finds each function by the path
@@ -673,6 +698,7 @@ export interface RouteTableMatch {
 export type DeclaredDiscoveryMatch =
   | NamedExportMatch
   | RegisteredFunctionMatch
+  | DecoratedMatch
   | ManifestMatch
   | SubclassOfMatch
   | MarkedMatch
@@ -680,6 +706,7 @@ export type DeclaredDiscoveryMatch =
 
 const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
   "registeredFunction",
+  "decorated",
   "manifest",
   "subclassOf",
   "marked",

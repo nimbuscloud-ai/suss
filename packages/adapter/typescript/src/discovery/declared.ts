@@ -2,7 +2,13 @@
 // this adapter's facts. The reader is in @suss/recognize; this file hands
 // it the module ops for one file and widens what it finds.
 
-import { Node, type SourceFile, SyntaxKind } from "ts-morph";
+import {
+  type ClassDeclaration,
+  type MethodDeclaration,
+  Node,
+  type SourceFile,
+  SyntaxKind,
+} from "ts-morph";
 
 import { discoverDeclared } from "@suss/recognize";
 import { factModuleOps } from "@suss/recognize/ops";
@@ -79,7 +85,7 @@ export function moduleOpsFor(
           if (declaration !== undefined) {
             access.stateClass(declaration);
           }
-          return nodeId(node);
+          return { key: nodeId(node), name: node.getName() ?? null };
         }),
       mentions: (word) => sourceFile.getFullText().includes(word),
     },
@@ -87,8 +93,10 @@ export function moduleOpsFor(
 }
 
 /** Every declared class and method the file writes under a decorator, in source order. */
-function decoratedIn(sourceFile: SourceFile): Node[] {
-  const found: Node[] = [];
+function decoratedIn(
+  sourceFile: SourceFile,
+): (ClassDeclaration | MethodDeclaration)[] {
+  const found: (ClassDeclaration | MethodDeclaration)[] = [];
   sourceFile.forEachDescendant((node) => {
     if (
       (Node.isClassDeclaration(node) || Node.isMethodDeclaration(node)) &&

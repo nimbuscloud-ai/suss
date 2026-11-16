@@ -405,7 +405,8 @@ These discovery patterns are read here for every adapter, through
 says the platform calls (`manifest`), exports by name or by a pattern,
 with an object's members (`namedExport`), the methods of a class that
 reaches a library base (`subclassOf`), the functions a directive marks
-(`marked`), and a function a call hands over (`registeredFunction`).
+(`marked`), a function a call hands over (`registeredFunction`), and a
+function written under one of a library's decorators (`decorated`).
 They are not chain endings, since a unit found by an export, a file or
 a manifest is not reached from a call. `factModuleOps` answers the
 module ops from these facts:
@@ -419,7 +420,7 @@ module ops from these facts:
 | `calls(scope)` | the calls the adapter lists outside every function body, or with `file` every call the file writes, each as the fact ops for it in source order |
 | `elements()` | the elements the adapter lists for the file through `ModuleWritten.elements`, which TypeScript states as `writesElement(file, v)` with their rows when asked, keeping those with no `jsxParent(v, p)` row. Python and Ruby write no JSX and leave it unset |
 | `importedNames(modules)` | the adapter's `importedNames`: the file's named imports of the modules in TypeScript, and its `from m import n as x` bindings at module scope in Python. Ruby imports no names, and leaves it unset |
-| `decorated()` | `decoratedWith(x, d)` for each function and class the adapter lists through `ModuleWritten.decorated`, with the decorators in source order. A decorator that is a call comes back as its call ops, and any other as its value ops. TypeScript lists the classes and methods written under a decorator, Python every decorated function and class. Ruby writes no decorators and leaves it unset |
+| `decorated()` | `decoratedWith(x, d)` for each function and class the adapter lists through `ModuleWritten.decorated`, with the decorators in source order and the name the adapter says the definition is declared under. A decorator that is a call comes back as its call ops, and any other as its value ops. TypeScript lists the classes and methods written under a decorator, Python every decorated function and class. Ruby writes no decorators and leaves it unset |
 | `mentions(word)` | the adapter's own `mentions`, which in TypeScript looks for the word in the file's text. Python and Ruby leave it unset, and the module ops then say yes |
 
 `registeredFunction` with a global start and no method asks
@@ -441,6 +442,31 @@ functions too, since most apps boot inside a function. Each adapter's
 walk skips the bodies it defers for the module body, a function in
 TypeScript and Python and a method, lambda or block in Ruby, and keeps
 them for `file`.
+
+`decorated` reads `decorated()` for the functions written under a
+decorator the library gives as a method of something it made:
+
+```ts
+{
+  type: "decorated",
+  on: constructedFrom({ from: ["fastapi"], named: ["FastAPI"] }),
+  named: { middleware: { kind: "middleware" } },
+}
+```
+
+A decorator written as a call, `@app.middleware("http")`, is read
+through its receiver, and one written as a member read with no call,
+`@app.before_request`, through the object it is read off. The pattern's
+`on` is asked of the call that value was written as, `FastAPI()` for
+`app`, so a value a project function returns is not one the library
+made. The unit is the function, under the name it is declared with,
+and a function nested in another function or a class counts. A class
+under the decorator gives no unit. Each unit says which decorator found
+it in `decoratedBy`: the method, the decorator, the receiver as written
+and the call it was written as, which is where a reader looks for the
+object the decorator registers the function on. A file whose text
+writes none of the methods is not read, and the receivers of the
+decorators that call one are asked about at once.
 
 A unit spec's `handedIn` lists the parameters the platform fills when
 it calls the unit, by position and the name a read chain asks for each

@@ -218,11 +218,15 @@ describe("the definitions a file writes under decorators", () => {
   it("gives each one the adapter lists its decorators top first, a call as its call ops", () => {
     const module = factModuleOps("app.py", source(), {
       calls: () => [],
-      decorated: () => ["app.py:30-60", "app.py:70-90"],
+      decorated: () => [
+        { key: "app.py:30-60", name: "list_orders" },
+        { key: "app.py:70-90", name: null },
+      ],
     });
     expect(
-      module.decorated().map(({ definition, decorators }) => ({
+      module.decorated().map(({ definition, name, decorators }) => ({
         definition: definition.source?.(),
+        name,
         decorators: decorators.map((decorator) =>
           decorator.form === "call"
             ? `call ${decorator.call.calleeText()}`
@@ -232,6 +236,7 @@ describe("the definitions a file writes under decorators", () => {
     ).toEqual([
       {
         definition: "app.py:30-60",
+        name: "list_orders",
         decorators: ["call route", "value cached"],
       },
     ]);
