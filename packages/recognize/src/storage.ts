@@ -95,6 +95,12 @@ export interface StorageCalls {
     options?: { ignoringCase?: boolean },
   ): StorageCalls;
   /**
+   * What every method the table leaves out does, on a receiver the
+   * start accepts. A session whose other methods all read lists its
+   * writes and reads the rest here.
+   */
+  otherwise(meaning: StorageMethod): StorageCalls;
+  /**
    * What a bare call of the client itself does. A store hook such as
    * `useAppStore((s) => s.bears)` calls no method, so this meaning
    * applies to every call.
@@ -154,8 +160,20 @@ export interface StorageCalls {
   readonly declared: Chain<StorageMethod>;
 }
 
+/** Which calls in hand a chain reads, beyond what its links say. */
+export interface StorageCallsOptions {
+  /**
+   * Only the last call of a chain of calls, so `db.query(User).first()`
+   * is read once, at `.first()`.
+   */
+  outermost?: boolean;
+}
+
 /** A pack that recognizes calls against a store. */
-export function storageCalls(spec: StorageCallsSpec): StorageCalls {
+export function storageCalls(
+  spec: StorageCallsSpec,
+  options: StorageCallsOptions = {},
+): StorageCalls {
   const ending: StorageEnding = {
     yields: "storageAccess",
     system: spec.system,
@@ -163,8 +181,13 @@ export function storageCalls(spec: StorageCallsSpec): StorageCalls {
     scope: spec.scope ?? "default",
     unsettledName: spec.unsettledName ?? "reference",
   };
+  const outermost: Link<StorageMethod>[] =
+    options.outermost === true ? [{ asks: "outermost" }] : [];
   return chainFrom({
-    links: chainStart(spec.client, spec.clientAt),
+    links: [
+      ...chainStart<StorageMethod>(spec.client, spec.clientAt),
+      ...outermost,
+    ],
     ending,
     example: null,
   });
@@ -224,6 +247,23 @@ function subjectLink(
   };
 }
 
+/** The chain with its methods table's `otherwise` set, and an empty table added when it has none. */
+function withOtherwise(
+  declared: Chain<StorageMethod>,
+  meaning: StorageMethod,
+): Chain<StorageMethod> {
+  const hasTable = declared.links.some((link) => link.asks === "methods");
+  const links: Link<StorageMethod>[] = hasTable
+    ? declared.links.map((link) =>
+        link.asks === "methods" ? { ...link, otherwise: meaning } : link,
+      )
+    : [
+        ...declared.links,
+        { asks: "methods", table: {}, ignoringCase: false, otherwise: meaning },
+      ];
+  return { ...declared, links };
+}
+
 /** The same chain with one more link, or with its example set. */
 function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
   const adding = (link: Link<StorageMethod>): StorageCalls =>
@@ -238,6 +278,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
+    otherwise: (meaning) => chainFrom(withOtherwise(declared, meaning)),
     calls: (meaning) => adding({ asks: "calls", meaning }),
     container: (says, options) =>
       adding(containerLink(says, options?.qualified === true)),

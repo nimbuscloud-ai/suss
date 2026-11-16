@@ -24,6 +24,7 @@ import type {
   GeneratedModuleSpec,
   InvocationRecognizer,
   PackDeclarations,
+  PackWords,
   ParameterSupplier,
   PatternPack,
   ProjectHelpers,
@@ -105,6 +106,13 @@ export interface PackSpec {
   parameterSuppliers?: ParameterSupplier[];
   /** What the library reads out of a class body, such as its association calls. */
   classBodies?: ClassBodyDeclaration[];
+  /**
+   * What the library's own calls give back, for a language whose code
+   * declares no return types: `session.get(User, id)` is one `User`.
+   * The shared rules read them, so a method called on the result
+   * reaches the one the class declares.
+   */
+  words?: PackWords;
   /** Where this library's generator writes a copy of its module into the project. */
   generatedModules?: GeneratedModuleSpec;
   /**
@@ -200,6 +208,7 @@ const PASSED_THROUGH = [
   "projectHelpers",
   "parameterSuppliers",
   "classBodies",
+  "words",
   "generatedModules",
   "discoveryInputs",
 ] as const;
@@ -424,6 +433,7 @@ function rulesIn(chain: Chain<MethodMeaning>): WrittenAsCode[] {
   );
   const meanings = [
     ...Object.values(link?.table ?? {}),
+    ...(link?.otherwise === undefined ? [] : [link.otherwise]),
     ...(calls === undefined ? [] : [calls.meaning]),
   ];
   const written = new Map<string, InputRule>();

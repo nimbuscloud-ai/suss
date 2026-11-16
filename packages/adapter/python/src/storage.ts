@@ -28,7 +28,6 @@ import { pythonFactSource } from "./factSource.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls, calleeText } from "./paths/effects.js";
-import { rawSqlEffects, rawSqlOptionsOf } from "./rawSql.js";
 import { ownReceiverName } from "./reach/receivers.js";
 import {
   firstInBody,
@@ -45,7 +44,7 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PackRecognizer } from "@suss/extractor";
 import type { HeardSlot } from "@suss/recognize/ops";
-import type { RawSqlPattern, StoragePattern } from "./pack.js";
+import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { BoundPythonFile } from "./routers.js";
@@ -753,8 +752,6 @@ export interface StorageLookup {
   readonly files?: ReadonlyMap<string, BoundPythonFile>;
   readonly patterns: readonly StoragePattern[];
   readonly couldMatch: ReadonlySet<string>;
-  /** What a pack says about statements a project writes as SQL itself. */
-  readonly rawSql?: readonly RawSqlPattern[];
   /** The hooks packs declared with `@suss/recognize`, run over every call in a body. */
   readonly declared?: readonly PackRecognizer[];
 }
@@ -989,11 +986,10 @@ export function callStorage(
       );
     },
   });
-  const raw = rawSqlEffects(calls, rawSqlOptionsOf(lookup));
   const declared = declaredStorage(calls, lookup);
   return {
-    effects: [...effects, ...raw.effects, ...declared.effects],
-    slots: [...slots, ...raw.slots, ...declared.slots],
+    effects: [...effects, ...declared.effects],
+    slots: [...slots, ...declared.slots],
   };
 }
 

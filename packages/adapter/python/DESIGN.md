@@ -253,13 +253,17 @@ The two questions about where values came from, which input a guard reads and wh
 
 ## A statement the project wrote as SQL
 
-Some libraries run a statement the project wrote as SQL instead of building one. SQLAlchemy exports a function for this, and a pack lists the function and the module it comes from:
+Some libraries run a statement the project wrote as SQL instead of building one. SQLAlchemy exports a function for this, and the pack declares it with `@suss/recognize` (the section after this one) as a bare call of a function the file imported, with the places a statement's values are bound:
 
 ```ts
-rawSql: [{ module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" }]
+sqlStatements({ system, dialect: system, client: imported({ from: ["sqlalchemy"], named: ["text"] }) })
+  .calls({ statement: { at: 0 }, parameters: [
+    { of: [{ to: "chained", method: "bindparams" }], keywords: true },
+    { of: [{ to: "passedTo", at: 0 }], at: 1, keyword: "params" },
+  ] })
 ```
 
-A cloud warehouse gives the project a client object instead, and the statement goes to a method on it. A pack declares that with `@suss/recognize` (the section after this one), and the client's origin is `declaredBy` the client's module, which this adapter settles from the class of the receiver:
+A cloud warehouse gives the project a client object instead, and the statement goes to a method on it. A pack declares that the same way, and the client's origin is `declaredBy` the client's module, which this adapter settles from the class of the receiver:
 
 ```ts
 sqlStatements({ system: "gcp.bigquery", dialect: "bigquery", client: declaredBy("google.cloud.bigquery") })
@@ -276,7 +280,7 @@ An annotated attribute on a plain class is shared like `TABLE`, since nothing ge
 
 Reading a property runs its getter, so the adapter records what the getter returns under the property's name, one `holdsProperty` row per `return`, and a read finds that value rather than the getter function. The setter and the deleter are not recorded under the name at all. A def is a getter when it is written under `@property` or `@functools.cached_property`, or when the class body writes a `@name.setter` or `@name.deleter` for its name, which covers a library's own kind of property without the adapter knowing the library.
 
-A statement is read through the value evaluator, so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. A pick's `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. A method that takes a table name instead of SQL is a `storageCalls` chain whose container is `qualified`.
+A statement is read through the value facts and, where they write neither a literal nor a template, through the value evaluator (`partsOf` on `pythonFactSource`), so an f-string, a `+`, and a constant another module defines all read the same as a statement written out at the call. A piece the evaluator cannot settle becomes a parameter, which the statement would have had in that place anyway. A pick's `path` lists the keys to follow when the statement is inside a dictionary: `["query", "query"]` for a method taking `configuration={"query": {"query": sql}}`. A method that takes a table name instead of SQL is a `storageCalls` chain whose container is `qualified`.
 
 Nothing in the project states what one of the library's methods returns, so the adapter does not infer it. A chain like `hook.get_client().query(sql)` matches because the pack's origin says so: `returnedBy("get_client", declaredBy(HOOK_MODULE))`.
 

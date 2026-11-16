@@ -41,6 +41,7 @@ import {
   noopTimer,
   ownersWhereWritten,
   packRecognizers,
+  pooledWords,
   runDigest,
   runRootOf,
   stampModuleImports,
@@ -277,18 +278,28 @@ function reportUnresolvedProjectModules(
  */
 export function packWordsOf(packs: readonly PythonPack[]): PackWords {
   const models = packs.flatMap((pack) => pack.models ?? []);
+  const stated = pooledWords(packs);
   return {
-    givesBackOne: models.flatMap((model) =>
-      model.baseNames.flatMap((base) =>
-        model.givesBack.map((method) => ({ base, method })),
+    givesBackOne: [
+      ...models.flatMap((model) =>
+        model.baseNames.flatMap((base) =>
+          model.givesBack.map((method) => ({ base, method })),
+        ),
       ),
-    ),
-    givesBackOneOfArgument: models.flatMap((model) =>
-      model.baseNames.flatMap((base) =>
-        model.entryMethods.map((entry) => ({ base, ...entry })),
+      ...stated.givesBackOne,
+    ],
+    givesBackOneOfArgument: [
+      ...models.flatMap((model) =>
+        model.baseNames.flatMap((base) =>
+          model.entryMethods.map((entry) => ({ base, ...entry })),
+        ),
       ),
-    ),
-    givesBackOneOfImport: models.flatMap((model) => model.entryFunctions),
+      ...stated.givesBackOneOfArgument,
+    ],
+    givesBackOneOfImport: [
+      ...models.flatMap((model) => model.entryFunctions),
+      ...stated.givesBackOneOfImport,
+    ],
     associationConstructor: packs.flatMap((pack) =>
       (pack.classBodies ?? []).flatMap((body) =>
         constructorsOf(body.fields.association?.madeBy),
@@ -582,7 +593,6 @@ async function runPython(
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
   const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
-  const rawSqlPatterns = options.packs.flatMap((pack) => pack.rawSql ?? []);
   const declaredHooks = packRecognizers(options.packs, tallies);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);
@@ -652,16 +662,13 @@ async function runPython(
 
   const filesByPath = new Map(bound.map((one) => [one.file, one]));
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
-    storagePatterns.length > 0 ||
-    rawSqlPatterns.length > 0 ||
-    declaredHooks.length > 0
+    storagePatterns.length > 0 || declaredHooks.length > 0
       ? {
           facts: db,
           factsPath: file.file,
           files: filesByPath,
           patterns: storagePatterns,
           couldMatch,
-          rawSql: rawSqlPatterns,
           declared: declaredHooks,
         }
       : undefined;

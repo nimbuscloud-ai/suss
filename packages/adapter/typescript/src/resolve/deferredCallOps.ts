@@ -62,6 +62,7 @@ export function deferredCallOps(
     nameAt: (index, unsettled) => stated().nameAt(index, unsettled),
     receiver: () => stated().receiver(),
     chainedOn: () => stated().chainedOn?.() ?? null,
+    passedTo: () => stated().passedTo?.() ?? null,
     member: () => stated().member?.() ?? null,
     argument: (index) => stated().argument(index),
     callee: () => stated().callee(),

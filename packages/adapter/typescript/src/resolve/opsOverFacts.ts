@@ -76,6 +76,7 @@ function withNodeMembers(
     receiver: () => ops.receiver(),
     site: () => ops.site?.() ?? nodeId(node),
     chainedOn: () => ops.chainedOn?.() ?? null,
+    passedTo: () => ops.passedTo?.() ?? null,
     member: () => ops.member?.() ?? null,
     file: () => ops.file?.() ?? null,
     argument: (index) => ops.argument(index),

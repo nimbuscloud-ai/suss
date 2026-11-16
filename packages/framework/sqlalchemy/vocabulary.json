@@ -52,5 +52,8 @@
   "get": "language: Python spells dict.get and os.environ.get the same way. SQLAlchemy: Session.get, the row of a mapped class with the given primary key",
   "all": "SQLAlchemy: the method that runs the query and returns every row",
   "query": "SQLAlchemy: Session.query, which starts a 1.x query over a mapped class",
-  "relationship": "SQLAlchemy: sqlalchemy.orm.relationship, the constructor a mapped class's field is given to reach another mapped class"
+  "relationship": "SQLAlchemy: sqlalchemy.orm.relationship, the constructor a mapped class's field is given to reach another mapped class",
+  "bindparams": "SQLAlchemy: TextClause.bindparams, which binds a text() statement's named parameters by keyword",
+  "params": "SQLAlchemy: the keyword Session.execute and Connection.execute take a statement's parameters under",
+  "python": "suss: language name"
 }

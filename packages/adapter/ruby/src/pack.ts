@@ -16,6 +16,7 @@ import type {
   ClassBodyDeclaration,
   DeclaredDiscoveryPattern,
   InvocationRecognizer,
+  PackWords,
   PatternPack,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
@@ -98,6 +99,8 @@ export interface RubyPack {
    * declare an association, register a callback or define a class method.
    */
   classBodies?: ClassBodyDeclaration[];
+  /** What the library's own calls give back, `Account.find(id)` one `Account`, as a `pack()` pack states it. */
+  words?: PackWords;
   /** The calls the library offers for sending the store a statement the project wrote itself. */
   rawSql?: RbRawSqlPattern[];
   /**

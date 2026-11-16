@@ -230,8 +230,81 @@ const ROW_READS = storageCalls({
   .container({ at: 0 })
   .example('rows.read("orders").eq("id", 1).single()');
 
+// A vault whose `stash` writes and whose every other method reads. Each
+// chain of calls is read once, at its last call, and a call that sifts
+// rows picks them by the keywords of every call before it but `mark`.
+const VAULT = typed({ from: ["vault", "Vault"], named: ["Vault"] });
+
+// Ruby reads `Vault::Vault.new` as a call on a vault too, so the sift
+// that starts the chain is the one asked for, and the Ruby source opens
+// the vault in a method of its own.
+const FIRST_SIFT = {
+  to: "receiver",
+  every: true,
+  method: "sift",
+  origin: VAULT,
+} as const;
+
+const VAULT_CALLS = storageCalls(
+  { system: "vault", client: VAULT, unsettledName: "nothing" },
+  { outermost: true },
+)
+  .methods({ stash: { kind: "write", fields: { keywordsOf: {} } } })
+  .otherwise({ kind: "read", selector: { keywordsOf: {} } })
+  .container({ at: 0 })
+  .example('vault.stash("items", name="a")');
+
+const SIFTED_CALLS = storageCalls(
+  {
+    system: "vault",
+    client: VAULT,
+    clientAt: [FIRST_SIFT],
+    unsettledName: "nothing",
+  },
+  { outermost: true },
+)
+  .otherwise({
+    kind: "read",
+    selector: {
+      keywordsOf: { of: [{ to: "receiver", every: true, except: ["mark"] }] },
+    },
+  })
+  .container({ of: [FIRST_SIFT], at: 0 })
+  .example('vault.sift("items", kind="x").take()');
+
+// The columns a call reads off the table it is passed first, from every
+// argument after it.
+const BUILDER_PICKS = storageCalls({
+  system: "warehouse",
+  client: constructedFrom({ from: QB, named: ["Qb"] }),
+  unsettledName: "nothing",
+})
+  .methods({
+    pick: { kind: "read", fields: { fieldsRead: { from: 1 }, off: { at: 0 } } },
+  })
+  .container({
+    of: [
+      {
+        to: "argument",
+        at: 0,
+        origin: constructedFrom({ from: QB, named: ["table"] }),
+      },
+    ],
+    at: 0,
+  })
+  .slots("none")
+  .example("builder.pick(t, t.id, t.name)");
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
+  pack("declared-vault", [VAULT_CALLS, SIFTED_CALLS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
+  pack("declared-picks", [BUILDER_PICKS], {
+    languages: LANGUAGES,
+    recognizedAs: "@suss/declared-test",
+  }),
   pack("declared-rows", [ROW_READS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
@@ -281,6 +354,7 @@ const TYPESCRIPT = `
   import { eq, Qb, table } from "qb";
   import { Warehouse } from "depot";
   import { Client } from "rows";
+  import { Vault } from "vault";
 
   const cache = new Cache();
   const db = new Pool();
@@ -344,6 +418,18 @@ const TYPESCRIPT = `
     var cursor: any = cursor.next();
     cursor.single();
   }
+
+  export function browse(vault: Vault, owner: string) {
+    vault.stash("items", { name: "a", owner });
+    vault.peek("items", { owner });
+    vault.sift("items", { kind: "x" }).mark({ tag: "t" }).sift({ owner }).take();
+  }
+
+  export function choose() {
+    const builder = new Qb();
+    const t = table("users");
+    builder.pick(t, t.id, t.name);
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -355,6 +441,7 @@ from sqldb import Pool
 from qb import Qb, eq, table
 from depot import Warehouse
 from rows import Client
+from vault import Vault
 
 cache = Cache()
 db = Pool()
@@ -424,6 +511,18 @@ def fetch(id):
 def spin():
     cursor = cursor.next()
     cursor.single()
+
+
+def browse(vault: Vault, owner):
+    vault.stash("items", name="a", owner=owner)
+    vault.peek("items", owner=owner)
+    vault.sift("items", kind="x").mark(tag="t").sift(owner=owner).take()
+
+
+def choose():
+    builder = Qb()
+    t = table("users")
+    builder.pick(t, t.id, t.name)
 `;
 
 const RUBY = `module Store
@@ -487,6 +586,23 @@ const RUBY = `module Store
     cursor = cursor.next()
     cursor.single()
   end
+
+  def self.open_vault
+    Vault::Vault.new
+  end
+
+  def self.browse(owner)
+    vault = open_vault
+    vault.stash("items", name: "a", owner: owner)
+    vault.peek("items", owner: owner)
+    vault.sift("items", kind: "x").mark(tag: "t").sift(owner: owner).take
+  end
+
+  def self.choose
+    builder = Qb.new
+    t = Qb.table("users")
+    builder.pick(t, t.id, t.name)
+  end
 end
 `;
 
@@ -510,6 +626,7 @@ const LIBRARIES: Record<string, string> = {
       update(table: unknown): Update;
       put(row?: unknown): unknown;
       putAll(rows: unknown[]): unknown;
+      pick(table: unknown, ...columns: unknown[]): unknown;
     }
     export declare function table(name: string): unknown;
     export declare function eq(a: unknown, b: unknown): unknown;
@@ -527,6 +644,18 @@ const LIBRARIES: Record<string, string> = {
     }
   `,
   rows: "export declare class Client { read(table: string): any; }",
+  vault: `
+    export declare class Sifted {
+      mark(spec: unknown): Sifted;
+      sift(spec: unknown): Sifted;
+      take(): unknown;
+    }
+    export declare class Vault {
+      stash(table: string, row: unknown): unknown;
+      peek(table: string, spec: unknown): unknown;
+      sift(table: string, spec: unknown): Sifted;
+    }
+  `,
 };
 
 /** What the pack's hooks make of every call inside the TypeScript function `unit`. */
@@ -824,6 +953,75 @@ describe("a pack whose chain climbs the receivers", () => {
     expect(await rubyEffects("spin")).toEqual([]);
   });
 });
+
+describe("a pack whose table lists the writes and reads every other method", () => {
+  it("reads each chain once, at its last call, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("browse").map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["stash", "default", "items"],
+      ["peek", "default", "items"],
+      ["take", "default", "items"],
+    ]);
+    expect((await pythonEffects("browse")).map(addressOf)).toEqual(
+      fromTypeScript.map(addressOf),
+    );
+    expect((await rubyEffects("browse")).map(addressOf)).toEqual(
+      fromTypeScript.map(addressOf),
+    );
+  });
+
+  it("reads the keywords a call passes, and every call's before it but the ones it passes over, in Python and Ruby", async () => {
+    const fromPython = (await pythonEffects("browse")).map(placeless);
+
+    expect(fromPython.map(columnsOf)).toEqual([
+      ["write", ["name", "owner"], []],
+      ["read", [], ["owner"]],
+      ["read", [], ["owner", "kind"]],
+    ]);
+    expect((await rubyEffects("browse")).map(columnsOf)).toEqual(
+      fromPython.map(columnsOf),
+    );
+  });
+
+  it("reads no keywords in TypeScript, whose calls pass none", () => {
+    expect(typescriptEffects("browse").map(columnsOf)).toEqual([
+      ["write", [], []],
+      ["read", [], []],
+      ["read", [], []],
+    ]);
+  });
+});
+
+describe("a pack that reads the columns off every argument from a position", () => {
+  it("reads each one off the table, in TypeScript, Python and Ruby", async () => {
+    const fromTypeScript = typescriptEffects("choose").map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["pick", "default", "users"],
+    ]);
+    expect(fromTypeScript.map(fieldsWritten)).toEqual([["id", "name"]]);
+    expect((await pythonEffects("choose")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+    expect((await rubyEffects("choose")).map(placeless)).toEqual(
+      fromTypeScript,
+    );
+  });
+});
+
+/** The kind, fields and selector a storage access records. */
+function columnsOf(effect: unknown): unknown {
+  const written = effect as Effect;
+  return written.type === "interaction" &&
+    written.interaction.class === "storage-access"
+    ? [
+        written.interaction.kind,
+        written.interaction.fields,
+        written.interaction.selector ?? [],
+      ]
+    : null;
+}
 
 /** The operation, scope and container a storage access records. */
 function addressOf(effect: unknown): readonly (string | null)[] | null {

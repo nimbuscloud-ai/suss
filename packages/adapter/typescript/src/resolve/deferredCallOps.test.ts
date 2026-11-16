@@ -102,6 +102,28 @@ describe("the ops for a call that state its facts when a question needs them", (
     }
   });
 
+  it("give the call a result is handed to in place, and where", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/src/run.ts",
+      [
+        "declare function run(statement: unknown, values: unknown): void;",
+        "declare function make(): unknown;",
+        "run(make(), [1]);",
+      ].join("\n"),
+    );
+    const store = new ResolutionStore();
+    const call = callWritten(file, "make()");
+    for (const ops of [
+      deferredCallOps(call, { resolution: store }),
+      opsOverFacts(call, { resolution: store }),
+    ]) {
+      const passed = ops.passedTo?.() ?? null;
+      expect(passed?.call.calleeText()).toBe("run");
+      expect(passed?.at).toBe(0);
+    }
+  });
+
   it("read the callee's own import, and nothing past it", () => {
     const { file, store } = fixture();
     const reading = { resolution: store };
