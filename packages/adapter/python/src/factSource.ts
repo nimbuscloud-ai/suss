@@ -35,6 +35,7 @@ import {
   usesOf,
   writtenValueOf,
 } from "./facts/resolve.js";
+import { callArguments } from "./facts/values.js";
 import { argOf } from "./paths/effects.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
@@ -136,6 +137,15 @@ export function pythonFactSource(db: Database): PythonFactSource {
         (isBuiltin(callee, scopeAt(callee, moduleOf(callee)), path) ||
           calleePathOf(db, call) === path)
       );
+    },
+    // `callArgCount` counts every argument the call writes, keywords too.
+    positionalCount: (call) => {
+      const node = nodeAt(call);
+      return node === null
+        ? 0
+        : callArguments(node).filter(
+            (argument) => argument.kind === "positional",
+          ).length;
     },
     globalsReaching: (key) => streamsReaching(db, key),
     handedReaching: (key) => handedNamesAt(db, key),

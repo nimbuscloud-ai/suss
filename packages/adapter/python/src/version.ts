@@ -9,7 +9,7 @@
 
 import { createAdapterStamp } from "@suss/extractor";
 
-export const ADAPTER_VERSION = "0.1.0";
+export const ADAPTER_VERSION = "0.1.1";
 
 export const adapterStamp = createAdapterStamp({
   moduleUrl: import.meta.url,

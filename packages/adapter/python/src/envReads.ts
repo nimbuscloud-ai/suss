@@ -33,8 +33,8 @@ import {
 import { callArguments, nodeId, readKey } from "./facts/values.js";
 import { ENVIRONMENT } from "./stdlib/environment.js";
 import { environmentReadAt } from "./stdlib/environmentRead.js";
+import { STREAM_PATHS } from "./stdlib/streams.js";
 import { spellsStdlibPath } from "./stdlibNames.js";
-import { standardStream } from "./streamWrites.js";
 import { nodeOfResolutionKey, resolutionKeyOf } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -192,12 +192,15 @@ function handsOnward(node: PyNode): boolean {
   return true;
 }
 
-/** `sys.stdout` as the source spells it. The `stdout` inside that spelling is only its name. */
+/** `sys.stdout` as the source spells it, under any name. The `stdout` inside that spelling is only its name. */
 function spellsStream(node: PyNode, scope: Scope): boolean {
   const parent = node.parent;
   const attributeName =
     parent?.type === "attribute" && field(parent, "attribute")?.id === node.id;
-  return !attributeName && standardStream(node, scope) !== null;
+  return (
+    !attributeName &&
+    STREAM_PATHS.some((path) => spellsStdlibPath(node, scope, path))
+  );
 }
 
 /** `sys.stdout.write(x)` writes to the stream it spells, and hands the stream to nobody. */

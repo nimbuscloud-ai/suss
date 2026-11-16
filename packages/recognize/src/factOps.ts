@@ -176,6 +176,10 @@ class FactCall implements CallOps {
     return Math.max(stated.size, counted === null ? 0 : Number(counted));
   }
 
+  positionalCount(): number {
+    return this.source.positionalCount?.(this.key) ?? this.argumentCount();
+  }
+
   decodes(): Decoded | null {
     const found = this.source.decodedOf?.(this.key) ?? null;
     return found === null
@@ -1192,6 +1196,13 @@ class FactValue implements ValueOps {
       return adapters(this.key, object);
     }
     return RUNTIME_PATH[object.origin](this.key, object as never, this.facts);
+  }
+
+  globalPath(paths: readonly string[]): string | null {
+    const [one, ...more] = paths.filter(
+      (path) => this.facts.spellsGlobal?.(this.key, path) === true,
+    );
+    return one === undefined || more.length > 0 ? null : one;
   }
 
   /** Asked of the value as written here, so a name for a schema says nothing. */

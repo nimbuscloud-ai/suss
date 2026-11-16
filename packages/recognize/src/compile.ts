@@ -805,15 +805,50 @@ const RECEIVER_STREAM = "receiver";
  * hash of what it writes, so a second site writing something else in
  * the same unit gets its own.
  */
-function streamWrite(matched: Matched): Effect[] {
+function streamWrite(matched: Matched): Effect[] | null {
   const { ops, subject, recognition } = matched;
+  const { onlyWithArguments } = matched.meaning as StreamWriteMethod;
+  if (onlyWithArguments === true && positionalCountOf(subject) === 0) {
+    return null;
+  }
+  const named = streamNamedByKeyword(matched);
+  if (named === null) {
+    return null;
+  }
   const effect: Extract<Effect, { type: "interaction" }> = {
     type: "interaction",
-    binding: ioBinding({ recognition, target: streamTarget(matched) }),
+    binding: ioBinding({
+      recognition,
+      target: named ?? streamTarget(matched),
+    }),
     callee: ops.calleeText(),
     interaction: { class: "stream-write", ...writtenPayload(subject) },
   };
   return [{ ...effect, groupId: callSiteKey(effect) }];
+}
+
+/**
+ * The stream the call's `streamAt` keyword says it writes to. Null when
+ * the value spells no stream, so the call writes to a file, and
+ * undefined when the method has no such keyword or the call passes none.
+ */
+function streamNamedByKeyword(matched: Matched): string | null | undefined {
+  const { streamAt } = matched.meaning as StreamWriteMethod;
+  const value =
+    streamAt === undefined
+      ? null
+      : (matched.subject.keywordAt?.(streamAt.keyword) ?? null);
+  if (value === null) {
+    return undefined;
+  }
+  const { streams } = matched.chain.ending as StreamWriteEnding;
+  const path = value.globalPath?.(Object.keys(streams)) ?? null;
+  return path === null ? null : (streams[path] ?? null);
+}
+
+/** How many arguments the call passes by position, where the adapter counts keywords apart. */
+function positionalCountOf(call: CallOps): number {
+  return call.positionalCount?.() ?? call.argumentCount();
 }
 
 /**
@@ -865,7 +900,7 @@ function writtenPayload(subject: CallOps): {
   payload: TypeShape | null;
   serialized: "json" | "text";
 } {
-  const count = subject.argumentCount();
+  const count = positionalCountOf(subject);
   if (count !== 1) {
     const properties: Record<string, TypeShape> = {};
     for (let at = 0; at < count; at += 1) {
