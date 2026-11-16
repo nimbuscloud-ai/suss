@@ -717,6 +717,12 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   name the list has, upper-cased, with the method as the handler and the
   class as the outcome's `owner`, which is how flask-restx writes a
   resource.
+- `methods: { pick, unstated }` serves the methods an entry lists at
+  the pick, upper-cased, and the `unstated` ones when it passes nothing
+  there: FastAPI's `@app.api_route("/x", methods=["GET", "POST"])`
+  serves both, and `@app.api_route("/x")` serves GET, as FastAPI does. A
+  value at the pick that reads as no word serves nothing, so a list
+  built at run time gives no route rather than a guessed one.
 - `throughWrappers` reads a decorator written as a call to a project
   function as the library call that function returns, through
   `returnedCall()`, with the decorator's own arguments. The outcome

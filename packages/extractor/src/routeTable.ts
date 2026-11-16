@@ -188,13 +188,19 @@ export interface ServesRole {
   /**
    * The methods, fixed by the entry's name or read from a pick. A picked
    * list is upper-cased, and when it has the word `all` gives, the entry
-   * serves every method, which the table writes as `*`. Under `members`,
-   * a decorated class serves one route for each method it writes whose
-   * name the list has, upper-cased, with that method as the handler.
+   * serves every method, which the table writes as `*`. An entry that
+   * passes nothing at the pick serves the `unstated` methods, as
+   * FastAPI's `api_route` serves GET. Under `members`, a decorated class
+   * serves one route for each method it writes whose name the list has,
+   * upper-cased, with that method as the handler.
    */
   readonly methods:
     | readonly string[]
-    | { readonly pick: EntryPick; readonly all?: string }
+    | {
+        readonly pick: EntryPick;
+        readonly all?: string;
+        readonly unstated?: readonly string[];
+      }
     | { readonly members: readonly string[] };
   /** Where the path is, tried in order, or the scope's own path for an entry such as `root`. */
   readonly path: readonly EntryPick[] | { readonly fixed: "scope" };
