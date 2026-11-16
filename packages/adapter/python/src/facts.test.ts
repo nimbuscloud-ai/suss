@@ -123,6 +123,59 @@ describe("emitModuleImportFacts", () => {
     ]);
   });
 
+  it("records a submodule imported by name as that module imported whole", async () => {
+    write("root/shop/__init__.py");
+    write("root/shop/orders.py", "router = None\n");
+    const importingFile = write(
+      "root/shop/main.py",
+      "from shop import orders\nfrom . import orders as same\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+
+    const db = new Database();
+    emitModuleImportFacts(db, importingFile, bindModule(tree.rootNode), {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    const pkg = path.join(tmpDir, "root/shop/__init__.py");
+    const orders = path.join(tmpDir, "root/shop/orders.py");
+    expect(db.facts("importsFile")).toEqual([
+      [importingFile, pkg],
+      [importingFile, orders],
+    ]);
+    // The package's own name `orders` stays stated beside the module,
+    // since Python reads the package's name first when it has one.
+    expect(db.facts("imports")).toEqual([
+      [`${importingFile}#orders`, pkg, "orders"],
+      [`${importingFile}#orders`, "shop", "orders"],
+      [`${importingFile}#orders`, orders, "*"],
+      [`${importingFile}#same`, pkg, "orders"],
+      [`${importingFile}#same`, ".", "orders"],
+      [`${importingFile}#same`, orders, "*"],
+    ]);
+  });
+
+  it("records no module for a name imported from a package that has no submodule of that name", async () => {
+    write("root/shop/__init__.py", "router = None\n");
+    const importingFile = write(
+      "root/shop/main.py",
+      "from shop import router\n",
+    );
+    const tree = await parsePython(fs.readFileSync(importingFile, "utf8"));
+
+    const db = new Database();
+    emitModuleImportFacts(db, importingFile, bindModule(tree.rootNode), {
+      roots: [path.join(tmpDir, "root")],
+    });
+
+    const pkg = path.join(tmpDir, "root/shop/__init__.py");
+    expect(db.facts("importsFile")).toEqual([[importingFile, pkg]]);
+    expect(db.facts("imports")).toEqual([
+      [`${importingFile}#router`, pkg, "router"],
+      [`${importingFile}#router`, "shop", "router"],
+    ]);
+  });
+
   it("records an external import with no resolved-file fact", async () => {
     const importingFile = write(
       "root/myapp/routes/todos.py",

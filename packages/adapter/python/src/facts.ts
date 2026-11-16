@@ -12,7 +12,7 @@ import { resolveModule } from "./moduleResolver.js";
 
 import type { Database } from "@suss/datalog";
 import type { ModuleResolverOptions } from "./moduleResolver.js";
-import type { ModuleBinding } from "./scope.js";
+import type { Binding, ModuleBinding } from "./scope.js";
 
 /** The dotted path with its leading dots put back, the way the import is written in the source. */
 function importedModuleText(module: string, relativeLevel: number): string {
@@ -68,9 +68,51 @@ export function emitModuleImportFacts(
       // Keyed on the module text for every import, so a pack matching its
       // library tells `FastAPI()` apart from a project class of that name.
       db.add("imports", [nameKey, moduleText, exportedName]);
+      if (binding.kind === "importFrom") {
+        emitSubmoduleImportFacts(
+          db,
+          filePath,
+          nameKey,
+          binding,
+          resolverOptions,
+        );
+      }
     }
   }
   emitWildcardImportFacts(db, filePath, module, resolverOptions);
+}
+
+/**
+ * `from pkg import mod` gives `mod` the package's own name `mod` when
+ * the package binds one, and the submodule `pkg.mod` when it does not.
+ * Whenever `pkg.mod` resolves to a file, this states the submodule the
+ * way `import pkg.mod as mod` does, beside the package's name. It does
+ * not ask whether the package binds `mod`, so when it does, the rules
+ * follow both, and the file's module imports list the submodule.
+ */
+function emitSubmoduleImportFacts(
+  db: Database,
+  filePath: string,
+  nameKey: string,
+  binding: Extract<Binding, { kind: "importFrom" }>,
+  resolverOptions: ModuleResolverOptions,
+): void {
+  const submodule = resolveModule(
+    filePath,
+    {
+      module:
+        binding.module === ""
+          ? binding.importedName
+          : `${binding.module}.${binding.importedName}`,
+      relativeLevel: binding.relativeLevel,
+    },
+    resolverOptions,
+  );
+  if (submodule.status !== "resolved") {
+    return;
+  }
+  db.add("importsFile", [filePath, submodule.file]);
+  db.add("imports", [nameKey, submodule.file, NAMESPACE_IMPORT_NAME]);
 }
 
 /**
