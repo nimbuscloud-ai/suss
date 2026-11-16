@@ -65,7 +65,7 @@ import {
   walkRecordsByFile,
 } from "@suss/resolution";
 
-import { children, field, isFunction, rangeOf } from "./ast.js";
+import { children, isFunction, rangeOf } from "./ast.js";
 import { declaredDiscoveryUnits } from "./declaredDiscovery.js";
 import {
   buildPythonExtractionReport,
@@ -75,7 +75,6 @@ import {
 import { discoverUnits } from "./discovery.js";
 import { bindEnvFacts, envFactsIn, settleNamedParameters } from "./envReads.js";
 import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
-import { inModule } from "./factSource.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
@@ -91,7 +90,6 @@ import {
   pythonEntryReuse,
   storedFunction,
   WalkReplay,
-  WatchedNames,
   watchRouterIndex,
 } from "./reuse.js";
 import { buildRouterIndex } from "./routers.js";
@@ -126,7 +124,7 @@ import type {
   StoredDependencies,
   StoredFacts,
 } from "@suss/resolution";
-import type { PythonPack, StoragePattern } from "./pack.js";
+import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ReachedUnits, Seed } from "./reach/closure.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
@@ -593,7 +591,6 @@ async function runPython(
   const mountsRouters = options.packs.some((pack) =>
     pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
   );
-  const storagePatterns = options.packs.flatMap((pack) => pack.storage ?? []);
   const declaredHooks = packRecognizers(options.packs, tallies);
   // A module's public exports are discovered like a pack's routes.
   const declaredModules = settlePythonModules(options.modules);
@@ -635,15 +632,6 @@ async function runPython(
   reportUnresolvedProjectModules(options.packs, roots, db);
   const subUnits = subUnitClaims(db, options.packs, tallies);
 
-  // A matching chain starts at a method declared in a file that imports the
-  // library. A project that renames the method on the way is missed, since
-  // asking the rules about every call instead would cost about a minute.
-  const namesNearStorage = timer.time("discover", () =>
-    methodsDeclaredNear(db, storagePatterns, definitions),
-  );
-  const couldMatch =
-    ledger === null ? namesNearStorage : new WatchedNames(namesNearStorage, db);
-
   const plainRouterIndex = timer.time("discover", () =>
     buildRouterIndex(bound, options.packs, {
       roots,
@@ -663,13 +651,11 @@ async function runPython(
 
   const filesByPath = new Map(bound.map((one) => [one.file, one]));
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
-    storagePatterns.length > 0 || declaredHooks.length > 0
+    declaredHooks.length > 0
       ? {
           facts: db,
           factsPath: file.file,
           files: filesByPath,
-          patterns: storagePatterns,
-          couldMatch,
           declared: declaredHooks,
         }
       : undefined;
@@ -704,7 +690,6 @@ async function runPython(
             log,
             lookAgain: lookAgainIn({
               db,
-              couldMatch: namesNearStorage,
               routerIndex: plainRouterIndex,
               wrapperIndex,
               positions,
@@ -1326,33 +1311,4 @@ function indexDefinitions(
       indexDefinitions(into, file, child);
     }
   }
-}
-
-/** The names of the functions declared in files that import one of the storage libraries. */
-function methodsDeclaredNear(
-  db: Database,
-  patterns: readonly StoragePattern[],
-  definitions: ReadonlyMap<string, PyNode>,
-): Set<string> {
-  const modules = [...new Set(patterns.map((pattern) => pattern.module))];
-  const importing = new Set(
-    db
-      .facts("importsModule")
-      .filter((row) =>
-        modules.some((module) => inModule(String(row[1]), module)),
-      )
-      .map((row) => String(row[0])),
-  );
-  const found = new Set<string>();
-  for (const [key, node] of definitions) {
-    const at = key.lastIndexOf(":");
-    if (at === -1 || !importing.has(key.slice(0, at))) {
-      continue;
-    }
-    const name = field(node, "name");
-    if (name !== null) {
-      found.add(name.text);
-    }
-  }
-  return found;
 }

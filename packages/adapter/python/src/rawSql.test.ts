@@ -134,8 +134,6 @@ async function effectsFor(source: string): Promise<Effect[]> {
   const lookup: StorageLookup = {
     facts: read.facts,
     factsPath: read.filePath,
-    patterns: [],
-    couldMatch: new Set(),
     declared: packRecognizers([SQL_TEXT], undefined),
   };
   return bodyStorage(read.handler, lookup).effects.map((one) => one.effect);
@@ -146,8 +144,6 @@ function warehouseLookup(read: Read): StorageLookup {
   return {
     facts: read.facts,
     factsPath: read.filePath,
-    patterns: [],
-    couldMatch: new Set(),
     declared: packRecognizers([WAREHOUSE], undefined),
   };
 }

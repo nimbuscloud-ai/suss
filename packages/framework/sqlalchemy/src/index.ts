@@ -16,11 +16,7 @@ import {
   typed,
 } from "@suss/recognize";
 
-import type {
-  PyModelQueries,
-  PythonPack,
-  StoragePattern,
-} from "@suss/adapter-python";
+import type { PyModelQueries, PythonPack } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
@@ -31,6 +27,8 @@ import type {
   NamePick,
   ParameterPick,
   PatternPack,
+  ReceiverOrigin,
+  StorageMethod,
   ToReceiver,
 } from "@suss/recognize";
 
@@ -52,27 +50,6 @@ export type SqlalchemyPackOptions = z.infer<typeof optionsSchema>;
 
 /** The calls that say which table a statement reads when its first argument did not. */
 export const TABLE_METHODS = ["select_from", "join"];
-
-/**
- * The statements SQLAlchemy 2.0 builds with a function the file imports,
- * `select(User.id).where(...)`, which the adapter's own storage reader
- * still reads. A chain on a session or a query is declared below.
- */
-export function sqlalchemyStorage(
-  options: SqlalchemyPackOptions,
-): StoragePattern[] {
-  return [
-    {
-      module: "sqlalchemy",
-      queryTypes: [],
-      writes: ["update", "delete", "insert", "commit"],
-      queryFunctions: ["select", "insert", "update", "delete"],
-      valueMethods: ["values"],
-      tableMethods: TABLE_METHODS,
-      storageSystem: options.storageSystem,
-    },
-  ];
-}
 
 /** SQLAlchemy has several ways to declare a base, and every mapped class inherits from one of these. */
 const MODEL_BASE_NAMES = [
@@ -256,15 +233,75 @@ export const SQLALCHEMY_TYPES: readonly QueryTypes[] = [
 /** The calls that join two or more conditions into one. */
 const COMBINED_BY = ["and_", "or_", "not_"];
 
+const CHAIN_START: CallStep = { to: "chainStart" };
+
+/** What a chain reads, the class it works on and the names it states for each kind of access. */
+interface ChainReading {
+  readonly model: ClassPick;
+  readonly reads: StorageMethod;
+  readonly writes: StorageMethod;
+}
+
+/**
+ * How a chain is read, from its last call back to its first call on
+ * `origin`, the calls after that first call picking rows. The container
+ * is the class the first call is passed, or the one a `select_from` or
+ * `join` after it is passed, or the class the chain is called on.
+ */
+function chainReading(
+  origin: ReceiverOrigin,
+  values: readonly string[],
+  libraries: readonly string[],
+): ChainReading {
+  const later: ToReceiver = {
+    to: "receiver",
+    every: true,
+    inPlace: true,
+    until: origin,
+  };
+  const model: ClassPick = {
+    class: [
+      { of: [CHAIN_START], at: 0 },
+      { of: [{ ...later, method: TABLE_METHODS }], itself: true, at: 0 },
+      { of: [CHAIN_START], receiver: true },
+    ],
+    notFrom: libraries,
+  };
+  // A keyword is a column only in a call that supplies values, the
+  // chain's first call included. A session method's keywords are its
+  // options, and a project function's are its parameters.
+  const valuesKeywords: NamePick[] = [
+    { keywordsOf: { of: [{ to: "chainStart", method: values }] } },
+    { keywordsOf: { of: [{ ...later, method: values }], itself: true } },
+  ];
+  const fields: NamePick[] = [
+    { columns: { of: [CHAIN_START], from: 0 }, ofClass: model },
+    ...(values.length === 0 ? [] : valuesKeywords),
+  ];
+  const selector: ConditionsPick = {
+    conditions: {
+      of: [values.length === 0 ? later : { ...later, except: values }],
+      itself: true,
+    },
+    ofClass: model,
+    combinedBy: COMBINED_BY,
+    pinnedBy: ["and_"],
+    equality: ["=="],
+  };
+  return {
+    model,
+    reads: { kind: "read", fields, selector },
+    writes: { kind: "write", fields, selector },
+  };
+}
+
 /**
  * The chains of calls on one of the query types, each read once at its
  * last call: `db.query(User).filter(User.id == x).first()`, or
  * `db.add(user)` alone. A chain's first call is made on the session, or
- * is the session when a project method returns one, `Orders.query()`,
- * and the calls after it pick rows. The container is the class the
- * first call is passed, or the one a `select_from` or `join` after it is
- * passed, or the class the chain is called on. A chain whose first call
- * records nothing, `db.execute(stmt).scalars().all()`, still matches.
+ * is the session when a project method returns one, `Orders.query()`.
+ * A chain whose first call records nothing,
+ * `db.execute(stmt).scalars().all()`, still matches.
  */
 export function queryCalls(
   types: QueryTypes,
@@ -280,45 +317,11 @@ export function queryCalls(
     },
     { to: "chained", fromItself: true, every: true },
   ];
-  const start: CallStep = { to: "chainStart" };
-  const later: ToReceiver = {
-    to: "receiver",
-    every: true,
-    inPlace: true,
-    until: session,
-  };
-  const model: ClassPick = {
-    class: [
-      { of: [start], at: 0 },
-      { of: [{ ...later, method: TABLE_METHODS }], itself: true, at: 0 },
-      { of: [start], receiver: true },
-    ],
-    notFrom: libraries,
-  };
-  const values = types.values ?? [];
-  // A keyword is a column only in a call that supplies values, the
-  // chain's first call included. A session method's keywords are its
-  // options, and a project function's are its parameters.
-  const valuesKeywords: NamePick[] = [
-    { keywordsOf: { of: [{ to: "chainStart", method: values }] } },
-    { keywordsOf: { of: [{ ...later, method: values }], itself: true } },
-  ];
-  const fields: NamePick[] = [
-    { columns: { of: [start], from: 0 }, ofClass: model },
-    ...(values.length === 0 ? [] : valuesKeywords),
-  ];
-  const selector: ConditionsPick = {
-    conditions: {
-      of: [values.length === 0 ? later : { ...later, except: values }],
-      itself: true,
-    },
-    ofClass: model,
-    combinedBy: COMBINED_BY,
-    pinnedBy: ["and_"],
-    equality: ["=="],
-  };
-  const reads = { kind: "read", fields, selector } as const;
-  const writes = { kind: "write", fields, selector } as const;
+  const { model, reads, writes } = chainReading(
+    session,
+    types.values ?? [],
+    libraries,
+  );
   const accesses = storageCalls(
     {
       system: storageSystem,
@@ -339,7 +342,7 @@ export function queryCalls(
     { system: storageSystem, client: session, unsettledName: "nothing" },
     { outermost: true },
   )
-    .about(start)
+    .about(CHAIN_START)
     .methods(
       Object.fromEntries(
         recordsNothing.map((name) => [name, { kind: "nothing" }] as const),
@@ -350,25 +353,78 @@ export function queryCalls(
 }
 
 /**
+ * The statements a file builds with a function it imports from one of
+ * `modules`, each read once at its last call: `select(User.id).where(...)`
+ * or `update(User).where(...).values(name=x)`. The function says what the
+ * statement does however the chain ends, and the calls after it pick rows
+ * and supply values the way a query's do.
+ */
+export function statementCalls(
+  modules: readonly string[],
+  libraries: readonly string[],
+  storageSystem: string,
+): Match {
+  const statement = imported({
+    from: modules,
+    named: ["select", "insert", "update", "delete"],
+  });
+  const { model, reads, writes } = chainReading(
+    statement,
+    ["values"],
+    libraries,
+  );
+  return storageCalls(
+    {
+      system: storageSystem,
+      client: statement,
+      clientAt: [CHAIN_START],
+      unsettledName: "nothing",
+    },
+    { outermost: true },
+  )
+    .methods(
+      { select: reads, insert: writes, update: writes, delete: writes },
+      { of: [CHAIN_START] },
+    )
+    .container(model)
+    .example("select(User.id).where(User.id == 1)");
+}
+
+/**
  * The chains on each query type. A value declared as a type from any of
  * the packages the types come from is a statement or a column rather
- * than a model. The accesses are recognized under the name the
- * adapter's storage reader gives the imported statements, so a summary
- * reads them as one reader's.
+ * than a model. The accesses are recognized as `python-storage`, the
+ * name the adapter merges a body's storage accesses under.
  */
 export function queryChains(
   name: string,
   types: readonly QueryTypes[],
   options: SqlalchemyPackOptions,
 ): PatternPack {
-  const libraries = [
-    ...new Set(types.map((one) => one.module.split(".")[0] ?? one.module)),
-  ];
+  const libraries = topPackages(types.map((one) => one.module));
   return pack(
     name,
     types.flatMap((one) => queryCalls(one, libraries, options.storageSystem)),
     { languages: ["python"], recognizedAs: "python-storage" },
   );
+}
+
+/** The statements built with a function imported from one of the modules, recognized as the chains on a query are. */
+export function statementChains(
+  name: string,
+  modules: readonly string[],
+  options: SqlalchemyPackOptions,
+): PatternPack {
+  return pack(
+    name,
+    [statementCalls(modules, topPackages(modules), options.storageSystem)],
+    { languages: ["python"], recognizedAs: "python-storage" },
+  );
+}
+
+/** The packages the modules are in, `sqlalchemy` for `sqlalchemy.orm`. */
+function topPackages(modules: readonly string[]): string[] {
+  return [...new Set(modules.map((one) => one.split(".")[0] ?? one))];
 }
 
 /** The hooks of each pack, put beside the ones the route pack already has. */
@@ -401,13 +457,13 @@ export function withSqlalchemy(
   return withStatements(
     {
       ...pack,
-      storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
       models: [...(pack.models ?? []), ...sqlalchemyModels()],
       classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
     },
     [
       rawStatements("sqlalchemy", options),
       queryChains("sqlalchemy-queries", SQLALCHEMY_TYPES, options),
+      statementChains("sqlalchemy-statements", ["sqlalchemy"], options),
     ],
   );
 }

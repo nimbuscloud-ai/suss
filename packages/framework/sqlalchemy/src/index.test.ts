@@ -10,7 +10,6 @@ import {
   SQLALCHEMY_TYPES,
   sqlalchemyFramework,
   sqlalchemyModels,
-  sqlalchemyStorage,
   withSqlalchemy,
 } from "./index.js";
 
@@ -23,17 +22,6 @@ const routePack: PythonPack = {
 };
 
 describe("the SQLAlchemy pack", () => {
-  it("leaves the adapter the statements a file builds with an imported function", () => {
-    const [pattern] = sqlalchemyStorage({ storageSystem: "postgresql" });
-    expect(pattern?.queryFunctions).toEqual([
-      "select",
-      "insert",
-      "update",
-      "delete",
-    ]);
-    expect(pattern?.queryTypes).toEqual([]);
-  });
-
   it("declares a chain for each query type, on its own module", () => {
     expect(
       SQLALCHEMY_TYPES.map((one) => [one.module, one.types, one.values ?? []]),
@@ -43,39 +31,26 @@ describe("the SQLAlchemy pack", () => {
     ]);
   });
 
-  it("takes the database from the caller, since SQLAlchemy talks to all of them", () => {
-    const patterns = sqlalchemyStorage({ storageSystem: "mysql" });
-    expect(patterns.every((p) => p.storageSystem === "mysql")).toBe(true);
-  });
-
-  it("adds itself to a route pack without disturbing its routes", () => {
+  it("adds its chains to a route pack without disturbing its routes", () => {
     const composed = withSqlalchemy(routePack, { storageSystem: "sqlite" });
     expect(composed.name).toBe("flask-restx");
     expect(composed.discovery).toBe(routePack.discovery);
-    expect(composed.storage).toHaveLength(1);
+    expect(composed.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
-  it("keeps a storage pattern the route pack already had", () => {
-    const already: PythonPack = {
-      ...routePack,
-      storage: [
-        {
-          module: "other",
-          queryTypes: ["Thing"],
-          writes: [],
-          storageSystem: "postgresql",
-        },
-      ],
-    };
+  it("keeps the hooks the route pack already had, first", () => {
+    const hook = () => null;
+    const already: PythonPack = { ...routePack, invocationRecognizers: [hook] };
     expect(
-      withSqlalchemy(already, { storageSystem: "postgresql" }).storage,
-    ).toHaveLength(2);
+      withSqlalchemy(already, { storageSystem: "postgresql" })
+        .invocationRecognizers?.[0],
+    ).toBe(hook);
   });
 
   it("stands alone for a run that wants no routes", () => {
     const pack = sqlalchemyFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
-    expect(pack.storage).toHaveLength(1);
+    expect(pack.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
   it("says which names a mapped class's ancestry arrives at", () => {

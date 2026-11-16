@@ -66,12 +66,7 @@ import {
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
 import { stdlibEffects } from "./stdlib/dispatch.js";
-import {
-  bodyStorage,
-  declaredCallIds,
-  type StorageLookup,
-  storageCallIds,
-} from "./storage.js";
+import { bodyStorage, declaredCallIds, type StorageLookup } from "./storage.js";
 import {
   askWrittenValues,
   evaluatedValue,
@@ -1757,14 +1752,7 @@ export function recognizedCallIds(
   if (storageLookup === undefined) {
     return new Set(enqueues);
   }
-  return new Set([
-    ...storageCallIds(calls, {
-      ...storageLookup,
-      filePath: storageLookup.factsPath,
-    }),
-    ...declaredCallIds(calls, storageLookup),
-    ...enqueues,
-  ]);
+  return new Set([...declaredCallIds(calls, storageLookup), ...enqueues]);
 }
 
 /** Whether a body contains only a docstring and/or a bare `pass`, or something more. */

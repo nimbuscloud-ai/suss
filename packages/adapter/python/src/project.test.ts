@@ -9,6 +9,7 @@ import { Database } from "@suss/datalog";
 import { classBody, imported } from "@suss/recognize";
 import { addPackWords } from "@suss/resolution";
 
+import { storageChains } from "./__fixtures__/storageChains.js";
 import { resolveCalls, resolvedFunctions } from "./facts/resolve.js";
 import { parsePython } from "./parser.js";
 import {
@@ -1196,27 +1197,25 @@ describe("extractPythonProject", () => {
 describe("a route whose body talks to the database", () => {
   const withStorage2: PythonPack = {
     ...flaskRestxLike,
-    storage: [
+    invocationRecognizers: storageChains([
       {
         module: "sqlalchemy",
-        queryTypes: ["Select"],
+        types: ["Select"],
+        functions: ["select"],
         writes: ["update", "delete"],
-        queryFunctions: ["select"],
-        storageSystem: "postgresql",
       },
-    ],
+    ]),
   };
 
   const withStorage: PythonPack = {
     ...flaskRestxLike,
-    storage: [
+    invocationRecognizers: storageChains([
       {
         module: "sqlalchemy.orm",
-        queryTypes: ["Query"],
+        types: ["Query"],
         writes: ["update", "delete"],
-        storageSystem: "postgresql",
       },
-    ],
+    ]),
   };
 
   it("puts a service function's query on its own summary and links the route's call to it", async () => {

@@ -33,7 +33,7 @@ export interface ModelNaming {
 }
 
 /** The call a method is read off, or null when the callee is not a method read. */
-export function receiverCall(call: PyNode): PyNode | null {
+function receiverCall(call: PyNode): PyNode | null {
   const callee = field(call, "function");
   if (callee === null || callee.type !== "attribute") {
     return null;
@@ -95,7 +95,7 @@ export function modelNamed(
 }
 
 /** The model in the call's first positional argument, or null. */
-export function modelArgument(
+function modelArgument(
   call: PyNode,
   from: PyNode,
   naming: ModelNaming,

@@ -1,518 +1,40 @@
 /**
- * Finds the calls in a body that talk to the database, and what each one
- * does. A pack lists its library's query types, and a call chain matches
- * when the method behind it declares that it returns one. DESIGN.md says
- * why the match goes by return type.
+ * The database work a body does, as the hooks packs declared with
+ * `@suss/recognize` read it. The SQLAlchemy and SQLModel packs declare
+ * their session, query and statement chains that way, under the name
+ * `python-storage`. This module runs the hooks over a body's calls and
+ * adds what a chain cannot know: one container per construction of the
+ * method's class when the chain reads `self.model`. DESIGN.md says how
+ * the chains match.
  */
 
 import { runPackRecognizer } from "@suss/extractor";
-import { storageBinding } from "@suss/ir-core";
 import { factCallOps, SlotsHeard } from "@suss/recognize/ops";
 
-import {
-  allChildren,
-  calledName,
-  children,
-  enclosingFunction,
-  field,
-  rangeOf,
-} from "./ast.js";
+import { children, enclosingFunction, field, rangeOf } from "./ast.js";
 import {
   classesNamed,
   classNameOf,
   constructionRef,
   fieldArguments,
 } from "./constructions.js";
-import { inModule, pythonFactSource } from "./factSource.js";
-import { originsOf, resolveCalls } from "./facts/resolve.js";
-import { nodeId, readKey } from "./facts/values.js";
-import {
-  isClassName,
-  modelArgument,
-  receiverCall,
-  returnTypeName,
-  rootOf,
-  settledCallee,
-  topPackage,
-} from "./modelNames.js";
-import { bodyCalls, calleeText } from "./paths/effects.js";
+import { pythonFactSource } from "./factSource.js";
+import { nodeId } from "./facts/values.js";
+import { rootOf } from "./modelNames.js";
+import { bodyCalls } from "./paths/effects.js";
 import { ownReceiverName } from "./reach/receivers.js";
-import { receiverTypeOrigins } from "./receiverTypes.js";
-import {
-  constructionSitesOf,
-  evaluationScope,
-  resolutionKeyOf,
-} from "./values/evaluator.js";
+import { constructionSitesOf, evaluationScope } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PackRecognizer } from "@suss/extractor";
 import type { HeardSlot } from "@suss/recognize/ops";
-import type { ModelNaming } from "./modelNames.js";
-import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { BoundPythonFile } from "./routers.js";
 
-/** The name this reader's accesses are recognized under. */
+/** The name the storage chains' accesses are recognized under. */
 const STORAGE_RECOGNITION = "python-storage";
-
-/** One call chain, from the call that starts it to the call that ends it. */
-interface Chain {
-  readonly root: PyNode;
-  readonly last: PyNode;
-  /** What the chain was called on, `AccessPoints` in `AccessPoints.query()`. */
-  readonly subject: string;
-  /** The method the last call makes. It decides whether the chain reads or writes. */
-  readonly operation: string;
-  /**
-   * The calls the chain makes between the first and the last, where
-   * `filter_by(id=x)` picks rows, from the one the last is made on back
-   * to the one made on the first. A call written inside an argument is
-   * not one of them.
-   */
-  readonly between: readonly PyNode[];
-}
-
-/** What a chain is called on, `AccessPoints` in `AccessPoints.query()`. */
-function subjectOf(call: PyNode): string {
-  const callee = field(call, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return callee?.text ?? "";
-  }
-  return field(callee, "object")?.text ?? "";
-}
-
-/**
- * Every call chain in a body, one entry each. A chain is one thing the code
- * does, so `Model.query().filter_by(...).first()` counts once rather than
- * three times.
- */
-function chainsIn(calls: readonly PyNode[]): Chain[] {
-  const endsWith = new Map<number, PyNode>();
-  for (const call of calls) {
-    const receiver = receiverCall(call);
-    if (receiver === null) {
-      continue;
-    }
-    // The outermost call is the one that ends the chain, and it is the one
-    // whose text runs furthest.
-    const start = rootOf(receiver);
-    const kept = endsWith.get(start.id);
-    if (kept === undefined || call.endIndex > kept.endIndex) {
-      endsWith.set(start.id, call);
-    }
-  }
-
-  const chains: Chain[] = [];
-  for (const call of calls) {
-    // A call with a call before it is somewhere in the middle of a chain.
-    if (receiverCall(call) !== null) {
-      continue;
-    }
-    const last = endsWith.get(call.id) ?? call;
-    chains.push({
-      root: call,
-      last,
-      subject: subjectOf(call),
-      operation: calledName(last),
-      between: receiversBetween(last, call),
-    });
-  }
-  return chains;
-}
-
-/** The calls `last` is made on, one receiver after another, until `root`. */
-function receiversBetween(last: PyNode, root: PyNode): PyNode[] {
-  const found: PyNode[] = [];
-  for (
-    let at = last.id === root.id ? null : receiverCall(last);
-    at !== null && at.id !== root.id;
-    at = receiverCall(at)
-  ) {
-    found.push(at);
-  }
-  return found;
-}
-
-/**
- * The pattern a chain matches because it starts at a function the library
- * exports and the file imported, rather than at a method on a project class.
- * SQLAlchemy 2.0 writes `select(...)` that way, and no project method comes
- * between the call site and the library for its return to be read.
- */
-function importedQueryFunction(
-  options: StorageOptions,
-  chain: Chain,
-): StoragePattern | undefined {
-  const callee = field(chain.root, "function");
-  if (callee === null || callee.type !== "identifier") {
-    return undefined;
-  }
-  const key = readKey(options.filePath, callee, enclosingFunction(callee));
-  for (const origin of originsOf(options.facts, key)) {
-    const pattern = options.patterns.find(
-      (candidate) =>
-        inModule(origin.module, candidate.module) &&
-        (candidate.queryFunctions ?? []).includes(origin.name),
-    );
-    if (pattern !== undefined) {
-      return pattern;
-    }
-  }
-  return undefined;
-}
-
-/** The name a chain's first call is read off, `db` in `db.add(order)`, or null when it starts anywhere else. */
-function receiverName(chain: Chain): PyNode | null {
-  const callee = field(chain.root, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return null;
-  }
-  const object = field(callee, "object");
-  return object !== null && object.type === "identifier" ? object : null;
-}
-
-/**
- * The pattern a chain matches because the name it starts on is declared,
- * where the chain is written, as one of the library's own query types:
- * `db: Session` on the handler, or `session = Session()` in its body.
- * The name has to have come from the pattern's module for the class to be
- * the library's rather than a project's of the same name.
- */
-function typedReceiverPattern(
-  options: StorageOptions,
-  chain: Chain,
-): StoragePattern | undefined {
-  const receiver = receiverName(chain);
-  if (receiver === null || !listsQueryTypes(options)) {
-    return undefined;
-  }
-  for (const origin of receiverTypeOrigins(receiver, options)) {
-    const pattern = queryTypePattern(options, origin.module, origin.name);
-    if (pattern !== undefined) {
-      return pattern;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Whether any pattern lists a query type. A pack whose sessions and
- * queries are declared chains lists only the functions its statements
- * start at, so asking about a receiver's type would find nothing.
- */
-function listsQueryTypes(options: StorageOptions): boolean {
-  return options.patterns.some((pattern) => pattern.queryTypes.length > 0);
-}
-
-/** The pattern whose module exports `name` as one of its query types. */
-function queryTypePattern(
-  options: StorageOptions,
-  module: string,
-  name: string,
-): StoragePattern | undefined {
-  return options.patterns.find(
-    (pattern) =>
-      inModule(module, pattern.module) && pattern.queryTypes.includes(name),
-  );
-}
-
-/** The columns a chain says it wants, as written, positional ones only when read off its model. */
-function fieldsOf(
-  chain: Chain,
-  valueMethods: readonly string[],
-  model: string | null,
-): string[] {
-  const args = field(chain.root, "arguments");
-  const named: string[] = [];
-  // A keyword is a column only in a call that supplies values.
-  const supplies = valueMethods.includes(calledName(chain.root));
-  for (const argument of args === null ? [] : children(args)) {
-    if (argument.type === "keyword_argument") {
-      const name = field(argument, "name");
-      if (name !== null && supplies) {
-        named.push(name.text);
-      }
-      continue;
-    }
-    // `token.sub` in `session.get(User, token.sub)` is a value, not a column.
-    const column = model === null ? null : columnOfModel(argument, model);
-    if (column !== null) {
-      named.push(column);
-    }
-  }
-  for (const call of laterCalls(chain)) {
-    if (valueMethods.includes(calledName(call))) {
-      named.push(...keywordNames(call));
-    }
-  }
-  return [...new Set(named)];
-}
-
-/** The calls after the root, in source order. */
-function laterCalls(chain: Chain): PyNode[] {
-  return [...chain.between, chain.last].filter((call) => call !== chain.root);
-}
-
-function keywordNames(call: PyNode): string[] {
-  return keywordValues(call).map((one) => one.name);
-}
-
-/** Each keyword a call passes, with the value it passes there. */
-function keywordValues(call: PyNode): Array<{ name: string; value: PyNode }> {
-  const args = field(call, "arguments");
-  const picked: Array<{ name: string; value: PyNode }> = [];
-  for (const argument of args === null ? [] : children(args)) {
-    if (argument.type === "keyword_argument") {
-      const name = field(argument, "name");
-      const value = field(argument, "value");
-      if (name !== null && value !== null) {
-        picked.push({ name: name.text, value });
-      }
-    }
-  }
-  return picked;
-}
-
-/**
- * The value a chain passes under each keyword: the values a write sets,
- * and what the calls after the root pick rows by. These are the same
- * keywords `fieldsOf` and `selectorOf` read the columns from.
- */
-function slotsOf(
-  chain: Chain,
-  valueMethods: readonly string[],
-  model: string | null,
-): SlotValue[] {
-  const later = laterCalls(chain);
-  const written = [chain.root, ...later]
-    .filter((call) => valueMethods.includes(calledName(call)))
-    .flatMap(keywordValues);
-  const picked = later
-    .filter((call) => !valueMethods.includes(calledName(call)))
-    .flatMap((call) => pickedBy(call, model));
-  return [
-    ...written.map((one) => ({ slot: "field" as const, ...one })),
-    ...picked.map((one) => ({ slot: "selector" as const, ...one })),
-  ];
-}
-
-/**
- * The columns a call picks rows by, with the value each is compared
- * with: `filter_by(tenant_id=t)` by keyword, and `where(Order.tenant_id
- * == t)` or `filter(t == Order.tenant_id)` by comparison, when `Order`
- * is the chain's own model.
- */
-function pickedBy(
-  call: PyNode,
-  model: string | null,
-): Array<{ name: string; value: PyNode }> {
-  const args = field(call, "arguments");
-  return [
-    ...keywordValues(call),
-    ...(model === null || args === null ? [] : children(args)).flatMap(
-      (argument) => columnComparisons(argument, model as string),
-    ),
-  ];
-}
-
-/** The `==` comparisons of the model's column in an argument, `and_(...)` taken apart. */
-function columnComparisons(
-  node: PyNode,
-  model: string,
-): Array<{ name: string; value: PyNode }> {
-  if (node.type === "call" && calledName(node) === "and_") {
-    const args = field(node, "arguments");
-    return (args === null ? [] : children(args)).flatMap((argument) =>
-      columnComparisons(argument, model),
-    );
-  }
-  const operator = allChildren(node).find((child) => !child.isNamed);
-  const [left, right, ...rest] = children(node);
-  if (
-    node.type !== "comparison_operator" ||
-    operator?.type !== "==" ||
-    left === undefined ||
-    right === undefined ||
-    rest.length > 0
-  ) {
-    return [];
-  }
-  const leftColumn = columnOfModel(left, model);
-  if (leftColumn !== null) {
-    return [{ name: leftColumn, value: right }];
-  }
-  const rightColumn = columnOfModel(right, model);
-  return rightColumn === null ? [] : [{ name: rightColumn, value: left }];
-}
-
-/** A column a storage effect writes or picks rows by, and the value passed for it. */
-export interface SlotValue {
-  slot: "field" | "selector";
-  name: string;
-  value: PyNode;
-}
-
-/**
- * The slot with its value given as the key the rules read it at. A
- * source walk starts from the key, and a declared hook's slots come
- * with keys only.
- */
-function keyedSlot(one: SlotValue, facts: Database): HeardSlot {
-  return {
-    slot: one.slot,
-    name: one.name,
-    key: resolutionKeyOf(one.value, facts),
-  };
-}
-
-/**
- * What the calls after the root were given to pick rows by. A call that
- * supplies values is not one of them. A column of the chain's own model
- * picks rows whatever it is compared with, so `filter(Token.expires >=
- * now)` picks by `expires` though it states no value for it.
- */
-function selectorOf(
-  chain: Chain,
-  valueMethods: readonly string[],
-  model: string | null,
-): string[] {
-  const picking = laterCalls(chain).filter(
-    (call) => !valueMethods.includes(calledName(call)),
-  );
-  return [
-    ...new Set([
-      ...picking.flatMap((call) =>
-        pickedBy(call, model).map((one) => one.name),
-      ),
-      ...(model === null
-        ? []
-        : picking.flatMap((call) => columnsComparedBy(call, model))),
-    ]),
-  ];
-}
-
-/** The calls that join two or more tests into one condition. */
-const COMBINED_TESTS = ["and_", "or_", "not_"];
-
-/** The columns of `model` a call's arguments compare with anything. */
-function columnsComparedBy(call: PyNode, model: string): string[] {
-  const args = field(call, "arguments");
-  return (args === null ? [] : children(args)).flatMap((argument) =>
-    columnsCompared(argument, model),
-  );
-}
-
-/** The columns of `model` one condition compares, with `and_`, `or_` and `not_` taken apart. */
-function columnsCompared(node: PyNode, model: string): string[] {
-  if (node.type === "call" && COMBINED_TESTS.includes(calledName(node))) {
-    return columnsComparedBy(node, model);
-  }
-  if (node.type !== "comparison_operator") {
-    return [];
-  }
-  return children(node).flatMap((side) => {
-    const column = columnOfModel(side, model);
-    return column === null ? [] : [column];
-  });
-}
-
-/** The column `Item.id` reads off the model `Item`, or null when the node reads nothing off it. */
-function columnOfModel(node: PyNode, model: string): string | null {
-  const object = node.type === "attribute" ? field(node, "object") : null;
-  return object?.text === model
-    ? (field(node, "attribute")?.text ?? null)
-    : null;
-}
-
-/**
- * The model a chain works on. It is the first argument of a statement
- * (`select(Item)`, `session.get(Item, 1)`), the class a column is read
- * off (`select(Item.id)`), what the function declares a variable to be
- * (`session.add(item)` with `item: Item`), or the receiver when the chain
- * starts on the model itself (`Orders.query()`). Null for a call that
- * works on no table of its own, `session.commit()` among them.
- */
-function modelOf(
-  chain: Chain,
-  pattern: StoragePattern,
-  options: StorageOptions,
-): string | null {
-  const naming = namingOf(options);
-  const fromRoot = modelArgument(chain.root, chain.root, naming);
-  if (fromRoot !== null) {
-    return fromRoot;
-  }
-  const tableMethods = pattern.tableMethods ?? [];
-  for (const call of laterCalls(chain)) {
-    if (tableMethods.includes(calledName(call))) {
-      const named = modelArgument(call, chain.root, naming);
-      if (named !== null) {
-        return named;
-      }
-    }
-  }
-  return isClassName(chain.subject) ? chain.subject : null;
-}
-
-/** How the storage reader names a model, with the pattern libraries' own types left out. */
-function namingOf(options: StorageOptions): ModelNaming {
-  return {
-    facts: options.facts,
-    filePath: options.filePath,
-    libraries: new Set(
-      options.patterns.map((pattern) => topPackage(pattern.module)),
-    ),
-  };
-}
-
-/**
- * One effect for a chain. `operation` is the call that says what the chain
- * does to the database: the last one for a query built up by methods, and
- * the first one for a statement function, since `update(...).values(...)`
- * is an update whatever it ends with.
- */
-function effectFor(
-  pattern: StoragePattern,
-  chain: Chain,
-  operation: string,
-  options: StorageOptions,
-): Effect {
-  const valueMethods = pattern.valueMethods ?? [];
-  const model = modelOf(chain, pattern, options);
-  const picked = selectorOf(chain, valueMethods, model);
-  const effect: Effect = {
-    type: "interaction",
-    binding: storageBinding({
-      recognition: STORAGE_RECOGNITION,
-      storageSystem: pattern.storageSystem,
-      scope: "default",
-      container: model,
-    }),
-    callee: calleeText(chain.last),
-    interaction: {
-      class: "storage-access",
-      kind: pattern.writes.includes(operation) ? "write" : "read",
-      fields: fieldsOf(chain, valueMethods, model),
-      operation,
-      ...(picked.length > 0 ? { selector: picked } : {}),
-    },
-    location: rangeOf(chain.last),
-  };
-  const byConstruction =
-    model === null ? containerByConstruction(chain.root, options) : null;
-  if (effect.type === "interaction" && byConstruction !== null) {
-    effect.containerByConstruction = byConstruction;
-  }
-  if (options.statesSlots !== undefined) {
-    const slots = slotsOf(chain, valueMethods, model);
-    if (slots.length > 0) {
-      options.statesSlots(effect, slots);
-    }
-  }
-  return effect;
-}
 
 /**
  * The model a chain reads off its method's own receiver, as
@@ -552,7 +74,11 @@ function containerByConstruction(
 }
 
 /** What naming a model by the constructions of a method's class reads. */
-type ConstructionLookup = Pick<StorageOptions, "facts" | "filePath" | "files">;
+interface ConstructionLookup {
+  readonly facts: Database;
+  readonly filePath: string;
+  readonly files?: ReadonlyMap<string, BoundPythonFile>;
+}
 
 /** The statement's model argument when it is a field of the method's own receiver, `self.model`, or null. */
 function receiverFieldModel(
@@ -573,24 +99,6 @@ function receiverFieldModel(
     : null;
 }
 
-/** The file part of a node key, which says where a definition was written. */
-function fileOf(key: string): string {
-  const at = key.lastIndexOf(":");
-  return at === -1 ? key : key.slice(0, at);
-}
-
-export interface StorageOptions {
-  readonly facts: Database;
-  readonly filePath: string;
-  /** Every file in the run by absolute path, for naming a construction a model depends on. */
-  readonly files?: ReadonlyMap<string, BoundPythonFile>;
-  readonly patterns: readonly StoragePattern[];
-  /** Method names a file importing the library declares, the only ones that can match. */
-  readonly couldMatch: ReadonlySet<string>;
-  /** Told the value each effect's columns are given, when somebody listens. */
-  readonly statesSlots?: SlotsStated;
-}
-
 /**
  * What discovery uses for one file. `factsPath` is the path the facts were
  * keyed under, which is the absolute one, while a summary shows the short one.
@@ -600,178 +108,9 @@ export interface StorageLookup {
   readonly factsPath: string;
   /** Every file in the run by absolute path, for naming a construction a model depends on. */
   readonly files?: ReadonlyMap<string, BoundPythonFile>;
-  readonly patterns: readonly StoragePattern[];
-  readonly couldMatch: ReadonlySet<string>;
   /** The hooks packs declared with `@suss/recognize`, run over every call in a body. */
   readonly declared?: readonly PackRecognizer[];
 }
-
-/**
- * Every callee a chain in this file starts at. Asking about all of them at
- * once costs one derivation for the project rather than one per route.
- */
-export function storageCallees(
-  calls: readonly PyNode[],
-  filePath: string,
-  couldMatch: ReadonlySet<string>,
-): string[] {
-  return chainsIn(calls)
-    .filter((chain) => couldMatch.has(calledName(chain.root)))
-    .map((chain) => field(chain.root, "function"))
-    .filter((callee): callee is PyNode => callee !== null)
-    .map((callee) => readKey(filePath, callee, enclosingFunction(callee)));
-}
-
-/** The pattern a chain matches by resolving its first call to a project method whose annotation says it returns a query type. */
-function resolvedMethodPattern(
-  options: StorageOptions,
-  callee: PyNode,
-): StoragePattern | undefined {
-  if (!listsQueryTypes(options)) {
-    return undefined;
-  }
-  const settled = settledCallee(options, callee);
-  if (settled === undefined) {
-    return undefined;
-  }
-  const typeName = returnTypeName(options.facts, settled);
-  if (typeName === null) {
-    return undefined;
-  }
-  const imported = options.facts
-    .lookup("importsModule", 0, fileOf(settled))
-    .map((row) => String(row[1]));
-  return options.patterns.find(
-    (candidate) =>
-      candidate.queryTypes.includes(typeName) &&
-      imported.some((module) => inModule(module, candidate.module)),
-  );
-}
-
-/** A chain the patterns claim, with the call in it that says what it does. `operation` is null for a call that touches no rows of its own. */
-interface MatchedChain {
-  readonly chain: Chain;
-  readonly pattern: StoragePattern;
-  readonly operation: string | null;
-}
-
-/**
- * Every chain in a body some pattern claims. A chain starts at a function
- * the library exports and the file imported, at a name the enclosing
- * function declares as one of the library's query types, or at a project
- * method whose annotation says it returns one; nothing else can start a
- * query. Empty when no pack declares a storage pattern.
- */
-function matchedChains(
-  calls: readonly PyNode[],
-  options: StorageOptions,
-): MatchedChain[] {
-  if (options.patterns.length === 0) {
-    return [];
-  }
-
-  const named = new Set(
-    options.patterns.flatMap((pattern) => pattern.queryFunctions ?? []),
-  );
-  const chains = chainsIn(calls).filter(
-    (chain) =>
-      options.couldMatch.has(calledName(chain.root)) ||
-      named.has(calledName(chain.root)) ||
-      typedReceiverPattern(options, chain) !== undefined,
-  );
-  if (chains.length === 0) {
-    return [];
-  }
-  resolveCalls(
-    options.facts,
-    storageCallees(calls, options.filePath, options.couldMatch),
-  );
-
-  const matched: MatchedChain[] = [];
-  for (const chain of chains) {
-    const callee = field(chain.root, "function");
-    if (callee === null) {
-      continue;
-    }
-    const imported = importedQueryFunction(options, chain);
-    if (imported !== undefined) {
-      matched.push({
-        chain,
-        pattern: imported,
-        operation: calledName(chain.root),
-      });
-      continue;
-    }
-    const typed = typedReceiverPattern(options, chain);
-    if (typed !== undefined) {
-      // `db.execute(stmt).all()` records nothing for the call on `db`,
-      // whatever it does with the result.
-      const silent = (typed.recordsNothing ?? []).includes(
-        calledName(chain.root),
-      );
-      matched.push({
-        chain,
-        pattern: typed,
-        operation: silent ? null : chain.operation,
-      });
-      continue;
-    }
-    const pattern = resolvedMethodPattern(options, callee);
-    if (pattern !== undefined) {
-      // On its own the call only returned a session or a query. The
-      // database work is inside the project's own function, which the
-      // walk steps into and which reports it there.
-      const returnedOnly = chain.last === chain.root;
-      matched.push({
-        chain,
-        pattern,
-        operation: returnedOnly ? null : chain.operation,
-      });
-    }
-  }
-  return matched;
-}
-
-/**
- * The calls a body makes that start a chain the patterns claim, by node id.
- * The reach walk cannot step into any of them, since the library is outside
- * the run, and it asks here so as not to report a call it already knows
- * the meaning of as one it lost.
- */
-export function storageCallIds(
-  calls: readonly PyNode[],
-  options: StorageOptions,
-): Set<number> {
-  return new Set(
-    matchedChains(calls, options).map(({ chain }) => chain.root.id),
-  );
-}
-
-/**
- * The database work a body does itself, one effect per chain. Work inside a
- * function the body calls goes on that function's own summary, and the call
- * links to it, so nothing here follows a call. Empty when no pack declares a
- * storage pattern, or when nothing in the body settles on one.
- */
-export function storageEffects(
-  calls: readonly PyNode[],
-  options: StorageOptions,
-): EffectAt[] {
-  return matchedChains(calls, options).flatMap(
-    ({ chain, pattern, operation }) =>
-      operation === null
-        ? []
-        : [
-            {
-              effect: effectFor(pattern, chain, operation, options),
-              at: chain.last,
-            },
-          ],
-  );
-}
-
-/** Told the value each column of an effect is given. */
-export type SlotsStated = (effect: Effect, slots: readonly SlotValue[]) => void;
 
 /** One column of one effect, and the key the rules read its value at. */
 export interface EffectSlot extends HeardSlot {
@@ -832,30 +171,18 @@ export function callStorage(
   calls: readonly PyNode[],
   lookup: StorageLookup,
 ): SlottedEffects {
-  const slots: EffectSlot[] = [];
-  const effects = storageEffects(calls, {
-    ...lookup,
-    filePath: lookup.factsPath,
-    statesSlots: (effect, stated) => {
-      slots.push(
-        ...stated.map((one) => ({ ...keyedSlot(one, lookup.facts), effect })),
-      );
-    },
-  });
   const declared = declaredStorage(calls, lookup);
-  const declaredHere = declared.effects.filter(({ effect }) =>
-    readHere(effect),
-  );
   const found = [
-    ...inCallOrder([...effects, ...declaredHere], calls).filter(
-      ({ effect }) => !readsNoTable(effect),
-    ),
+    ...inCallOrder(
+      declared.effects.filter(({ effect }) => readHere(effect)),
+      calls,
+    ).filter(({ effect }) => !readsNoTable(effect)),
     ...declared.effects.filter(({ effect }) => !readHere(effect)),
   ];
   const kept = new Set(found.map(({ effect }) => effect));
   return {
     effects: found,
-    slots: [...slots, ...declared.slots].filter((one) => kept.has(one.effect)),
+    slots: declared.slots.filter((one) => kept.has(one.effect)),
   };
 }
 
@@ -875,9 +202,8 @@ function readsNoTable(effect: Effect): boolean {
 }
 
 /**
- * Whether the effect is one of this reader's accesses, which the library
- * packs also declare chains for under the same name. A body lists those
- * together, before what other packs read in it.
+ * Whether the effect is one of the storage chains' accesses. A body
+ * lists those together, before what other packs read in it.
  */
 function readHere(effect: Effect): boolean {
   return (
