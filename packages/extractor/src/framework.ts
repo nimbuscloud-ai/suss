@@ -30,7 +30,11 @@ import type {
   ValueOps,
 } from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
-import type { RouteTableDeclaration, RouteUnread } from "./routeTable.js";
+import type {
+  ReceiverUnread,
+  RouteTableDeclaration,
+  RouteUnread,
+} from "./routeTable.js";
 
 // =============================================================================
 // Discovery
@@ -653,8 +657,13 @@ export interface RouteTableMatch {
   table: RouteTableDeclaration;
   /** Read each handler as a JSX element and take the component its tag is. Unset takes the handler itself. */
   through?: "element";
-  /** The sentence a unit that claims no route says it with, by why its entry could not be read. */
-  unread: Readonly<Record<RouteUnread, string>>;
+  /**
+   * The sentence a unit that claims no route says it with, by why its
+   * entry could not be read. A table whose entries are found through
+   * receivers says the receiver reasons too.
+   */
+  unread: Readonly<Record<RouteUnread, string>> &
+    Readonly<Partial<Record<ReceiverUnread, string>>>;
 }
 
 /** The discovery members every adapter reads through the module ops. */

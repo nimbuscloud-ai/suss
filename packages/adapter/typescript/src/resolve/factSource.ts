@@ -19,6 +19,7 @@ import { decodedIn, encodedIn } from "../values/encoded.js";
 import { readSitesOf } from "../values/readSites.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
+import { writesUndefined } from "../walk/undefinedValue.js";
 import { climbSyntax, peelValue } from "../walk/unwrap.js";
 import {
   anchorAccepts,
@@ -166,6 +167,7 @@ export function factSourceFor(
     writtenItemsOf: (key) => at(key, null, writtenItemsOf),
     formOf: (key) => at(key, "other", valueFormOf),
     literalOf: (key) => at(key, null, literalOf),
+    writesNothing: (key) => at(key, false, writesNothing),
     nameOf: (key, unsettled) =>
       at(key, null, (node) => readName(node, { resolve, unsettled })),
     namesOf: (key, cap) =>
@@ -446,4 +448,8 @@ function shapeOf(node: Node): "object" | "list" | null {
  */
 function literalOf(node: Node): string | boolean | null {
   return literalText(node) ?? literalFlag(node);
+}
+
+function writesNothing(node: Node): boolean {
+  return Node.isNullLiteral(node) || writesUndefined(node);
 }

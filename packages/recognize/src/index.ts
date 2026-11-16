@@ -239,6 +239,7 @@ export type {
   FragmentRole,
   IncludeRole,
   MountRole,
+  ReceiverUnread,
   ReplayRole,
   RootRule,
   RouteGap,

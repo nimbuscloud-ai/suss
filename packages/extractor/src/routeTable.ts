@@ -52,6 +52,22 @@ export interface RouteTableDeclaration {
    * since those elements are read where they are written.
    */
   readonly elementLists?: readonly string[];
+  /**
+   * How a path goes after the prefix in front of it, for a library that
+   * puts the two together as strings: `asWritten` writes one after the
+   * other, as FastAPI does, and `merged` then merges repeated slashes, as
+   * Werkzeug serves a flask-restx path. Unset joins with one slash, or
+   * the way `absolutePaths` says.
+   */
+  readonly joins?: "asWritten" | "merged";
+  /**
+   * Whether a decorator written as a call to a project function counts as
+   * the library call that function returns, `@api_route("/x")` where
+   * `api_route(path)` returns `ns.route(path)`, read with the decorator's
+   * own arguments. It counts only when the function hands the library its
+   * parameters in order, as `CallOps.returnedCall` says.
+   */
+  readonly throughWrappers?: boolean;
 }
 
 /** The calls a table starts from, such as `<owner>.routes.draw do`, and the order each kind runs in. */
@@ -72,6 +88,13 @@ export interface RootRule {
   readonly in?: "moduleBody" | "file";
   /** Whether every element of the file that no element written with children encloses is a root too, walked in place. */
   readonly elements?: boolean;
+  /**
+   * Leave out a root built in a function that drops it, as
+   * `CallOps.dropped` says, since nothing registered on it can serve a
+   * request. The methods it may be called with are the roles' and
+   * `owned`, the library's own registrations that are no role.
+   */
+  readonly unlessDropped?: { readonly owned: readonly string[] };
 }
 
 /**
@@ -79,13 +102,21 @@ export interface RootRule {
  * function it is handed at a position, as the entries of a list it is
  * handed, or as the elements written inside it. `chain` is for a builder
  * written as a chain of calls, and has no reader yet.
+ *
+ * `receiver` is for an entry that builds a value, such as `APIRouter()`:
+ * its children are the calls made on that value anywhere in the files
+ * read, each whose receiver comes to the call the entry is and whose
+ * method a role has. A serves role whose handler is decorated takes only
+ * the decorators written as such a call, so a dictionary's `.get(...)`
+ * is never an entry.
  */
 export type ChildrenIn =
   | { readonly in: "block" }
   | { readonly in: "callback"; readonly at: number }
   | { readonly in: "list"; readonly pick: EntryPick }
   | { readonly in: "elements" }
-  | { readonly in: "chain" };
+  | { readonly in: "chain" }
+  | { readonly in: "receiver" };
 
 /**
  * One value an entry states: by position, by keyword, as the key or the
@@ -115,22 +146,28 @@ export interface ServesRole {
   /**
    * The methods, fixed by the entry's name or read from a pick. A picked
    * list is upper-cased, and when it has the word `all` gives, the entry
-   * serves every method, which the table writes as `*`.
+   * serves every method, which the table writes as `*`. Under `members`,
+   * a decorated class serves one route for each method it writes whose
+   * name the list has, upper-cased, with that method as the handler.
    */
   readonly methods:
     | readonly string[]
-    | { readonly pick: EntryPick; readonly all?: string };
+    | { readonly pick: EntryPick; readonly all?: string }
+    | { readonly members: readonly string[] };
   /** Where the path is, tried in order, or the scope's own path for an entry such as `root`. */
   readonly path: readonly EntryPick[] | { readonly fixed: "scope" };
   /**
    * Where the handler is, tried in order: a name written
    * `controller#action` with the table's separator, or, under `value`,
    * the value itself, handed back with the route, for a table whose
-   * handler is a component rather than a name.
+   * handler is a component rather than a name. Under `decorated`, the
+   * handler is the function or class the entry is written over as a
+   * decorator, and the entries are found as `ChildrenIn` `receiver` says.
    */
   readonly handler:
     | readonly EntryPick[]
-    | { readonly value: readonly EntryPick[] };
+    | { readonly value: readonly EntryPick[] }
+    | { readonly decorated: true };
   /** A flag that, read true, has the entry serve the scope's own path when it states none. */
   readonly index?: EntryPick;
   /**
@@ -213,6 +250,20 @@ export interface ScopesRole {
   readonly both?: EntryPick;
   /** Whether the path segment also starts the shallow path, as `namespace` does and `scope` does not. */
   readonly shallowPath?: boolean;
+  /**
+   * What a path written as a value the library reads as none means: `""`,
+   * `0`, `false`, or the language's literal for no value. `unstated`
+   * reads it as no path, and `unreadable` evaluates it like any other
+   * value, so only a string gives a path. Setting this reads the path the
+   * way a library reads a router's prefix: one that does not read leaves
+   * every route under the scope unread, where a scope that leaves it
+   * unset, as Rails' `scope` does, adds no segment.
+   */
+  readonly noValue?: "unstated" | "unreadable";
+  /** Whether the library trims trailing slashes off the path, as flask-restx trims a namespace's. Unset keeps them. */
+  readonly trailingSlash?: "kept" | "trimmed";
+  /** Whether the library makes up a path of its own where none is stated, so a route under a scope that states none is unread. */
+  readonly prefixRequired?: boolean;
   readonly children: ChildrenIn;
 }
 
@@ -248,12 +299,27 @@ export interface IncludeRole {
   readonly name: EntryPick;
 }
 
-/** An entry such as `mount X, at:` that serves another table under a prefix, keyed under that table's namespace. */
+/**
+ * An entry such as `mount X, at:` that serves another table under a
+ * prefix, keyed under that table's namespace. With `prefix` set, the
+ * table is a value the source built, such as `include_router(router)`,
+ * and the call that built it is walked as an entry, through names and
+ * fields. A `for` loop's variable is read as each item of its list.
+ */
 export interface MountRole {
   readonly role: "mount";
   /** Where the table is written, tried in order, read as the source writes it. */
   readonly table: readonly EntryPick[];
   readonly at: readonly EntryPick[];
+  /**
+   * How a path the mount states goes with the mounted value's own: in
+   * front of it, as FastAPI's `include_router(prefix=)` does, or in
+   * its place, as flask-restx's `add_namespace(path=)` does, which the
+   * table does not follow, so routes under it are unread.
+   */
+  readonly prefix?: "inFront" | "replaces";
+  /** What a path written as no value means at the mount, as `ScopesRole.noValue` says. Unset reads it as `unreadable`. */
+  readonly noValue?: "unstated" | "unreadable";
 }
 
 /** Which table a root or a mount refers to. */
@@ -326,6 +392,23 @@ export type RouteUnread =
   | "rootListUnread"
   | "listUnread";
 
+/** Why an entry found through a receiver, or a route under a mount of a value, gave no route. */
+export type ReceiverUnread =
+  /** No root's walk reaches the value the entry is made on: nothing mounts it, or it comes to no one value. */
+  | "unreached"
+  /** The same, while a loop the table cannot list mounts values that may include it. */
+  | "unlistedLoop"
+  /** A mount above it is in a function, and a loop elsewhere the table cannot list may mount it instead. */
+  | "rivalledMount"
+  /** A mount above it states a path that does not read. */
+  | "mountUnread"
+  /** A scope above it states no path, where its library makes one up. */
+  | "prefixUnstated"
+  /** A mount above it states a path that replaces the scope's own. */
+  | "prefixReplaced"
+  /** A mount above it leads back into a value the walk is already inside. */
+  | "cycle";
+
 /** What one entry of a table whose handlers are values came to, in the order the walk met it. */
 export type RouteOutcome =
   | {
@@ -334,12 +417,18 @@ export type RouteOutcome =
       readonly path: string;
       readonly handler: ValueOps;
       readonly entry: EntrySource;
+      /** For a route a decorated class's method serves, the class. */
+      readonly owner?: ValueOps;
     }
   | {
       readonly kind: "unread";
-      readonly reason: "pathUnread" | "prefixUnread";
+      readonly reason: "pathUnread" | "prefixUnread" | ReceiverUnread;
       readonly handler: ValueOps;
       readonly entry: EntrySource;
+      /** For a route a decorated class's method serves, the class. */
+      readonly owner?: ValueOps;
+      /** For `unlistedLoop` and `rivalledMount`, each mount written in a loop the table cannot list that may mount it. */
+      readonly loops?: readonly CallOps[];
     }
   | {
       readonly kind: "unread";

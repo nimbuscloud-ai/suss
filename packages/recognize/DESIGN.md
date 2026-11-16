@@ -281,7 +281,11 @@ No shipped pack lists Python or Ruby among its languages yet.
 |---|---|
 | `method()`, `calleeText()` | `call(r, c)`, then `readsProperty(c, o, n)` for the method, with the adapter's `memberName` turning a class's own spelling back into the plain name, or the source text of `c` |
 | `argumentCount()`, `argument(k)`, `nameAt(k)`, `valueAt(k)` | `callArg(r, k, a)`, and `callArgCount` where an adapter states it |
-| `receiver()`, `callee()`, `argument(k)` | a name or field followed to what it was written as, through the adapter's `writtenAs` |
+| `receiver()` | a name or a field followed to what it was written as, through the adapter's `writtenAs`, and then through a call into a project function to what it returns |
+| `callee()`, `argument(k)` | a name followed to what it was written as, through the adapter's `writtenAs`. A field is not followed, since the readers of a command object rely on reading a name alone |
+| `returnedCall()` | the one `returnsValue(f, x)` row of the function the callee comes to, when `x` is a call whose `callArg` rows are `f`'s parameters at their own positions and nothing else |
+| `dropped(owned)` | the adapter's `dropped`: Python asks the shared `passedOn` rules about the one local the call's value is written to, the way its router index asks about a dropped app. TypeScript and Ruby drop nothing |
+| `callerSite()` | the `makesCall(f, r)` row on the call, or null for a call at the top of a file |
 | `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read off `computedKeyAt` at the entry's position through `nameOf`. A call into a project function is read as the one value it returns, through `writtenAs` on the call, and a library call or a construction stays as written. An object's spread is read in its place, its name or project call followed the same way, or failing that through `comesTo`, and a key written twice keeps its first place and takes the later value. A list built by mapping is one item, read off `eachElement`: what the function a call hands over returns, from its one `returnsValue` row, or the element a comprehension writes. A list's spread is left out |
 | `object()` | the value itself when it is an object written out, or else the one object among the adapter's `comesTo` answers, any function among them left out. `comesTo(x, z)` follows names and calls that return their argument, and never a factory call |
 | `function()` | `func(x)` on the value itself, or else the one function among the `comesTo` answers, or else the adapter's `givesBack`: what `givesBackUnwrapped`, then `givesBack`, says a factory call returns |
@@ -338,7 +342,8 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `fieldCalls()` | the `holdsProperty(c, n, v)` and `declaresDefault(c, n, v)` rows whose `v` is a call, in source order, each under its plain name |
 | `writesBase()` | an `extendsNamed(c, n)` row, which an adapter states for a base the declaration writes and never for a mixin |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
-| `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed |
+| `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed. With `{ follow: "namesAndFields" }`, the value is read the way `receiver()` reads a receiver, so `include_router(users.router)` and `@router.get` on the same router give one call |
+| `nothing()` | the adapter's `writesNothing` on the value's own key: `None`, `nil`, or `null` and `undefined` |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
 | `loopsOver()` | the call's block from `callBlock(r, b)`, or else a function written as its first argument. The `elementOf(x, o)` row off the call's receiver `o` whose `x` is that function's first parameter, by `paramOf` or the adapter's `parameterOf`, gives the element's variable, and `positionOf(i, x)` the position's. A variable's name is the one `paramNamed` gives it, or its text |
 | `evaluatedWith(bindings)` | the adapter's `evaluatedWith`, its evaluator with the names bound. An adapter with none reads the value as `name("nothing")` does |
@@ -619,6 +624,92 @@ expects the same routes from each. It also writes one table of objects
 in all three languages, with a nested list, an index entry, a path that
 does not read, a spread and an item that is no object, and expects the
 same outcomes from each.
+
+### A table whose entries are made on a value
+
+FastAPI writes no entry inside another. A route is a decorator called on
+the app or on a router, and a router is mounted by a call made on the
+app or on another router, in any file:
+
+```ts
+const FASTAPI_ROUTES: RouteTableDeclaration = {
+  roots: { kinds: { FastAPI: 0 }, children: { in: "receiver" }, in: "file", unlessDropped: { owned: ["middleware", "exception_handler"] } },
+  from: ["fastapi"],
+  joins: "asWritten",
+  loops: ["for"],
+  throughWrappers: true,
+  roles: {
+    get: { role: "serves", methods: ["GET"], path: [{ at: 0 }, { keyword: "path" }], handler: { decorated: true } },
+    include_router: { role: "mount", table: [{ at: 0 }, { keyword: "router" }], at: [{ keyword: "prefix" }], prefix: "inFront" },
+    APIRouter: { role: "scopes", path: [{ keyword: "prefix" }], children: { in: "receiver" }, noValue: "unreadable", trailingSlash: "kept" },
+  },
+};
+```
+
+- `{ in: "receiver" }` makes an entry's children the entries made on the
+  value it builds. They are found in every file the sources list, by
+  the value their receiver comes to, `receiver().site()`, the first
+  time a table asks, and walked in the order the files are read and
+  then in source order. A serves role whose handler is
+  `{ decorated: true }` takes its entries from the module ops'
+  `decorated()`, the decorators that call the role's method, so a
+  dictionary's `.get(...)` is never one, and its handler is the
+  definition under the decorator. Every other serves role and every
+  mount role takes the calls of its method from `calls("file")`.
+- `methods: { members }` serves each method of a decorated class whose
+  name the list has, upper-cased, with the method as the handler and the
+  class as the outcome's `owner`, which is how flask-restx writes a
+  resource.
+- `throughWrappers` reads a decorator written as a call to a project
+  function as the library call that function returns, through
+  `returnedCall()`, with the decorator's own arguments.
+- A mount role with `prefix` mounts a value. Its table pick is read
+  with `asCall({ follow: "namesAndFields" })`, so `users.router` is the
+  `APIRouter(...)` the module assigns, and the call that built it is
+  walked as an entry, named the way its own file imports the name. With
+  `for` among the `loops`, a mount whose table is a loop's variable
+  mounts each item of the list the loop goes over, through `element()`.
+  `prefix: "inFront"` puts the mount's path in front of the value's own;
+  `"replaces"`, which the table does not follow, leaves every route
+  under it unread.
+- A scopes role with `noValue` reads its path the way a library reads a
+  router's prefix. `unstated` reads `""`, `0`, `false` and the
+  language's literal for no value as no path, and `unreadable` keeps
+  only a string. `trailingSlash: "trimmed"` trims the path, and
+  `prefixRequired` leaves the routes under a scope that states none
+  unread. A path that does not read leaves them unread too, ahead of
+  what the mounts above say, since the router's own prefix is what it is
+  built with.
+- `joins` puts a prefix and a path together as strings: `asWritten`
+  writes one after the other, as FastAPI does, and `merged` then merges
+  repeated slashes, as Werkzeug serves a path.
+- `unlessDropped` leaves out a root its function drops, as
+  `CallOps.dropped` says, with every entry made on it. It takes the
+  methods the library may call on the app besides the roles, `owned`,
+  because FastAPI's middleware and exception handler decorators are
+  registrations that are no role of the table, and an app that only
+  has those called on it is still dropped.
+
+What such a table cannot claim a path for comes back as an outcome
+with a `ReceiverUnread` reason. A `routeTable` pattern says a sentence
+for each one its table can give, and a table that never reads
+receivers can leave them out. Each reason tells the reader of a unit
+with no path where to look, so each cause has its own.
+
+| reason | when, and why the table needs it |
+|---|---|
+| `unreached` | a decorated entry whose value no root's walk reaches: nothing mounts it, it is mounted only on values nothing mounts, or it comes to no one value. A route on a router nobody mounts still gets its unit, with no path |
+| `unlistedLoop` | the same, while a mount written in a loop the table cannot list, in a directory that contains the entry's file, may mount it, so the unit can point at the loop |
+| `rivalledMount` | a mount above it is written in a function while such a loop elsewhere may mount the value instead, and which of the two the app runs is not written down |
+| `mountUnread` | a mount above it states a path that does not read, which the reader fixes at the mount and not at the router's own prefix |
+| `prefixUnstated` | a scope above it states no path where its library makes one up, as flask-restx does for a namespace, so the path served is one the source never states |
+| `prefixReplaced` | a mount above it states a path that replaces the scope's own, which flask-restx does and the table does not follow |
+| `cycle` | a mount above it leads back into a value the walk is already inside. The value's entries are walked once more with no path claimed, so every route on the cycle, and under it, is unread, since the cycle gives it no one path |
+
+`packages/cli/src/routeTableReceiversLanguages.test.ts` reads one app
+written in Python and in TypeScript, with decorated functions and class
+methods, a router mounted twice, two mounted from a loop over a list,
+and one nobody mounts, and expects the same outcomes from each.
 
 ## Reaching a call next to this one
 
