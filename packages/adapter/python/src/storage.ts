@@ -24,7 +24,7 @@ import {
   constructionRef,
   fieldArguments,
 } from "./constructions.js";
-import { pythonFactSource } from "./factSource.js";
+import { inModule, pythonFactSource } from "./factSource.js";
 import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { bodyCalls, calleeText } from "./paths/effects.js";
@@ -161,7 +161,7 @@ function importedQueryFunction(
   for (const origin of originsOf(options.facts, key)) {
     const pattern = options.patterns.find(
       (candidate) =>
-        origin.module === candidate.module &&
+        inModule(origin.module, candidate.module) &&
         (candidate.queryFunctions ?? []).includes(origin.name),
     );
     if (pattern !== undefined) {
@@ -293,7 +293,8 @@ function queryTypePattern(
   name: string,
 ): StoragePattern | undefined {
   return options.patterns.find(
-    (pattern) => module === pattern.module && pattern.queryTypes.includes(name),
+    (pattern) =>
+      inModule(module, pattern.module) && pattern.queryTypes.includes(name),
   );
 }
 
@@ -803,10 +804,13 @@ function resolvedMethodPattern(
   if (typeName === null) {
     return undefined;
   }
+  const imported = options.facts
+    .lookup("importsModule", 0, fileOf(settled))
+    .map((row) => String(row[1]));
   return options.patterns.find(
     (candidate) =>
       candidate.queryTypes.includes(typeName) &&
-      options.facts.has("importsModule", [fileOf(settled), candidate.module]),
+      imported.some((module) => inModule(module, candidate.module)),
   );
 }
 

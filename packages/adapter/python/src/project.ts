@@ -75,6 +75,7 @@ import {
 import { discoverUnits } from "./discovery.js";
 import { bindEnvFacts, envFactsIn, settleNamedParameters } from "./envReads.js";
 import { exitSites, type FileExits, markExitCodeFunctions } from "./exits.js";
+import { inModule } from "./factSource.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
@@ -1333,11 +1334,13 @@ function methodsDeclaredNear(
   patterns: readonly StoragePattern[],
   definitions: ReadonlyMap<string, PyNode>,
 ): Set<string> {
-  const modules = new Set(patterns.map((pattern) => pattern.module));
+  const modules = [...new Set(patterns.map((pattern) => pattern.module))];
   const importing = new Set(
     db
       .facts("importsModule")
-      .filter((row) => modules.has(String(row[1])))
+      .filter((row) =>
+        modules.some((module) => inModule(String(row[1]), module)),
+      )
       .map((row) => String(row[0])),
   );
   const found = new Set<string>();
