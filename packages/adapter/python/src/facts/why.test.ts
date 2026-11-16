@@ -141,14 +141,11 @@ describe("PythonWhySession", () => {
       name: "sqlmodel",
       protocol: "postgresql",
       discovery: [],
-      models: [
-        {
-          baseNames: ["SQLModel"],
-          givesBack: [],
-          entryMethods: [{ method: "get", argument: 0 }],
-          entryFunctions: [],
-        },
-      ],
+      words: {
+        givesBackOneOfArgument: [
+          { base: "SQLModel", method: "get", argument: 0 },
+        ],
+      },
     };
 
     const explainClose = (packs: readonly PythonPack[]) => {

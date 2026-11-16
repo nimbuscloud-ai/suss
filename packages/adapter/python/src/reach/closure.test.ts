@@ -1150,18 +1150,15 @@ const sqlmodelLike: PythonPack = {
       recordsNothing: ["exec"],
     },
   ]),
-  models: [
-    {
-      baseNames: ["SQLModel", "declarative_base"],
-      givesBack: ["filter", "first"],
-      entryMethods: [
-        { method: "get", argument: 0 },
-        { method: "query", argument: 0 },
-        { method: "exec", argument: 0 },
-      ],
-      entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
-    },
-  ],
+  words: {
+    givesBackOne: ["SQLModel", "declarative_base"].flatMap((base) =>
+      ["filter", "first"].map((method) => ({ base, method })),
+    ),
+    givesBackOneOfArgument: ["SQLModel", "declarative_base"].flatMap((base) =>
+      ["get", "query", "exec"].map((method) => ({ base, method, argument: 0 })),
+    ),
+    givesBackOneOfImport: [{ module: "sqlmodel", name: "select", argument: 0 }],
+  },
 };
 
 async function extractWithModels(): Promise<BehavioralSummary[]> {

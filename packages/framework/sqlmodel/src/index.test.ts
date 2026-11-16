@@ -5,12 +5,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { modelWords } from "@suss/framework-sqlalchemy";
 
 import {
+  SQLMODEL_MODEL_CALLS,
   SQLMODEL_TYPES,
   STATEMENT_MODULES,
   sqlmodelFramework,
-  sqlmodelModels,
   withSqlmodel,
 } from "./index.js";
 
@@ -71,33 +72,33 @@ describe("the SQLModel pack", () => {
   });
 
   it("puts its own model base beside the SQLAlchemy ones", () => {
-    const [model] = sqlmodelModels();
-    expect(model?.baseNames).toContain("SQLModel");
-    expect(model?.baseNames).toContain("DeclarativeBase");
+    expect(SQLMODEL_MODEL_CALLS.baseNames).toContain("SQLModel");
+    expect(SQLMODEL_MODEL_CALLS.baseNames).toContain("DeclarativeBase");
   });
 
   it("adds exec and its own select to what SQLAlchemy already declares", () => {
-    const [model] = sqlmodelModels();
-    expect(model?.entryMethods).toContainEqual({ method: "exec", argument: 0 });
-    expect(model?.entryMethods).toContainEqual({ method: "get", argument: 0 });
-    expect(model?.entryFunctions).toContainEqual({
-      module: "sqlmodel",
-      name: "select",
+    expect(SQLMODEL_MODEL_CALLS.entryMethods).toContainEqual({
+      method: "exec",
       argument: 0,
     });
-    expect(model?.entryFunctions).toContainEqual({
-      module: "sqlalchemy",
-      name: "select",
+    expect(SQLMODEL_MODEL_CALLS.entryMethods).toContainEqual({
+      method: "get",
       argument: 0,
     });
+    expect(SQLMODEL_MODEL_CALLS.entryFunctions).toEqual([
+      { module: "sqlalchemy", name: "select", argument: 0 },
+      { module: "sqlmodel", name: "select", argument: 0 },
+    ]);
   });
 
-  it("stands the model declarations up on the pack a run loads", () => {
-    const pack = sqlmodelFramework({ storageSystem: "postgresql" });
-    expect(pack.models?.length).toBeGreaterThan(0);
+  it("states its words on the pack a run loads, and on a route pack it composes with", () => {
+    const words = modelWords(SQLMODEL_MODEL_CALLS);
+    expect(sqlmodelFramework({ storageSystem: "postgresql" }).words).toEqual(
+      words,
+    );
     expect(
-      withSqlmodel(fastapiLike, { storageSystem: "sqlite" }).models?.length,
-    ).toBeGreaterThan(0);
+      withSqlmodel(fastapiLike, { storageSystem: "sqlite" }).words,
+    ).toEqual(words);
   });
 
   it("refuses a config that says no database with a sentence instead of a TypeError", () => {

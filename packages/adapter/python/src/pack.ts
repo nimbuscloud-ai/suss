@@ -59,10 +59,6 @@ export interface PythonPack {
   projectModules?: string[];
   /** The callables the library gives a project for making a request. */
   clients?: PyClientCall[];
-  /** What the library's own database queries look like. DESIGN.md says how one is matched. */
-  storage?: StoragePattern[];
-  /** Which of the library's calls give back one of a model class. DESIGN.md says what a chain of them composes into. */
-  models?: PyModelQueries[];
   /**
    * What the library reads out of a model's class body: a field assigned
    * from the library's own relationship callable reaches another model.
@@ -237,82 +233,6 @@ export interface PyTestMocks {
   patchers: string[];
   /** Patchers a fixture hands the test, by the fixture's parameter name and the methods called on it. */
   fixturePatchers: { fixture: string; methods: string[] }[];
-}
-
-/**
- * A call talks to the database when the method behind it declares that it
- * returns one of the library's query types. Matching on the return type finds
- * queries made through a project base class that wraps the library, where a
- * match on the import would find none.
- */
-export interface StoragePattern {
-  /** The module a query type is imported from, `sqlalchemy.orm` for a Session. */
-  module: string;
-  /** Type names that mean the value is a query against the database. */
-  queryTypes: string[];
-  /** Chain-ending methods that change what is stored. Anything else reads. */
-  writes: string[];
-  /**
-   * Methods on a query type that touch no rows of their own, and a call to
-   * one records nothing. `session.execute(stmt)` runs a statement whose own
-   * chain already records the work, and `close` manages the session.
-   */
-  recordsNothing?: string[];
-  /**
-   * Methods whose keywords supply column values instead of picking rows,
-   * `values` in `update(User).where(id=1).values(name="x")`. Their keywords
-   * are reported as fields, and every other call's keywords as the selector.
-   */
-  valueMethods?: string[];
-  /**
-   * Methods whose first argument says which table a statement reads when
-   * its own arguments do not, `select_from` in
-   * `select(func.count()).select_from(User)`.
-   */
-  tableMethods?: string[];
-  /**
-   * Functions the library exports that start a query on their own, such as
-   * SQLAlchemy 2.0's `select(...)`. A call site imports one directly instead
-   * of reaching it through a project class.
-   */
-  queryFunctions?: string[];
-  /** Which database the library is talking to, for the boundary binding. */
-  storageSystem: "postgresql" | "mysql" | "sqlite";
-}
-
-/**
- * Which of a library's calls give back an instance of the project model
- * class they were passed, so a method called on the result resolves to the
- * one that class declares. SQLAlchemy and SQLModel take the class as an
- * argument, as in `session.get(User, id)` and `select(User)`, where a Rails
- * finder is called on the class itself.
- */
-export interface PyModelQueries {
-  /**
-   * The names a model's base classes lead back to: a base class the
-   * library exports, `DeclarativeBase`, or the function that builds one,
-   * `declarative_base`.
-   */
-  baseNames: string[];
-  /** Methods whose result is the model again: one row, or a query a later read narrows to one. */
-  givesBack: string[];
-  /** Methods that take the model class and give back one of it, with the position it is written at. */
-  entryMethods: PyModelEntryMethod[];
-  /** Functions the library exports that do the same, called on their own instead of on a session. */
-  entryFunctions: PyModelEntryFunction[];
-}
-
-/** `session.get(User, id)`: the method, and where the class is written. */
-export interface PyModelEntryMethod {
-  method: string;
-  argument: number;
-}
-
-/** `select(User)`: the function, the module it comes from, and where the class is written. */
-export interface PyModelEntryFunction {
-  module: string;
-  name: string;
-  argument: number;
 }
 
 export type PythonDiscoveryPattern =

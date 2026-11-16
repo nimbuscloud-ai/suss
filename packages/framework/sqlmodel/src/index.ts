@@ -8,21 +8,23 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
+  modelWords,
+  PACK_VERSION,
   queryChains,
   rawStatements,
   SESSION_WRITES,
+  SQLALCHEMY_MODEL_CALLS,
   SESSION_RECORDS_NOTHING as SQLALCHEMY_RECORDS_NOTHING,
   SQLALCHEMY_TYPES,
   sqlalchemyClassBodies,
-  sqlalchemyModels,
   statementChains,
   withStatements,
 } from "@suss/framework-sqlalchemy";
 import { classBody, imported } from "@suss/recognize";
 
-import type { PyModelQueries, PythonPack } from "@suss/adapter-python";
+import type { PythonPack } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
-import type { QueryTypes } from "@suss/framework-sqlalchemy";
+import type { ModelCalls, QueryTypes } from "@suss/framework-sqlalchemy";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { PatternPack } from "@suss/recognize";
 
@@ -80,17 +82,18 @@ export const STATEMENT_MODULES = ["sqlmodel", "sqlalchemy"];
  * from `SQLModel` (`class User(SQLModel, table=True)`), and `exec` runs
  * a statement.
  */
-export function sqlmodelModels(): PyModelQueries[] {
-  return sqlalchemyModels().map((model) => ({
-    baseNames: [...model.baseNames, "SQLModel"],
-    givesBack: model.givesBack,
-    entryMethods: [...model.entryMethods, { method: "exec", argument: 0 }],
-    entryFunctions: [
-      ...model.entryFunctions,
-      { module: "sqlmodel", name: "select", argument: 0 },
-    ],
-  }));
-}
+export const SQLMODEL_MODEL_CALLS: ModelCalls = {
+  baseNames: [...SQLALCHEMY_MODEL_CALLS.baseNames, "SQLModel"],
+  givesBack: SQLALCHEMY_MODEL_CALLS.givesBack,
+  entryMethods: [
+    ...SQLALCHEMY_MODEL_CALLS.entryMethods,
+    { method: "exec", argument: 0 },
+  ],
+  entryFunctions: [
+    ...SQLALCHEMY_MODEL_CALLS.entryFunctions,
+    { module: "sqlmodel", name: "select", argument: 0 },
+  ],
+};
 
 /** SQLAlchemy's `relationship` field, and SQLModel's own `Relationship`. */
 export function sqlmodelClassBodies(): ClassBodyDeclaration[] {
@@ -117,26 +120,21 @@ export function sqlmodelRawStatements(
 }
 
 /**
- * Adds the storage patterns to the route pack a run already uses. A
- * project picks its web framework and its database library separately,
- * so the two packs combine.
+ * Adds the storage chains to the route pack a run already uses, since a
+ * project picks its web framework and its database library separately.
  */
 export function withSqlmodel(
   pack: PythonPack,
   options: SqlmodelPackOptions,
 ): PythonPack {
-  return withStatements(
-    {
-      ...pack,
-      models: [...(pack.models ?? []), ...sqlmodelModels()],
-      classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
-    },
-    [
-      ...sqlmodelRawStatements(options),
-      queryChains("sqlmodel-queries", SQLMODEL_TYPES, options),
-      statementChains("sqlmodel-statements", STATEMENT_MODULES, options),
-    ],
-  );
+  return withStatements(pack, [
+    ...sqlmodelRawStatements(options),
+    queryChains("sqlmodel-queries", SQLMODEL_TYPES, options, {
+      words: modelWords(SQLMODEL_MODEL_CALLS),
+      classBodies: sqlmodelClassBodies(),
+    }),
+    statementChains("sqlmodel-statements", STATEMENT_MODULES, options),
+  ]);
 }
 
 export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
@@ -148,7 +146,12 @@ export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
     );
   }
   return withSqlmodel(
-    { name: "sqlmodel", protocol: options.storageSystem, discovery: [] },
+    {
+      name: "sqlmodel",
+      version: PACK_VERSION,
+      protocol: options.storageSystem,
+      discovery: [],
+    },
     options,
   );
 }

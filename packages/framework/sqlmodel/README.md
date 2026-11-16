@@ -5,9 +5,11 @@ for a project that uses SQLModel.
 
 ## What this package is
 
-A pattern pack. It declares the types SQLModel returns from a query, the
-methods that change what is stored, and the constructor a model's field
-uses to reach another model. The Python adapter does the matching.
+A pack declared with `@suss/recognize`, built from the sqlalchemy pack's
+chains. It declares the chains of calls on SQLModel's session and query
+types and on the functions it builds a statement with, says what a
+model's field reaches, and says what the library's calls give back. The
+Python adapter runs the chains over every call.
 
 ```ts
 import { fastapiFramework } from "@suss/framework-fastapi";
@@ -38,11 +40,12 @@ def read_items(session: Session):
 The sqlalchemy pack matches a name by the module it was imported from, so
 it finds nothing here. `Session` came from `sqlmodel` instead of
 `sqlalchemy.orm`, and `select` came from `sqlmodel` instead of
-`sqlalchemy`. This pack declares the same things for the `sqlmodel`
+`sqlalchemy`. This pack declares the same chains for the `sqlmodel`
 module, and adds `exec`, which is SQLModel's own name for running a
-statement. It also includes the sqlalchemy patterns, since a SQLModel
+statement. It also includes the sqlalchemy chains, since a SQLModel
 project imports from `sqlalchemy` for anything SQLModel does not
-re-export.
+re-export. Its words add `SQLModel` as a model's base, `exec` as a call
+handed the class, and SQLModel's own `select`.
 
 ## What comes out
 
@@ -90,7 +93,11 @@ class User(SQLModel, table=True):
 ```
 
 ```ts
-relationships: [{ module: "sqlmodel", name: "Relationship" }]
+classBody({
+  fields: {
+    association: { madeBy: imported({ from: ["sqlmodel"], named: ["Relationship"] }) },
+  },
+})
 ```
 
 The model comes from the annotation, with the wrappers removed. A forward

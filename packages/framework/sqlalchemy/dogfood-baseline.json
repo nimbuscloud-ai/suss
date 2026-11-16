@@ -2,6 +2,6 @@
   "name": "@suss/framework-sqlalchemy",
   "exports": 11,
   "internal": 3,
-  "consumers": 19,
+  "consumers": 20,
   "unfollowedCalls": 0
 }

@@ -5,9 +5,22 @@ for a project that uses SQLAlchemy.
 
 ## What this package is
 
-A pattern pack. It declares the types SQLAlchemy returns from a query,
-the methods that change what is stored, and the constructor a model's
-field uses to reach another model. The Python adapter does the matching.
+A pack declared with `@suss/recognize`. It declares the chains of calls
+a body makes through SQLAlchemy: one on each of its query types, a
+session and a query, and one on the functions it builds a statement
+with. It also says what a model's field reaches and what the library's
+calls give back. The Python adapter runs the chains over every call.
+
+```ts
+storageCalls({ system, client: typed({ from: ["sqlalchemy.orm"], named: ["Query", "Session"] }), clientAt }, { outermost: true })
+  .methods({ add: WRITE, commit: WRITE, delete: WRITE /* the other writes */ })
+  .otherwise(READ)
+  .container(MODEL);
+
+storageCalls({ system, client: imported({ from: ["sqlalchemy"], named: ["select", "insert", "update", "delete"] }), clientAt: [{ to: "chainStart" }] }, { outermost: true })
+  .methods({ select: READ, insert: WRITE, update: WRITE, delete: WRITE }, { of: [{ to: "chainStart" }] })
+  .container(MODEL);
+```
 
 ```ts
 import { flaskRestxFramework } from "@suss/framework-flask-restx";
@@ -20,8 +33,8 @@ const pack = withSqlalchemy(flaskRestxFramework({}), {
 
 A project picks its web framework and its database library separately,
 so this pack combines with whichever route pack a run already uses.
-`sqlalchemyFramework` is for a run that wants the storage patterns and
-no routes.
+`sqlalchemyFramework` is for a run that wants the storage chains and no
+routes.
 
 You have to set `storageSystem`. SQLAlchemy works with Postgres, MySQL
 and SQLite, and the connection URL decides which, so the pack cannot
@@ -101,7 +114,11 @@ and the table taken from the statement.
 field reaches another model:
 
 ```ts
-relationships: [{ module: "sqlalchemy.orm", name: "relationship" }]
+classBody({
+  fields: {
+    association: { madeBy: imported({ from: ["sqlalchemy.orm"], named: ["relationship"] }) },
+  },
+})
 ```
 
 The model comes from the field's annotation when it has one, with the
@@ -113,6 +130,27 @@ function called `relationship` does not match.
 
 With that, `case.participants` resolves to `Participant`, and a call on
 it works the same way as for any model suss has resolved.
+
+## What a call gives back
+
+Python declares no return types for the library's own methods, so the
+pack says which calls give back one of the model they work on. A method
+that narrows or runs a query, `filter` or `first`, gives back the model
+it was called on. `session.get(User, 1)` and `session.query(User)` give
+back the class they are handed, and so does `select(User)`. The pack
+states these as words for every base a model's ancestry reaches,
+`DeclarativeBase` and the others:
+
+```ts
+words: {
+  givesBackOne: [{ base: "DeclarativeBase", method: "first" }, /* ... */],
+  givesBackOneOfArgument: [{ base: "DeclarativeBase", method: "get", argument: 0 }, /* ... */],
+  givesBackOneOfImport: [{ module: "sqlalchemy", name: "select", argument: 0 }],
+}
+```
+
+So a method called on `session.get(User, 1)` resolves to the one `User`
+declares.
 
 ## License
 
