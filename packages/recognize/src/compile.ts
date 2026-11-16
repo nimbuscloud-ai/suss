@@ -811,15 +811,15 @@ function streamWrite(matched: Matched): Effect[] | null {
   if (onlyWithArguments === true && positionalCountOf(subject) === 0) {
     return null;
   }
-  const named = streamNamedByKeyword(matched);
-  if (named === null) {
+  const keyword = streamAtKeyword(matched);
+  if (keyword === "file") {
     return null;
   }
   const effect: Extract<Effect, { type: "interaction" }> = {
     type: "interaction",
     binding: ioBinding({
       recognition,
-      target: named ?? streamTarget(matched),
+      target: keyword === "noKeyword" ? streamTarget(matched) : keyword.target,
     }),
     callee: ops.calleeText(),
     interaction: { class: "stream-write", ...writtenPayload(subject) },
@@ -828,22 +828,27 @@ function streamWrite(matched: Matched): Effect[] | null {
 }
 
 /**
- * The stream the call's `streamAt` keyword says it writes to. Null when
- * the value spells no stream, so the call writes to a file, and
- * undefined when the method has no such keyword or the call passes none.
+ * What the call's `streamAt` keyword says: that the call passes none, that
+ * no stream reaches its value so the call writes to a file, or the stream
+ * it writes to, null when two of them reach the value.
  */
-function streamNamedByKeyword(matched: Matched): string | null | undefined {
+type KeywordStream = "noKeyword" | "file" | { readonly target: string | null };
+
+function streamAtKeyword(matched: Matched): KeywordStream {
   const { streamAt } = matched.meaning as StreamWriteMethod;
   const value =
     streamAt === undefined
       ? null
       : (matched.subject.keywordAt?.(streamAt.keyword) ?? null);
   if (value === null) {
-    return undefined;
+    return "noKeyword";
   }
   const { streams } = matched.chain.ending as StreamWriteEnding;
-  const path = value.globalPath?.(Object.keys(streams)) ?? null;
-  return path === null ? null : (streams[path] ?? null);
+  const path = value.globalPath?.(Object.keys(streams));
+  if (path === undefined) {
+    return "file";
+  }
+  return { target: path === null ? null : (streams[path] ?? null) };
 }
 
 /** How many arguments the call passes by position, where the adapter counts keywords apart. */

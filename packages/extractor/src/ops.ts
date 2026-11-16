@@ -480,11 +480,13 @@ export interface ValueOps {
    */
   runtimePath?(object: RuntimeObject): string | undefined;
   /**
-   * The one path among `paths` the value is spelled as, the language's
-   * way: `sys.stderr`, or `stderr` after `from sys import stderr`. Null
-   * when it is spelled as none of them.
+   * The one path among `paths` the value is, as `receiverGlobal` says it
+   * of a receiver: spelled as it, `sys.stderr` or `stderr` after `from sys
+   * import stderr`, or a value the rules followed that global into, such
+   * as a parameter a caller passed it to. Null when two of them reach it,
+   * and undefined when none does.
    */
-  globalPath?(paths: readonly string[]): string | null;
+  globalPath?(paths: readonly string[]): string | null | undefined;
   /**
    * Whether the value is written with a call to one of `calls` or sets
    * one of `options`: `z.string().default(8080)` calls `default`, and
