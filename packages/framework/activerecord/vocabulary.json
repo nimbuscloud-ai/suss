@@ -97,5 +97,7 @@
   "on": "ActiveRecord::Callbacks: the option that narrows a callback to some of create, update and destroy",
   "config": "Rails: the directory config/database.yml is in, the file ActiveRecord takes its connections from",
   "mysql": "suss: the storage system a provider summary spells for MySQL, which the mysql2 and trilogy adapters connect to",
-  "sqlite": "suss: the storage system a provider summary spells for SQLite, which the sqlite3 adapter connects to"
+  "sqlite": "suss: the storage system a provider summary spells for SQLite, which the sqlite3 adapter connects to",
+  "included": "ActiveSupport: ActiveSupport::Concern#included, which evaluates its block against the class doing the including",
+  "with_options": "ActiveSupport: Object#with_options, which runs its block with extra keywords on whatever it is written in"
 }

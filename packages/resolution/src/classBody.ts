@@ -5,8 +5,8 @@
  *
  * Every adapter states the call statements of a body in order as
  * `bodyCallAt`, a class's among them, and Ruby links a call to the block
- * it is written with by `callBlock`. A call inside such a block runs
- * when the class body does, so the rule follows each block down. A call
+ * it is written with by `callBlock`. The rule follows a block down only
+ * when its call runs it in place, as a loop or `included do` does. A call
  * inside a method, a lambda or a nested class belongs to that, and none
  * of them is a block. DESIGN.md, under "The calls a class body makes",
  * has the facts.
@@ -33,6 +33,7 @@ export const CLASS_BODY_RULES: readonly Rule[] = [
     [v("c"), v("r")],
     [
       lit("classBodyCall", v("c"), v("outer")),
+      lit("runsBlockInPlace", v("outer")),
       lit("callBlock", v("outer"), v("b")),
       lit("bodyCallAt", v("b"), v("k"), v("r")),
     ],
