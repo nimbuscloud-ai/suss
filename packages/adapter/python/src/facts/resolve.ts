@@ -219,10 +219,11 @@ export function anchorCallsOf(db: Database, key: string): string[] {
 /**
  * Where a name came from, through any aliases and re-exports the project
  * put between it and the import. Empty when nothing in the project
- * imports what the name refers to.
+ * imports what the name refers to. The question leaves out the library
+ * calls the name's function makes, which no Python reader asks about.
  */
 export function originsOf(db: Database, nameKey: string): SubjectOrigin[] {
-  askResolution(db, [nameKey], "wantedOrigin", programFor(db));
+  askResolution(db, [nameKey], "wantedNameOrigin", programFor(db));
   return db
     .lookup("wantedComesFrom", 0, nameKey)
     .map((row) => ({ module: String(row[1]), name: String(row[2]) }));
