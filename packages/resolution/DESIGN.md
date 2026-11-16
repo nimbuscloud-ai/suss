@@ -134,6 +134,13 @@ compares(x, a, b)           the comparison x compares a with b, whatever
                             a < b < c is two rows. The ops in
                             @suss/recognize/ops read it, and no rule does
                             (Python, Ruby)
+comparesWith(x, a, o, b)    the same row as compares, with the operator
+                            o written between a and b, `not in` with its
+                            spaces collapsed. A query pins a column to a
+                            value only under ==, so a pack that reads
+                            the columns a condition pins needs it. The
+                            ops in @suss/recognize/ops read it, and no
+                            rule does (Python, Ruby)
 converts(r, a, n)           the call r converts a to another type with
                             the language's own n, as Number(x), int(x)
                             or x.to_i. Only the source walk reads it

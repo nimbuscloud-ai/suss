@@ -57,6 +57,10 @@ import type {
   ChannelPart,
   ClaimMetadata,
   ClaimMetadataLeaf,
+  ClassPick,
+  ClassSource,
+  ColumnsPick,
+  ConditionsPick,
   ContainerArgument,
   ContainerLink,
   ContainerMember,
@@ -76,6 +80,7 @@ import type {
   MessageSendMethod,
   MethodMeaning,
   MethodsLink,
+  NamePick,
   NamesStated,
   Naming,
   OneArgument,
@@ -102,6 +107,7 @@ import type {
   ToArgument,
   ToBuilder,
   ToChained,
+  ToChainStart,
   ToMember,
   ToPassedTo,
   ToReceiver,
@@ -116,6 +122,7 @@ import type {
   ReceiverOrigin,
   UnsettledName,
   ValueOps,
+  ValueRead,
 } from "./ops.js";
 
 /** What every ending is handed once the shared links have matched. */
@@ -153,7 +160,7 @@ export function compile(
   const modules = modulesOfChain(chain);
   const onlyWhereWritten = options.onlyWhereWritten === true;
   const outermost = linkIn(chain, "outermost") !== null;
-  return (_call: unknown, ctx: unknown): Effect[] | null => {
+  const hook = (_call: unknown, ctx: unknown): Effect[] | null => {
     const ops = opsIn(ctx);
     if (ops === null || (outermost && hasCallChainedOn(ops))) {
       return null;
@@ -202,6 +209,9 @@ export function compile(
     }
     return null;
   };
+  return outermost
+    ? Object.assign(hook, { claimsChainStart: true as const })
+    : hook;
 }
 
 /**
@@ -545,6 +555,7 @@ const STEP: Record<
   chained: (step, ops) => chainedOf(ops, step as ToChained),
   builder: (step, ops) => builderOf(ops, step as ToBuilder),
   passedTo: (step, ops) => passedToOf(ops, step as ToPassedTo),
+  chainStart: (step, ops) => chainStartsOf(ops, step as ToChainStart),
 };
 
 /** The calls a list of steps reaches from where it starts. */
@@ -557,23 +568,166 @@ function walk(from: readonly CallOps[], steps: readonly CallStep[]): CallOps[] {
 }
 
 /**
+ * The calls a pick reads: the ones its steps reach from the subject,
+ * then with `itself` the subject, when the first step would have
+ * reached it.
+ */
+function callsReached(
+  subject: CallOps,
+  pick: { readonly of?: readonly CallStep[]; readonly itself?: true },
+): CallOps[] {
+  const steps = pick.of ?? [];
+  const reached = walk([subject], steps);
+  const [first] = steps;
+  return pick.itself === true &&
+    first !== undefined &&
+    ADMITS[first.to](first, subject)
+    ? [...reached, subject]
+    : reached;
+}
+
+/**
+ * Whether a step would keep this call, by what the step says about the
+ * calls it keeps. A step that says nothing about them keeps any call.
+ */
+const ADMITS: Record<
+  CallStep["to"],
+  (step: CallStep, ops: CallOps) => boolean
+> = {
+  receiver: (step, ops) => {
+    const { method, except, origin, until } = step as ToReceiver;
+    const start = until === undefined ? null : chainStartOn(ops, until);
+    return (
+      methodWanted(ops, method) &&
+      !passedOver(ops, except) &&
+      cameFrom(ops, origin) &&
+      (start === null || !sameCall(ops, start))
+    );
+  },
+  chained: (step, ops) => {
+    const { method, except } = step as ToChained;
+    return methodWanted(ops, method) && !passedOver(ops, except);
+  },
+  argument: keepsAny,
+  member: keepsAny,
+  builder: keepsAny,
+  passedTo: keepsAny,
+  chainStart: keepsAny,
+};
+
+/** A step that says nothing about the calls it keeps keeps any of them. */
+function keepsAny(): boolean {
+  return true;
+}
+
+/**
  * The receiver, or the one up the chain that calls the named method,
  * when it came from the step's origin. With `every`, each call up the
- * chain the step accepts.
+ * chain the step accepts. A call the walk starts from is reached as
+ * itself, since nothing it was reached from is chained on it.
  */
 function receiversOf(ops: CallOps, step: ToReceiver): CallOps[] {
-  const wanted = (at: CallOps): boolean =>
-    (step.method === undefined || at.method() === step.method) &&
-    !passedOver(at, step.except);
-  if (step.every === true) {
-    return climbed(ops, (at) => at.receiver(), wanted)
-      .filter((found) => cameFrom(found.at, step.origin))
-      .map((found) => chainedBack(found.at, found.from));
+  const start = step.until === undefined ? null : chainStartOn(ops, step.until);
+  const climbing: Climbing = {
+    hop: step.inPlace === true ? receiverInPlace : (at) => at.receiver(),
+    wanted: (at) =>
+      methodWanted(at, step.method) && !passedOver(at, step.except),
+    ...(start === null ? {} : { stop: (at: CallOps) => sameCall(at, start) }),
+  };
+  const found =
+    step.every === true
+      ? climbed(ops, climbing).filter((one) => cameFrom(one.at, step.origin))
+      : climbed(ops, { ...climbing, limit: 1 }).filter((one) =>
+          cameFrom(one.at, step.origin),
+        );
+  return found.map((one) =>
+    one.from === null ? one.at : chainedBack(one.at, one.from),
+  );
+}
+
+/**
+ * The receiver, when the source writes it in place, so that the call is
+ * chained on it there. An adapter that cannot say what is chained on a
+ * call gives every receiver.
+ */
+function receiverInPlace(at: CallOps): CallOps | null {
+  const receiver = at.receiver();
+  if (receiver === null || receiver.chainedOn === undefined) {
+    return receiver;
   }
-  const found = climb(ops, (at) => at.receiver(), wanted);
-  return found !== null && cameFrom(found.at, step.origin)
-    ? [chainedBack(found.at, found.from)]
-    : [];
+  const chained = receiver.chainedOn();
+  return chained !== null && sameCall(chained, at) ? receiver : null;
+}
+
+/** Whether two ops are about the same call, by their sites where the adapter gives them. */
+function sameCall(one: CallOps, other: CallOps): boolean {
+  const site = one.site?.();
+  return site === undefined ? one === other : site === other.site?.();
+}
+
+/**
+ * The first call of the chain written in place that the call is part
+ * of: its receivers in place, up to the one made on something other
+ * than a call. A call that comes round again ends the climb.
+ */
+function chainStartOf(ops: CallOps): CallOps {
+  const chain = climbed(ops, {
+    hop: receiverInPlace,
+    wanted: () => true,
+    fromItself: true,
+  });
+  return chain[chain.length - 1]?.at ?? ops;
+}
+
+/** Each call's chain start on each origin, since a chain's picks ask for it once each. */
+const chainStarts = new WeakMap<CallOps, Map<ReceiverOrigin, CallOps | null>>();
+
+/**
+ * The chain's first call on the origin: the first call, from this one up
+ * its receivers written in place, that the origin accepts. A call made
+ * on a call written in place is made on the session that call gives
+ * back, so the chain starts where that call's own chain does. Null when
+ * no call on the way is the origin's.
+ */
+function chainStartOn(ops: CallOps, origin: ReceiverOrigin): CallOps | null {
+  let known = chainStarts.get(ops);
+  if (known === undefined) {
+    known = new Map();
+    chainStarts.set(ops, known);
+  }
+  const asked = known.get(origin);
+  if (asked !== undefined) {
+    return asked;
+  }
+  const [accepted] = climbed(ops, {
+    hop: receiverInPlace,
+    wanted: (at) => at.isFrom(origin),
+    fromItself: true,
+    limit: 1,
+  });
+  const start = accepted === undefined ? null : chainStartOf(accepted.at);
+  known.set(origin, start);
+  return start;
+}
+
+/** The chain start of the call, as a step reaches it. */
+function chainStartsOf(ops: CallOps, step: ToChainStart): CallOps[] {
+  const start = chainStartOf(ops);
+  return passedOver(start, step.except) ? [] : [start];
+}
+
+/** Whether the call makes the step's method, or one of its methods, when the step says. */
+function methodWanted(
+  at: CallOps,
+  method: string | readonly string[] | undefined,
+): boolean {
+  if (method === undefined) {
+    return true;
+  }
+  const made = at.method();
+  return typeof method === "string"
+    ? made === method
+    : made !== null && method.includes(made);
 }
 
 /** Whether a step's `except` passes over this call. */
@@ -584,44 +738,52 @@ function passedOver(
   return except !== undefined && except.includes(at.method() ?? "");
 }
 
-/** The call a climb stopped at, and the call it stepped there from. */
+/**
+ * The call a climb stopped at, and the call it stepped there from: null
+ * for the call the climb started at, when the walk counts that one.
+ */
 interface Climbed {
   readonly at: CallOps;
-  readonly from: CallOps;
+  readonly from: CallOps | null;
+}
+
+/** How one climb goes: the hop it takes, the calls it keeps, and where it ends. */
+interface Climbing {
+  readonly hop: (at: CallOps) => CallOps | null;
+  readonly wanted: (at: CallOps) => boolean;
+  /** How many calls the climb keeps before it ends. */
+  readonly limit?: number;
+  /** The climb ends before a call this accepts, the call it starts at included. */
+  readonly stop?: (at: CallOps) => boolean;
+  /** The call the climb starts at is the first one it meets. */
+  readonly fromItself?: boolean;
 }
 
 /**
- * The first call `wanted` accepts, one hop after another from `ops`. A
- * call the climb has already passed ends it. A receiver kept in a
- * variable can be a call made on that same variable, as in `x =
- * x.next()`, and a field, or two variables each written as a call on
- * the other, come back round the same way.
+ * Every call `wanted` accepts, one hop after another from `ops`, in the
+ * order the climb meets them, up to `limit` of them. A call the climb
+ * has already passed ends it. A receiver kept in a variable can be a
+ * call made on that same variable, as in `x = x.next()`, and a field,
+ * or two variables each written as a call on the other, come back round
+ * the same way.
  */
-function climb(
-  ops: CallOps,
-  hop: (at: CallOps) => CallOps | null,
-  wanted: (at: CallOps) => boolean,
-): Climbed | null {
-  const [first] = climbed(ops, hop, wanted, 1);
-  return first ?? null;
-}
-
-/**
- * Every call `wanted` accepts along the same climb, in the order it
- * meets them, up to `limit` of them.
- */
-function climbed(
-  ops: CallOps,
-  hop: (at: CallOps) => CallOps | null,
-  wanted: (at: CallOps) => boolean,
-  limit = Number.POSITIVE_INFINITY,
-): Climbed[] {
+function climbed(ops: CallOps, climbing: Climbing): Climbed[] {
+  const { hop, wanted, stop } = climbing;
+  const limit = climbing.limit ?? Number.POSITIVE_INFINITY;
   const found: Climbed[] = [];
+  if (stop?.(ops) === true) {
+    return found;
+  }
   const passed = new Set<unknown>();
-  let from = ops;
-  for (let at = hop(ops); at !== null; at = hop(at)) {
+  let from: CallOps | null = null;
+  let at: CallOps | null = ops;
+  if (climbing.fromItself !== true) {
+    from = ops;
+    at = hop(ops);
+  }
+  for (; at !== null; at = hop(at)) {
     const site = at.site?.() ?? at;
-    if (passed.has(site)) {
+    if (passed.has(site) || (at !== ops && stop?.(at) === true)) {
       return found;
     }
     if (wanted(at)) {
@@ -666,14 +828,14 @@ function membersOf(ops: CallOps, step: ToMember): CallOps[] {
  * `receiversOf` pointed the other way.
  */
 function chainedOf(ops: CallOps, step: ToChained): CallOps[] {
-  const found = climbed(
-    ops,
-    (at) => at.chainedOn?.() ?? null,
-    (at) =>
+  const found = climbed(ops, {
+    hop: (at) => at.chainedOn?.() ?? null,
+    wanted: (at) =>
       (step.method === undefined || at.method() === step.method) &&
       !passedOver(at, step.except),
-    step.every === true ? Number.POSITIVE_INFINITY : 1,
-  );
+    limit: step.every === true ? Number.POSITIVE_INFINITY : 1,
+    fromItself: step.fromItself === true,
+  });
   return found.map((one) => one.at);
 }
 
@@ -1450,6 +1612,9 @@ function storageAccess(matched: Matched): Effect[] | null {
   const meaning = matched.meaning as StorageMethod;
   const unsettled = (chain.ending as StorageEnding).unsettledName;
   const kind = kindOf(meaning.kind, subject, unsettled);
+  if (kind === "nothing") {
+    return [];
+  }
   const link: InputLink | null = linkIn(chain, "input");
   const input = link === null ? null : statedValue(subject, link.at);
   if (kind === null || (link !== null && input === null)) {
@@ -1885,7 +2050,7 @@ function kindOf(
   kind: AccessKind,
   subject: CallOps,
   unsettled: UnsettledName,
-): "read" | "write" | null {
+): "read" | "write" | "nothing" | null {
   if (typeof kind === "string") {
     return kind;
   }
@@ -1908,6 +2073,9 @@ function containerOf(
   }
   if ("from" in link) {
     return link.from(selector, subject);
+  }
+  if ("class" in link) {
+    return classNamed(subject, link);
   }
   if ("of" in link) {
     return memberNamed(subject, link);
@@ -1955,7 +2123,7 @@ export function statedValue(
   subject: CallOps,
   pick: OneArgument,
 ): ValueOps | null {
-  for (const ops of walk([subject], pick.of ?? [])) {
+  for (const ops of callsReached(subject, pick)) {
     const stated = pickedIn(ops, pick, pick.at);
     const inside = stated === null ? null : propertyIn(stated, pick.property);
     if (inside !== null) {
@@ -1993,6 +2161,15 @@ function namesFor(
   if (says === undefined) {
     return [];
   }
+  if (isPickList(says)) {
+    return [
+      ...new Set(
+        says.flatMap((pick) =>
+          namesFor(pick, subject, stated, unsettled, read),
+        ),
+      ),
+    ];
+  }
   if (Array.isArray(says)) {
     return [...(says as readonly string[])];
   }
@@ -2002,6 +2179,12 @@ function namesFor(
   }
   if ("fieldsRead" in says) {
     return fieldsReadOff(subject, says);
+  }
+  if ("conditions" in says) {
+    return conditionsRead(subject, says, read);
+  }
+  if ("columns" in says) {
+    return columnsWritten(subject, says);
   }
   if ("keysOf" in says) {
     return keysStated(subject, says, unsettled);
@@ -2038,7 +2221,7 @@ function conditionsAt(subject: CallOps, pick: ArgumentPick): ValueOps[] {
     const one = statedValue(subject, pick);
     return one === null ? [] : [one];
   }
-  return walk([subject], pick.of ?? []).flatMap((ops) =>
+  return callsReached(subject, pick).flatMap((ops) =>
     positions(ops, pick).flatMap((index) => {
       const value = ops.valueAt(index);
       const inside = value === null ? null : propertyIn(value, pick.property);
@@ -2073,17 +2256,241 @@ function keywordsPassed(
   pick: KeywordsOfPick,
   read: ReadValues | null,
 ): string[] {
-  const names = new Set<string>();
-  for (const ops of walk([subject], pick.keywordsOf.of ?? [])) {
-    for (const name of ops.keywordNames?.() ?? []) {
-      names.add(name);
-      const value = read === null ? null : (ops.keywordAt?.(name) ?? null);
-      if (read !== null && value !== null) {
+  return [
+    ...new Set(
+      callsReached(subject, pick.keywordsOf).flatMap((ops) =>
+        keywordsNoted(ops, read),
+      ),
+    ),
+  ];
+}
+
+/** The keywords one call passes, noting each one's value when somebody listens. */
+function keywordsNoted(ops: CallOps, read: ReadValues | null): string[] {
+  const names = ops.keywordNames?.() ?? [];
+  if (read !== null) {
+    for (const name of names) {
+      const value = ops.keywordAt?.(name) ?? null;
+      if (value !== null) {
         noteRead(read, name, value);
       }
     }
   }
   return [...names];
+}
+
+/**
+ * The columns the reached calls pick rows by: each call's keywords and
+ * the columns it pins to a value, then every column compared anywhere
+ * in them, each once. When somebody listens, a keyword's value and a
+ * pinned column's value are noted under its name.
+ */
+function conditionsRead(
+  subject: CallOps,
+  pick: ConditionsPick,
+  read: ReadValues | null,
+): string[] {
+  const owner = classNamed(subject, pick.ofClass);
+  const calls = callsReached(subject, pick.conditions);
+  const names: string[] = [];
+  for (const call of calls) {
+    names.push(...keywordsNoted(call, read));
+    const pinned =
+      owner === null
+        ? []
+        : argumentValues(call).flatMap((value) =>
+            pinnedColumns(value, owner, pick),
+          );
+    for (const one of pinned) {
+      names.push(one.name);
+      if (read !== null) {
+        noteRead(read, one.name, one.value);
+      }
+    }
+  }
+  if (owner !== null) {
+    for (const call of calls) {
+      names.push(
+        ...argumentValues(call).flatMap((value) =>
+          comparedColumns(value, owner, pick),
+        ),
+      );
+    }
+  }
+  return [...new Set(names)];
+}
+
+/** The value a call passes at each position, in order. */
+function argumentValues(call: CallOps): ValueOps[] {
+  const values: ValueOps[] = [];
+  for (let at = 0; at < call.argumentCount(); at += 1) {
+    const value = call.valueAt(at);
+    if (value !== null) {
+      values.push(value);
+    }
+  }
+  return values;
+}
+
+/**
+ * The columns of the class a condition pins to a value, each with that
+ * value: a comparison of two operands under one of the equality
+ * operators, where the left operand is tried first, inside any of the
+ * `pinnedBy` calls.
+ */
+function pinnedColumns(
+  condition: ValueOps,
+  owner: string,
+  pick: ConditionsPick,
+): { name: string; value: ValueOps }[] {
+  const call = condition.asCall?.() ?? null;
+  if (call !== null) {
+    return pick.pinnedBy.includes(operationOf(call))
+      ? argumentValues(call).flatMap((inner) =>
+          pinnedColumns(inner, owner, pick),
+        )
+      : [];
+  }
+  const [only, ...more] = condition.comparisons?.() ?? [];
+  if (
+    only === undefined ||
+    more.length > 0 ||
+    !pick.equality.includes(only.operator)
+  ) {
+    return [];
+  }
+  const left = columnOf(only.left, owner, pick.ofClass);
+  if (left !== null) {
+    return [{ name: left, value: only.right }];
+  }
+  const right = columnOf(only.right, owner, pick.ofClass);
+  return right === null ? [] : [{ name: right, value: only.left }];
+}
+
+/** The columns of the class that are operands of a comparison in the condition, inside any of the `combinedBy` calls. */
+function comparedColumns(
+  condition: ValueOps,
+  owner: string,
+  pick: ConditionsPick,
+): string[] {
+  const call = condition.asCall?.() ?? null;
+  if (call !== null) {
+    return pick.combinedBy.includes(operationOf(call))
+      ? argumentValues(call).flatMap((inner) =>
+          comparedColumns(inner, owner, pick),
+        )
+      : [];
+  }
+  const rows = condition.comparisons?.() ?? [];
+  const [first] = rows;
+  const operands =
+    first === undefined ? [] : [first.left, ...rows.map((row) => row.right)];
+  return operands.flatMap((operand) => {
+    const column = columnOf(operand, owner, pick.ofClass);
+    return column === null ? [] : [column];
+  });
+}
+
+/**
+ * The column a value is, when the source writes it in place as a read
+ * off the class: `id` for `User.id` when the class is `User`. A name
+ * kept for a read elsewhere is not a column here.
+ */
+function columnOf(
+  value: ValueOps,
+  owner: string,
+  pick: ClassPick,
+): string | null {
+  const read = readInPlace(value);
+  return read !== null && read.object.className?.(pick.notFrom) === owner
+    ? read.key
+    : null;
+}
+
+/** The member read a value is written as, through the adapter's `memberRead` where it has one. */
+function readInPlace(value: ValueOps): ValueRead | null {
+  if (value.memberRead !== undefined) {
+    return value.memberRead();
+  }
+  return value.form?.() === "name" ? null : (value.read?.() ?? null);
+}
+
+/** The arguments that are themselves columns of the class, each once. */
+function columnsWritten(subject: CallOps, pick: ColumnsPick): string[] {
+  const owner = classNamed(subject, pick.ofClass);
+  if (owner === null) {
+    return [];
+  }
+  const columns = conditionsAt(subject, pick.columns).flatMap((value) => {
+    const column = columnOf(value, owner, pick.ofClass);
+    return column === null ? [] : [column];
+  });
+  return [...new Set(columns)];
+}
+
+/**
+ * The class each call's picks found, by the pick's sources and then its
+ * modules, so the container and the picks that read its columns ask
+ * once. A container link is a copy of its pick, and the two share both.
+ */
+const classesFound = new WeakMap<
+  CallOps,
+  Map<ClassPick["class"], Map<readonly string[], string | null>>
+>();
+
+/** The first class a source of the pick reaches, in the order the pick lists them. */
+function classNamed(subject: CallOps, pick: ClassPick): string | null {
+  let bySources = classesFound.get(subject);
+  if (bySources === undefined) {
+    bySources = new Map();
+    classesFound.set(subject, bySources);
+  }
+  let byModules = bySources.get(pick.class);
+  if (byModules === undefined) {
+    byModules = new Map();
+    bySources.set(pick.class, byModules);
+  }
+  const asked = byModules.get(pick.notFrom);
+  if (asked !== undefined) {
+    return asked;
+  }
+  const named = firstClassIn(subject, pick);
+  byModules.set(pick.notFrom, named);
+  return named;
+}
+
+function firstClassIn(subject: CallOps, pick: ClassPick): string | null {
+  for (const source of inOrder(pick.class)) {
+    for (const value of sourceValues(subject, source)) {
+      const named = value.className?.(pick.notFrom) ?? null;
+      if (named !== null) {
+        return named;
+      }
+    }
+  }
+  return null;
+}
+
+/** Each value one class source reaches, in the order its calls are reached. */
+function sourceValues(subject: CallOps, source: ClassSource): ValueOps[] {
+  return callsReached(subject, source).flatMap((ops) => {
+    const value =
+      "receiver" in source
+        ? (ops.receiverValue?.() ?? null)
+        : pickedIn(ops, source, source.at);
+    const inside =
+      value === null || "receiver" in source
+        ? value
+        : propertyIn(value, source.property);
+    return inside === null ? [] : [inside];
+  });
+}
+
+/** Whether a stated list is picks to read in order, rather than the names themselves. */
+function isPickList(says: NamesStated): says is readonly NamePick[] {
+  return (
+    Array.isArray(says) && says.some((one: unknown) => typeof one !== "string")
+  );
 }
 
 /**
@@ -2139,7 +2546,7 @@ function namesAt(
     return [];
   }
   const names: string[] = [];
-  for (const ops of walk([subject], pick.of ?? [])) {
+  for (const ops of callsReached(subject, pick)) {
     for (const index of positions(ops, pick)) {
       const name = nameOf(ops, pick, index, unsettled);
       if (name !== null) {

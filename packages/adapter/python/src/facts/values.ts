@@ -1186,15 +1186,35 @@ function emitComparison(emitter: Emitter, comparison: PyNode): void {
   for (const [at, left] of operands.entries()) {
     const right = operands[at + 1];
     if (right !== undefined) {
+      const leftKey = valueKey(emitter, left);
+      const rightKey = valueKey(emitter, right);
+      add(emitter, "compares", comparisonKey, leftKey, rightKey);
       add(
         emitter,
-        "compares",
+        "comparesWith",
         comparisonKey,
-        valueKey(emitter, left),
-        valueKey(emitter, right),
+        leftKey,
+        operatorBetween(comparison, left, right),
+        rightKey,
       );
     }
   }
+}
+
+/** The operator written between two operands, `not in` with its spaces collapsed. */
+function operatorBetween(
+  comparison: PyNode,
+  left: PyNode,
+  right: PyNode,
+): string {
+  return comparison.text
+    .slice(
+      left.endIndex - comparison.startIndex,
+      right.startIndex - comparison.startIndex,
+    )
+    .trim()
+    .split(/\s+/)
+    .join(" ");
 }
 
 /** What one expression says about itself, whichever walk reached it. */

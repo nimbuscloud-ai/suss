@@ -97,7 +97,21 @@ export type CallStep =
   | ToMember
   | ToChained
   | ToBuilder
-  | ToPassedTo;
+  | ToPassedTo
+  | ToChainStart;
+
+/**
+ * The first call of the chain the source writes in place, up the
+ * receivers to the one made on something other than a call:
+ * `db.query(User)` in `db.query(User).filter(c).first()`, and
+ * `Orders.query()` in `Orders.query().first()`. A call made on no call is
+ * its own chain start.
+ */
+export interface ToChainStart {
+  readonly to: "chainStart";
+  /** Methods that, made by the chain start, leave the step without a call. */
+  readonly except?: readonly string[];
+}
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
@@ -108,7 +122,8 @@ export type CallStep =
  */
 export interface ToReceiver {
   readonly to: "receiver";
-  readonly method?: string;
+  /** The method the call reached has to make, or one of them. */
+  readonly method?: string | readonly string[];
   /** Where the call reached has to have come from, else the step reaches nothing. */
   readonly origin?: ReceiverOrigin;
   /**
@@ -119,6 +134,21 @@ export interface ToReceiver {
   readonly every?: true;
   /** Methods whose calls the walk passes over without reaching them. */
   readonly except?: readonly string[];
+  /**
+   * The walk stops before the chain's first call on the origin: the
+   * first call the origin accepts, `db.query(User)` in
+   * `db.query(User).filter(c).first()`. When that call is made on a call
+   * written in place, as `.first()` is made on `Orders.query()`, the
+   * session is that call, and the chain starts where it does. A walk
+   * from the chain's first call reaches nothing.
+   */
+  readonly until?: ReceiverOrigin;
+  /**
+   * The walk goes only through receivers the source writes in place, so
+   * it ends at a receiver kept in a name: `q.first()` after `q =
+   * db.query(User)` reaches nothing.
+   */
+  readonly inPlace?: true;
 }
 
 /** The call an argument is, when the argument is a call or a construction. */
@@ -166,6 +196,13 @@ export interface ToChained {
   readonly every?: true;
   /** Methods whose calls the walk passes over without reaching them. */
   readonly except?: readonly string[];
+  /**
+   * The walk starts at the call the step is at, so that call is the
+   * first one it meets: from `db.query(User)`, the calls out to
+   * `.first()` in `db.query(User).filter(c).first()`, the query
+   * included.
+   */
+  readonly fromItself?: true;
 }
 
 /**
@@ -247,7 +284,16 @@ export interface OutermostLink {
  * states, as the member the call is made on, or as the pack's own rule
  * over what the call reached.
  */
-export type ContainerLink = ContainerArgument | ContainerMember | ContainerRule;
+export type ContainerLink =
+  | ContainerArgument
+  | ContainerMember
+  | ContainerRule
+  | ContainerClass;
+
+/** The class a pick finds, as the container: `User` for `db.query(User)`. */
+export interface ContainerClass extends ClassPick {
+  readonly asks: "container";
+}
 
 /**
  * The member the steps reach, as a container. Prisma lowercases a model's
@@ -735,6 +781,8 @@ export interface SelectorParamPick {
 export interface OneArgument {
   /** The steps to the call the argument belongs to. */
   readonly of?: readonly CallStep[];
+  /** The call the pick starts from counts too, after the ones the steps reach, as `CallsReached` says. */
+  readonly itself?: true;
   readonly at: number;
   /**
    * The keyword the argument can be passed under instead, `query=` in
@@ -759,6 +807,8 @@ export interface OneArgument {
 export interface ArgumentsFrom {
   /** The steps to the call the arguments belong to. */
   readonly of?: readonly CallStep[];
+  /** The call the pick starts from counts too, after the ones the steps reach, as `CallsReached` says. */
+  readonly itself?: true;
   readonly from: number;
   /** Properties of the object each argument states, tried in order. */
   readonly property?: readonly string[];
@@ -778,13 +828,24 @@ export interface KeywordArguments {
 /** The calls the steps reach, for a pick that reads the calls themselves. */
 export interface CallsReached {
   readonly of?: readonly CallStep[];
+  /**
+   * The call the pick starts from is one of the calls too, after the
+   * ones the steps reach, when the first step would have reached it:
+   * its method, `except` and `until` apply to that call as they do to
+   * the others. `.first()` in `db.query(User).filter(c).first()` comes
+   * after `.filter(c)`.
+   */
+  readonly itself?: true;
 }
 
 /**
  * What one method of a storage client does to the store: a read, a
  * write, or whichever of the two one of its arguments asked for.
+ * `nothing` is a call that does not record an access, as a session's
+ * `execute(stmt)` runs a statement whose chain is read already. It still
+ * matches, so the call counts as the client's.
  */
-export type AccessKind = "read" | "write" | KindAsAsked;
+export type AccessKind = "read" | "write" | "nothing" | KindAsAsked;
 
 /** A method whose argument says whether the call reads or writes. */
 export interface KindAsAsked {
@@ -870,6 +931,62 @@ export interface KeywordsOfPick {
 }
 
 /**
+ * A class, read the way the adapter reads one: the first value the
+ * sources reach that is a class, or is one of a class. The class of
+ * `db.query(User)` is `User`, and so is the class of `db.add(user)`
+ * after `user: User`. A value declared as one of the library's own
+ * types is a statement or a column rather than a model, so it has no
+ * class here, and `notFrom` says which modules those types come from.
+ */
+export interface ClassPick {
+  readonly class: ClassSource | readonly ClassSource[];
+  readonly notFrom: readonly string[];
+}
+
+/** Where a class pick looks: an argument, or the value a call is made on. */
+export type ClassSource = OneArgument | ReceiverValue;
+
+/**
+ * The value the reached call is made on, as the source writes it:
+ * `Orders` in `Orders.query()`, and `db` in `db.query(User)`.
+ */
+export interface ReceiverValue {
+  readonly of?: readonly CallStep[];
+  readonly itself?: true;
+  readonly receiver: true;
+}
+
+/**
+ * The columns the reached calls pick rows by, as a query that compares
+ * columns of a class writes them. For each call in turn the pick reads
+ * the keywords it passes, then the columns of the class it compares
+ * under one of `equality`'s operators in a comparison of two operands,
+ * looking inside `pinnedBy` calls only, and each of those states the
+ * value it is compared with. Then, over the calls again, it reads every
+ * column of the class that is an operand of any comparison, looking
+ * inside `combinedBy` calls. Each name comes once.
+ * `filter(User.id == x, User.age > 3)` picks by `id` with the value `x`,
+ * and by `age`.
+ */
+export interface ConditionsPick {
+  readonly conditions: CallsReached;
+  readonly ofClass: ClassPick;
+  readonly combinedBy: readonly string[];
+  readonly pinnedBy: readonly string[];
+  readonly equality: readonly string[];
+}
+
+/**
+ * The arguments that are themselves columns of the class, written as a
+ * read off it: `select(User.id, User.name)` reads `id` and `name`, and
+ * `select(func.count(User.id))` reads none.
+ */
+export interface ColumnsPick {
+  readonly columns: ArgumentsFrom;
+  readonly ofClass: ClassPick;
+}
+
+/**
  * The keys of the object the pick reaches, or of every object in the
  * list it reaches, each key in the order first written. `under` reads
  * the objects under those properties of it instead, in that order.
@@ -904,14 +1021,22 @@ export interface StorageMethod {
   readonly fields?: NamesStated;
 }
 
-/** Every way a storage method can say which names a call reached. */
-export type NamesStated =
-  | readonly string[]
+/**
+ * Every way a storage method can say which names a call reached: a
+ * fixed list, one pick, or several picks read in order, each name kept
+ * once.
+ */
+export type NamesStated = readonly string[] | NamePick | readonly NamePick[];
+
+/** One way to read the names a call reached off the call. */
+export type NamePick =
   | ArgumentPick
   | SelectorParamPick
   | FieldsReadPick
   | KeysOfPick
   | KeywordsOfPick
+  | ConditionsPick
+  | ColumnsPick
   | InputRule
   | StatedRule;
 

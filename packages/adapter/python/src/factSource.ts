@@ -36,6 +36,13 @@ import {
   writtenValueOf,
 } from "./facts/resolve.js";
 import { callArguments } from "./facts/values.js";
+import {
+  isClassName,
+  modelNamed,
+  returnTypeName,
+  settledCallee,
+  topPackage,
+} from "./modelNames.js";
 import { argOf } from "./paths/effects.js";
 import { shapeOfReturned } from "./paths/returnedShape.js";
 import { receiverTypeOrigins } from "./receiverTypes.js";
@@ -157,6 +164,21 @@ export function pythonFactSource(db: Database): PythonFactSource {
       const node = valueNode(key);
       return node === null ? null : literalParts(evaluatedValue(node, db));
     },
+    classNameOf: (key, notFrom) => {
+      // A name is keyed by its scope, so it is read off a mention of it.
+      const node = nodeAt(key) ?? mentionOf(db, key);
+      if (node === null) {
+        // A module's own name is keyed by the file. No function declares
+        // it, so only its spelling can say it is a class.
+        const name = nameIn(key);
+        return isClassName(name) ? name : null;
+      }
+      return modelNamed(node, node, {
+        facts: db,
+        filePath: fileOfKey(key),
+        libraries: new Set(notFrom.map(topPackage)),
+      });
+    },
     comesTo: (key) => {
       resolveCalls(db, [key]);
       return answersFor(db, "wantedComesTo", key);
@@ -170,7 +192,9 @@ export function pythonFactSource(db: Database): PythonFactSource {
     declares: (call, module) =>
       receiverClassesOf(call, db).some((origin) => origin.module === module),
     typedAs: (call, origin) =>
-      receiverClassesOf(call, db).some((found) => originAccepts(origin, found)),
+      receiverClassesOf(call, db).some((found) =>
+        originAccepts(origin, found),
+      ) || receiverCallReturns(call, db, origin),
     defaultedAt: (key) => {
       const node = nodeAt(key);
       return node !== null && copingAt(node, factSourceOf(db)).defaulted;
@@ -220,6 +244,42 @@ function receiverClassesOf(
   return receiver === null
     ? []
     : receiverTypeOrigins(receiver, { facts: db, filePath: fileOfKey(call) });
+}
+
+/**
+ * Whether the call's receiver is a call to a project function that says
+ * it returns one of the origin's types, in a file that imports one of
+ * its modules: `Orders.query()` in `Orders.query().first()`, when
+ * `query` is declared `-> Query` beside `from sqlalchemy.orm import
+ * Query`. Python states no return types for a library's methods, so only
+ * a function the project wrote can say.
+ */
+function receiverCallReturns(
+  call: string,
+  db: Database,
+  origin: Typed,
+): boolean {
+  const node = nodeOfResolutionKey(call, db);
+  const callee = node === null ? null : field(node, "function");
+  const receiver =
+    callee?.type === "attribute" ? field(callee, "object") : null;
+  const made = receiver?.type === "call" ? field(receiver, "function") : null;
+  if (made === null) {
+    return false;
+  }
+  const settled = settledCallee({ facts: db, filePath: fileOfKey(call) }, made);
+  const returned = settled === undefined ? null : returnTypeName(db, settled);
+  if (settled === undefined || returned === null) {
+    return false;
+  }
+  return (
+    (origin.named === undefined || origin.named.includes(returned)) &&
+    db
+      .lookup("importsModule", 0, fileOfKey(settled))
+      .some((row) =>
+        origin.importedFrom.some((module) => inModule(String(row[1]), module)),
+      )
+  );
 }
 
 /**

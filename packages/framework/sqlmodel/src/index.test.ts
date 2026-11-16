@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
 import {
+  SQLMODEL_TYPES,
   sqlmodelFramework,
   sqlmodelModels,
   sqlmodelStorage,
@@ -37,32 +38,32 @@ const fastapiLike: PythonPack = {
 };
 
 describe("the SQLModel pack", () => {
-  it("says which types a query comes back as under SQLModel's own module", () => {
+  it("declares a chain for each query type under SQLModel's own modules", () => {
+    const own = SQLMODEL_TYPES.filter((one) =>
+      one.module.startsWith("sqlmodel"),
+    );
+    expect(own.flatMap((one) => one.types)).toEqual(
+      expect.arrayContaining(["Session", "AsyncSession", "SelectOfScalar"]),
+    );
     const patterns = sqlmodelStorage({ storageSystem: "postgresql" });
-    const own = patterns.filter((pattern) => pattern.module === "sqlmodel");
-    expect(own.flatMap((pattern) => pattern.queryTypes)).toEqual(
-      expect.arrayContaining(["Session", "Select", "SelectOfScalar"]),
-    );
-    expect(own.flatMap((pattern) => pattern.queryFunctions ?? [])).toContain(
-      "select",
-    );
+    expect(
+      patterns.find((pattern) => pattern.module === "sqlmodel")?.queryFunctions,
+    ).toContain("select");
     expect(patterns.every((p) => p.storageSystem === "postgresql")).toBe(true);
   });
 
   it("treats exec as running a statement rather than as a query of its own", () => {
-    const session = sqlmodelStorage({ storageSystem: "postgresql" }).find(
-      (pattern) =>
-        pattern.module === "sqlmodel" && pattern.queryTypes.includes("Session"),
-    );
+    const session = SQLMODEL_TYPES.find((one) => one.types.includes("Session"));
     expect(session?.recordsNothing).toContain("exec");
   });
 
-  it("includes the SQLAlchemy patterns, since a SQLModel project imports from both", () => {
-    const modules = sqlmodelStorage({ storageSystem: "mysql" }).map(
-      (pattern) => pattern.module,
-    );
-    expect(modules).toContain("sqlalchemy.orm");
-    expect(modules).toContain("sqlalchemy");
+  it("includes the SQLAlchemy chains and statements, since a SQLModel project imports from both", () => {
+    expect(SQLMODEL_TYPES.map((one) => one.module)).toContain("sqlalchemy.orm");
+    expect(
+      sqlmodelStorage({ storageSystem: "mysql" }).map(
+        (pattern) => pattern.module,
+      ),
+    ).toEqual(["sqlmodel", "sqlalchemy"]);
   });
 
   it("adds itself to a route pack without disturbing its routes", () => {

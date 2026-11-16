@@ -6,8 +6,8 @@ import { sqlStatements } from "./sqlStatements.js";
 import { storageCalls } from "./storage.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { PassedTo, StatedSlot } from "@suss/extractor";
-import type { CallStep } from "./chain.js";
+import type { Comparison, PassedTo, StatedSlot } from "@suss/extractor";
+import type { CallStep, ClassPick, ToReceiver } from "./chain.js";
 import type { CallOps, ValueOps } from "./ops.js";
 import type { Match } from "./pack.js";
 
@@ -23,6 +23,9 @@ interface Written {
   keywords?: Record<string, string>;
   /** What each positional argument is, by position. */
   args?: readonly ValueOps[];
+  site?: string;
+  /** The value the call is made on, as the source writes it. */
+  on?: ValueOps;
 }
 
 function callOps(written: Written): CallOps {
@@ -44,10 +47,76 @@ function callOps(written: Written): CallOps {
     keywordAt: (name) => (name in keywords ? text(keywords[name] ?? "") : null),
     keywordNames: () => Object.keys(keywords),
     passedTo: () => written.passedTo ?? null,
+    ...(written.site === undefined ? {} : { site: () => written.site ?? "" }),
+    ...(written.on === undefined
+      ? {}
+      : { receiverValue: () => written.on ?? null }),
   };
   return written.chained === "unsaid"
     ? ops
     : { ...ops, chainedOn: () => (written.chained as CallOps) ?? null };
+}
+
+/**
+ * The calls of one chain written in place, first call first: each is
+ * made on the one before it, which knows it is chained on.
+ */
+function chainOf(...links: readonly Written[]): CallOps[] {
+  const calls: CallOps[] = [];
+  links.forEach((link, at) => {
+    const ops = callOps({ ...link, site: link.site ?? `call${at}` });
+    calls.push({
+      ...ops,
+      receiver: () => calls[at - 1] ?? link.receiver ?? null,
+      chainedOn: () => calls[at + 1] ?? null,
+    });
+  });
+  return calls;
+}
+
+/** The last call of a chain, the one a chain read at its last call reads. */
+function lastOf(calls: readonly CallOps[]): CallOps {
+  const last = calls[calls.length - 1];
+  if (last === undefined) {
+    throw new Error("a chain of no calls");
+  }
+  return last;
+}
+
+/** A value whose class the adapter reads as `name`. */
+function classNamed(name: string | null, written = name ?? ""): ValueOps {
+  return { ...text(written), className: () => name };
+}
+
+/** A column read off a class in place, `User.id`. */
+function column(owner: string, key: string): ValueOps {
+  return {
+    ...text(`${owner}.${key}`),
+    form: () => "other",
+    read: () => ({ key, object: classNamed(owner) }),
+  };
+}
+
+/** A comparison of its operands, with the operators between them. */
+function compared(
+  left: ValueOps,
+  ...rest: readonly (string | ValueOps)[]
+): ValueOps {
+  const comparisons: Comparison[] = [];
+  let before = left;
+  for (let at = 0; at + 1 < rest.length; at += 2) {
+    const operator = rest[at] as string;
+    const right = rest[at + 1] as ValueOps;
+    comparisons.push({ left: before, operator, right });
+    before = right;
+  }
+  return { ...text("compared"), comparisons: () => comparisons };
+}
+
+/** A call written as an argument, `and_(a, b)`. */
+function calledWith(callee: string, ...args: readonly ValueOps[]): ValueOps {
+  const call = callOps({ callee, args });
+  return { ...text(callee), asCall: () => call };
 }
 
 /** A value whose text is `said`, and which reads `reads` off the value called `off`. */
@@ -312,6 +381,590 @@ describe("the columns read off every argument from a position", () => {
     expect(accesses(run([picks], query).effects)).toEqual([
       ["query", "read", [], []],
     ]);
+  });
+});
+
+/** The container each storage access records. */
+function containers(effects: readonly Effect[]): (string | null)[] {
+  return effects.map((effect) =>
+    effect.type === "interaction" &&
+    effect.binding?.semantics.name === "storage"
+      ? effect.binding.semantics.container
+      : null,
+  );
+}
+
+// The chain's first call, unless it closes the session, and the calls
+// out from it: one of them is made on the session.
+const FIRST: readonly CallStep[] = [
+  { to: "chainStart", except: ["close"] },
+  { to: "chained", fromItself: true, every: true },
+];
+
+// Every call after the chain's first call.
+const LATER: ToReceiver = {
+  to: "receiver",
+  every: true,
+  inPlace: true,
+  until: SESSION,
+};
+
+const SESSION_CHAIN = storageCalls(
+  {
+    system: "vault",
+    client: SESSION,
+    clientAt: FIRST,
+    unsettledName: "nothing",
+  },
+  { outermost: true },
+)
+  .otherwise({
+    kind: "read",
+    fields: { keywordsOf: { of: [{ to: "chainStart" }] } },
+    selector: { keywordsOf: { of: [LATER], itself: true } },
+  })
+  .container({
+    class: [
+      { of: [{ to: "chainStart" }], at: 0 },
+      { of: [{ to: "chainStart" }], receiver: true },
+    ],
+    notFrom: ["vault"],
+  });
+
+describe("a chain read from the first call on its session", () => {
+  it("reads the calls after the first one, the call in hand last, and the first one's keywords as fields", () => {
+    const calls = chainOf(
+      { method: "query", onSession: true, keywords: { user: "U" } },
+      { method: "filter", keywords: { a: "1" } },
+      { method: "filter", keywords: { b: "2" } },
+      { method: "first", keywords: { c: "3" } },
+    );
+
+    expect(accesses(run([SESSION_CHAIN], lastOf(calls)).effects)).toEqual([
+      ["first", "read", ["user"], ["b", "a", "c"]],
+    ]);
+  });
+
+  it("reads a call on the session alone as its own first call, with no call after it", () => {
+    const calls = chainOf({
+      method: "get",
+      onSession: true,
+      keywords: { id: "1" },
+    });
+
+    expect(accesses(run([SESSION_CHAIN], lastOf(calls)).effects)).toEqual([
+      ["get", "read", ["id"], []],
+    ]);
+  });
+
+  it("reads nothing when the chain starts with a method the step leaves out, and reads a chain that only ends with one", () => {
+    const alone = chainOf({ method: "close", onSession: true });
+    const chained = chainOf(
+      { method: "close", onSession: true },
+      { method: "all" },
+    );
+    const ending = chainOf(
+      { method: "query", onSession: true },
+      { method: "close" },
+    );
+
+    expect(run([SESSION_CHAIN], lastOf(alone)).effects).toEqual([]);
+    expect(run([SESSION_CHAIN], lastOf(chained)).effects).toEqual([]);
+    expect(accesses(run([SESSION_CHAIN], lastOf(ending)).effects)).toEqual([
+      ["close", "read", [], []],
+    ]);
+  });
+
+  it("starts the chain at the call in hand when its receiver is kept in a name, and a walk that does not keep to the chain goes past it", () => {
+    // q = db.query(User, k=1); q.first()
+    const query = callOps({
+      method: "query",
+      onSession: true,
+      keywords: { k: "1" },
+      site: "q",
+    });
+    const first = callOps({ method: "first", receiver: query, site: "f" });
+    const keywordsUp = (step: ToReceiver) =>
+      accesses(
+        run(
+          [
+            storageCalls({ system: "vault" }).otherwise({
+              kind: "read",
+              selector: { keywordsOf: { of: [step] } },
+            }),
+          ],
+          first,
+        ).effects,
+      );
+
+    expect(run([SESSION_CHAIN], first).effects).toEqual([]);
+    expect(keywordsUp({ to: "receiver", every: true })).toEqual([
+      ["first", "read", [], ["k"]],
+    ]);
+    expect(keywordsUp({ to: "receiver", every: true, inPlace: true })).toEqual([
+      ["first", "read", [], []],
+    ]);
+  });
+
+  it("starts the chain at the call the session is, when the first call on the session is made on a call written in place", () => {
+    // Orders.query().filter_by(id=1).first(), where query() gives the session
+    const calls = chainOf(
+      { method: "query", on: classNamed("Orders") },
+      { method: "filter_by", onSession: true, keywords: { id: "1" } },
+      { method: "first" },
+    );
+    const read = run([SESSION_CHAIN], lastOf(calls));
+
+    expect(accesses(read.effects)).toEqual([["first", "read", [], ["id"]]]);
+    expect(containers(read.effects)).toEqual(["Orders"]);
+  });
+});
+
+describe("a step that reaches the calls of several methods", () => {
+  it("keeps each call to one of them, in the order the walk meets them", () => {
+    const calls = chainOf(
+      { method: "query", onSession: true },
+      { method: "join", keywords: { j: "1" } },
+      { method: "filter", keywords: { f: "1" } },
+      { method: "select_from", keywords: { s: "1" } },
+      { method: "first" },
+    );
+    const tables = storageCalls(
+      { system: "vault", client: SESSION, clientAt: FIRST },
+      { outermost: true },
+    ).otherwise({
+      kind: "read",
+      selector: {
+        keywordsOf: {
+          of: [{ ...LATER, method: ["join", "select_from"] }],
+        },
+      },
+    });
+
+    expect(accesses(run([tables], lastOf(calls)).effects)).toEqual([
+      ["first", "read", [], ["s", "j"]],
+    ]);
+  });
+});
+
+describe("the class a chain works on", () => {
+  it("is the first class one of the sources reaches, in the order the pick lists them", () => {
+    const calls = chainOf(
+      {
+        method: "query",
+        onSession: true,
+        args: [text("count")],
+        on: classNamed("Ledger"),
+      },
+      { method: "select_from", args: [classNamed("User")] },
+      { method: "first" },
+    );
+    const classes = (pick: ClassPick) =>
+      containers(
+        run(
+          [
+            storageCalls(
+              { system: "vault", client: SESSION, clientAt: FIRST },
+              { outermost: true },
+            )
+              .otherwise({ kind: "read" })
+              .container(pick),
+          ],
+          lastOf(calls),
+        ).effects,
+      );
+
+    expect(
+      classes({
+        class: [
+          { of: [{ to: "chainStart" }], at: 0 },
+          { of: [{ ...LATER, method: "select_from" }], itself: true, at: 0 },
+          { of: [{ to: "chainStart" }], receiver: true },
+        ],
+        notFrom: [],
+      }),
+    ).toEqual(["User"]);
+    expect(
+      classes({
+        class: { of: [{ to: "chainStart" }], receiver: true },
+        notFrom: [],
+      }),
+    ).toEqual(["Ledger"]);
+    expect(
+      classes({ class: { of: [{ to: "chainStart" }], at: 0 }, notFrom: [] }),
+    ).toEqual([null]);
+  });
+
+  it("hands the adapter the modules whose own types are no class", () => {
+    const asked: (readonly string[])[] = [];
+    const typedValue: ValueOps = {
+      ...text("q"),
+      className: (notFrom) => {
+        asked.push(notFrom);
+        return null;
+      },
+    };
+    const calls = chainOf({
+      method: "get",
+      onSession: true,
+      args: [typedValue],
+    });
+    run(
+      [
+        storageCalls({ system: "vault", client: SESSION, clientAt: FIRST })
+          .otherwise({ kind: "read" })
+          .container({ class: { at: 0 }, notFrom: ["vault"] }),
+      ],
+      lastOf(calls),
+    );
+
+    expect(asked).toEqual([["vault"]]);
+  });
+});
+
+describe("the columns a query's conditions pick rows by", () => {
+  const conditions = (calls: readonly CallOps[]) =>
+    run(
+      [
+        storageCalls(
+          { system: "vault", client: SESSION, clientAt: FIRST },
+          { outermost: true },
+        ).otherwise({
+          kind: "read",
+          selector: {
+            conditions: { of: [LATER], itself: true },
+            ofClass: {
+              class: { of: [{ to: "chainStart" }], at: 0 },
+              notFrom: [],
+            },
+            combinedBy: ["and_", "or_"],
+            pinnedBy: ["and_"],
+            equality: ["=="],
+          },
+        }),
+      ],
+      lastOf(calls),
+    );
+
+  it("reads each call's keywords and the columns it pins with the value each is compared with, then every column compared", () => {
+    const read = conditions(
+      chainOf(
+        { method: "query", onSession: true, args: [classNamed("User")] },
+        {
+          method: "filter",
+          args: [
+            compared(column("User", "id"), "==", text("x")),
+            compared(column("User", "age"), ">", text("3")),
+          ],
+        },
+        {
+          method: "filter",
+          keywords: { org: "o" },
+          args: [
+            calledWith(
+              "and_",
+              compared(text("t"), "==", column("User", "team")),
+              compared(column("User", "kind"), "!=", text("k")),
+            ),
+          ],
+        },
+        {
+          method: "filter",
+          args: [
+            calledWith("or_", compared(column("User", "a"), "==", text("1"))),
+          ],
+        },
+        { method: "first" },
+      ),
+    );
+
+    expect(accesses(read.effects)).toEqual([
+      ["first", "read", [], ["org", "team", "id", "a", "kind", "age"]],
+    ]);
+    expect(read.slots).toEqual([
+      "selector org o",
+      "selector team t",
+      "selector id x",
+    ]);
+  });
+
+  it("pins no column compared in a chain of three operands, a column of another class, or a column kept in a name", () => {
+    const kept: ValueOps = { ...column("User", "id"), form: () => "name" };
+    const read = conditions(
+      chainOf(
+        { method: "query", onSession: true, args: [classNamed("User")] },
+        {
+          method: "filter",
+          args: [
+            compared(column("User", "b"), "==", text("1"), "==", text("2")),
+            compared(column("Team", "id"), "==", text("y")),
+            compared(kept, "==", text("z")),
+          ],
+        },
+        { method: "first" },
+      ),
+    );
+
+    expect(accesses(read.effects)).toEqual([["first", "read", [], ["b"]]]);
+    expect(read.slots).toEqual([]);
+  });
+
+  it("passes over a value that compares nothing and a call that joins no conditions, and asks for the class once", () => {
+    let asked = 0;
+    const counted: ValueOps = {
+      ...text("User"),
+      className: () => {
+        asked += 1;
+        return "User";
+      },
+    };
+    const model: ClassPick = {
+      class: { of: [{ to: "chainStart" }], at: 0 },
+      notFrom: [],
+    };
+    const calls = chainOf(
+      { method: "query", onSession: true, args: [counted] },
+      {
+        method: "filter",
+        args: [
+          text("raw"),
+          calledWith(
+            "lower",
+            compared(column("User", "name"), "==", text("n")),
+          ),
+          compared(column("User", "id"), "==", text("x")),
+        ],
+      },
+      { method: "first" },
+    );
+    const read = run(
+      [
+        storageCalls(
+          { system: "vault", client: SESSION, clientAt: FIRST },
+          { outermost: true },
+        )
+          .otherwise({
+            kind: "read",
+            selector: {
+              conditions: { of: [LATER], itself: true },
+              ofClass: model,
+              combinedBy: ["and_"],
+              pinnedBy: ["and_"],
+              equality: ["=="],
+            },
+          })
+          .container(model),
+      ],
+      lastOf(calls),
+    );
+
+    expect(accesses(read.effects)).toEqual([["first", "read", [], ["id"]]]);
+    expect(containers(read.effects)).toEqual(["User"]);
+    expect(asked).toBe(1);
+  });
+
+  it("reads only the keywords when the chain works on no class", () => {
+    const read = conditions(
+      chainOf(
+        { method: "query", onSession: true },
+        {
+          method: "filter",
+          keywords: { id: "1" },
+          args: [compared(column("User", "age"), "==", text("3"))],
+        },
+        { method: "first" },
+      ),
+    );
+
+    expect(accesses(read.effects)).toEqual([["first", "read", [], ["id"]]]);
+  });
+});
+
+describe("the arguments that are columns of the class", () => {
+  it("reads each argument written as a read off the class, each once, alongside the picks listed with it", () => {
+    const calls = chainOf({
+      method: "query",
+      onSession: true,
+      keywords: { name: "n" },
+      args: [
+        classNamed("User"),
+        column("User", "id"),
+        column("User", "name"),
+        calledWith("count", column("User", "id")),
+        column("Team", "id"),
+      ],
+    });
+    const read = run(
+      [
+        storageCalls({
+          system: "vault",
+          client: SESSION,
+          clientAt: FIRST,
+        }).otherwise({
+          kind: "read",
+          fields: [
+            {
+              columns: { of: [{ to: "chainStart" }], from: 0 },
+              ofClass: { class: { at: 0 }, notFrom: [] },
+            },
+            { keywordsOf: { of: [{ to: "chainStart" }] } },
+          ],
+        }),
+      ],
+      lastOf(calls),
+    );
+
+    expect(accesses(read.effects)).toEqual([
+      ["query", "read", ["id", "name"], []],
+    ]);
+    expect(read.slots).toEqual(["field name n"]);
+  });
+});
+
+describe("the calls a pick reaches, the call it starts from among them", () => {
+  /** The keywords a pick over these steps reads, starting from the call in hand. */
+  const keywordsFrom = (of: readonly CallStep[], ops: CallOps) =>
+    accesses(
+      run(
+        [
+          storageCalls({ system: "vault" }).otherwise({
+            kind: "read",
+            selector: { keywordsOf: { of, itself: true } },
+          }),
+        ],
+        ops,
+      ).effects,
+    );
+
+  it("adds the call in hand when a chained step or a step that says nothing about its calls would keep it", () => {
+    // db.update(t, u=1).where(w=1)
+    const update = callOps({
+      method: "update",
+      keywords: { u: "1" },
+      args: [text("t")],
+      chained: callOps({ method: "where", keywords: { w: "1" } }),
+    });
+
+    expect(keywordsFrom([{ to: "chained", method: "where" }], update)).toEqual([
+      ["update", "read", [], ["w"]],
+    ]);
+    expect(keywordsFrom([{ to: "chained", every: true }], update)).toEqual([
+      ["update", "read", [], ["w", "u"]],
+    ]);
+    expect(keywordsFrom([{ to: "argument", at: 0 }], update)).toEqual([
+      ["update", "read", [], ["u"]],
+    ]);
+  });
+
+  it("walks to the end of the chain when no call on it is the origin's", () => {
+    const calls = chainOf(
+      { method: "query", keywords: { q: "1" } },
+      { method: "filter", keywords: { a: "1" } },
+      { method: "first" },
+    );
+
+    expect(keywordsFrom([LATER], lastOf(calls))).toEqual([
+      ["first", "read", [], ["a", "q"]],
+    ]);
+  });
+
+  it("finds the chain start of a call made on no call, and of receivers that come back round", () => {
+    const alone = callOps({ method: "query", keywords: { k: "q" } });
+    // a = b.next(); b = a.next(), each written in place on the other
+    const loop: { a?: CallOps; b?: CallOps } = {};
+    loop.a = {
+      ...callOps({ method: "next", site: "a", keywords: { k: "a" } }),
+      receiver: () => loop.b ?? null,
+      chainedOn: () => loop.b ?? null,
+    };
+    loop.b = {
+      ...callOps({ method: "next", site: "b", keywords: { k: "b" } }),
+      receiver: () => loop.a ?? null,
+      chainedOn: () => loop.a ?? null,
+    };
+    const fromStart = (ops: CallOps) =>
+      accesses(
+        run(
+          [
+            storageCalls({ system: "vault" }).otherwise({
+              kind: "read",
+              selector: { keywordsOf: { of: [{ to: "chainStart" }] } },
+            }),
+          ],
+          ops,
+        ).effects,
+      );
+
+    expect(fromStart(alone)).toEqual([["query", "read", [], ["k"]]]);
+    expect(fromStart(loop.a)).toEqual([["next", "read", [], ["k"]]]);
+  });
+});
+
+describe("the arguments that are columns of a class nothing names", () => {
+  it("reads none", () => {
+    const calls = chainOf({
+      method: "query",
+      onSession: true,
+      args: [text("count"), column("User", "id")],
+    });
+    const read = run(
+      [
+        storageCalls({
+          system: "vault",
+          client: SESSION,
+          clientAt: FIRST,
+        }).otherwise({
+          kind: "read",
+          fields: {
+            columns: { from: 0 },
+            ofClass: { class: { at: 0 }, notFrom: [] },
+          },
+        }),
+      ],
+      lastOf(calls),
+    );
+
+    expect(accesses(read.effects)).toEqual([["query", "read", [], []]]);
+  });
+});
+
+describe("a call on the client that records nothing", () => {
+  // db.execute(stmt).scalars().all(), read at its first call
+  const nothing = storageCalls(
+    { system: "vault", client: SESSION },
+    { outermost: true },
+  )
+    .about({ to: "chainStart" })
+    .methods({ execute: { kind: "nothing" } });
+  const hooksOf = (match: typeof nothing) =>
+    pack("vault", [match], {
+      languages: ["python"],
+      recognizedAs: "@suss/vault-test",
+    }).invocationRecognizers ?? [];
+
+  it("matches with no effect, so the call counts as the client's, and a method the table leaves out does not match", () => {
+    const [hook] = hooksOf(nothing);
+    const ran = chainOf(
+      { method: "execute", onSession: true },
+      { method: "scalars" },
+      { method: "all" },
+    );
+    const other = chainOf({ method: "query", onSession: true });
+
+    expect(hook?.(null, { ops: lastOf(ran) })).toEqual([]);
+    expect(hook?.(null, { ops: lastOf(other) })).toBeNull();
+  });
+
+  it("is a hook that claims the call that starts its chain, as every chain read at its last call is", () => {
+    const [read] = hooksOf(nothing);
+    const [everyCall] = hooksOf(
+      storageCalls({ system: "vault", client: SESSION }).otherwise({
+        kind: "read",
+      }),
+    );
+
+    expect(read?.claimsChainStart).toBe(true);
+    expect(everyCall?.claimsChainStart).toBeUndefined();
   });
 });
 
