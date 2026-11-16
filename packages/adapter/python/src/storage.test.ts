@@ -467,6 +467,38 @@ describe("the database work a Python body does", () => {
     ]);
   });
 
+  it("picks rows by the calls along the chain, and by none written inside an argument", async () => {
+    const effects = await effectsFor(
+      [
+        "from datetime import timedelta",
+        "from sqlalchemy import select",
+        "",
+        "select(Orders).where(Orders.placed_at >= now - timedelta(hours=window))",
+        "select(Orders).where(Orders.id.in_(select(Users.id).where(Users.tenant_id == t)))",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
+      ["placed_at"],
+      undefined,
+      ["tenant_id"],
+    ]);
+  });
+
+  it("picks rows by an equality on another class's column only when it is the chain's model", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import select",
+        "",
+        "select(Orders).join(Users).where(Users.kind == k, Orders.state == s)",
+        "",
+      ].join("\n"),
+    );
+    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
+      ["state"],
+    ]);
+  });
+
   it("picks rows by its own model's column however a filter compares it", async () => {
     const effects = await effectsFor(
       [
