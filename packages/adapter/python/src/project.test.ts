@@ -21,7 +21,7 @@ import {
 import { bindModule } from "./scope.js";
 
 import type { ExtractionReport, TimingReport } from "@suss/extractor";
-import type { PyModelQueries, PythonPack } from "./pack.js";
+import type { PythonPack } from "./pack.js";
 
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
@@ -1410,24 +1410,26 @@ function packFacts(packs: readonly PythonPack[]): Database {
   return db;
 }
 
-describe("what a pack's model declarations put in the facts", () => {
-  const packWithModels = (models: PyModelQueries[]): PythonPack => ({
+describe("what a pack's words put in the facts", () => {
+  const packWithWords = (words: PythonPack["words"] = {}): PythonPack => ({
     name: "sqlmodel",
     protocol: "postgresql",
     discovery: [],
-    models,
+    words,
   });
 
-  it("pairs every method with every base name the declaration lists", () => {
+  it("puts each word in the facts, a method also under its spelling as a member", () => {
     const db = packFacts([
-      packWithModels([
-        {
-          baseNames: ["DeclarativeBase", "SQLModel"],
-          givesBack: ["first"],
-          entryMethods: [{ method: "get", argument: 0 }],
-          entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
-        },
-      ]),
+      packWithWords({
+        givesBackOne: [
+          { base: "DeclarativeBase", method: "first" },
+          { base: "SQLModel", method: "first" },
+        ],
+        givesBackOneOfArgument: [
+          { base: "DeclarativeBase", method: "get", argument: 0 },
+          { base: "SQLModel", method: "get", argument: 0 },
+        ],
+      }),
     ]);
 
     expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
@@ -1446,14 +1448,11 @@ describe("what a pack's model declarations put in the facts", () => {
 
   it("keys a function called on its own by the module it comes from", () => {
     const db = packFacts([
-      packWithModels([
-        {
-          baseNames: ["SQLModel"],
-          givesBack: [],
-          entryMethods: [],
-          entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
-        },
-      ]),
+      packWithWords({
+        givesBackOneOfImport: [
+          { module: "sqlmodel", name: "select", argument: 0 },
+        ],
+      }),
     ]);
 
     expect(
@@ -1464,7 +1463,7 @@ describe("what a pack's model declarations put in the facts", () => {
   it("keys a relationship constructor by the module it comes from", () => {
     const db = packFacts([
       {
-        ...packWithModels([]),
+        ...packWithWords(undefined),
         classBodies: [
           classBody({
             fields: {
@@ -1485,35 +1484,7 @@ describe("what a pack's model declarations put in the facts", () => {
     ).toEqual([["sqlmodel", "Relationship"]]);
   });
 
-  it("puts a declared pack's own words beside the ones its models give", () => {
-    const db = packFacts([
-      {
-        ...packWithModels([]),
-        words: {
-          givesBackOne: [{ base: "SQLModel", method: "first" }],
-          givesBackOneOfArgument: [
-            { base: "SQLModel", method: "get", argument: 0 },
-          ],
-          givesBackOneOfImport: [
-            { module: "sqlmodel", name: "select", argument: 0 },
-          ],
-        },
-      },
-    ]);
-
-    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
-      ["SQLModel", "first"],
-      ["SQLModel", ".first"],
-    ]);
-    expect(
-      db.facts("givesBackOneOfArgument").map((row) => row.map(String)),
-    ).toEqual([["SQLModel", "get", "0"]]);
-    expect(
-      db.facts("givesBackOneOfImport").map((row) => row.map(String)),
-    ).toEqual([["sqlmodel", "select", "0"]]);
-  });
-
-  it("says nothing for a pack that declares no models at all", () => {
+  it("says nothing for a pack that states no words at all", () => {
     const db = packFacts([flaskRestxLike]);
 
     expect(db.size("givesBackOne")).toBe(0);

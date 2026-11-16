@@ -279,7 +279,7 @@ For a table written as `project.dataset.table` or `dataset.table`, the adapter p
 
 ## A pack declared with `@suss/recognize`
 
-A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `PythonPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, the same two lists a TypeScript pack has. TypeScript runs the second list over tagged templates as well, and Python has none, so both lists run over every call in a body. They run inside `bodyStorage`, beside the storage patterns, so their effects are kept and placed the same way. A hook that throws on a call makes nothing of that call, and the failure goes on its pack's tally with the file and line, as a TypeScript recognizer's does. The run goes on.
+A pack written with `@suss/recognize`, such as `storageCalls` or `sqlStatements`, compiles to hooks that read only the ops on their context. A `PythonPack` takes those hooks as `invocationRecognizers` and `accessRecognizers`, the same two lists a TypeScript pack has. TypeScript runs the second list over tagged templates as well, and Python has none, so both lists run over every call in a body. They run inside `bodyStorage`, so their effects are kept and placed the way the storage chains' are. A hook that throws on a call makes nothing of that call, and the failure goes on its pack's tally with the file and line, as a TypeScript recognizer's does. The run goes on.
 
 Each hook gets the ops from `@suss/recognize/ops` over this run's facts. `pythonFactSource` hands those ops what only Python can read: a literal off its node, a name through the value evaluator, an import's origin through `originsOf`, and what a name was written as through `writtenValueOf`. A bare name is keyed by its scope and has no node of its own, so a name is read through what it was written as. Python declares no method types, so a `declaredBy` origin is checked against the class of the receiver, which `receiverTypes.ts` takes from its annotation or the call that built it. A `typed` origin takes the same class, and also accepts a receiver written as a call to a project function that says it returns one of the origin's types, in a file that imports one of its modules: `Orders.query()` with `def query(cls) -> Query`. `classNameOf` reads a model through `modelNames.ts`, and a storage chain asks it for both a column's class and its container, so the two come out under the same name.
 
@@ -302,21 +302,17 @@ item = session.get(Item, item_id)
 item.deactivate()
 ```
 
-Nothing in the run declares `get`. SQLAlchemy declares it, and the adapter does not read SQLAlchemy. So a pack declares what its library's calls return, under `models` next to `storage`:
+Nothing in the run declares `get`. SQLAlchemy declares it, and the adapter does not read SQLAlchemy. So a pack states what its library's calls return as words, one for each base a model's ancestry can reach:
 
 ```ts
-models: [
-  {
-    baseNames: ["DeclarativeBase", "declarative_base", "SQLModel"],
-    givesBack: ["filter", "where", "first", "all"],
-    entryMethods: [{ method: "get", argument: 0 }],
-    entryFunctions: [{ module: "sqlmodel", name: "select", argument: 0 }],
-    relationships: [{ module: "sqlmodel", name: "Relationship" }],
-  },
-]
+words: {
+  givesBackOne: [{ base: "SQLModel", method: "first" }],
+  givesBackOneOfArgument: [{ base: "SQLModel", method: "get", argument: 0 }],
+  givesBackOneOfImport: [{ module: "sqlmodel", name: "select", argument: 0 }],
+}
 ```
 
-While it reads the run, the adapter adds each of these to the facts, paired with every base name the declaration lists:
+While it reads the run, the adapter adds each of these to the facts:
 
 ```
 givesBackOneOfArgument  SQLModel  get     0

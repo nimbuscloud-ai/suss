@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
 import {
+  modelWords,
+  PACK_VERSION,
+  SQLALCHEMY_MODEL_CALLS,
   SQLALCHEMY_TYPES,
   sqlalchemyFramework,
-  sqlalchemyModels,
   withSqlalchemy,
 } from "./index.js";
 
@@ -53,37 +55,44 @@ describe("the SQLAlchemy pack", () => {
     expect(pack.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
-  it("says which names a mapped class's ancestry arrives at", () => {
-    const [model] = sqlalchemyModels();
-    expect(model?.baseNames).toContain("DeclarativeBase");
-    expect(model?.baseNames).toContain("declarative_base");
+  it("says a chain method hands the same model on, for every base a mapped class's ancestry arrives at", () => {
+    const words = modelWords(SQLALCHEMY_MODEL_CALLS);
+    expect(words.givesBackOne).toContainEqual({
+      base: "DeclarativeBase",
+      method: "where",
+    });
+    expect(words.givesBackOne).toContainEqual({
+      base: "declarative_base",
+      method: "first",
+    });
+    expect(words.givesBackOne?.map((one) => one.method)).not.toContain("count");
   });
 
   it("says which calls take the mapped class and give back one of it", () => {
-    const [model] = sqlalchemyModels();
-    expect(model?.entryMethods).toContainEqual({ method: "get", argument: 0 });
-    expect(model?.entryMethods).toContainEqual({
+    const words = modelWords(SQLALCHEMY_MODEL_CALLS);
+    expect(words.givesBackOneOfArgument).toContainEqual({
+      base: "DeclarativeBase",
+      method: "get",
+      argument: 0,
+    });
+    expect(words.givesBackOneOfArgument).toContainEqual({
+      base: "DeclarativeBase",
       method: "query",
       argument: 0,
     });
-    expect(model?.entryFunctions).toContainEqual({
-      module: "sqlalchemy",
-      name: "select",
-      argument: 0,
-    });
+    expect(words.givesBackOneOfImport).toEqual([
+      { module: "sqlalchemy", name: "select", argument: 0 },
+    ]);
   });
 
-  it("says which chain methods hand the same model on", () => {
-    const [model] = sqlalchemyModels();
-    expect(model?.givesBack).toContain("where");
-    expect(model?.givesBack).toContain("first");
-    expect(model?.givesBack).not.toContain("count");
-  });
-
-  it("carries the model declarations onto a route pack it composes with", () => {
-    expect(
-      withSqlalchemy(routePack, { storageSystem: "sqlite" }).models,
-    ).toHaveLength(1);
+  it("carries its words and class bodies onto a route pack it composes with, and stamps its own build", () => {
+    const composed = withSqlalchemy(routePack, { storageSystem: "sqlite" });
+    expect(composed.words).toEqual(modelWords(SQLALCHEMY_MODEL_CALLS));
+    expect(composed.classBodies).toHaveLength(1);
+    expect(composed.version).toBeUndefined();
+    expect(sqlalchemyFramework({ storageSystem: "sqlite" }).version).toBe(
+      PACK_VERSION,
+    );
   });
 });
 
