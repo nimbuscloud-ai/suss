@@ -170,7 +170,7 @@ const BODY_BLOCKS = [
   { name: "included", moduleOnly: true },
   { name: "prepended", moduleOnly: true },
   { name: "class_methods", moduleOnly: true, definesClassMethods: true },
-  { name: "concerning" },
+  { name: "concerning", moduleBody: true },
   { name: "with_options" },
 ];
 
@@ -305,7 +305,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   return {
     name: "rails",
-    version: "4",
+    version: "5",
     protocol: "http",
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,

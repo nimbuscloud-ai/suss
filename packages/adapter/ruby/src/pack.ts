@@ -55,6 +55,7 @@ export function bodyBlocksIn(packs: readonly RubyPack[]): BodyBlocks {
       pooled.set(declared.name, {
         moduleOnly: declared.moduleOnly ?? false,
         definesClassMethods: declared.definesClassMethods ?? false,
+        moduleBody: declared.moduleBody ?? false,
       });
     }
   }
@@ -405,6 +406,12 @@ export interface RbBodyBlock {
   moduleOnly?: boolean;
   /** Set when a `def` in the block defines a method on the class itself instead of on an instance. */
   definesClassMethods?: boolean;
+  /**
+   * Set when the block is the body of a module the call makes, as
+   * `concerning :Name do` makes a concern. A block the library offers
+   * only to modules, such as `included do`, then counts inside it.
+   */
+  moduleBody?: boolean;
 }
 
 /**
