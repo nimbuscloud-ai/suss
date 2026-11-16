@@ -8,15 +8,27 @@
  * calls. The README lists what the pack reads and where it stops.
  */
 
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { OneArgument, RequestMethod } from "@suss/recognize";
 
-type PyClientCall = NonNullable<PythonPack["clients"]>[number];
-type RedirectDelivery = NonNullable<
-  NonNullable<PyClientCall["response"]>["redirectDelivery"]
->;
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "1";
 
-const VERB_FUNCTIONS_THAT_FOLLOW: Record<string, string> = {
+// The verb functions take the URL first and `request` takes it second.
+// All of them accept it as `url=`.
+const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
+
+const VERBS: Record<string, string> = {
   get: "GET",
   post: "POST",
   put: "PUT",
@@ -25,55 +37,44 @@ const VERB_FUNCTIONS_THAT_FOLLOW: Record<string, string> = {
   options: "OPTIONS",
 };
 
-/**
- * The verb calls in `verbs`, on the module or a `Session`, which do
- * `redirectDelivery` with a redirect unless the call passes
- * `allow_redirects` to say otherwise.
- */
-function verbCalls(
-  verbs: Record<string, string>,
-  redirectDelivery: RedirectDelivery,
-): PyClientCall {
-  return {
-    type: "clientCall",
-    importModule: ["requests"],
-    verbAttributeNames: verbs,
-    url: { position: 0, keyword: "url" },
-    receiverConstructors: ["Session"],
-    // A caller's condition on one of these members shows which
-    // statuses it handles.
-    response: {
-      statusCode: ["status_code"],
-      success: ["ok"],
-      body: ["json", "text", "content"],
-      failureDelivery: "response",
-      redirectDelivery,
-      redirectOption: { name: "allow_redirects", handsBack: [false] },
-    },
-  };
-}
+// `head` defaults `allow_redirects` to False, and every other call,
+// `request("HEAD", url)` included, defaults it to True.
+const METHODS: Record<string, RequestMethod> = {
+  ...verbs(VERBS, URL_FIRST),
+  head: { sends: "HEAD", url: URL_FIRST, redirects: "response" },
+  request: {
+    sends: { from: { at: 0, keyword: "method" } },
+    url: { at: 1, keyword: "url" },
+  },
+};
+
+/** The module's own functions, and the same calls on a `Session`. */
+export const REQUESTS = httpRequests({
+  client: anyOf(
+    imported({ from: ["requests"], named: ["*", ...Object.keys(METHODS)] }),
+    constructedFrom({ from: ["requests"], named: ["Session"] }),
+  ),
+})
+  .methods(METHODS)
+  // A caller's condition on one of these members shows which statuses
+  // it handles.
+  .response({
+    statusCode: ["status_code"],
+    success: ["ok"],
+    body: ["json", "text", "content"],
+    failureDelivery: "response",
+    redirectDelivery: "followed",
+    redirectOption: { name: "allow_redirects", handsBack: [false] },
+  })
+  .example('requests.get("https://api.example.com/orders")');
 
 export function requestsClient(): PythonPack {
   return {
     name: "requests",
+    version: PACK_VERSION,
     protocol: "http",
     discovery: [],
-    // `head` defaults `allow_redirects` to False, and every other call,
-    // `request("HEAD", url)` included, defaults it to True.
-    clients: [
-      {
-        ...verbCalls(VERB_FUNCTIONS_THAT_FOLLOW, "followed"),
-        // The verb functions take the URL first and `request` takes it
-        // second. All of them accept it as `url=`.
-        methodCall: {
-          attribute: "request",
-          methodPosition: 0,
-          methodKeyword: "method",
-          urlPosition: 1,
-        },
-      },
-      verbCalls({ head: "HEAD" }, "response"),
-    ],
+    requestRecognizers: requestRecognizersOf([REQUESTS]),
     // `Session.__enter__` returns the session, so `with
     // requests.Session() as s` puts the constructed session in s.
     contextManagers: [{ module: "requests", returnsSelf: ["Session"] }],

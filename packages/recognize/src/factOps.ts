@@ -65,6 +65,7 @@ import type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Splats,
   StatedSlot,
   Typed,
   UnsettledName,
@@ -112,6 +113,8 @@ function valueOpsRead(
 
 /** The key each value the ops handed out was read at, so one value can be compared with another. */
 const keysOfValues = new WeakMap<ValueOps, string>();
+
+const NO_SPLATS: Splats = { positionalFrom: null, keywords: false };
 
 /**
  * The call and argument each value read off one was read at. A name in
@@ -372,6 +375,10 @@ class FactCall implements CallOps {
 
   constructionSites(): readonly string[] {
     return this.source.constructionSitesOf?.(this.key) ?? [];
+  }
+
+  splats(): Splats {
+    return this.source.splatsOf?.(this.key) ?? NO_SPLATS;
   }
 
   /** The `callKeywordArg` rows, which each adapter states in the order the call writes them. */

@@ -38,7 +38,7 @@ suss extract --dir src -f fastapi -f requests
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-python`, for the `PythonPack` type and the `clientCall` pattern it fills in. It has no analysis of its own. Every call it lists belongs to requests, and the adapter does the reading.
+The pack declares its calls with `@suss/recognize`'s `httpRequests`, and depends on `@suss/adapter-python` for the `PythonPack` type. It has no analysis of its own. Every call it lists belongs to requests, and the adapter's client walk hands each call in a function body to the declaration.
 
 ## License
 

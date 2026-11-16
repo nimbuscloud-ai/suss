@@ -7,7 +7,7 @@ import {
   parsePython,
 } from "@suss/adapter-python";
 
-import { httpxClient } from "./index.js";
+import { HTTPX, httpxClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
@@ -109,5 +109,20 @@ describe("a function that calls httpx", () => {
     );
 
     expect(units).toEqual([]);
+  });
+});
+
+describe("the declaration's example", () => {
+  it("makes the function it is written in a client", async () => {
+    const units = await unitsIn(
+      [
+        "import httpx",
+        "",
+        "def example():",
+        `    return ${HTTPX.declared.example}`,
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 });

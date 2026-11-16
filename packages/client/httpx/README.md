@@ -35,7 +35,7 @@ suss extract --dir src -f fastapi -f httpx
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-python`, for the `PythonPack` type and the client-call declaration it fills in.
+The pack declares its calls with `@suss/recognize`'s `httpRequests`, and depends on `@suss/adapter-python` for the `PythonPack` type.
 
 ## License
 
