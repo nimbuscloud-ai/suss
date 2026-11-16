@@ -82,9 +82,6 @@ export type {
   PyDefaultTaskName,
   PyEnqueueMethod,
   PyJobQueue,
-  PyModelEntryFunction,
-  PyModelEntryMethod,
-  PyModelQueries,
   PySendByName,
   PyStatusCall,
   PyTaskArguments,
@@ -96,7 +93,6 @@ export type {
   RequestObject,
   RouteConventions,
   RouterComposition,
-  StoragePattern,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
 export type {

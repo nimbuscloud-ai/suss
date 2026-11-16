@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { storageSystemOption } from "@suss/extractor";
+import { pooledWords, storageSystemOption } from "@suss/extractor";
 import {
   classBody,
   imported,
@@ -16,8 +16,8 @@ import {
   typed,
 } from "@suss/recognize";
 
-import type { PyModelQueries, PythonPack } from "@suss/adapter-python";
-import type { ClassBodyDeclaration } from "@suss/extractor";
+import type { PythonPack } from "@suss/adapter-python";
+import type { ClassBodyDeclaration, PackWords } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
   CallStep,
@@ -93,22 +93,47 @@ const SESSION_ENTRY_METHODS = [
   { method: "execute", argument: 0 },
 ];
 
+/** The calls that give back one of a model class, as a library writes them. */
+export interface ModelCalls {
+  /** The names a model's base classes lead back to. */
+  readonly baseNames: readonly string[];
+  /** Methods whose result is the model again. */
+  readonly givesBack: readonly string[];
+  /** Methods handed the model class at `argument` that give back one of it. */
+  readonly entryMethods: readonly { method: string; argument: number }[];
+  /** Functions a module exports that do the same. */
+  readonly entryFunctions: readonly {
+    module: string;
+    name: string;
+    argument: number;
+  }[];
+}
+
 /**
- * The calls that give back the mapped class they were passed, so a method
- * called on the result resolves to the one the project's model declares.
- * `session.execute(stmt)` takes a statement instead of the class, but the
- * statement has already settled on one model, so the rules treat the two
- * the same way.
+ * SQLAlchemy's calls that give back the mapped class they were passed,
+ * so a method called on the result resolves to the one the project's
+ * model declares. `session.execute(stmt)` takes a statement instead of
+ * the class, but the statement has already settled on one model, so the
+ * rules treat the two the same way.
  */
-export function sqlalchemyModels(): PyModelQueries[] {
-  return [
-    {
-      baseNames: MODEL_BASE_NAMES,
-      givesBack: [...NARROWS_A_QUERY, ...RUNS_A_QUERY],
-      entryMethods: SESSION_ENTRY_METHODS,
-      entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
-    },
-  ];
+export const SQLALCHEMY_MODEL_CALLS: ModelCalls = {
+  baseNames: MODEL_BASE_NAMES,
+  givesBack: [...NARROWS_A_QUERY, ...RUNS_A_QUERY],
+  entryMethods: SESSION_ENTRY_METHODS,
+  entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
+};
+
+/** The words the shared rules read the calls as, for every base a model can have. */
+export function modelWords(calls: ModelCalls): PackWords {
+  return {
+    givesBackOne: calls.baseNames.flatMap((base) =>
+      calls.givesBack.map((method) => ({ base, method })),
+    ),
+    givesBackOneOfArgument: calls.baseNames.flatMap((base) =>
+      calls.entryMethods.map((entry) => ({ base, ...entry })),
+    ),
+    givesBackOneOfImport: [...calls.entryFunctions],
+  };
 }
 
 /**
@@ -166,6 +191,7 @@ export function rawStatements(
   return pack(`${module}-text`, [statements], {
     languages: ["python"],
     recognizedAs: `python-${module}`,
+    version: PACK_VERSION,
   });
 }
 
@@ -400,14 +426,30 @@ export function queryChains(
   name: string,
   types: readonly QueryTypes[],
   options: SqlalchemyPackOptions,
+  models: ModelsSaid,
 ): PatternPack {
   const libraries = topPackages(types.map((one) => one.module));
   return pack(
     name,
     types.flatMap((one) => queryCalls(one, libraries, options.storageSystem)),
-    { languages: ["python"], recognizedAs: "python-storage" },
+    {
+      languages: ["python"],
+      recognizedAs: "python-storage",
+      version: PACK_VERSION,
+      words: models.words,
+      classBodies: models.classBodies,
+    },
   );
 }
+
+/** What a pack says about its models beside the chains: what its calls give back, and what a class body reaches. */
+export interface ModelsSaid {
+  readonly words: PackWords;
+  readonly classBodies: ClassBodyDeclaration[];
+}
+
+/** The build of this pack and of SQLModel's, which the extraction cache keys on. */
+export const PACK_VERSION = "1";
 
 /** The statements built with a function imported from one of the modules, recognized as the chains on a query are. */
 export function statementChains(
@@ -418,7 +460,11 @@ export function statementChains(
   return pack(
     name,
     [statementCalls(modules, topPackages(modules), options.storageSystem)],
-    { languages: ["python"], recognizedAs: "python-storage" },
+    {
+      languages: ["python"],
+      recognizedAs: "python-storage",
+      version: PACK_VERSION,
+    },
   );
 }
 
@@ -427,7 +473,7 @@ function topPackages(modules: readonly string[]): string[] {
   return [...new Set(modules.map((one) => one.split(".")[0] ?? one))];
 }
 
-/** The hooks of each pack, put beside the ones the route pack already has. */
+/** The hooks, class bodies and words of each pack, put after the ones the route pack already has. */
 export function withStatements(
   base: PythonPack,
   packs: readonly PatternPack[],
@@ -442,30 +488,30 @@ export function withStatements(
       ...(base.accessRecognizers ?? []),
       ...packs.flatMap((one) => one.accessRecognizers ?? []),
     ],
+    classBodies: [
+      ...(base.classBodies ?? []),
+      ...packs.flatMap((one) => one.classBodies ?? []),
+    ],
+    words: pooledWords([base, ...packs]),
   };
 }
 
 /**
- * Adds the storage patterns to the route pack a run already uses. A
- * project picks its web framework and its database library separately,
- * so the two packs combine.
+ * Adds the storage chains to the route pack a run already uses, since a
+ * project picks its web framework and its database library separately.
  */
 export function withSqlalchemy(
   pack: PythonPack,
   options: SqlalchemyPackOptions,
 ): PythonPack {
-  return withStatements(
-    {
-      ...pack,
-      models: [...(pack.models ?? []), ...sqlalchemyModels()],
-      classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
-    },
-    [
-      rawStatements("sqlalchemy", options),
-      queryChains("sqlalchemy-queries", SQLALCHEMY_TYPES, options),
-      statementChains("sqlalchemy-statements", ["sqlalchemy"], options),
-    ],
-  );
+  return withStatements(pack, [
+    rawStatements("sqlalchemy", options),
+    queryChains("sqlalchemy-queries", SQLALCHEMY_TYPES, options, {
+      words: modelWords(SQLALCHEMY_MODEL_CALLS),
+      classBodies: sqlalchemyClassBodies(),
+    }),
+    statementChains("sqlalchemy-statements", ["sqlalchemy"], options),
+  ]);
 }
 
 export function sqlalchemyFramework(
@@ -479,7 +525,12 @@ export function sqlalchemyFramework(
     );
   }
   return withSqlalchemy(
-    { name: "sqlalchemy", protocol: options.storageSystem, discovery: [] },
+    {
+      name: "sqlalchemy",
+      version: PACK_VERSION,
+      protocol: options.storageSystem,
+      discovery: [],
+    },
     options,
   );
 }

@@ -269,36 +269,12 @@ function reportUnresolvedProjectModules(
 }
 
 /**
- * What the run's packs declare about their own libraries, in the form
- * `addPackWords` takes. The run does not read library source, so a pack's
- * model declarations are the only thing that says `session.get(User, id)`
- * is one User. A `with` block gets whatever `__enter__` returned, and only
- * the library knows that its own class returns the object it built.
+ * What the run's packs say about their own libraries, in the form
+ * `addPackWords` takes, since the run does not read library source.
  */
 export function packWordsOf(packs: readonly PythonPack[]): PackWords {
-  const models = packs.flatMap((pack) => pack.models ?? []);
-  const stated = pooledWords(packs);
   return {
-    givesBackOne: [
-      ...models.flatMap((model) =>
-        model.baseNames.flatMap((base) =>
-          model.givesBack.map((method) => ({ base, method })),
-        ),
-      ),
-      ...stated.givesBackOne,
-    ],
-    givesBackOneOfArgument: [
-      ...models.flatMap((model) =>
-        model.baseNames.flatMap((base) =>
-          model.entryMethods.map((entry) => ({ base, ...entry })),
-        ),
-      ),
-      ...stated.givesBackOneOfArgument,
-    ],
-    givesBackOneOfImport: [
-      ...models.flatMap((model) => model.entryFunctions),
-      ...stated.givesBackOneOfImport,
-    ],
+    ...pooledWords(packs),
     associationConstructor: packs.flatMap((pack) =>
       (pack.classBodies ?? []).flatMap((body) =>
         constructorsOf(body.fields.association?.madeBy),
