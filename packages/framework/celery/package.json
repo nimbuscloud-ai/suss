@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",
+    "@suss/framework-fastapi": "*",
     "@suss/ir-core": "*",
     "tsup": "*",
     "typescript": "*",

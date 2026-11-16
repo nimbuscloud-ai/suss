@@ -50,7 +50,7 @@ import {
   readCallArguments,
   unwrapDecorator,
 } from "./decorators.js";
-import { routeOnDroppedApp } from "./droppedApps.js";
+import { nodeId } from "./facts/values.js";
 import { enqueueEffects, enqueuesAmong } from "./jobQueues.js";
 import {
   bodyTerminals,
@@ -65,6 +65,8 @@ import {
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
+import { routerCompositionOf } from "./routers.js";
+import { isTablePattern } from "./routeTables.js";
 import { stdlibEffects } from "./stdlib/dispatch.js";
 import { bodyStorage, declaredCallIds, type StorageLookup } from "./storage.js";
 import {
@@ -113,6 +115,7 @@ import type {
 } from "./paths/bodyBranches.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { RoutePrefixResolution, RouterIndex } from "./routers.js";
+import type { DeclaredRoute, DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 import type { PythonWrapperIndex } from "./wrappers.js";
 
@@ -122,6 +125,8 @@ export interface DiscoveryOptions {
   filePath: string;
   /** Without it, every route object is treated as the app itself and paths are used as written. */
   routerIndex?: RouterIndex;
+  /** The routes the run's route tables found. Without it, a pattern that declares a table doesn't find any. */
+  routes?: DeclaredRouteIndex;
   /** Under "strict" a route whose unit cannot be built stops the run instead of abstaining. */
   gapHandling?: ExtractorOptions["gapHandling"];
   /** What a pack needs to decide that a call talks to the database. Absent when no pack declares storage. */
@@ -136,21 +141,25 @@ export interface DiscoveryOptions {
   importedDefinition?: ImportedDefinitionLookup | undefined;
 }
 
-/** One decorated definition, and what each decorator on it was classified as. */
+/** One decorated definition, with the decorators written over it, top first. */
 interface DecoratedStatement {
   stmt: PyNode;
-  decorators: { node: PyNode; direct: DecoratorClassification }[];
+  decorators: PyNode[];
 }
+
+/** What a route's own conventions and its wrappers read off the decorator that declares it. */
+export type RouteDecorator = Pick<
+  DecoratorClassification,
+  "range" | "objectName" | "objectModule" | "args" | "keywordArgs"
+>;
 
 /**
  * Every decorated definition in the file, wherever it is written. A route
  * can be declared anywhere Python allows a statement, so the walk visits
  * every node instead of a list of places a route might be.
  */
-function decoratedNodes(
-  root: PyNode,
-): { stmt: PyNode; decorators: PyNode[] }[] {
-  const found: { stmt: PyNode; decorators: PyNode[] }[] = [];
+function decoratedNodes(root: PyNode): DecoratedStatement[] {
+  const found: DecoratedStatement[] = [];
   walkDescendants<PyNode, null>(root, null, children, {
     at: (node) => {
       if (node.type !== "decorated_definition") {
@@ -164,32 +173,39 @@ function decoratedNodes(
 }
 
 /**
- * What each decorator in the file was written as. The rules are asked
- * about every object a decorator is called on in one go, because they run
- * over the whole project's facts and asking per decorator would run them
- * once per route.
+ * What each decorator in the file was written as, for a pattern that
+ * finds its routes by the decorator's callee rather than through a route
+ * table. The rules are asked about every object a decorator is called on
+ * in one go, because they run over the whole project's facts and asking
+ * per decorator would run them once per route.
  */
-function decoratedStatements(
-  root: PyNode,
+function classifiedDecorators(
+  decorated: readonly DecoratedStatement[],
   module: ModuleBinding,
-  facts: Database | undefined,
-): DecoratedStatement[] {
-  const found = decoratedNodes(root);
+  options: DiscoveryOptions,
+): ReadonlyMap<PyNode, DecoratorClassification> {
+  const classified = new Map<PyNode, DecoratorClassification>();
+  if (
+    !options.packs.some((pack) =>
+      pack.discovery.some((pattern) => !isTablePattern(pattern)),
+    )
+  ) {
+    return classified;
+  }
+  const decorators = decorated.flatMap((one) => one.decorators);
   askWrittenValues(
-    found.flatMap(({ decorators }) =>
-      decorators
-        .map((decorator) => decoratorReceiver(decorator)?.object)
-        .filter((object): object is PyNode => object !== undefined),
-    ),
-    facts,
+    decorators
+      .map((decorator) => decoratorReceiver(decorator)?.object)
+      .filter((object): object is PyNode => object !== undefined),
+    options.facts,
   );
-  return found.map(({ stmt, decorators }) => ({
-    stmt,
-    decorators: decorators.map((decorator) => ({
-      node: decorator,
-      direct: classifyDecorator(decorator, module, facts),
-    })),
-  }));
+  for (const decorator of decorators) {
+    classified.set(
+      decorator,
+      classifyDecorator(decorator, module, options.facts),
+    );
+  }
+  return classified;
 }
 
 export function discoverUnits(
@@ -197,18 +213,19 @@ export function discoverUnits(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  const decorated = decoratedStatements(root, module, options.facts);
+  const decorated = decoratedNodes(root);
+  const classified = classifiedDecorators(decorated, module, options);
   askWrittenValues(clientCallReceivers(root, module), options.facts);
   if (options.facts !== undefined) {
     askFileSources(
-      routedFunctions(decorated, options),
+      routedFunctions(decorated, classified, options),
       options.facts,
       options.storage,
     );
   }
   return [
     ...decorated.flatMap((decoratedStatement) =>
-      decoratedUnits(decoratedStatement, module, options),
+      decoratedUnits(decoratedStatement, classified, module, options),
     ),
     ...clientUnits(root, module, options),
   ];
@@ -234,127 +251,156 @@ function clientUnits(
  * The functions a pattern's decorator is written on, and the methods of
  * a class one is written on: the bodies whose units ask where their
  * values came from. A decorator only a project wrapper leads to a
- * pattern is left out, and its unit asks on its own.
+ * class pattern is left out, and its unit asks on its own.
  */
 function routedFunctions(
   decorated: readonly DecoratedStatement[],
+  classified: ReadonlyMap<PyNode, DecoratorClassification>,
   options: DiscoveryOptions,
 ): PyNode[] {
-  return decorated
-    .filter(({ decorators }) =>
-      decorators.some(
-        ({ direct }) =>
-          direct.module !== null &&
-          acceptedByAnyPattern(direct.module, options),
-      ),
-    )
-    .flatMap(({ stmt }) => {
-      const { definition } = stripDecorators(stmt);
-      return definition.type === "class_definition"
-        ? definition.descendantsOfType("function_definition")
-        : [definition];
-    });
+  return decorated.flatMap(({ stmt, decorators }) => {
+    const { definition } = stripDecorators(stmt);
+    const routed = decorators.some(
+      (decorator) =>
+        acceptedAsWritten(classified.get(decorator), options) ||
+        declaredRoutesOf(decorator, definition, options).length > 0,
+    );
+    if (!routed) {
+      return [];
+    }
+    return definition.type === "class_definition"
+      ? definition.descendantsOfType("function_definition")
+      : [definition];
+  });
 }
 
 function decoratedUnits(
   decoratedStatement: DecoratedStatement,
+  classified: ReadonlyMap<PyNode, DecoratorClassification>,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
   const { stmt, decorators } = decoratedStatement;
   const units: RawCodeStructure[] = [];
   const { definition } = stripDecorators(stmt);
-  for (const { node: decoratorNode, direct } of decorators) {
-    // A decorator no pattern accepts as written may still be a project
-    // wrapper around one a pattern does accept.
-    const classifications =
-      direct.module !== null && acceptedByAnyPattern(direct.module, options)
-        ? [direct]
-        : [unwrapDecorator(decoratorNode, options.facts)].filter(
-            (candidate): candidate is DecoratorClassification =>
-              candidate !== null,
-          );
-
-    for (const classification of classifications) {
-      if (classification.module === null) {
-        continue;
-      }
-      const decoratorModule = classification.module;
-      for (const pack of options.packs) {
-        for (const pattern of pack.discovery) {
-          if (
-            declaredOnDroppedApp(
-              pattern,
-              classification,
-              decoratorNode,
-              options,
-            )
-          ) {
-            continue;
-          }
-          units.push(
-            ...unitsFor(
-              pattern,
-              pack,
-              decoratorModule,
-              classification,
-              definition,
-              module,
-              options,
-            ),
-          );
-        }
+  for (const decoratorNode of decorators) {
+    // A wrapper is unwrapped by asking the rules, so only once, and only
+    // for a class pattern that reads it.
+    let classification: { found: DecoratorClassification | null } | undefined;
+    const found: DecoratorFound = {
+      node: decoratorNode,
+      classification: () => {
+        classification ??= {
+          found: classificationOf(
+            classified.get(decoratorNode) ??
+              classifyDecorator(decoratorNode, module, options.facts),
+            decoratorNode,
+            options,
+          ),
+        };
+        return classification.found;
+      },
+    };
+    for (const pack of options.packs) {
+      for (const pattern of pack.discovery) {
+        units.push(
+          ...unitsFor(pattern, pack, found, definition, module, options),
+        );
       }
     }
   }
   return units;
 }
 
+/** A decorator, and what its callee was classified as, worked out only for a pattern that reads it. */
+interface DecoratorFound {
+  node: PyNode;
+  classification: () => DecoratorClassification | null;
+}
+
 /**
- * Whether a route's decorator is called on an app its own function builds
- * and drops, so no request can reach the route.
+ * What a class pattern reads a decorator as: its callee as written when a
+ * pattern accepts that, and otherwise the library call a project wrapper
+ * it calls makes.
  */
-function declaredOnDroppedApp(
-  pattern: PythonDiscoveryPattern,
-  classification: DecoratorClassification,
+function classificationOf(
+  direct: DecoratorClassification,
   decoratorNode: PyNode,
   options: DiscoveryOptions,
+): DecoratorClassification | null {
+  const classification = acceptedAsWritten(direct, options)
+    ? direct
+    : unwrapDecorator(decoratorNode, options.facts);
+  return classification?.module === null ? null : classification;
+}
+
+function acceptedAsWritten(
+  classification: DecoratorClassification | undefined,
+  options: DiscoveryOptions,
 ): boolean {
-  const built = classification.subjectConstruction;
-  const object = decoratorReceiver(decoratorNode)?.object;
+  const module = classification?.module ?? null;
   return (
-    options.facts !== undefined &&
-    object !== undefined &&
-    built !== undefined &&
-    routeOnDroppedApp(options.facts, object, built.key, pattern)
+    module !== null &&
+    options.packs.some((pack) =>
+      pack.discovery.some((pattern) => pattern.importModule.includes(module)),
+    )
   );
 }
 
-function acceptedByAnyPattern(
-  module: string,
+/** What the run's route tables say a decorator written over a function declares, for every table pattern. */
+function declaredRoutesOf(
+  decoratorNode: PyNode,
+  definition: PyNode,
   options: DiscoveryOptions,
-): boolean {
-  return options.packs.some((pack) =>
-    pack.discovery.some((pattern) => pattern.importModule.includes(module)),
+): DeclaredRoute[] {
+  return options.packs.flatMap((pack) =>
+    pack.discovery
+      .filter(isTablePattern)
+      .flatMap((pattern) =>
+        routesDeclaredBy(pattern, decoratorNode, definition, options),
+      ),
+  );
+}
+
+/** What one pattern's route table says a decorator declares, which is nothing unless it is a call written over a function. */
+function routesDeclaredBy(
+  pattern: DecoratedFunctionRoute,
+  decoratorNode: PyNode,
+  definition: PyNode,
+  options: DiscoveryOptions,
+): DeclaredRoute[] {
+  const call = decoratorNode.namedChild(0);
+  if (
+    options.routes === undefined ||
+    call?.type !== "call" ||
+    definition.type !== "function_definition"
+  ) {
+    return [];
+  }
+  return options.routes.routesAt(
+    pattern,
+    nodeId(options.absoluteFile ?? options.filePath, call),
   );
 }
 
 function unitsFor(
   pattern: PythonDiscoveryPattern,
   pack: PythonPack,
-  decoratorModule: string,
-  classification: ReturnType<typeof classifyDecorator>,
+  decorator: DecoratorFound,
   definition: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RawCodeStructure[] {
-  if (!pattern.importModule.includes(decoratorModule)) {
-    return [];
-  }
   const table: DispatchTable<PythonDiscoveryPattern, RawCodeStructure[]> = {
     decoratedClassRoute: (p) => {
+      const classification =
+        definition.type === "class_definition"
+          ? decorator.classification()
+          : null;
       if (
-        definition.type !== "class_definition" ||
+        classification === null ||
+        classification.module === null ||
+        !p.importModule.includes(classification.module) ||
         classification.importedName !== p.decoratorName
       ) {
         return [];
@@ -369,21 +415,15 @@ function unitsFor(
       );
     },
     decoratedFunctionRoute: (p) => {
-      if (definition.type !== "function_definition") {
-        return [];
-      }
-      const verb =
-        classification.importedName !== null
-          ? p.verbAttributeNames[classification.importedName]
-          : undefined;
-      if (verb === undefined) {
+      const routes = routesDeclaredBy(p, decorator.node, definition, options);
+      if (routes.length === 0) {
         return [];
       }
       return functionRouteUnits(
         p,
         pack,
-        verb,
-        classification,
+        routes,
+        routeDecoratorOf(decorator.node, options),
         definition,
         module,
         options,
@@ -393,9 +433,43 @@ function unitsFor(
   return dispatchByType(table, pattern);
 }
 
+/**
+ * What a route's conventions read off the decorator: the call as written,
+ * or for a project wrapper, its own arguments with the object the library
+ * call inside the wrapper is made on.
+ */
+function routeDecoratorOf(
+  decoratorNode: PyNode,
+  options: DiscoveryOptions,
+): RouteDecorator {
+  const direct = decoratorReceiver(decoratorNode);
+  if (direct !== null) {
+    return {
+      range: direct.range,
+      objectName:
+        direct.object.type === "identifier" ? direct.object.text : null,
+      args: direct.args,
+      keywordArgs: direct.keywordArgs,
+    };
+  }
+  const inner = unwrapDecorator(decoratorNode, options.facts);
+  const call = decoratorNode.namedChild(0);
+  const argumentList = call === null ? null : field(call, "arguments");
+  return {
+    range: rangeOf(decoratorNode),
+    objectName: inner?.objectName ?? null,
+    ...(inner?.objectModule === undefined
+      ? {}
+      : { objectModule: inner.objectModule }),
+    ...(argumentList?.type === "argument_list"
+      ? readCallArguments(argumentList)
+      : { args: [], keywordArgs: {} }),
+  };
+}
+
 /** The library requires a path here, so a first argument nobody can read is unreadable rather than absent. */
 function readPathArgument(
-  classification: DecoratorClassification,
+  classification: Pick<RouteDecorator, "args" | "range">,
   options: DiscoveryOptions,
 ): Reading<string> {
   const first = classification.args[0];
@@ -634,7 +708,7 @@ function routerResolutionOf(
   module: ModuleBinding,
   options: DiscoveryOptions,
 ): RoutePrefixResolution | null {
-  const composition = pattern.routerComposition;
+  const composition = routerCompositionOf(pattern);
   const index = options.routerIndex;
   if (composition === undefined || index === undefined) {
     return null;
@@ -712,6 +786,47 @@ function servedSpelling(pattern: PythonDiscoveryPattern, path: string): string {
   return REPEATED_SLASH_READERS[pattern.pathRepeatedSlashes ?? "kept"](path);
 }
 
+/** What a route says when the router it is declared on gives it no path, with the reason worded to follow "the router this route is declared on". */
+function routerUnread(reason: string): string {
+  return `The router this route is declared on ${reason}, so the binding names no path and nothing pairs with it`;
+}
+
+/**
+ * The paths a route a table found is served at: one for each prefix it
+ * is served under, each saying which mount it is when there are several
+ * (#689), or no path, saying why.
+ */
+function declaredRoutePaths(
+  pattern: DecoratedFunctionRoute,
+  pathArgument: Reading<string>,
+  route: DeclaredRoute,
+): RoutePathEntry[] {
+  if (route.kind === "unread") {
+    return [
+      {
+        routePath: andThenReading(pathArgument, (_literal, range) =>
+          unreadableReading(routerUnread(route.reason), range),
+        ),
+      },
+    ];
+  }
+  const servedUnder = (prefix: string): Reading<PathTemplateReading> =>
+    andThenReading(
+      andThenReading(pathArgument, (literal, range) =>
+        writtenReading(servedSpelling(pattern, prefix + literal), range),
+      ),
+      (path, range) => readPathTemplate(pattern, path, range),
+    );
+  const [only] = route.prefixes;
+  if (only !== undefined && route.prefixes.length === 1) {
+    return [{ routePath: servedUnder(only) }];
+  }
+  return route.prefixes.map((prefix) => ({
+    routePath: servedUnder(prefix),
+    mount: { siblings: route.prefixes.length, prefix },
+  }));
+}
+
 /** Absent when the decorator is called on something that composes no prefix, the app itself included. */
 function readRouterPrefix(
   pattern: PythonDiscoveryPattern,
@@ -731,10 +846,7 @@ function readRouterPrefix(
   }
 
   if (resolution.kind === "abstain") {
-    return unreadableReading(
-      `The router this route is declared on ${resolution.reason}, so the binding names no path and nothing pairs with it`,
-      range,
-    );
+    return unreadableReading(routerUnread(resolution.reason), range);
   }
 
   if (resolution.kind === "composed") {
@@ -747,7 +859,7 @@ function readRouterPrefix(
 /** If the status keyword does not come to a number, falling back to the library's default would claim a status the running app does not return. */
 function readStatusCode(
   pattern: DecoratedFunctionRoute,
-  classification: DecoratorClassification,
+  classification: RouteDecorator,
   options: { module: ModuleBinding; facts: Database | undefined },
 ): Reading<number> {
   if (pattern.statusCodeKeyword === undefined) {
@@ -1092,7 +1204,7 @@ function defaultedStatus(
 
 function readResponseModel(
   pattern: DecoratedFunctionRoute,
-  classification: DecoratorClassification,
+  classification: RouteDecorator,
   module: ModuleBinding,
   ctx: ReturnType<typeof createAnnotationContext>,
 ): Reading<TypeShape> {
@@ -1137,8 +1249,8 @@ function readReturnAnnotation(
 function functionRouteUnits(
   pattern: DecoratedFunctionRoute,
   pack: PythonPack,
-  verb: string,
-  classification: DecoratorClassification,
+  routes: readonly DeclaredRoute[],
+  classification: RouteDecorator,
   functionNode: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
@@ -1171,13 +1283,14 @@ function functionRouteUnits(
     module,
     options,
   );
-  return readRoutePaths(
-    pattern,
-    readPathArgument(classification, options),
-    classification,
-    module,
-    options,
-  ).flatMap((entry) =>
+  const pathArgument = readPathArgument(classification, options);
+  const served = routes.flatMap((route) =>
+    declaredRoutePaths(pattern, pathArgument, route).map((entry) => ({
+      method: route.method,
+      ...entry,
+    })),
+  );
+  return served.flatMap((entry) =>
     routeUnitOrAbstention(
       {
         pack,
@@ -1185,7 +1298,7 @@ function functionRouteUnits(
         exportPath: [functionName],
         dependencyParameters,
         declaredStatuses,
-        method: verb,
+        method: entry.method,
         routePath: entry.routePath,
         ...(entry.mount !== undefined ? { mount: entry.mount } : {}),
         requestBodyFromAnnotatedClass:
@@ -1227,7 +1340,7 @@ function functionRouteUnits(
 function wrappersAround(
   pattern: PythonDiscoveryPattern,
   pack: PythonPack,
-  classification: DecoratorClassification,
+  classification: RouteDecorator,
   definitionNode: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,
@@ -1253,7 +1366,7 @@ function wrappersAround(
 function declaredStatusesOf(
   pattern: DecoratedFunctionRoute,
   pack: PythonPack,
-  classification: DecoratorClassification,
+  classification: RouteDecorator,
   definitionNode: PyNode,
   module: ModuleBinding,
   options: DiscoveryOptions,

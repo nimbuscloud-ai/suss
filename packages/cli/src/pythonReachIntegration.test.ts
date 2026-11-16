@@ -15,14 +15,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { functionOf, readCallFacts } from "@suss/checker";
+import fastapiFramework from "@suss/packs/fastapi";
 import sqlalchemyFramework from "@suss/packs/sqlalchemy";
 
 import { answerQuestion } from "./ask.js";
 import { relativizeSummaryPaths } from "./extract.js";
 import { touchesOfUnits } from "./target.js";
 
-import type { PythonPack } from "@suss/adapter-python";
+import type { DeclaredRoutes, PythonPack } from "@suss/adapter-python";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+
+/** The routes the shipped FastAPI pack declares, read here with fewer of its conventions. */
+function fastapiRoutes(): DeclaredRoutes {
+  const [pattern] = fastapiFramework().discovery;
+  if (pattern?.type !== "decoratedFunctionRoute") {
+    throw new Error("the FastAPI pack declares its routes first");
+  }
+  return pattern.routes;
+}
 
 const fastapiLike: PythonPack = {
   name: "fastapi",
@@ -31,7 +41,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiRoutes(),
       pathParamSyntax: "braces",
       defaultStatusCode: 200,
     },

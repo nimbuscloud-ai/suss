@@ -7,7 +7,7 @@
  * declared readers hand back a function.
  */
 
-import { composeRoutes } from "./routeTable.js";
+import { composeAppRoutes } from "./routeTable.js";
 
 import type {
   AstCapableValueOps,
@@ -25,12 +25,9 @@ export function readRouteTable(
   kind: string,
   module: ModuleOps,
 ): DeclaredUnit[] {
-  const set = composeRoutes(match.table, {
-    files: [{ module, displayPath: module.path() }],
-    ownerOf: () => ({ table: "app" }),
-    include: () => null,
-    naming: { singular: (word) => word, plural: (word) => word },
-  });
+  const set = composeAppRoutes(match.table, [
+    { module, displayPath: module.path() },
+  ]);
   return set.outcomes.map((outcome) => unitOf(outcome, match, kind));
 }
 

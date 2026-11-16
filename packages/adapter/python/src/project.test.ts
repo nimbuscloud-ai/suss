@@ -9,6 +9,7 @@ import { Database } from "@suss/datalog";
 import { classBody, imported } from "@suss/recognize";
 import { addPackWords } from "@suss/resolution";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { resolveCalls, resolvedFunctions } from "./facts/resolve.js";
 import { parsePython } from "./parser.js";
@@ -108,7 +109,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
       annotatedClassIsRequestBody: true,
       injectedParameterCallees: ["Depends", "Security"],
@@ -661,12 +662,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -781,12 +777,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -851,12 +842,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -917,12 +903,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -991,12 +972,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -1052,12 +1028,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            prefixKeyword: "prefix",
-          },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -1131,7 +1102,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };
@@ -1167,12 +1138,16 @@ describe("extractPythonProject", () => {
       workspaceRoot: tmpDir,
     });
 
+    // Nothing mounts the router, so the route is found and claims no path.
     const readItem = summaries.find((s) => s.identity.name === "read_item");
     expect(readItem?.identity.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
-      path: "/{item_id}",
+      path: null,
     });
+    expect(readItem?.gaps.map((gap) => gap.description).join(" ")).toContain(
+      "is never mounted through a single variable binding",
+    );
   });
 
   it("discovers a route on an app a guarded getter builds after writing None", async () => {
@@ -1183,7 +1158,7 @@ describe("extractPythonProject", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET" },
+          routes: fastapiTestRoutes({ get: "GET" }),
         },
       ],
     };

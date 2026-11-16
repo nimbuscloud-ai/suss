@@ -24,7 +24,6 @@ import {
   stripDecorators,
 } from "./ast.js";
 import { readCallArguments } from "./decorators.js";
-import { localStaysPut } from "./droppedApps.js";
 import {
   containedValues,
   objectReturnedBy,
@@ -101,16 +100,6 @@ export interface RouterIndex {
     constructorName: string,
     constructionKey: string,
   ): RoutePrefixResolution;
-  /**
-   * The mounts above the router built by this call, innermost first, up
-   * to the one on the app. Null unless every router on the way is mounted
-   * exactly once by a mount this reading followed, since a route reached
-   * two ways runs only the wrappers of the way a request took.
-   */
-  mountsAbove(
-    pattern: PythonDiscoveryPattern,
-    constructionKey: string,
-  ): MountHop[] | null;
 }
 
 /** An `x = <Constructor>(...)` from an accepted module, and what its call said about a prefix. */
@@ -156,17 +145,8 @@ type MountState =
       /** The router the child is mounted on, or null when it is mounted
        * on the app or a carrier, where a chain starts. */
       parentValueKey: string | null;
-      /** The mount call, and the file it is written in. */
-      written?: { call: PyNode; file: string };
     }
   | { kind: "abstain"; reason: string };
-
-/** One mount above a router: the call that mounts it, and the router it mounts it on, null for the app. */
-export interface MountHop {
-  call: PyNode;
-  file: string;
-  parentKey: string | null;
-}
 
 /** Where a mount call is written: a module's top level, which runs on import, or one function's body, which runs only if something calls it. */
 type MountSite = { kind: "module" } | { kind: "function"; node: number };
@@ -192,8 +172,6 @@ type ConstructionsByName = Map<ModuleBinding, Map<string, Construction>>;
 
 interface PatternIndex {
   composition: RouterComposition;
-  /** The pattern the index was built for, which says the methods it registers with. */
-  pattern: PythonDiscoveryPattern;
   /** Every construction by the value key of the call that built it, so a resolved value finds one whatever module wrote it. */
   byValueKey: Map<string, Construction>;
   /** The project's facts, when the caller built them, so a loop over a call can be settled. */
@@ -220,6 +198,15 @@ interface PatternIndex {
 
 const NOT_ROUTER: RoutePrefixResolution = { kind: "notRouter" };
 
+/** How a pattern that finds its routes by the decorator's callee mounts its routers, unset for a library that mounts none. */
+export function routerCompositionOf(
+  pattern: PythonDiscoveryPattern,
+): RouterComposition | undefined {
+  return pattern.type === "decoratedClassRoute"
+    ? pattern.routerComposition
+    : undefined;
+}
+
 export interface RouterIndexOptions extends ModuleResolverOptions {
   /** The project's facts, so a loop over a call can be settled by the rules. */
   facts?: Database;
@@ -233,15 +220,11 @@ export function buildRouterIndex(
   const byPattern = new Map<PythonDiscoveryPattern, PatternIndex>();
   for (const pack of packs) {
     for (const pattern of pack.discovery) {
-      if (pattern.routerComposition !== undefined) {
+      const composition = routerCompositionOf(pattern);
+      if (composition !== undefined) {
         byPattern.set(
           pattern,
-          buildPatternIndex(
-            files,
-            pattern,
-            pattern.routerComposition,
-            resolverOptions,
-          ),
+          buildPatternIndex(files, pattern, composition, resolverOptions),
         );
       }
     }
@@ -307,33 +290,7 @@ export function buildRouterIndex(
 
       return NOT_ROUTER;
     },
-
-    mountsAbove(pattern, constructionKey) {
-      const index = byPattern.get(pattern);
-      return index === undefined ? null : hopsAbove(index, constructionKey);
-    },
   };
-}
-
-function hopsAbove(index: PatternIndex, key: string): MountHop[] | null {
-  const hops: MountHop[] = [];
-  const seen = new Set<string>();
-  let current: string | null = key;
-  while (current !== null) {
-    const construction = index.byValueKey.get(current);
-    if (construction === undefined || seen.has(current)) {
-      return null;
-    }
-    seen.add(current);
-    const states = index.mounts.get(construction) ?? [];
-    const only = states.length === 1 ? states[0] : undefined;
-    if (only?.kind !== "mounted" || only.written === undefined) {
-      return null;
-    }
-    hops.push({ ...only.written, parentKey: only.parentValueKey });
-    current = only.parentValueKey;
-  }
-  return hops;
 }
 
 /** What a construction the index knows composes to, once the caller has found it by name or by call. */
@@ -612,7 +569,6 @@ function buildPatternIndex(
   const importModule = pattern.importModule;
   const index: PatternIndex = {
     composition,
-    pattern,
     byValueKey: new Map(),
     ...(resolverOptions.facts !== undefined
       ? { facts: resolverOptions.facts }
@@ -1545,36 +1501,6 @@ function importedModuleSpec(
   return null;
 }
 
-/**
- * Whether the mount is called on an app that its own function builds once
- * and then drops, so nobody can request a path the mount adds. The shared
- * rules say where the app goes. DESIGN.md has the cases.
- */
-function appNeverLeavesItsFunction(
-  objectName: string,
-  includerCall: PyNode,
-  position: WalkPosition,
-  scan: Scan,
-): boolean {
-  const facts = scan.index.facts;
-  if (
-    facts === undefined ||
-    scan.composition.mountObjectPrefix !== undefined ||
-    position.site.kind !== "function" ||
-    position.scope.bindings.get(objectName)?.kind !== "assignment"
-  ) {
-    return false;
-  }
-
-  const nameKey = nameKeyIn(scan.bound.file, position.scope.node, objectName);
-  const writes = facts.lookup("binds", 0, nameKey);
-  return (
-    writes.length === 1 &&
-    writes[0]?.[1] === nodeId(scan.bound.file, includerCall) &&
-    localStaysPut(facts, nameKey, scan.index.pattern)
-  );
-}
-
 function recordMountStatement(
   stmt: PyNode,
   position: WalkPosition,
@@ -1582,17 +1508,6 @@ function recordMountStatement(
 ): void {
   const mountCall = mountCallOf(stmt, position.scope, scan);
   if (mountCall === null) {
-    return;
-  }
-
-  if (
-    appNeverLeavesItsFunction(
-      mountCall.objectName,
-      mountCall.includerCall,
-      position,
-      scan,
-    )
-  ) {
     return;
   }
 
@@ -1617,17 +1532,8 @@ function recordMountStatement(
     position.site,
     scan.index.facts,
   );
-  const mounted =
-    args[0] ??
-    (scan.composition.routerKeyword === undefined
-      ? undefined
-      : keywordArgs[scan.composition.routerKeyword]);
-  const recorded: MountState =
-    state.kind === "mounted"
-      ? { ...state, written: { call: mountCall.call, file: scan.bound.file } }
-      : state;
-  for (const target of mountedConstructions(mounted, position, scan)) {
-    recordMount(scan.index, target, recorded);
+  for (const target of mountedConstructions(args[0], position, scan)) {
+    recordMount(scan.index, target, state);
   }
 }
 

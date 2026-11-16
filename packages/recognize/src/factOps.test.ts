@@ -2743,3 +2743,64 @@ describe("a value read as the source writes it", () => {
     expect(valueKeyOf({} as ValueOps)).toBeNull();
   });
 });
+
+describe("what a route table asks of the facts", () => {
+  it("lists each call a receiver written twice is written as, and none for a receiver that comes to one", () => {
+    const twice = source({
+      writtenAs: () => null,
+      writtenAsEach: (key) => (key === "client" ? ["new", "put"] : []),
+    });
+    const shared = opsAt("set", twice);
+    expect(shared.receiver()).toBeNull();
+    expect(shared.receiverCalls?.().map((call) => call.site?.())).toEqual([
+      "new",
+      "put",
+    ]);
+    expect(opsAt("set").receiverCalls?.()).toEqual([]);
+    expect(opsAt("send").receiverCalls?.()).toEqual([]);
+    expect(
+      opsAt("set", source({ writtenAs: () => null })).receiverCalls?.(),
+    ).toEqual([]);
+  });
+
+  it("gives each value in the collection a call returns, and nothing where the adapter settles none", () => {
+    const returning = source({
+      returnedItemsOf: (call) => (call === "send" ? ["a", "b"] : null),
+    });
+    expect(
+      factValueOps("send", returning)
+        .returnedItems?.()
+        ?.map((item) => item.source?.()),
+    ).toEqual(["a", "b"]);
+    expect(factValueOps("put", returning).returnedItems?.()).toBeNull();
+    expect(factValueOps("send", source()).returnedItems?.()).toBeNull();
+  });
+
+  it("says which collection a loop takes an element apart from, and nothing for a value it does not", () => {
+    const db = new Database();
+    db.add("elementPartOf", ["router", "pairs", "1"]);
+    const facts = source({ db });
+    expect(factValueOps("router", facts).elementPart?.()?.source?.()).toBe(
+      "pairs",
+    );
+    expect(factValueOps("router", facts).element?.()).toBeNull();
+    expect(factValueOps("tpl", facts).elementPart?.()).toBeNull();
+  });
+
+  it("hands the modules a file imports whole and the receivers it will read on to the adapter", () => {
+    const asked: string[] = [];
+    const module = factModuleOps("/f.py", source(), {
+      calls: () => [],
+      importedWhole: () => new Set(["fastapi"]),
+      readingReceivers: (methods, of) => {
+        asked.push(`${of}: ${[...methods].join(" ")}`);
+      },
+    });
+    module.readingReceivers?.(new Set(["get"]), "decorators");
+    expect(module.importedWhole?.(["fastapi"])).toEqual(new Set(["fastapi"]));
+    expect(asked).toEqual(["decorators: get"]);
+    const bare = factModuleOps("/f.py", source(), { calls: () => [] });
+    bare.readingReceivers?.(new Set(["get"]), "calls");
+    expect(bare.importedWhole?.(["fastapi"])).toEqual(new Set());
+  });
+});

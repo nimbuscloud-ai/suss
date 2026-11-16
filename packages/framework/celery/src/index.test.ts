@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { fastapiRoutes, ROUTER_UNREAD } from "@suss/framework-fastapi";
 
 import {
   celeryFramework,
@@ -23,7 +24,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { post: "POST" },
+      routes: { table: fastapiRoutes(["fastapi"]), unread: ROUTER_UNREAD },
       pathParamSyntax: "braces",
     },
   ],

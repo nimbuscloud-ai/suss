@@ -20,8 +20,8 @@ app.include_router(router, prefix="/v1")
 
 `@suss/framework-fastapi` exports a `PythonPack`. It covers:
 
-- **Discovery**: a function decorated with a method on the app or on a router, such as `@app.get(path)` or `@router.post(path)`, where the decorator's attribute name is the HTTP verb (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`). The pack recognizes the app and the router by how they are built: `app = FastAPI()` and `router = APIRouter()`, one assignment back from an import of `fastapi`.
-- **Router prefixes**: a route on a router gets its path from the router's own `prefix` and the `prefix` on the single `app.include_router(...)` call that mounts it. That needs both to settle on one string, and the mount has to reach the router through one variable binding, either in the same file or imported from the file that built the router. In any other case the pack still discovers the route by name, with no path, and the summary's gap says why.
+- **Discovery**: a function decorated with a method on the app or on a router, such as `@app.get(path)` or `@router.post(path)`, where the decorator's attribute name is the HTTP verb (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`). The pack recognizes the app and the router by how they are built: `app = FastAPI()` and `router = APIRouter()`, from an import of `fastapi`, or `fastapi.FastAPI()` after `import fastapi`.
+- **Router prefixes**: the pack declares FastAPI's app and routers as a route table. A route on a router gets its path from the `prefix` on each `include_router(...)` call on the way from the app and each router's own `prefix`, through as many routers mounted onto one another as the project writes, in any file. A router mounted twice serves its routes under each mount. In any case the table cannot follow, the pack still discovers the route by name, with no path, and the summary's gap says why.
 - **Boundary bindings**: `rest(method, path)`. The `response_model` and `status_code` keywords and the parameter and return annotations are read as the route's contract.
 - **Where a parameter comes from**: `Header()`, `Query()`, `Path()`, `Body()`, `Form()` and `Cookie()` say which part of the request a parameter is, and `alias=` which field. A header parameter's underscores become hyphens, as FastAPI sends them, so an intent writes `x_tenant_id: str = Header()` as `input.headers.x-tenant-id`. A parameter defaulted to `Depends(f)` or `Security(f)`, or annotated with a class FastAPI supplies (`Request`, `Response`, `BackgroundTasks`, `WebSocket`, `SecurityScopes`), comes from FastAPI and not from the request.
 - **Transitions**: one for each place the handler ends, which means each return and each `HTTPException` it raises. FastAPI sends the raised status, whatever the decorator declares, so a route that raises 404 on one branch and returns on the other comes out as a 404 and a 200, each under the condition that leads to it. The pack lists `HTTPException` under both the module FastAPI exports it from and the Starlette module FastAPI takes it from, so either import matches. When a handler returns a `Response` or `JSONResponse` with a `status_code`, the route responds with that status. A status written as `status.HTTP_404_NOT_FOUND`, from `fastapi` or `starlette`, reads as its number without either installed, because the pack lists Starlette's constants. A `raise` of a name assigned `HTTPException(...)` elsewhere reads the status that call was built with. The keys of a `responses=` dictionary on the route, its router, a mount above it or the app are recorded as statuses the code declares. A spec FastAPI generates lists those statuses for that reason alone, so the check does not ask a path to produce them. A body that runs off its end sends the declared status, the same as a bare `return`. A route that reads any parameter off the request also gets a 422 transition, because FastAPI validates those parameters before the handler runs and sends 422 itself when one does not parse.
@@ -29,7 +29,7 @@ app.include_router(router, prefix="/v1")
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline. It has no analysis logic of its own.
+The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, and on `@suss/extractor` for the route table's types. It has no analysis logic of its own: `@suss/recognize` composes the table.
 
 ## When a route has no path
 
@@ -38,11 +38,11 @@ The decorator's path argument and both prefixes go through the value evaluator. 
 The pack never guesses a path. A route keeps its name and has no path when:
 
 - the decorator's path argument does not come out as a string,
-- the router's own `prefix` or the mount call's `prefix` does not settle on one string,
-- nothing mounts the router through a single variable binding in the files read,
-- the router is mounted more than once,
-- the router is mounted onto another router (a second hop), or
-- the router's variable is assigned a second router construction. Routes bind when the decorator runs, so which construction a decorator or a mount saw depends on the order things run in, and the pack does not follow that.
+- a router's own `prefix` or a mount call's `prefix` on the way from the app does not settle on one string,
+- nothing mounts the router, or a loop the pack cannot list may be what mounts it,
+- a mount on the way is inside a function, while a loop elsewhere the pack cannot list may mount routers in its place,
+- the router is mounted onto a router nothing mounts, or routers mount each other, or
+- the decorator is written on a name assigned two routers. Routes bind when the decorator runs, so which router it saw depends on the order things run in.
 
 Mounted sub-apps are not read.
 

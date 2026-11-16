@@ -2,7 +2,7 @@
   "name": "@suss/framework-fastapi",
   "version": "0.39.0",
   "type": "module",
-  "description": "Pattern pack for extracting suss behavioral summaries from FastAPI routes, composing APIRouter prefixes one include hop deep.",
+  "description": "Pattern pack for extracting suss behavioral summaries from FastAPI routes, composing APIRouter prefixes through every include_router mount.",
   "keywords": [
     "suss",
     "behavioral-summary",
@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@suss/adapter-python": "0.39.0",
+    "@suss/extractor": "0.39.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
