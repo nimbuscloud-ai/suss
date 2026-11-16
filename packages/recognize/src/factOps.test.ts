@@ -2804,3 +2804,130 @@ describe("what a route table asks of the facts", () => {
     expect(bare.importedWhole?.(["fastapi"])).toEqual(new Set());
   });
 });
+
+describe("a request's URL and the receiver it is made on, over the facts", () => {
+  /**
+   * The facts for, in one file:
+   *
+   *   import requests
+   *   from proj import util          # a project module
+   *   requests.get(url)
+   *   params.get("q", timeout=5)     # params = {}
+   *   arg.get("q")                   # a parameter nothing settles
+   *   util.get("q")
+   *   s.get("/x")                    # s = requests.Session()
+   *   requests.adapters.get("/x")
+   *   get("/x")
+   */
+  function requesting(): {
+    facts: FactSource;
+    urls: { key: string; site?: string; at?: unknown }[];
+  } {
+    const db = new Database();
+    const add = (relation: string, ...row: string[]) => db.add(relation, row);
+    add("imports", "requests", "requests", "*");
+    add("imports", "util", "/proj/util.py", "util");
+    add("imports", "util", "proj", "util");
+    add("importsFile", "/app.py", "/proj/util.py");
+    const call = (key: string, object: string) => {
+      add("call", key, `${key}.callee`);
+      add("readsProperty", `${key}.callee`, object, "get");
+    };
+    call("viaModule", "requests");
+    add("callArg", "viaModule", "0", "url");
+    call("viaDict", "params");
+    add("callKeywordArg", "viaDict", "timeout", "five");
+    call("viaParameter", "arg");
+    call("viaProject", "util");
+    call("viaSession", "s");
+    add("call", "made", "requests.Session");
+    add("readsProperty", "requests.Session", "requests", "Session");
+    call("viaSubmodule", "requests.adapters");
+    add("readsProperty", "requests.adapters", "requests", "adapters");
+    add("call", "bare", "get");
+    const written: Record<string, string> = { params: "dict", s: "made" };
+    const urls: { key: string; site?: string; at?: unknown }[] = [];
+    return {
+      urls,
+      facts: {
+        db,
+        read: () => undefined,
+        writtenAs: (key) => written[key] ?? null,
+        anchorCalls: () => [],
+        importedFrom: () => {
+          throw new Error("the rules were asked");
+        },
+        importedAs: () => {
+          throw new Error("the rules were asked");
+        },
+        shapeOf: () => null,
+        textOf: (key) => key,
+        literalOf: () => null,
+        nameOf: () => null,
+        argOf: () => null,
+        urlOf: (key, site, at) => {
+          urls.push({ key, ...(site === undefined ? {} : { site }), at });
+          return { path: "/orders", host: undefined };
+        },
+        constructionSitesOf: (call) => (call === "viaModule" ? ["c1"] : []),
+      },
+    };
+  }
+
+  const REQUESTS = imported({ from: ["requests"], named: ["*", "get"] });
+  const SESSION = constructedFrom({ from: ["requests"], named: ["Session"] });
+
+  function settled(call: string, origin: typeof REQUESTS | typeof SESSION) {
+    return factCallOps(call, requesting().facts)?.receiverSettledFrom?.(origin);
+  }
+
+  it("hands the source the call and argument a URL was read off", () => {
+    const { facts, urls } = requesting();
+    const ops = factCallOps("viaModule", facts);
+    ops?.valueAt(0)?.url?.("c1");
+    factCallOps("viaDict", facts)?.keywordAt?.("timeout")?.url?.();
+    expect(urls).toEqual([
+      { key: "url", site: "c1", at: { call: "viaModule", at: 0 } },
+      { key: "five", at: { call: "viaDict", at: { keyword: "timeout" } } },
+    ]);
+    expect(ops?.constructionSites?.()).toEqual(["c1"]);
+  });
+
+  it("settles a receiver an import binds by the import", () => {
+    expect(settled("viaModule", REQUESTS)).toBe(true);
+    expect(settled("viaModule", SESSION)).toBe(false);
+  });
+
+  it("settles a receiver written as something else as no import", () => {
+    expect(settled("viaDict", REQUESTS)).toBe(false);
+    expect(settled("viaDict", SESSION)).toBe(false);
+  });
+
+  it("settles a receiver written as a construction by the construction's import", () => {
+    expect(settled("viaSession", SESSION)).toBe(true);
+    expect(settled("viaSession", REQUESTS)).toBe(false);
+  });
+
+  it("settles a member read off a whole module by the member's name", () => {
+    expect(settled("viaSubmodule", REQUESTS)).toBe(false);
+  });
+
+  it("settles a parameter as from no import, without following its callers", () => {
+    expect(settled("viaParameter", REQUESTS)).toBe(false);
+  });
+
+  it("leaves open a name imported from a project file", () => {
+    expect(settled("viaProject", REQUESTS)).toBeUndefined();
+  });
+
+  it("settles a call with no receiver, and one into a project method, as from no client", () => {
+    const { facts } = requesting();
+    expect(factCallOps("bare", facts)?.receiverSettledFrom?.(REQUESTS)).toBe(
+      false,
+    );
+    const projectMethod = { ...facts, callsProjectMethod: () => true };
+    expect(
+      factCallOps("viaSession", projectMethod)?.receiverSettledFrom?.(SESSION),
+    ).toBe(false);
+  });
+});

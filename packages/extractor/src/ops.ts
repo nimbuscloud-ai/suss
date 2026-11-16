@@ -223,6 +223,16 @@ import type { EffectArg } from "./index.js";
 export type UnsettledName = "nothing" | "reference";
 
 /**
+ * Where a URL goes, as `ValueOps.url` reads it. The path is undefined
+ * when the value is not a string or has no path in it, and the host is
+ * undefined for a relative URL.
+ */
+export interface UrlTarget {
+  readonly path: string | undefined;
+  readonly host: string | undefined;
+}
+
+/**
  * One value a call states, as the questions a pack can ask about it.
  *
  * `CallOps` reaches the calls around the one in hand, and this reaches the
@@ -325,6 +335,14 @@ export interface ValueOps {
   evaluatedWith?(
     bindings: ReadonlyMap<string, string>,
   ): string | number | boolean | null;
+  /**
+   * What this value comes to read as a URL: its path in the IR's
+   * template form, with a hole for each part the program works out, and
+   * its host when it is absolute. With a site from
+   * `CallOps.constructionSites`, it is read as the construction at that
+   * site made the instance. Null when the adapter cannot read it.
+   */
+  url?(site?: string): UrlTarget | null;
   /**
    * The calls written as statements of the body of the function, block,
    * class or file this value is, in source order, through the branches of
@@ -823,6 +841,11 @@ export interface CallOps {
   /** Whether the receiver came from where the origin says. */
   receiverIsFrom(origin: ReceiverOrigin): boolean;
   /**
+   * Whether the receiver's import statement and written value say it came
+   * from the origin, or undefined when they leave it open. Asks no rules.
+   */
+  receiverSettledFrom?(origin: Imported | ConstructedFrom): boolean | undefined;
+  /**
    * The one path among `paths` the receiver is: spelled as it, or a value
    * the rules followed that global into, such as a parameter a caller
    * passed `process.stdout` to. Null when two of them reach it, and
@@ -929,6 +952,13 @@ export interface CallOps {
    * `model("User", schema)` call it was declared as says everything.
    */
   callee(): CallOps | null;
+  /**
+   * The constructions of the class whose method makes this call, each as
+   * a site `ValueOps.url` can read a value under. A URL the class takes
+   * in its constructor can differ between them. Empty outside a class,
+   * or for a class nothing in the run constructs.
+   */
+  constructionSites?(): readonly string[];
   /**
    * Whether the call goes to a name the program bound, rather than to
    * an expression written in place. `useAppStore(...)` does;
@@ -1365,6 +1395,15 @@ export interface FactSource {
     bindings: ReadonlyMap<string, string>,
   ): string | number | boolean | null;
   /**
+   * The value at the key read as a URL, under the construction at `site`
+   * when one is given. A name in Python or Ruby has a key and no node,
+   * so `at` says which argument of which call the value was read off,
+   * and the adapter reads that argument where the call writes it.
+   */
+  urlOf?(key: string, site?: string, at?: ArgumentRead): UrlTarget | null;
+  /** What `CallOps.constructionSites` gives for the call at the key. */
+  constructionSitesOf?(call: string): readonly string[];
+  /**
    * The text the evaluator settles a string to, split where a piece of
    * it does not settle, for a value the facts write as neither a literal
    * nor a template: `"SELECT id" + " FROM users"`. Null when the value is
@@ -1490,6 +1529,12 @@ export interface FactSource {
    * statement. Unset reads the `imports` rows.
    */
   importedUnder?(key: string, modules: readonly string[]): readonly string[];
+}
+
+/** The argument of one call a value was read off, by position or keyword. */
+export interface ArgumentRead {
+  readonly call: string;
+  readonly at: number | { readonly keyword: string };
 }
 
 /** One argument that becomes a read's key, as a fact source states it. */

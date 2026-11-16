@@ -28,6 +28,7 @@ import { factReadOps, handedInAs } from "./factReadOps.js";
 
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
+  ArgumentRead,
   ByOrigin,
   CallOps,
   CallScope,
@@ -67,6 +68,7 @@ import type {
   StatedSlot,
   Typed,
   UnsettledName,
+  UrlTarget,
   ValueEntry,
   ValueForm,
   ValueOps,
@@ -90,14 +92,33 @@ export function factCallOps(key: string, source: FactSource): CallOps | null {
 
 /** The ops for the value at `key`. */
 export function factValueOps(key: string, source: FactSource): ValueOps {
+  return valueOpsRead(key, source, null);
+}
+
+/** The ops for the value at `key`, noting the argument it was read off when it was. */
+function valueOpsRead(
+  key: string,
+  source: FactSource,
+  read: ArgumentRead | null,
+): ValueOps {
   const value = new FactValue(key, source);
   const ops = source.extendValue?.(key, value) ?? value;
   keysOfValues.set(ops, key);
+  if (read !== null) {
+    argumentsRead.set(value, read);
+  }
   return ops;
 }
 
 /** The key each value the ops handed out was read at, so one value can be compared with another. */
 const keysOfValues = new WeakMap<ValueOps, string>();
+
+/**
+ * The call and argument each value read off one was read at. A name in
+ * Python or Ruby has a key and no node, and two assignments to one name
+ * share the key, so an adapter reads the argument where the call writes it.
+ */
+const argumentsRead = new WeakMap<ValueOps, ArgumentRead>();
 
 /**
  * The ops for the JSX element at `key`: its tag from its `jsxElement`
@@ -327,7 +348,9 @@ class FactCall implements CallOps {
 
   valueAt(index: number): ValueOps | null {
     const argument = this.arguments().get(index);
-    return argument === undefined ? null : factValueOps(argument, this.source);
+    return argument === undefined
+      ? null
+      : valueOpsRead(argument, this.source, { call: this.key, at: index });
   }
 
   keywordAt(name: string): ValueOps | null {
@@ -341,7 +364,14 @@ class FactCall implements CallOps {
       return null;
     }
     this.source.read(passed);
-    return factValueOps(passed, this.source);
+    return valueOpsRead(passed, this.source, {
+      call: this.key,
+      at: { keyword: name },
+    });
+  }
+
+  constructionSites(): readonly string[] {
+    return this.source.constructionSitesOf?.(this.key) ?? [];
   }
 
   /** The `callKeywordArg` rows, which each adapter states in the order the call writes them. */
@@ -423,6 +453,25 @@ class FactCall implements CallOps {
 
   receiverIsFrom(origin: ReceiverOrigin): boolean {
     return byOrigin(receiverOrigin(this), origin);
+  }
+
+  /** The receiver's import rows and the construction it was written as, read as `importSettled` and `madeSettled` say. */
+  receiverSettledFrom(origin: Imported | ConstructedFrom): boolean | undefined {
+    if (this.calleeRead === null) {
+      return false;
+    }
+    if (origin.origin === "imported") {
+      return importSettled(origin, this.calleeRead.object, this.source);
+    }
+    if (this.source.callsProjectMethod?.(this.key) === true) {
+      return false;
+    }
+    const asWritten = this.madeExpression("asWritten");
+    const settled = madeSettled(origin, asWritten, this.source);
+    const through = this.madeExpression("throughProjectCalls");
+    return settled === false && through !== asWritten
+      ? madeSettled(origin, through, this.source)
+      : settled;
   }
 
   /**
@@ -970,6 +1019,10 @@ class FactValue implements ValueOps {
 
   evaluated(): string | number | boolean | null {
     return this.facts.evaluatedOf?.(this.key) ?? null;
+  }
+
+  url(site?: string): UrlTarget | null {
+    return this.facts.urlOf?.(this.key, site, argumentsRead.get(this)) ?? null;
   }
 
   /**
@@ -2745,6 +2798,114 @@ function constructorName(key: string, source: FactSource): string {
     memberRead(key, source)?.name ??
     source.textOf(key)
   );
+}
+
+/**
+ * Whether the value at `key` was imported as the origin asks, by the
+ * file's own import statements: a name an import binds, a member read
+ * off a whole module, or a name written as one of those. A parameter is
+ * from no import, as a callee is, since following one through its
+ * callers would ask the rules at every site. Undefined only when an
+ * import binds the name to a project file, whose own names the rules
+ * follow.
+ */
+function importSettled(
+  origin: Imported,
+  key: string,
+  source: FactSource,
+): boolean | undefined {
+  const rows = importRowsOf(key, source.db);
+  if (rows.length > 0) {
+    return importsSettle(rows, importsAsked(origin, key, source), source);
+  }
+  const read = memberRead(key, source);
+  const objectRows = read === null ? [] : importRowsOf(read.object, source.db);
+  if (read !== null && objectRows.length > 0) {
+    const whole = importNamesOf(read.object, origin.importedFrom, source);
+    return importsSettle(
+      objectRows,
+      whole.includes("*") && namesAsked(origin, read.name),
+      source,
+    );
+  }
+  const written = source.writtenAs(key);
+  return written !== null && importRowsOf(written, source.db).length > 0
+    ? importSettled(origin, written, source)
+    : false;
+}
+
+/** Whether a name an import binds is one the origin asks for. */
+function importsAsked(
+  origin: Imported,
+  key: string,
+  source: FactSource,
+): boolean {
+  return importNamesOf(key, origin.importedFrom, source).some((name) =>
+    namesAsked(origin, name),
+  );
+}
+
+function namesAsked(origin: Imported, name: string): boolean {
+  return origin.named === undefined || origin.named.includes(name);
+}
+
+/** True when the imports say yes, and otherwise false, unless one of them is of a project file. */
+function importsSettle(
+  rows: readonly (readonly unknown[])[],
+  asked: boolean,
+  source: FactSource,
+): boolean | undefined {
+  if (asked) {
+    return true;
+  }
+  return rows.some((row) => importsProjectFile(String(row[1]), source))
+    ? undefined
+    : false;
+}
+
+/** Whether a file in the run is the module an import row names. */
+function importsProjectFile(module: string, source: FactSource): boolean {
+  return source.db.lookup("importsFile", 1, module).length > 0;
+}
+
+/** The exports of the modules the file's own import statements bind the name at `key` to, `*` for a whole module. */
+function importNamesOf(
+  key: string,
+  modules: readonly string[],
+  source: FactSource,
+): readonly string[] {
+  return source.importedUnder === undefined
+    ? importedUnder(key, modules, source.db)
+    : source.importedUnder(key, modules);
+}
+
+/**
+ * Whether `made`, a construction or a callee, came from one of the
+ * origin's modules under an export it asks for, by the import rows of
+ * the name it starts from, as `writtenFrom` asks the rules. Undefined
+ * when that name has no import and the export is one the origin asks for.
+ */
+function madeSettled(
+  origin: ConstructedFrom,
+  made: string,
+  source: FactSource,
+): boolean | undefined {
+  const written = calleeOf(made, source) ?? made;
+  const modules = origin.importedFrom.filter((module) =>
+    namedAs(origin, written, module, source),
+  );
+  if (modules.length === 0) {
+    return false;
+  }
+  const root = rootOf(written, source);
+  const rows = importRowsOf(root, source.db);
+  return rows.length === 0
+    ? undefined
+    : importsSettle(
+        rows,
+        importNamesOf(root, modules, source).length > 0,
+        source,
+      );
 }
 
 /** Whether the value at `key` was imported from one of the origin's modules under a name it asks for. */

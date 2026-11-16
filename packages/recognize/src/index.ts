@@ -14,6 +14,7 @@ export { readSpellingsOf, siteReadOf } from "./compileReads.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared, discoverEntryObject } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
+export { httpRequests, verbs } from "./httpRequests.js";
 export { messageReceives } from "./messageReceives.js";
 export { messageSends } from "./messageSends.js";
 export {
@@ -36,6 +37,7 @@ export {
   declarationsIn,
   describeDiscovery,
   pack,
+  requestRecognizersOf,
   subUnitsOf,
 } from "./pack.js";
 export { renderedProps } from "./renderedProps.js";
@@ -74,6 +76,8 @@ export type {
   ArgumentPick,
   ArgumentPosition,
   ArgumentsFrom,
+  BaseJoin,
+  BaseUrlLink,
   CallbackAnyArgument,
   CallbackArgument,
   CallbackBlock,
@@ -121,6 +125,7 @@ export type {
   FunctionsLink,
   GetterMeaning,
   GettersLink,
+  HttpRequestEnding,
   InputLink,
   InputRule,
   InterpolatesLink,
@@ -157,12 +162,16 @@ export type {
   RelatedAccess,
   RelationsLink,
   RenderedPropsLink,
+  RequestMethod,
   RuntimeReadEnding,
   ScheduleEnding,
   ScheduleUnread,
   SchemaParse,
   ScopeLink,
   SelectorParamPick,
+  SentAsNamed,
+  SentAsObject,
+  SentFromArgument,
   SlotsLink,
   SqlEnding,
   SqlMethod,
@@ -200,6 +209,7 @@ export type { ReadSpellings, SiteRead } from "./compileReads.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
+export type { HttpRequests, HttpRequestsSpec } from "./httpRequests.js";
 export type {
   MessageReceives,
   MessageReceivesSpec,

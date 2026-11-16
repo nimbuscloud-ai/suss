@@ -1861,6 +1861,8 @@ export interface PatternPack {
    * emission and argument types follow the `invocationRecognizers` rules.
    */
   accessRecognizers?: AccessRecognizer[];
+  /** The HTTP requests the library's calls send, which an adapter's client walk reads. */
+  requestRecognizers?: RequestRecognizer[];
   /**
    * What the pack wrote as data, for the pack health report. A pack
    * written as a hand-rolled walk leaves it out, and the report says so.
@@ -1911,6 +1913,52 @@ export type InvocationRecognizer<TCtx = unknown> = ((
   readonly claimsChainStart?: true;
   /** The attributes the hook's class container names its class by first. */
   readonly containerAttributes?: readonly string[];
+};
+
+/**
+ * One HTTP request a call makes, under one construction of the class the
+ * call is written in when the URL differs between them.
+ */
+export interface RequestClaim {
+  readonly method: string;
+  /** Null when the URL reads as no path, or as only holes and slashes under a host suss did not read. */
+  readonly path: string | null;
+  readonly host: string | undefined;
+  /** What the call does with a redirect, when it says so itself. */
+  readonly redirectDelivery?: RedirectDelivery;
+}
+
+/** What the library's response object gives a caller, by what each member means. */
+export interface ClientResponse {
+  /** Members whose value is the status code: `status_code`. */
+  readonly statusCode?: readonly string[];
+  /** Members that say the request succeeded, a status in 200 to 299: `ok`. */
+  readonly success?: readonly string[];
+  /** Members that give the body: `json`, `text`. */
+  readonly body?: readonly string[];
+  /** Members that give the headers. */
+  readonly headers?: readonly string[];
+  /** Whether a refused request comes back as a response or raises where it was made. */
+  readonly failureDelivery?: "response" | "exception";
+  /** Whether the client follows a redirect itself or hands the 3xx back. */
+  readonly redirectDelivery?: RedirectDelivery;
+  /** The option one call passes to change `redirectDelivery` for itself. */
+  readonly redirectOption?: RedirectOption;
+}
+
+/**
+ * Per-call hook for a library that sends HTTP requests. The adapter calls
+ * it on every call its client walk visits, with the ops on the context
+ * as an invocation recognizer gets them, and builds a client unit around
+ * each claim from the function the call is written in. Null, or none, is
+ * no request.
+ */
+export type RequestRecognizer<TCtx = unknown> = ((
+  call: unknown,
+  ctx: TCtx,
+) => readonly RequestClaim[] | null) & {
+  /** What a caller can read off the response, which every claim's unit says. */
+  readonly response: ClientResponse;
 };
 
 /**
