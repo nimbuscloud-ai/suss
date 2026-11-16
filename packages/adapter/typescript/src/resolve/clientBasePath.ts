@@ -14,6 +14,7 @@
 import { Node } from "ts-morph";
 
 import { hasNameHole } from "@suss/behavioral-ir";
+import { statedRequestPath } from "@suss/values";
 
 import { clientConstructionCall } from "../discovery/clientCall.js";
 import { hostFromArgument, pathFromProperty } from "./routePath.js";
@@ -61,6 +62,37 @@ export function clientBaseHost(
   return config === undefined
     ? undefined
     : hostFromArgument(config, match.basePathOption, resolution, site);
+}
+
+/** Where a request goes: its path in the IR's template form, and its host when suss read one. */
+export interface RequestTarget {
+  path: string | undefined;
+  host: string | undefined;
+}
+
+/**
+ * Where a call sends its request once its own URL is read: under the
+ * instance's base, unless the URL has a host of its own, the way axios
+ * sends it.
+ * A path that says nothing about where it goes is dropped before the
+ * base goes on, so a forwarding wrapper still states no route of its own.
+ */
+export function requestTargetAt(
+  call: CallExpression,
+  match: DiscoveryPattern["match"] | undefined,
+  own: RequestTarget,
+  resolution: ResolutionStore | undefined,
+  site?: string,
+): RequestTarget {
+  const host = own.host ?? clientBaseHost(call, match, resolution, site);
+  const base =
+    own.host === undefined
+      ? clientBasePath(call, match, resolution, site)
+      : undefined;
+  return {
+    path: underBasePath(base, statedRequestPath(own.path, host)),
+    host,
+  };
 }
 
 /**
