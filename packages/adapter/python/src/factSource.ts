@@ -12,6 +12,8 @@ import {
   classBodyCalls,
   fileOfKey,
   givenBackFunction,
+  spanOfKey,
+  staysInItsFunction,
 } from "@suss/resolution";
 import { scalarOf } from "@suss/values";
 
@@ -30,6 +32,7 @@ import {
   originsOf,
   resolveCalls,
   resolveStreamObjects,
+  usesOf,
   writtenValueOf,
 } from "./facts/resolve.js";
 import { argOf } from "./paths/effects.js";
@@ -97,6 +100,8 @@ export function pythonFactSource(db: Database): PythonFactSource {
       return node === null ? ops : Object.assign(ops, { ast: () => node });
     },
     literalOf: (key) => literalOf(nodeAt(key)),
+    writesNothing: (key) => nodeAt(key)?.type === "none",
+    dropped: (call, owned) => droppedInItsFunction(db, call, owned),
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
       const settled = node === null ? null : stringValueOf(node, db);
@@ -419,6 +424,31 @@ function formOf(node: PyNode | null): ValueForm {
 }
 
 /** A string, number or boolean the source writes out at this node, read as written. */
+/**
+ * Whether the call's value is written to one local of a function, once,
+ * and stays there: nothing passes it on, and every method called on it
+ * is one of `owned`. A module-level name is keyed by the file and not by
+ * a function's span, and whoever imports the module may serve it.
+ */
+function droppedInItsFunction(
+  db: Database,
+  call: string,
+  owned: ReadonlySet<string>,
+): boolean {
+  const names = db.lookup("binds", 1, call).map((row) => String(row[0]));
+  const [local] = names;
+  if (names.length !== 1 || local === undefined) {
+    return false;
+  }
+  const scope = local.slice(0, local.lastIndexOf("#"));
+  const writes = db.lookup("binds", 0, local);
+  return (
+    spanOfKey(scope) !== null &&
+    writes.length === 1 &&
+    staysInItsFunction(usesOf(db, local), owned)
+  );
+}
+
 function literalOf(node: PyNode | null): string | number | boolean | null {
   if (node === null) {
     return null;

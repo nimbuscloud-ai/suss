@@ -612,6 +612,37 @@ class FactCall implements CallOps {
         });
   }
 
+  /** The one call `returnsValue` gives the callee's function, when its positional `callArg` rows are the function's parameters in order. */
+  returnedCall(): CallOps | null {
+    const func = functionBehind(this.calleeKey, this.source);
+    const returned =
+      func === null
+        ? null
+        : onlyKey(
+            this.source.db
+              .lookup("returnsValue", 0, func)
+              .map((row) => String(row[1])),
+          );
+    if (
+      func === null ||
+      returned === null ||
+      !isCall(returned, this.source) ||
+      !passesParametersInOrder(returned, func, this.source)
+    ) {
+      return null;
+    }
+    return factCallOps(returned, this.source);
+  }
+
+  dropped(owned: ReadonlySet<string>): boolean {
+    return this.source.dropped?.(this.key, owned) ?? false;
+  }
+
+  /** The function `makesCall` says writes the call. */
+  callerSite(): string | null {
+    return only(this.source.db.lookup("makesCall", 1, this.key), 0);
+  }
+
   private madeExpression(reading: "asWritten" | "throughProjectCalls"): string {
     if (this.calleeRead === null) {
       return this.calleeKey;
@@ -1168,8 +1199,20 @@ class FactValue implements ValueOps {
     return mentionsWords(this.key, words, this.facts);
   }
 
-  asCall(): CallOps | null {
-    return factCallOps(this.key, this.facts);
+  /** Followed, the value is read the way `receiver()` reads a receiver, so the two give one site for one construction. */
+  asCall(how?: { readonly follow: "namesAndFields" }): CallOps | null {
+    const key =
+      how === undefined
+        ? this.key
+        : madeThroughProjectCall(
+            settled(this.key, this.facts, how.follow),
+            this.facts,
+          );
+    return factCallOps(key, this.facts);
+  }
+
+  nothing(): boolean {
+    return this.facts.writesNothing?.(this.key) ?? false;
   }
 
   elements(tag: string): readonly ElementOps[] {
@@ -1352,6 +1395,23 @@ function importedDeclaration(
       : { file: String(module), name: String(name) };
   }
   return null;
+}
+
+/** Whether the call passes `func`'s parameters at their own positions, and nothing else by position. */
+function passesParametersInOrder(
+  call: string,
+  func: string,
+  source: FactSource,
+): boolean {
+  const parameters = source.db.lookup("paramOf", 0, func).length;
+  const passed = source.db.lookup("callArg", 0, call);
+  return (
+    passed.length === parameters &&
+    passed.every(
+      (row) =>
+        parameterPosition(String(row[2]), func, source) === Number(row[1]),
+    )
+  );
 }
 
 function parameterPosition(

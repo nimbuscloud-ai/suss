@@ -1019,6 +1019,105 @@ describe("the ops over a value kept in a name or returned by a project function"
 });
 
 /**
+ * `app.include(users.router, routerRef)` in `handler`, with both names
+ * written as `APIRouter()`, a literal for no value, and calls into
+ * `api_route(path)`, which returns `ns.route(path)`, `swap(a, b)`, which
+ * returns `ns.route(b, a)`, and `plain()`, which returns a string.
+ */
+function mounting(over: Partial<FactSource> = {}): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("call", "include1", "app.include");
+  add("readsProperty", "app.include", "app", "include");
+  add("callArg", "include1", "0", "users.router");
+  add("callArg", "include1", "1", "routerRef");
+  add("readsProperty", "users.router", "usersRef", "router");
+  add("call", "routerCall", "APIRouter");
+  add("makesCall", "handler", "include1");
+  add("call", "wrapped", "api_route");
+  add("func", "api_route");
+  add("paramOf", "api_route", "0", "api_route#path");
+  add("returnsValue", "api_route", "inner");
+  add("call", "inner", "ns.route");
+  add("readsProperty", "ns.route", "ns", "route");
+  add("callArg", "inner", "0", "api_route#path");
+  add("call", "swapped", "swap");
+  add("func", "swap");
+  add("paramOf", "swap", "0", "swap#a");
+  add("paramOf", "swap", "1", "swap#b");
+  add("returnsValue", "swap", "inner2");
+  add("call", "inner2", "ns.route");
+  add("callArg", "inner2", "0", "swap#b");
+  add("callArg", "inner2", "1", "swap#a");
+  add("call", "plainCall", "plain");
+  add("func", "plain");
+  add("returnsValue", "plain", "text");
+  add("writtenValue", "text");
+  add("call", "unknownCall", "unknown");
+  const written: Record<string, string> = {
+    "users.router": "routerCall",
+    routerRef: "routerCall",
+  };
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: (key) => written[key] ?? null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: () => [],
+    shapeOf: () => null,
+    textOf: (key) => key,
+    literalOf: () => null,
+    nameOf: () => null,
+    argOf: () => null,
+    ...over,
+  };
+}
+
+describe("the ops a route table reads a mounted value, a wrapper and a dropped app through", () => {
+  it("reads a name or a field as the call it was written as only when asked to follow them", () => {
+    const mount = opsAt("include1", mounting());
+    const field = mount.valueAt(0);
+    const name = mount.valueAt(1);
+
+    expect(field?.asCall?.()).toBeNull();
+    expect(field?.asCall?.({ follow: "namesAndFields" })?.site?.()).toBe(
+      "routerCall",
+    );
+    expect(name?.asCall?.({ follow: "namesAndFields" })?.site?.()).toBe(
+      "routerCall",
+    );
+  });
+
+  it("reads the literal for no value where the adapter says it is written", () => {
+    const facts = mounting({ writesNothing: (key) => key === "none" });
+
+    expect(factValueOps("none", facts).nothing?.()).toBe(true);
+    expect(factValueOps("text", facts).nothing?.()).toBe(false);
+    expect(factValueOps("none", mounting()).nothing?.()).toBe(false);
+  });
+
+  it("reads the call a project wrapper returns only when the wrapper passes its parameters on in order", () => {
+    const facts = mounting();
+
+    expect(opsAt("wrapped", facts).returnedCall?.()?.site?.()).toBe("inner");
+    expect(opsAt("swapped", facts).returnedCall?.()).toBeNull();
+    expect(opsAt("plainCall", facts).returnedCall?.()).toBeNull();
+    expect(opsAt("unknownCall", facts).returnedCall?.()).toBeNull();
+  });
+
+  it("says which function writes a call, and whether the adapter says what it builds is dropped", () => {
+    const owned = new Set(["include"]);
+    const dropping = mounting({ dropped: (call) => call === "include1" });
+
+    expect(opsAt("include1", mounting()).callerSite?.()).toBe("handler");
+    expect(opsAt("wrapped", mounting()).callerSite?.()).toBeNull();
+    expect(opsAt("include1", dropping).dropped?.(owned)).toBe(true);
+    expect(opsAt("include1", mounting()).dropped?.(owned)).toBe(false);
+  });
+});
+
+/**
  * The facts for a Worker's trigger handed `env`, in TypeScript's rows:
  *
  *   env.SESSIONS.get("a")
