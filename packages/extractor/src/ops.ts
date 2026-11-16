@@ -615,6 +615,16 @@ export interface ClassValueOps {
   writesBase(): boolean;
   /** The methods the class writes itself, instance ones or the class's own, in source order. */
   members(kind: "instance" | "singleton"): readonly ModuleMember[];
+  /**
+   * The classes the class body writes as statements of its own, in source
+   * order, each under the name the body declares it with: `class TestB:`
+   * inside `class TestA:` in Python, a class or module inside a Ruby class
+   * or module. `asClass()` on the value reads it as a class. A class
+   * written inside a method, a block or a branch of the body is not one of
+   * them. TypeScript writes no class declaration in a class body, so its
+   * classes have none.
+   */
+  classes(): readonly ModuleMember[];
   /** The string the class body assigns to the name, shared or the class's own, or null. */
   attribute?(name: string): string | null;
   /**

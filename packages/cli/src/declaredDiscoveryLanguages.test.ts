@@ -41,6 +41,7 @@ import type {
   EntryObject,
   EntryObjectMatch,
   ManifestEntry,
+  ModuleOps,
   PatternPack,
   UnitSpec,
 } from "@suss/extractor";
@@ -531,6 +532,124 @@ describe("subclassOf", () => {
         ENTRYPOINTS,
       ),
     ).toEqual(["handler Billing::Nightly.fetch function-call", ...expected]);
+  });
+});
+
+/** Each class the class at `name` writes in its body, as `Name method method`, or null when the module has no such class. */
+function nestedClasses(module: ModuleOps, name: string): string[] | null {
+  const outer = module.export([name])?.asClass?.() ?? null;
+  return outer === null
+    ? null
+    : outer.classes().map((nested) => {
+        const methods = nested.value.asClass?.()?.members("instance") ?? [];
+        return [nested.name, ...methods.map((method) => method.name)].join(" ");
+      });
+}
+
+describe("classes on a class", () => {
+  it("lists the classes the body writes as its own statements, under the names it declares them with, in Python and Ruby", async () => {
+    const pythonTree = await parsePython(
+      [
+        "class TestOuter:",
+        "    def test_one(self):",
+        "        pass",
+        "",
+        "    class TestInner:",
+        "        def test_two(self):",
+        "            pass",
+        "",
+        "    @marked",
+        "    class TestMarked:",
+        "        def test_three(self):",
+        "            pass",
+        "",
+        "    Alias = TestInner",
+        "",
+        "    if True:",
+        "        class InBranch:",
+        "            pass",
+        "",
+        "    def helper(self):",
+        "        class InMethod:",
+        "            pass",
+        "        return InMethod",
+        "",
+      ].join("\n"),
+    );
+    const pythonDb = pythonFacts({
+      file: "test_outer.py",
+      root: pythonTree.rootNode,
+      module: bindModule(pythonTree.rootNode),
+      packs: [],
+    });
+    const python = factModuleOps("test_outer.py", pythonFactSource(pythonDb), {
+      calls: () => [],
+    });
+
+    const rubyTree = await parseRuby(
+      [
+        "class Outer",
+        "  class Inner",
+        "    def two",
+        "    end",
+        "  end",
+        "",
+        "  module Helpers",
+        "    def three",
+        "    end",
+        "  end",
+        "",
+        "  Alias = Inner",
+        "",
+        "  if true",
+        "    class InBranch",
+        "    end",
+        "  end",
+        "",
+        "  def helper",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const rubyDb = rubyFacts({
+      file: "outer.rb",
+      root: rubyTree.rootNode,
+      packs: [],
+    });
+    const ruby = factModuleOps("outer.rb", rubyFactSource(rubyDb), {
+      calls: () => [],
+    });
+
+    expect(nestedClasses(python, "TestOuter")).toEqual([
+      "TestInner test_two",
+      "TestMarked test_three",
+    ]);
+    expect(nestedClasses(ruby, "Outer")).toEqual([
+      "Inner two",
+      "Helpers three",
+    ]);
+  });
+
+  // A TypeScript class body declares members, and a class expression held
+  // by a static property is a value of the class, not a class it writes.
+  it("lists none in TypeScript", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/outer.ts",
+      [
+        "export class Outer {",
+        "  static Inner = class { two() { return 2; } };",
+        "  helper() {",
+        "    class Local {}",
+        "    return Local;",
+        "  }",
+        "}",
+      ].join("\n"),
+    );
+    expect(
+      nestedClasses(moduleOpsFor(file, new ResolutionStore()), "Outer"),
+    ).toEqual([]);
   });
 });
 

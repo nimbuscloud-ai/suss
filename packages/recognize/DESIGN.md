@@ -353,6 +353,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `fieldCalls()` | the `holdsProperty(c, n, v)` and `declaresDefault(c, n, v)` rows whose `v` is a call, in source order, each under its plain name |
 | `writesBase()` | an `extendsNamed(c, n)` row, which an adapter states for a base the declaration writes and never for a mixin |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
+| `classes()` on a class | the `holdsProperty(c, n, v)` rows whose `v` is itself a class as `asClass()` reads one, without following `comesTo`, in source order, each under `n`. Python and Ruby state one for each class or module written as a statement of the body, so a name the body sets to another class is not one. A nested Python class has no `exportsAs` row, so `n` is the only name the facts give it |
 | `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed. With `{ follow: "namesAndFields" }`, the value is read the way `receiver()` reads a receiver, so `include_router(users.router)` and `@router.get` on the same router give one call |
 | `nothing()` | the adapter's `writesNothing` on the value's own key: `None`, `nil`, or `null` and `undefined` |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
