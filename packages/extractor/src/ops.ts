@@ -386,6 +386,13 @@ export interface ValueOps {
    */
   read?(): ValueRead | null;
   /**
+   * The member read this value is written as in place: a read, as `read`
+   * gives one but without following a name, or in a language that writes
+   * a member read as a call with no arguments, that call, as Ruby writes
+   * `Entry.id`. Null for anything else.
+   */
+  memberRead?(): ValueRead | null;
+  /**
    * The collection this value is one element of, when it is a name a loop
    * or a callback is given one element at a time: `record` in
    * `for (const record of event.Records)`. Null for anything else.
@@ -472,6 +479,20 @@ export interface ValueOps {
    * or a helper that builds it elsewhere, is not entered.
    */
   readsOff?(object: ValueOps): readonly string[];
+  /**
+   * The operands this value compares, one entry for each pair of
+   * neighbouring operands with the operator between them, when the value
+   * is a comparison: `User.id == x` is `User.id`, `==`, `x`. Empty for
+   * any other value.
+   */
+  comparisons?(): readonly Comparison[];
+  /**
+   * The name of the class this value is, or is one of, as the adapter
+   * reads it: `User` for `User`, and for a variable the class its
+   * annotation or its assignment gives. A value declared as a type from
+   * one of `notFrom`'s modules is no model, and gives null.
+   */
+  className?(notFrom: readonly string[]): string | null;
   /**
    * The path among the runtime object's that this value is: the one it
    * is spelled as, or the object's first path when the rules followed
@@ -802,6 +823,13 @@ export interface CallOps {
    */
   receiver(): CallOps | null;
   /**
+   * The value the method is called on, as the source writes it: `db` in
+   * `db.query(User)`, and `Orders.query()` in `Orders.query().first()`.
+   * Null for a call that is not a method call, and unset in an adapter
+   * that cannot say.
+   */
+  receiverValue?(): ValueOps | null;
+  /**
    * The call these ops are about, as a key that any two ops over the
    * same call share. A walk up the receivers keeps the keys it has
    * passed, since `x = x.next()` makes `x.next()` its own receiver.
@@ -999,6 +1027,13 @@ export interface CallOps {
   statesSlots?(effect: Effect, slots: readonly StatedSlot[]): void;
 }
 
+/** Two neighbouring operands of a comparison and the operator between them. */
+export interface Comparison {
+  readonly left: ValueOps;
+  readonly operator: string;
+  readonly right: ValueOps;
+}
+
 /** The call a result is passed to, at a position or under a keyword. */
 export interface PassedTo {
   readonly call: CallOps;
@@ -1170,6 +1205,12 @@ export interface FactSource {
    */
   memberName?(stated: string): string | null;
   /**
+   * Whether the language writes a member read as a call with no
+   * arguments, as Ruby writes `user.name`. Unset reads such a call as a
+   * call.
+   */
+  readsMembersAsCalls?: boolean;
+  /**
    * The class a callee makes one of, for a language that makes one by
    * calling a method on the class: `Connection` for the `new` in
    * `PG::Connection.new`. Null for any other callee, and unset where
@@ -1283,6 +1324,12 @@ export interface FactSource {
    * not a string. Unset leaves such a value with no parts.
    */
   partsOf?(key: string): readonly string[] | null;
+  /**
+   * The name of the class the value at the key is, or is one of, by the
+   * adapter's own reading of its language, or null. Unset reads the
+   * class the facts settle the value to.
+   */
+  classNameOf?(key: string, notFrom: readonly string[]): string | null;
   /**
    * The calls the class at the key makes in its body, in source order:
    * what the rules' `classBodyCall` gives. Unset reads the body's own

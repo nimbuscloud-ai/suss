@@ -8,10 +8,15 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
+  queryChains,
   rawStatements,
+  SESSION_WRITES,
+  SESSION_RECORDS_NOTHING as SQLALCHEMY_RECORDS_NOTHING,
+  SQLALCHEMY_TYPES,
   sqlalchemyClassBodies,
   sqlalchemyModels,
   sqlalchemyStorage,
+  TABLE_METHODS,
   withStatements,
 } from "@suss/framework-sqlalchemy";
 import { classBody, imported } from "@suss/recognize";
@@ -22,6 +27,7 @@ import type {
   StoragePattern,
 } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
+import type { QueryTypes } from "@suss/framework-sqlalchemy";
 import type { PackDeclaration } from "@suss/ir-core";
 import type { PatternPack } from "@suss/recognize";
 
@@ -41,42 +47,37 @@ export const optionsSchema = z
 
 export type SqlmodelPackOptions = z.infer<typeof optionsSchema>;
 
-const SESSION_WRITES = [
-  "update",
-  "delete",
-  "add",
-  "add_all",
-  "merge",
-  "flush",
-  "commit",
-  "bulk_save_objects",
-  "bulk_insert_mappings",
-  "bulk_update_mappings",
+/** `exec` is SQLModel's name for `execute`, and records nothing either. */
+const SESSION_RECORDS_NOTHING = ["exec", ...SQLALCHEMY_RECORDS_NOTHING];
+
+/** SQLModel's session types and statements, then SQLAlchemy's. */
+export const SQLMODEL_TYPES: readonly QueryTypes[] = [
+  {
+    module: "sqlmodel",
+    types: ["Session"],
+    writes: SESSION_WRITES,
+    recordsNothing: SESSION_RECORDS_NOTHING,
+  },
+  {
+    module: "sqlmodel.ext.asyncio.session",
+    types: ["AsyncSession"],
+    writes: SESSION_WRITES,
+    recordsNothing: SESSION_RECORDS_NOTHING,
+  },
+  {
+    module: "sqlmodel",
+    types: ["Select", "SelectOfScalar", "Update", "Delete", "Insert"],
+    writes: ["update", "delete", "insert", "commit"],
+    values: ["values"],
+  },
+  ...SQLALCHEMY_TYPES,
 ];
 
 /**
- * `exec`, `execute` and the scalar calls run a statement whose own chain
- * is read already, and the rest only manage the session. `exec` is
- * SQLModel's name for `execute`.
- */
-const SESSION_RECORDS_NOTHING = [
-  "exec",
-  "execute",
-  "scalars",
-  "scalar",
-  "begin",
-  "rollback",
-  "close",
-  "expire",
-  "expire_all",
-  "expunge",
-  "expunge_all",
-];
-
-/**
- * SQLModel's query types and write methods under the modules SQLModel
- * exports them from, followed by SQLAlchemy's. A SQLModel project still
- * imports from `sqlalchemy` for anything SQLModel does not re-export.
+ * The statements SQLModel builds with a function the file imports from
+ * the package root, `select(Item).where(...)`, followed by SQLAlchemy's.
+ * A SQLModel project still imports from `sqlalchemy` for anything
+ * SQLModel does not re-export.
  */
 export function sqlmodelStorage(
   options: SqlmodelPackOptions,
@@ -84,27 +85,11 @@ export function sqlmodelStorage(
   return [
     {
       module: "sqlmodel",
-      queryTypes: ["Session"],
-      writes: SESSION_WRITES,
-      recordsNothing: SESSION_RECORDS_NOTHING,
-      storageSystem: options.storageSystem,
-    },
-    {
-      module: "sqlmodel.ext.asyncio.session",
-      queryTypes: ["AsyncSession"],
-      writes: SESSION_WRITES,
-      recordsNothing: SESSION_RECORDS_NOTHING,
-      storageSystem: options.storageSystem,
-    },
-    {
-      module: "sqlmodel",
-      queryTypes: ["Select", "SelectOfScalar", "Update", "Delete", "Insert"],
+      queryTypes: [],
       writes: ["update", "delete", "insert", "commit"],
-      // `select(Item).where(...)` calls a constructor imported from the
-      // package root, so there is no project method in the chain whose
-      // return type the adapter could read.
       queryFunctions: ["select", "insert", "update", "delete"],
       valueMethods: ["values"],
+      tableMethods: TABLE_METHODS,
       storageSystem: options.storageSystem,
     },
     ...sqlalchemyStorage(options),
@@ -168,7 +153,10 @@ export function withSqlmodel(
       models: [...(pack.models ?? []), ...sqlmodelModels()],
       classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
     },
-    sqlmodelRawStatements(options),
+    [
+      ...sqlmodelRawStatements(options),
+      queryChains("sqlmodel-queries", SQLMODEL_TYPES, options),
+    ],
   );
 }
 

@@ -1628,12 +1628,17 @@ function emitComparison(emitter: Emitter, binary: RbNode): void {
   const left = field(binary, "left");
   const right = field(binary, "right");
   if (left !== null && right !== null) {
+    const comparisonKey = nodeId(emitter.filePath, binary);
+    const leftKey = valueKey(emitter, left, binary);
+    const rightKey = valueKey(emitter, right, binary);
+    add(emitter, "compares", comparisonKey, leftKey, rightKey);
     add(
       emitter,
-      "compares",
-      nodeId(emitter.filePath, binary),
-      valueKey(emitter, left, binary),
-      valueKey(emitter, right, binary),
+      "comparesWith",
+      comparisonKey,
+      leftKey,
+      field(binary, "operator")?.text ?? "",
+      rightKey,
     );
   }
 }

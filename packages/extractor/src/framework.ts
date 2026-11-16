@@ -1899,12 +1899,15 @@ export interface DeclaredMatch {
 
 /**
  * Per-call recognizer hook. `PatternPack.invocationRecognizers` says when
- * it is called and what it returns.
+ * it is called and what it returns. A hook that reads a chain of calls
+ * once, at the call that ends it, says `claimsChainStart`: the call it
+ * claims is the one that starts the chain, the call into the library,
+ * so an adapter does not report that call as one it lost.
  */
-export type InvocationRecognizer<TCtx = unknown> = (
+export type InvocationRecognizer<TCtx = unknown> = ((
   call: unknown,
   ctx: TCtx,
-) => Effect[] | null;
+) => Effect[] | null) & { readonly claimsChainStart?: true };
 
 /**
  * Per-access recognizer hook. `PatternPack.accessRecognizers` says when

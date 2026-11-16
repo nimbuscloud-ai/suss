@@ -144,6 +144,63 @@ describe("the Python fact source", () => {
     expect(source.typedAs?.(String(read), anyOf("other"))).toBe(false);
   });
 
+  it("names a model the way the storage reader does, and a receiver a project function says is a query as one", async () => {
+    const tree = await parsePython(
+      [
+        "from sqlalchemy.orm import Query, Session",
+        "",
+        "class Order:",
+        "    pass",
+        "",
+        "def query() -> Query:",
+        "    return None",
+        "",
+        "def load(db: Session, order: Order, other):",
+        "    db.add(order)",
+        "    db.add(Order)",
+        "    db.add(other)",
+        "    query().first()",
+        "    other.first()",
+      ].join("\n"),
+    );
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const callAt = (text: string) =>
+      db
+        .facts("call")
+        .map((row) => String(row[0]))
+        .find((call) => source.textOf(call) === text) ?? "";
+    const classOf = (text: string) => {
+      const [, , argument] =
+        db.lookup("callArg", 0, callAt(text)).find((row) => row[1] === "0") ??
+        [];
+      return source.classNameOf?.(String(argument), ["sqlalchemy"]);
+    };
+    const query = {
+      origin: "typed" as const,
+      importedFrom: ["sqlalchemy.orm"],
+      named: ["Query"],
+    };
+
+    expect(classOf("db.add(order)")).toBe("Order");
+    expect(classOf("db.add(Order)")).toBe("Order");
+    expect(classOf("db.add(other)")).toBeNull();
+    expect(source.typedAs?.(callAt("query().first()"), query)).toBe(true);
+    expect(
+      source.typedAs?.(callAt("query().first()"), {
+        ...query,
+        named: ["Session"],
+      }),
+    ).toBe(false);
+    expect(source.typedAs?.(callAt("other.first()"), query)).toBe(false);
+  });
+
   it("gives the module an import statement spells, and nothing for a name the file assigns", async () => {
     const { source, held } = await sourceFor();
 

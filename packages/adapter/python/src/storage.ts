@@ -8,7 +8,6 @@
 import { runPackRecognizer } from "@suss/extractor";
 import { storageBinding } from "@suss/ir-core";
 import { factCallOps, SlotsHeard } from "@suss/recognize/ops";
-import { answersFor } from "@suss/resolution";
 
 import {
   allChildren,
@@ -25,15 +24,20 @@ import {
   fieldArguments,
 } from "./constructions.js";
 import { inModule, pythonFactSource } from "./factSource.js";
-import { originsOf, resolveCalls, settledFunction } from "./facts/resolve.js";
+import { originsOf, resolveCalls } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
+import {
+  isClassName,
+  modelArgument,
+  receiverCall,
+  returnTypeName,
+  rootOf,
+  settledCallee,
+  topPackage,
+} from "./modelNames.js";
 import { bodyCalls, calleeText } from "./paths/effects.js";
 import { ownReceiverName } from "./reach/receivers.js";
-import {
-  firstInBody,
-  receiverTypeOrigins,
-  statedTypeName,
-} from "./receiverTypes.js";
+import { receiverTypeOrigins } from "./receiverTypes.js";
 import {
   constructionSitesOf,
   evaluationScope,
@@ -44,10 +48,14 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PackRecognizer } from "@suss/extractor";
 import type { HeardSlot } from "@suss/recognize/ops";
+import type { ModelNaming } from "./modelNames.js";
 import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { BoundPythonFile } from "./routers.js";
+
+/** The name this reader's accesses are recognized under. */
+const STORAGE_RECOGNITION = "python-storage";
 
 /** One call chain, from the call that starts it to the call that ends it. */
 interface Chain {
@@ -66,16 +74,6 @@ interface Chain {
   readonly between: readonly PyNode[];
 }
 
-/** The call a method is read off, or null when the callee is not a method read. */
-function receiverCall(call: PyNode): PyNode | null {
-  const callee = field(call, "function");
-  if (callee === null || callee.type !== "attribute") {
-    return null;
-  }
-  const object = field(callee, "object");
-  return object !== null && object.type === "call" ? object : null;
-}
-
 /** What a chain is called on, `AccessPoints` in `AccessPoints.query()`. */
 function subjectOf(call: PyNode): string {
   const callee = field(call, "function");
@@ -83,12 +81,6 @@ function subjectOf(call: PyNode): string {
     return callee?.text ?? "";
   }
   return field(callee, "object")?.text ?? "";
-}
-
-/** The call a chain starts at, following receivers down. */
-function rootOf(call: PyNode): PyNode {
-  const receiver = receiverCall(call);
-  return receiver === null ? call : rootOf(receiver);
 }
 
 /**
@@ -182,87 +174,6 @@ function receiverName(chain: Chain): PyNode | null {
 }
 
 /**
- * The class a call builds: `Session()` builds a Session, a class method
- * such as `User.model_validate(data)` gives back one of its class, and a
- * method given a class as its first argument, `db.get(Orders, 1)` or the
- * `db.query(Orders)` a chain starts at, gives back one of that class.
- * A function the project wrote, `get_user_by_email(...)`, gives back what
- * its annotation says.
- */
-function builtType(call: PyNode, options: StorageOptions): string | null {
-  const root = rootOf(call);
-  const callee = field(root, "function");
-  if (callee?.type === "identifier") {
-    return isClassName(callee.text)
-      ? callee.text
-      : resolvedReturnType(options, callee);
-  }
-  const object = callee?.type === "attribute" ? field(callee, "object") : null;
-  if (object?.type === "identifier" && isClassName(object.text)) {
-    return object.text;
-  }
-  const args = field(root, "arguments");
-  const first = (args === null ? [] : children(args))[0];
-  if (first?.type === "identifier" && isClassName(first.text)) {
-    return first.text;
-  }
-  return callee === null ? null : resolvedReturnType(options, callee);
-}
-
-/** What the project function a callee resolves to says it returns, or null when it resolves to none or to more than one. */
-function resolvedReturnType(
-  options: StorageOptions,
-  callee: PyNode,
-): string | null {
-  const settled = settledCallee(options, callee);
-  return settled === undefined ? null : returnTypeName(options, settled);
-}
-
-/** The one definition a callee resolves to, asking the rules. Undefined when it resolves to none or to more than one. */
-function settledCallee(
-  options: StorageOptions,
-  callee: PyNode,
-): string | undefined {
-  const key = readKey(options.filePath, callee, enclosingFunction(callee));
-  resolveCalls(options.facts, [key]);
-  return settledFunction(options.facts, key) ?? undefined;
-}
-
-/**
- * The class returned by the call a name is assigned from. This walks the
- * body itself instead of asking the rules, because the rules settle the
- * value only when the class is one the file imported. Here it can also be
- * a project class, a method read off one, or a return annotation.
- */
-function builtTypeName(
-  name: string,
-  from: PyNode,
-  options: StorageOptions,
-): string | null {
-  const fn = enclosingFunction(from);
-  const body = fn === null ? null : field(fn, "body");
-  if (body === null) {
-    return null;
-  }
-  return firstInBody(body, (statement) => {
-    const right =
-      statement.type === "assignment" ? field(statement, "right") : null;
-    return right?.type === "call" && field(statement, "left")?.text === name
-      ? builtType(right, options)
-      : null;
-  });
-}
-
-/** The class a name has in the enclosing function: its annotation, or what the call it is assigned from builds. */
-function declaredTypeName(
-  name: string,
-  from: PyNode,
-  options: StorageOptions,
-): string | null {
-  return statedTypeName(name, from) ?? builtTypeName(name, from, options);
-}
-
-/**
  * The pattern a chain matches because the name it starts on is declared,
  * where the chain is written, as one of the library's own query types:
  * `db: Session` on the handler, or `session = Session()` in its body.
@@ -274,7 +185,7 @@ function typedReceiverPattern(
   chain: Chain,
 ): StoragePattern | undefined {
   const receiver = receiverName(chain);
-  if (receiver === null) {
+  if (receiver === null || !listsQueryTypes(options)) {
     return undefined;
   }
   for (const origin of receiverTypeOrigins(receiver, options)) {
@@ -284,6 +195,15 @@ function typedReceiverPattern(
     }
   }
   return undefined;
+}
+
+/**
+ * Whether any pattern lists a query type. A pack whose sessions and
+ * queries are declared chains lists only the functions its statements
+ * start at, so asking about a receiver's type would find nothing.
+ */
+function listsQueryTypes(options: StorageOptions): boolean {
+  return options.patterns.some((pattern) => pattern.queryTypes.length > 0);
 }
 
 /** The pattern whose module exports `name` as one of its query types. */
@@ -505,9 +425,6 @@ function columnOfModel(node: PyNode, model: string): string | null {
     : null;
 }
 
-/** The calls whose first argument says which table a statement reads when `select(func.count())` did not. */
-const TABLE_METHODS = ["select_from", "join"];
-
 /**
  * The model a chain works on. It is the first argument of a statement
  * (`select(Item)`, `session.get(Item, 1)`), the class a column is read
@@ -516,14 +433,20 @@ const TABLE_METHODS = ["select_from", "join"];
  * starts on the model itself (`Orders.query()`). Null for a call that
  * works on no table of its own, `session.commit()` among them.
  */
-function modelOf(chain: Chain, options: StorageOptions): string | null {
-  const fromRoot = modelArgument(chain.root, chain.root, options);
+function modelOf(
+  chain: Chain,
+  pattern: StoragePattern,
+  options: StorageOptions,
+): string | null {
+  const naming = namingOf(options);
+  const fromRoot = modelArgument(chain.root, chain.root, naming);
   if (fromRoot !== null) {
     return fromRoot;
   }
+  const tableMethods = pattern.tableMethods ?? [];
   for (const call of laterCalls(chain)) {
-    if (TABLE_METHODS.includes(calledName(call))) {
-      const named = modelArgument(call, chain.root, options);
+    if (tableMethods.includes(calledName(call))) {
+      const named = modelArgument(call, chain.root, naming);
       if (named !== null) {
         return named;
       }
@@ -532,105 +455,15 @@ function modelOf(chain: Chain, options: StorageOptions): string | null {
   return isClassName(chain.subject) ? chain.subject : null;
 }
 
-/** The model in the call's first positional argument, or null. */
-function modelArgument(
-  call: PyNode,
-  from: PyNode,
-  options: StorageOptions,
-): string | null {
-  const args = field(call, "arguments");
-  const first = (args === null ? [] : children(args)).find(
-    (argument) => argument.type !== "keyword_argument",
-  );
-  return first === undefined ? null : modelNamed(first, from, options);
-}
-
-/**
- * The model an expression refers to. Python writes a class in CapWords
- * and a variable in lowercase, which is how `Item` is told from `item`
- * without a type checker: the class is its own name, and the variable is
- * whatever the enclosing function declares it as.
- */
-function modelNamed(
-  node: PyNode,
-  from: PyNode,
-  options: StorageOptions,
-): string | null {
-  if (node.type === "identifier") {
-    if (isClassName(node.text)) {
-      return node.text;
-    }
-    if (declaredAsLibraryType(node, options)) {
-      return null;
-    }
-    const declared = declaredTypeName(node.text, from, options);
-    return declared === null ? null : classBehind(declared, options);
-  }
-  if (node.type === "attribute") {
-    // `Item.id` and `models.Item` both refer to `Item`; `self.model` says nothing.
-    const property = field(node, "attribute");
-    if (property !== null && isClassName(property.text)) {
-      return property.text;
-    }
-    const object = field(node, "object");
-    return object === null ? null : modelNamed(object, from, options);
-  }
-  if (node.type === "call") {
-    // `Item(name=...)` builds one, and `func.count(Item.id)` counts one.
-    const callee = field(node, "function");
-    const built = callee === null ? null : modelNamed(callee, from, options);
-    return built ?? modelArgument(node, from, options);
-  }
-  return null;
-}
-
-/**
- * Whether a variable is declared as one of the library's own types, such
- * as `query: Select` or `column: ColumnElement` in SQLAlchemy. Those are
- * statements and columns, never one of the project's models.
- */
-function declaredAsLibraryType(
-  variable: PyNode,
-  options: StorageOptions,
-): boolean {
-  const libraries = new Set(
-    options.patterns.map((pattern) => topPackage(pattern.module)),
-  );
-  return receiverTypeOrigins(variable, options).some((origin) =>
-    libraries.has(topPackage(origin.module)),
-  );
-}
-
-const topPackage = (module: string): string => module.split(".")[0] ?? module;
-
-/**
- * The class a declared type is an alias of. `current_user: CurrentUser`
- * with `CurrentUser = Annotated[User, Depends(get_current_user)]` in the
- * file or in a module it imports from declares a `User`, the class the
- * shared rules say the name reaches. A name that reaches no project class
- * is returned as it is when it is written like a class name.
- */
-function classBehind(typeName: string, options: StorageOptions): string | null {
-  const key = `${options.filePath}#${typeName}`;
-  originsOf(options.facts, key);
-  const reached = new Set(answersFor(options.facts, "wantedComesTo", key));
-  const classes = new Set(
-    options.facts
-      .facts("objectValue")
-      .map((row) => String(row[0]))
-      .filter((value) => reached.has(value)),
-  );
-  const exported = options.facts
-    .facts("exportsAs")
-    .find((row) => classes.has(String(row[2])));
-  if (exported !== undefined) {
-    return String(exported[1]);
-  }
-  return isClassName(typeName) ? typeName : null;
-}
-
-function isClassName(name: string): boolean {
-  return /^[A-Z][A-Za-z0-9_]*$/.test(name) && name !== name.toUpperCase();
+/** How the storage reader names a model, with the pattern libraries' own types left out. */
+function namingOf(options: StorageOptions): ModelNaming {
+  return {
+    facts: options.facts,
+    filePath: options.filePath,
+    libraries: new Set(
+      options.patterns.map((pattern) => topPackage(pattern.module)),
+    ),
+  };
 }
 
 /**
@@ -646,12 +479,12 @@ function effectFor(
   options: StorageOptions,
 ): Effect {
   const valueMethods = pattern.valueMethods ?? [];
-  const model = modelOf(chain, options);
+  const model = modelOf(chain, pattern, options);
   const picked = selectorOf(chain, valueMethods, model);
   const effect: Effect = {
     type: "interaction",
     binding: storageBinding({
-      recognition: "python-storage",
+      recognition: STORAGE_RECOGNITION,
       storageSystem: pattern.storageSystem,
       scope: "default",
       container: model,
@@ -667,7 +500,7 @@ function effectFor(
     location: rangeOf(chain.last),
   };
   const byConstruction =
-    model === null ? containerByConstruction(chain, options) : null;
+    model === null ? containerByConstruction(chain.root, options) : null;
   if (effect.type === "interaction" && byConstruction !== null) {
     effect.containerByConstruction = byConstruction;
   }
@@ -688,11 +521,11 @@ function effectFor(
  * caller's repository gives. Null when no construction settles one.
  */
 function containerByConstruction(
-  chain: Chain,
-  options: StorageOptions,
+  root: PyNode,
+  options: ConstructionLookup,
 ): Record<string, string> | null {
   const files = options.files;
-  const model = receiverFieldModel(chain, options);
+  const model = receiverFieldModel(root, options);
   const name =
     model === null ? null : (field(model, "attribute")?.text ?? null);
   if (files === undefined || model === null || name === null) {
@@ -717,12 +550,15 @@ function containerByConstruction(
   return Object.keys(found).length === 0 ? null : found;
 }
 
+/** What naming a model by the constructions of a method's class reads. */
+type ConstructionLookup = Pick<StorageOptions, "facts" | "filePath" | "files">;
+
 /** The statement's model argument when it is a field of the method's own receiver, `self.model`, or null. */
 function receiverFieldModel(
-  chain: Chain,
-  options: StorageOptions,
+  root: PyNode,
+  options: ConstructionLookup,
 ): PyNode | null {
-  const args = field(chain.root, "arguments");
+  const args = field(root, "arguments");
   const first = (args === null ? [] : children(args)).find(
     (argument) => argument.type !== "keyword_argument",
   );
@@ -740,12 +576,6 @@ function receiverFieldModel(
 function fileOf(key: string): string {
   const at = key.lastIndexOf(":");
   return at === -1 ? key : key.slice(0, at);
-}
-
-/** What the function at a resolved key says it gives back, as the name written in its annotation. */
-function returnTypeName(options: StorageOptions, key: string): string | null {
-  const [row] = options.facts.lookup("returnsNamed", 0, key);
-  return row === undefined ? null : String(row[1]);
 }
 
 export interface StorageOptions {
@@ -796,11 +626,14 @@ function resolvedMethodPattern(
   options: StorageOptions,
   callee: PyNode,
 ): StoragePattern | undefined {
+  if (!listsQueryTypes(options)) {
+    return undefined;
+  }
   const settled = settledCallee(options, callee);
   if (settled === undefined) {
     return undefined;
   }
-  const typeName = returnTypeName(options, settled);
+  const typeName = returnTypeName(options.facts, settled);
   if (typeName === null) {
     return undefined;
   }
@@ -1009,10 +842,39 @@ export function callStorage(
     },
   });
   const declared = declaredStorage(calls, lookup);
+  const declaredHere = declared.effects.filter(({ effect }) =>
+    readHere(effect),
+  );
   return {
-    effects: [...effects, ...declared.effects],
+    effects: [
+      ...inCallOrder([...effects, ...declaredHere], calls),
+      ...declared.effects.filter(({ effect }) => !readHere(effect)),
+    ],
     slots: [...slots, ...declared.slots],
   };
+}
+
+/**
+ * Whether the effect is one of this reader's accesses, which the library
+ * packs also declare chains for under the same name. A body lists those
+ * together, before what other packs read in it.
+ */
+function readHere(effect: Effect): boolean {
+  return (
+    effect.type === "interaction" &&
+    effect.binding?.recognition === STORAGE_RECOGNITION
+  );
+}
+
+/** The effects in the order the body makes the calls they were read at. */
+function inCallOrder(
+  effects: readonly EffectAt[],
+  calls: readonly PyNode[],
+): EffectAt[] {
+  const position = new Map(calls.map((call, at) => [call.id, at]));
+  return [...effects].sort(
+    (a, b) => (position.get(a.at.id) ?? 0) - (position.get(b.at.id) ?? 0),
+  );
 }
 
 /**
@@ -1026,9 +888,20 @@ function declaredStorage(
   lookup: StorageLookup,
 ): SlottedEffects {
   const found: SlottedEffects = { effects: [], slots: [] };
+  const constructions: ConstructionLookup = {
+    facts: lookup.facts,
+    filePath: lookup.factsPath,
+    ...(lookup.files === undefined ? {} : { files: lookup.files }),
+  };
   for (const { call, effects, heard } of declaredReads(calls, lookup, true)) {
     for (const effect of effects) {
       const located = { ...effect, location: rangeOf(call) };
+      const byConstruction = withoutContainer(located)
+        ? containerByConstruction(rootOf(call), constructions)
+        : null;
+      if (located.type === "interaction" && byConstruction !== null) {
+        located.containerByConstruction = byConstruction;
+      }
       found.effects.push({ effect: located, at: call });
       found.slots.push(
         ...heard.of(effect).map((one) => ({ ...one, effect: located })),
@@ -1038,23 +911,55 @@ function declaredStorage(
   return found;
 }
 
-/** The calls a declared hook read, by node id, so the reach walk does not report them as lost. */
+/** Whether the effect is a storage access that states no container. */
+function withoutContainer(effect: Effect): boolean {
+  if (
+    effect.type !== "interaction" ||
+    effect.interaction.class !== "storage-access"
+  ) {
+    return false;
+  }
+  const semantics = effect.binding?.semantics;
+  return (
+    semantics !== undefined &&
+    "container" in semantics &&
+    semantics.container === null
+  );
+}
+
+/**
+ * The calls the declared hooks claim, by node id, so the reach walk does
+ * not report them as lost: the call a hook read, or the call that starts
+ * the chain for a hook that reads a chain at its last call.
+ */
 export function declaredCallIds(
   calls: readonly PyNode[],
   lookup: StorageLookup,
 ): number[] {
-  return declaredReads(calls, lookup, false).map(({ call }) => call.id);
+  return declaredReads(calls, lookup, false).flatMap(({ claims }) =>
+    claims.map((claimed) => claimed.id),
+  );
+}
+
+/** What the declared hooks made of one call. */
+interface DeclaredRead {
+  readonly call: PyNode;
+  readonly effects: Effect[];
+  readonly heard: SlotsHeard;
+  /** The calls the hooks that matched claim. */
+  readonly claims: PyNode[];
 }
 
 /**
  * Each call some declared hook read, with every effect the hooks made of
- * it, and when `listening`, the slots they stated about each one.
+ * it, and when `listening`, the slots they stated about each one. A hook
+ * that matches and records nothing still claims its call.
  */
 function declaredReads(
   calls: readonly PyNode[],
   lookup: StorageLookup,
   listening: boolean,
-): { call: PyNode; effects: Effect[]; heard: SlotsHeard }[] {
+): DeclaredRead[] {
   const hooks = lookup.declared ?? [];
   if (hooks.length === 0) {
     return [];
@@ -1072,8 +977,21 @@ function declaredReads(
         ? []
         : hooks.flatMap((hook) => {
             const made = runPackRecognizer(hook, at, call, { ops });
-            return made === null ? [] : [made];
+            return made === null ? [] : [{ hook, made }];
           });
-    return read.length === 0 ? [] : [{ call, effects: read.flat(), heard }];
+    if (read.length === 0) {
+      return [];
+    }
+    const claims = read.map(({ hook }) =>
+      hook.recognize.claimsChainStart === true ? rootOf(call) : call,
+    );
+    return [
+      {
+        call,
+        effects: read.flatMap(({ made }) => made),
+        heard,
+        claims: [...new Map(claims.map((one) => [one.id, one])).values()],
+      },
+    ];
   });
 }

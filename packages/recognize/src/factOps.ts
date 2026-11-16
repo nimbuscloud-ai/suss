@@ -33,6 +33,7 @@ import type {
   CallScope,
   CallsAndOptions,
   ClassValueOps,
+  Comparison,
   ConstructedFrom,
   Declaration,
   DeclaredBy,
@@ -207,6 +208,13 @@ class FactCall implements CallOps {
       this.source,
     );
     return factCallOps(made, this.source);
+  }
+
+  /** The object the callee reads the method off, as written, without following a name. */
+  receiverValue(): ValueOps | null {
+    return this.calleeRead === null
+      ? null
+      : factValueOps(this.calleeRead.object, this.source);
   }
 
   site(): string {
@@ -1043,6 +1051,24 @@ class FactValue implements ValueOps {
     );
   }
 
+  /** The `comparesWith` rows on the value's own key, in the order stated. */
+  comparisons(): readonly Comparison[] {
+    return this.facts.db.lookup("comparesWith", 0, this.key).map((row) => ({
+      left: factValueOps(String(row[1]), this.facts),
+      operator: String(row[2]),
+      right: factValueOps(String(row[3]), this.facts),
+    }));
+  }
+
+  /** The adapter's reading where it has one, and otherwise the name of the class the facts settle the value to. */
+  className(notFrom: readonly string[]): string | null {
+    const adapters = this.facts.classNameOf;
+    if (adapters !== undefined) {
+      return adapters(this.key, notFrom);
+    }
+    return this.asClass()?.name() ?? null;
+  }
+
   /** Asked of the settled value, as `asArg` is, so an encoding kept in a name is still read. */
   encoded(): Encoded | null {
     const found = this.facts.encodedOf?.(this.written()) ?? null;
@@ -1053,6 +1079,15 @@ class FactValue implements ValueOps {
 
   read(): ValueRead | null {
     const found = readThrough(this.key, this.facts);
+    return found === null
+      ? null
+      : { key: found.name, object: factValueOps(found.object, this.facts) };
+  }
+
+  /** The read at the value's own key, or the one its callee is when the language writes a member read as a call. */
+  memberRead(): ValueRead | null {
+    const found =
+      keyedRead(this.key, this.facts) ?? readAsCall(this.key, this.facts);
     return found === null
       ? null
       : { key: found.name, object: factValueOps(found.object, this.facts) };
@@ -2483,6 +2518,26 @@ function readThrough(key: string, source: FactSource): KeyedRead | null {
   });
   const [one, ...more] = reads;
   return one === undefined || more.length > 0 ? null : one;
+}
+
+/**
+ * The read a call with no arguments is, in a language that writes a
+ * member read that way: Ruby's `Entry.id` reads `id` off `Entry` through
+ * its callee. Null for a call that passes anything.
+ */
+function readAsCall(key: string, source: FactSource): KeyedRead | null {
+  const callee = only(source.db.lookup("call", 0, key), 1);
+  const { db } = source;
+  if (
+    source.readsMembersAsCalls !== true ||
+    callee === null ||
+    db.lookup("callArg", 0, key).length > 0 ||
+    db.lookup("callKeywordArg", 0, key).length > 0 ||
+    db.lookup("callBlock", 0, key).length > 0
+  ) {
+    return null;
+  }
+  return keyedRead(callee, source);
 }
 
 /** A read of one key off an object, as the facts key both. */

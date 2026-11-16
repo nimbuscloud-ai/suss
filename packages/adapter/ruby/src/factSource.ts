@@ -93,6 +93,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
       }),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     memberName: (stated) => classMemberOf(stated) ?? stated,
+    readsMembersAsCalls: true,
     constructedClass: (callee) => constructedClass(nodeAt(callee)),
     textOf,
     lineOf: (key) => {

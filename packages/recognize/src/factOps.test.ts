@@ -1951,6 +1951,85 @@ describe("the calls chained on a result, over the facts", () => {
   });
 });
 
+describe("the comparisons, the class and the receiver a query reads, over the facts", () => {
+  it("reads each comparison row on the value's own key, with its operator, in the order stated", () => {
+    // a < b <= c
+    const db = new Database();
+    db.add("comparesWith", ["cmp", "a", "<", "b"]);
+    db.add("comparesWith", ["cmp", "b", "<=", "c"]);
+    const from = source({ db });
+
+    expect(
+      factValueOps("cmp", from)
+        .comparisons?.()
+        .map((row) => [
+          row.left.source?.(),
+          row.operator,
+          row.right.source?.(),
+        ]),
+    ).toEqual([
+      ["a", "<", "b"],
+      ["b", "<=", "c"],
+    ]);
+    expect(factValueOps("tpl", from).comparisons?.()).toEqual([]);
+  });
+
+  it("names a class the way the adapter does, handing it the modules whose types are no class", () => {
+    const asked: [string, readonly string[]][] = [];
+    const from = source({
+      classNameOf: (key, notFrom) => {
+        asked.push([key, notFrom]);
+        return key === "Orders" ? "Orders" : null;
+      },
+    });
+
+    expect(factValueOps("Orders", from).className?.(["orm"])).toBe("Orders");
+    expect(factValueOps("opts", from).className?.(["orm"])).toBeNull();
+    expect(asked).toEqual([
+      ["Orders", ["orm"]],
+      ["opts", ["orm"]],
+    ]);
+  });
+
+  it("names the class the facts settle a value to when the adapter has no reading of its own", () => {
+    const db = new Database();
+    db.add("objectValue", ["Orders"]);
+    db.add("exportsAs", ["models.py", "Orders", "Orders"]);
+    const from = source({ db });
+
+    expect(factValueOps("Orders", from).className?.([])).toBe("Orders");
+    expect(factValueOps("tpl", from).className?.([])).toBeNull();
+  });
+
+  it("reads a member written in place, and a call with no arguments as one only where the language writes members that way", () => {
+    // Entry.id as a read, Entry.id as a Ruby call, Entry.find(1), and a name
+    const db = new Database();
+    db.add("readsProperty", ["read", "Entry", "id"]);
+    db.add("call", ["bare", "bare.callee"]);
+    db.add("readsProperty", ["bare.callee", "Entry", "id"]);
+    db.add("call", ["passing", "passing.callee"]);
+    db.add("readsProperty", ["passing.callee", "Entry", "find"]);
+    db.add("callArg", ["passing", "0", "one"]);
+    const asRead = (from: FactSource, key: string) => {
+      const read = factValueOps(key, from).memberRead?.() ?? null;
+      return read === null ? null : [read.object.source?.(), read.key];
+    };
+    const plain = source({ db });
+    const ruby = source({ db, readsMembersAsCalls: true });
+
+    expect(asRead(plain, "read")).toEqual(["Entry", "id"]);
+    expect(asRead(plain, "bare")).toBeNull();
+    expect(asRead(ruby, "bare")).toEqual(["Entry", "id"]);
+    expect(asRead(ruby, "passing")).toBeNull();
+    expect(asRead(ruby, "Entry")).toBeNull();
+  });
+
+  it("gives the value a method is called on as written, and none for a call that is not a method call", () => {
+    expect(opsAt("set").receiverValue?.()?.source?.()).toBe("client");
+    expect(opsAt("send").receiverValue?.()).toBeNull();
+  });
+});
+
 describe("the columns a condition reads, over the facts", () => {
   /** What the `where` call's condition reads off the table the first call took. */
   function columns(first: string, where: string, from = builder()) {

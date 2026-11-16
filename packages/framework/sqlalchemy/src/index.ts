@@ -7,7 +7,14 @@
 import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
-import { classBody, imported, pack, sqlStatements } from "@suss/recognize";
+import {
+  classBody,
+  imported,
+  pack,
+  sqlStatements,
+  storageCalls,
+  typed,
+} from "@suss/recognize";
 
 import type {
   PyModelQueries,
@@ -16,7 +23,16 @@ import type {
 } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
-import type { ParameterPick, PatternPack } from "@suss/recognize";
+import type {
+  CallStep,
+  ClassPick,
+  ConditionsPick,
+  Match,
+  NamePick,
+  ParameterPick,
+  PatternPack,
+  ToReceiver,
+} from "@suss/recognize";
 
 /**
  * The CLI checks a `-f sqlalchemy=config.json` file against this schema
@@ -34,55 +50,25 @@ export const optionsSchema = z
 
 export type SqlalchemyPackOptions = z.infer<typeof optionsSchema>;
 
+/** The calls that say which table a statement reads when its first argument did not. */
+export const TABLE_METHODS = ["select_from", "join"];
+
 /**
- * SQLAlchemy's query types and the methods that write. The list has only
- * SQLAlchemy's own names, because the adapter follows a project's base
- * class through to these types.
+ * The statements SQLAlchemy 2.0 builds with a function the file imports,
+ * `select(User.id).where(...)`, which the adapter's own storage reader
+ * still reads. A chain on a session or a query is declared below.
  */
 export function sqlalchemyStorage(
   options: SqlalchemyPackOptions,
 ): StoragePattern[] {
   return [
     {
-      module: "sqlalchemy.orm",
-      queryTypes: ["Query", "Session"],
-      writes: [
-        "update",
-        "delete",
-        "add",
-        "add_all",
-        "merge",
-        "flush",
-        "commit",
-        "bulk_save_objects",
-        "bulk_insert_mappings",
-        "bulk_update_mappings",
-      ],
-      // `execute` and the scalar calls run a statement whose own chain is
-      // read already, and the rest only manage the session.
-      recordsNothing: [
-        "execute",
-        "scalars",
-        "scalar",
-        "begin",
-        "rollback",
-        "close",
-        "expire",
-        "expire_all",
-        "expunge",
-        "expunge_all",
-      ],
-      storageSystem: options.storageSystem,
-    },
-    {
       module: "sqlalchemy",
-      queryTypes: ["Select", "Update", "Delete", "Insert"],
+      queryTypes: [],
       writes: ["update", "delete", "insert", "commit"],
-      // A 2.0 statement such as `select(User.id).where(...)` calls an
-      // imported constructor directly, so there is no project method in
-      // the chain whose return type the adapter could read.
       queryFunctions: ["select", "insert", "update", "delete"],
       valueMethods: ["values"],
+      tableMethods: TABLE_METHODS,
       storageSystem: options.storageSystem,
     },
   ];
@@ -206,6 +192,185 @@ export function rawStatements(
   });
 }
 
+/**
+ * One of the library's query types, as the chains on it read them: the
+ * module it comes from, the methods that write, the methods that record
+ * nothing when a chain starts with them, and the methods that supply
+ * values rather than pick rows.
+ */
+export interface QueryTypes {
+  readonly module: string;
+  readonly types: readonly string[];
+  readonly writes: readonly string[];
+  readonly recordsNothing?: readonly string[];
+  readonly values?: readonly string[];
+}
+
+/** SQLAlchemy's writes on a session and on a query. */
+export const SESSION_WRITES = [
+  "update",
+  "delete",
+  "add",
+  "add_all",
+  "merge",
+  "flush",
+  "commit",
+  "bulk_save_objects",
+  "bulk_insert_mappings",
+  "bulk_update_mappings",
+];
+
+/**
+ * `execute` and the scalar calls run a statement whose own chain is read
+ * already, and the rest only manage the session.
+ */
+export const SESSION_RECORDS_NOTHING = [
+  "execute",
+  "scalars",
+  "scalar",
+  "begin",
+  "rollback",
+  "close",
+  "expire",
+  "expire_all",
+  "expunge",
+  "expunge_all",
+];
+
+/** SQLAlchemy's session and query, and its statements. */
+export const SQLALCHEMY_TYPES: readonly QueryTypes[] = [
+  {
+    module: "sqlalchemy.orm",
+    types: ["Query", "Session"],
+    writes: SESSION_WRITES,
+    recordsNothing: SESSION_RECORDS_NOTHING,
+  },
+  {
+    module: "sqlalchemy",
+    types: ["Select", "Update", "Delete", "Insert"],
+    writes: ["update", "delete", "insert", "commit"],
+    values: ["values"],
+  },
+];
+
+/** The calls that join two or more conditions into one. */
+const COMBINED_BY = ["and_", "or_", "not_"];
+
+/**
+ * The chains of calls on one of the query types, each read once at its
+ * last call: `db.query(User).filter(User.id == x).first()`, or
+ * `db.add(user)` alone. A chain's first call is made on the session, or
+ * is the session when a project method returns one, `Orders.query()`,
+ * and the calls after it pick rows. The container is the class the
+ * first call is passed, or the one a `select_from` or `join` after it is
+ * passed, or the class the chain is called on. A chain whose first call
+ * records nothing, `db.execute(stmt).scalars().all()`, still matches.
+ */
+export function queryCalls(
+  types: QueryTypes,
+  libraries: readonly string[],
+  storageSystem: string,
+): Match[] {
+  const session = typed({ from: [types.module], named: types.types });
+  const recordsNothing = types.recordsNothing ?? [];
+  const onSession: CallStep[] = [
+    {
+      to: "chainStart",
+      ...(recordsNothing.length === 0 ? {} : { except: recordsNothing }),
+    },
+    { to: "chained", fromItself: true, every: true },
+  ];
+  const start: CallStep = { to: "chainStart" };
+  const later: ToReceiver = {
+    to: "receiver",
+    every: true,
+    inPlace: true,
+    until: session,
+  };
+  const model: ClassPick = {
+    class: [
+      { of: [start], at: 0 },
+      { of: [{ ...later, method: TABLE_METHODS }], itself: true, at: 0 },
+      { of: [start], receiver: true },
+    ],
+    notFrom: libraries,
+  };
+  const values = types.values ?? [];
+  const fields: NamePick[] = [
+    { columns: { of: [start], from: 0 }, ofClass: model },
+    { keywordsOf: { of: [start] } },
+    ...(values.length === 0
+      ? []
+      : [
+          {
+            keywordsOf: { of: [{ ...later, method: values }], itself: true },
+          } as const,
+        ]),
+  ];
+  const selector: ConditionsPick = {
+    conditions: {
+      of: [values.length === 0 ? later : { ...later, except: values }],
+      itself: true,
+    },
+    ofClass: model,
+    combinedBy: COMBINED_BY,
+    pinnedBy: ["and_"],
+    equality: ["=="],
+  };
+  const reads = { kind: "read", fields, selector } as const;
+  const writes = { kind: "write", fields, selector } as const;
+  const accesses = storageCalls(
+    {
+      system: storageSystem,
+      client: session,
+      clientAt: onSession,
+      unsettledName: "nothing",
+    },
+    { outermost: true },
+  )
+    .methods(Object.fromEntries(types.writes.map((name) => [name, writes])))
+    .otherwise(reads)
+    .container(model)
+    .example("db.query(User).filter(User.id == 1).first()");
+  if (recordsNothing.length === 0) {
+    return [accesses];
+  }
+  const nothing = storageCalls(
+    { system: storageSystem, client: session, unsettledName: "nothing" },
+    { outermost: true },
+  )
+    .about(start)
+    .methods(
+      Object.fromEntries(
+        recordsNothing.map((name) => [name, { kind: "nothing" }] as const),
+      ),
+    )
+    .example("db.execute(stmt).scalars().all()");
+  return [accesses, nothing];
+}
+
+/**
+ * The chains on each query type. A value declared as a type from any of
+ * the packages the types come from is a statement or a column rather
+ * than a model. The accesses are recognized under the name the
+ * adapter's storage reader gives the imported statements, so a summary
+ * reads them as one reader's.
+ */
+export function queryChains(
+  name: string,
+  types: readonly QueryTypes[],
+  options: SqlalchemyPackOptions,
+): PatternPack {
+  const libraries = [
+    ...new Set(types.map((one) => one.module.split(".")[0] ?? one.module)),
+  ];
+  return pack(
+    name,
+    types.flatMap((one) => queryCalls(one, libraries, options.storageSystem)),
+    { languages: ["python"], recognizedAs: "python-storage" },
+  );
+}
+
 /** The hooks of each pack, put beside the ones the route pack already has. */
 export function withStatements(
   base: PythonPack,
@@ -240,7 +405,10 @@ export function withSqlalchemy(
       models: [...(pack.models ?? []), ...sqlalchemyModels()],
       classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
     },
-    [rawStatements("sqlalchemy", options)],
+    [
+      rawStatements("sqlalchemy", options),
+      queryChains("sqlalchemy-queries", SQLALCHEMY_TYPES, options),
+    ],
   );
 }
 

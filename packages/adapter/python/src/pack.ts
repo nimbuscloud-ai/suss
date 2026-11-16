@@ -265,6 +265,12 @@ export interface StoragePattern {
    */
   valueMethods?: string[];
   /**
+   * Methods whose first argument says which table a statement reads when
+   * its own arguments do not, `select_from` in
+   * `select(func.count()).select_from(User)`.
+   */
+  tableMethods?: string[];
+  /**
    * Functions the library exports that start a query on their own, such as
    * SQLAlchemy 2.0's `select(...)`. A call site imports one directly instead
    * of reaching it through a project class.

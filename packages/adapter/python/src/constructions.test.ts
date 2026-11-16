@@ -13,6 +13,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { fastapiTestPack } from "./__fixtures__/fastapiPattern.js";
+import { sessionQueryTestPack } from "./__fixtures__/sessionQueryPack.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
@@ -257,6 +258,63 @@ describe("where a construction's model comes from", () => {
       "app/main.py:16:12": "Tag",
       "app/main.py:20:12": "Tool",
       "app/main.py:32:12": "Tag",
+    });
+  });
+
+  it("lists the table each construction passes to a session's query a declared chain reads", async () => {
+    write("app/__init__.py", []);
+    write("app/models.py", [
+      "from sqlalchemy.orm import DeclarativeBase",
+      "",
+      "class Base(DeclarativeBase):",
+      "    pass",
+      "",
+      "class Tool(Base):",
+      '    __tablename__ = "tools"',
+      "",
+      "class Tag(Base):",
+      '    __tablename__ = "tags"',
+    ]);
+    write("app/repos.py", [
+      "from sqlalchemy.orm import Session",
+      "",
+      "class Repository:",
+      "    def __init__(self, sql_model):",
+      "        self.model = sql_model",
+      "",
+      "    def get_one(self, db: Session, key):",
+      "        return db.query(self.model).filter_by(id=key).first()",
+    ]);
+    write("app/main.py", [
+      "from fastapi import FastAPI",
+      "",
+      "from app.models import Tag, Tool",
+      "from app.repos import Repository",
+      "",
+      "app = FastAPI()",
+      "db = None",
+      "",
+      '@app.get("/tools")',
+      "def tools():",
+      "    return Repository(Tool).get_one(db, 1)",
+      "",
+      '@app.get("/tags")',
+      "def tags():",
+      "    return Repository(Tag).get_one(db, 1)",
+    ]);
+
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(tmpDir),
+      packs: [fastapiTestPack(), sessionQueryTestPack()],
+      roots: [tmpDir],
+      workspaceRoot: tmpDir,
+    });
+    const { semantics, byConstruction } = readIn(summaries, tmpDir);
+
+    expect(semantics).toMatchObject({ name: "storage", container: null });
+    expect(byConstruction).toEqual({
+      "app/main.py:11:12": "Tool",
+      "app/main.py:15:12": "Tag",
     });
   });
 

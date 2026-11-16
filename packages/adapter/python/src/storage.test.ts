@@ -5,14 +5,16 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
+import { packRecognizers } from "@suss/extractor";
 
+import { sessionQueryTestPack } from "./__fixtures__/sessionQueryPack.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bodyCalls } from "./paths/effects.js";
 import { findPythonFiles } from "./project.js";
 import { bindModule } from "./scope.js";
-import { bodyStorage, storageEffects } from "./storage.js";
+import { bodyStorage, declaredCallIds, storageEffects } from "./storage.js";
 import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
@@ -34,6 +36,7 @@ const SQLALCHEMY: StoragePattern[] = [
     writes: ["update", "delete", "insert"],
     queryFunctions: ["select", "update", "delete", "insert"],
     valueMethods: ["values"],
+    tableMethods: ["select_from", "join"],
     storageSystem: "postgresql",
   },
 ];
@@ -191,6 +194,68 @@ describe("the database work a Python body does", () => {
       "found = Orders.query().filter_by(id=1).all()\n",
     );
     expect(effects).toHaveLength(1);
+  });
+
+  it("lists its own accesses and a declared chain's under its name in the order the body makes them", async () => {
+    const { db, definitions, files, handlerPath, scanned } =
+      await handlerProject(
+        [
+          "from sqlalchemy import select",
+          "from sqlalchemy.orm import Session",
+          "",
+          "def handler(db: Session):",
+          "    db.add(Orders())",
+          "    select(Orders).where(Orders.id == 1)",
+          "",
+        ].join("\n"),
+        BASE,
+        "handler",
+      );
+    bindEvaluator(db, { files, definitions });
+    const found = bodyStorage(scanned, {
+      facts: db,
+      factsPath: handlerPath,
+      patterns: SQLALCHEMY.filter((pattern) => pattern.module === "sqlalchemy"),
+      couldMatch: new Set(),
+      declared: packRecognizers([sessionQueryTestPack()], undefined),
+    });
+
+    expect(
+      found.effects.map(({ effect }) =>
+        effect.type === "interaction" ? effect.callee : null,
+      ),
+    ).toEqual(["db.add", "select(Orders).where"]);
+  });
+
+  it("claims the call that starts each chain a declared hook reads at its last call, one that records nothing included", async () => {
+    const { db, definitions, files, handlerPath, scanned } =
+      await handlerProject(
+        [
+          "from sqlalchemy.orm import Session",
+          "",
+          "def handler(db: Session, stmt):",
+          "    db.query(Orders).filter_by(id=1).first()",
+          "    db.execute(stmt).scalars().all()",
+          "",
+        ].join("\n"),
+        BASE,
+        "handler",
+      );
+    bindEvaluator(db, { files, definitions });
+    const calls = bodyCalls(scanned, db);
+    const claimed = new Set(
+      declaredCallIds(calls, {
+        facts: db,
+        factsPath: handlerPath,
+        patterns: [],
+        couldMatch: new Set(),
+        declared: packRecognizers([sessionQueryTestPack()], undefined),
+      }),
+    );
+
+    expect(
+      calls.filter((call) => claimed.has(call.id)).map((call) => call.text),
+    ).toEqual(["db.query(Orders)", "db.execute(stmt)"]);
   });
 
   it("recognizes a body once until evaluation starts over", async () => {
