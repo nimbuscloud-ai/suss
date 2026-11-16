@@ -12,13 +12,17 @@ import { anyOf, constructedFrom, global, imported } from "./ops.js";
 import { describeDiscovery } from "./pack.js";
 
 import type {
+  CallOps,
   DeclaredDiscoveryMatch,
+  DecoratedDefinition,
+  Decorator,
   EntryObjectMatch,
   FactSource,
   MarkedMatch,
   ModuleOps,
   ReceiverOrigin,
   ValueForm,
+  ValueOps,
 } from "@suss/extractor";
 import type { ModuleWritten } from "./factOps.js";
 
@@ -652,6 +656,133 @@ function storyFacts(meta: "withComponent" | "withoutComponent"): FactSource {
     argOf: () => null,
   };
 }
+
+describe("decorated", () => {
+  const APP = constructedFrom({ from: ["lib"], named: ["App"] });
+  const made = (from: ReceiverOrigin | null): CallOps =>
+    ({
+      isFrom: (origin: ReceiverOrigin) => origin === from,
+      calleeText: () => "App",
+    }) as unknown as CallOps;
+  const value = (extra: Partial<ValueOps> = {}): ValueOps =>
+    ({ text: () => null, ...extra }) as ValueOps;
+  const fn = (node: string): ValueOps =>
+    value({ function: () => value({ ast: () => node } as Partial<ValueOps>) });
+  const called = (
+    method: string | null,
+    on: CallOps | null,
+    receiver: ValueOps | null = value(),
+  ): Decorator => ({
+    form: "call",
+    call: {
+      method: () => method,
+      receiver: () => on,
+      receiverValue: () => receiver,
+    } as unknown as CallOps,
+  });
+  const read = (key: string | null, on: CallOps | null): Decorator => ({
+    form: "value",
+    value: value({
+      memberRead: () =>
+        key === null
+          ? null
+          : { key, object: value({ asCall: () => on } as Partial<ValueOps>) },
+    }),
+  });
+  const moduleWith = (
+    decorated: DecoratedDefinition[],
+    asked: string[] = [],
+    text = "middleware prepare",
+  ): ModuleOps =>
+    ({
+      mentions: (word: string) => text.includes(word),
+      decorated: () => decorated,
+      readingReceivers: (methods: ReadonlySet<string>) => {
+        asked.push([...methods].join(" "));
+      },
+    }) as unknown as ModuleOps;
+  const MATCH: DeclaredDiscoveryMatch = {
+    type: "decorated",
+    on: APP,
+    named: { middleware: { kind: "middleware" }, prepare: { kind: "hook" } },
+  };
+  const units = (module: ModuleOps): string[] =>
+    discoverDeclared(MATCH, "handler", module).map(
+      (unit) =>
+        `${unit.kind} ${unit.name} ${String(unit.func)} @${unit.decoratedBy?.method}`,
+    );
+
+  it("takes each function under a decorator called on, or read off, a value the origin made, after asking about the receivers at once", () => {
+    const asked: string[] = [];
+    const module = moduleWith(
+      [
+        {
+          definition: fn("stamp"),
+          name: "stamp",
+          decorators: [called("middleware", made(APP))],
+        },
+        {
+          definition: fn("check"),
+          name: "check",
+          decorators: [read("prepare", made(APP))],
+        },
+      ],
+      asked,
+    );
+    expect(units(module)).toEqual([
+      "middleware stamp stamp @middleware",
+      "hook check check @prepare",
+    ]);
+    expect(asked).toEqual(["middleware prepare"]);
+  });
+
+  it("passes over a class, a decorator it does not list, one on a value another origin made, and one on a value no call made", () => {
+    const module = moduleWith([
+      {
+        definition: value(),
+        name: "Wrapped",
+        decorators: [called("middleware", made(APP))],
+      },
+      {
+        definition: fn("unnamed"),
+        name: null,
+        decorators: [called("middleware", made(APP))],
+      },
+      {
+        definition: fn("others"),
+        name: "others",
+        decorators: [
+          called("unlisted", made(APP)),
+          called(null, made(APP)),
+          called("middleware", made(null)),
+          called("middleware", null),
+          called("middleware", made(APP), null),
+          read("unlisted", made(APP)),
+          read(null, made(APP)),
+          read("prepare", null),
+        ],
+      },
+    ]);
+    expect(units(module)).toEqual([]);
+  });
+
+  it("reads no file whose text writes none of the methods", () => {
+    const asked: string[] = [];
+    const module = moduleWith(
+      [
+        {
+          definition: fn("stamp"),
+          name: "stamp",
+          decorators: [called("middleware", made(APP))],
+        },
+      ],
+      asked,
+      "",
+    );
+    expect(units(module)).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+});
 
 const STORIES: EntryObjectMatch = {
   type: "entryObject",

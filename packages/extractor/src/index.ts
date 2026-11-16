@@ -177,6 +177,8 @@ export type {
   DeclaredDiscoveryPattern,
   DeclaredMatch,
   DeclaredStatusDecorators,
+  DecoratedMatch,
+  DecoratedUnitSpec,
   DefinesMethodMeaning,
   DiscoveredCustomUnit,
   DiscoveredSubUnit,

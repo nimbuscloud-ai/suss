@@ -2100,12 +2100,15 @@ export interface ModuleWritten {
     readonly assignedName: string | null;
   }[];
   /**
-   * The keys of the functions and classes the file writes under a
-   * decorator, nested ones included, in source order, with their
-   * `decoratedWith` rows stated. Unset where the language writes no
-   * decorators.
+   * The functions and classes the file writes under a decorator, nested
+   * ones included, in source order, each with the name it is declared
+   * under and its `decoratedWith` rows stated. Unset where the language
+   * writes no decorators.
    */
-  decorated?(): readonly string[];
+  decorated?(): readonly {
+    readonly key: string;
+    readonly name: string | null;
+  }[];
   /** Asks about the receivers of the file's decorators or calls with these methods in one go, as `ModuleOps.readingReceivers` says. Unset asks about each when it is read. */
   readingReceivers?(
     methods: ReadonlySet<string>,
@@ -2242,7 +2245,7 @@ class FactModule implements ModuleOps {
   }
 
   decorated(): readonly DecoratedDefinition[] {
-    return (this.written.decorated?.() ?? []).flatMap((key) => {
+    return (this.written.decorated?.() ?? []).flatMap(({ key, name }) => {
       const decorators = inSourceOrder(
         this.facts.db
           .lookup("decoratedWith", 0, key)
@@ -2253,6 +2256,7 @@ class FactModule implements ModuleOps {
         : [
             {
               definition: factValueOps(key, this.facts),
+              name,
               decorators: decorators.map((decorator) =>
                 decoratorAt(decorator, this.facts),
               ),
