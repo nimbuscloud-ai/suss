@@ -253,6 +253,72 @@ function moreSource(over: Partial<FactSource> = {}): FactSource {
   };
 }
 
+describe("factCallOps, at the keywords a call passes and the call its result is handed to", () => {
+  /**
+   *   run(text("SELECT 1").bindparams(id=x, at=y), params=z)
+   *   keep(text("SELECT 2"))
+   *   keep(text("SELECT 2"))
+   */
+  function handing(): FactSource {
+    const from = source();
+    const add = (relation: string, ...row: string[]) =>
+      (from.db as Database).add(relation, row);
+    add("call", "run", "run");
+    add("call", "text1", "text");
+    add("call", "bind", "text1.bindparams");
+    add("readsProperty", "text1.bindparams", "text1", "bindparams");
+    add("callKeywordArg", "bind", "id", "x");
+    add("callKeywordArg", "bind", "at", "y");
+    add("callArg", "run", "0", "bind");
+    add("callKeywordArg", "run", "params", "z");
+    add("call", "text2", "text");
+    add("call", "keep1", "keep");
+    add("call", "keep2", "keep");
+    add("callArg", "keep1", "0", "text2");
+    add("callArg", "keep2", "0", "text2");
+    add("call", "text3", "text");
+    add("call", "runNamed", "run");
+    add("callKeywordArg", "runNamed", "statement", "text3");
+    return from;
+  }
+
+  it("lists the keywords in the order the call writes them, and none for a call that passes none", () => {
+    expect(opsAt("bind", handing()).keywordNames?.()).toEqual(["id", "at"]);
+    expect(opsAt("run", handing()).keywordNames?.()).toEqual(["params"]);
+    expect(opsAt("text1", handing()).keywordNames?.()).toEqual([]);
+  });
+
+  it("gives the call a result is passed to, at its position or under its keyword", () => {
+    const passed = opsAt("bind", handing()).passedTo?.() ?? null;
+
+    expect(passed?.call.calleeText()).toBe("run");
+    expect(passed?.at).toBe(0);
+    expect(opsAt("text3", handing()).passedTo?.()?.at).toEqual({
+      keyword: "statement",
+    });
+    expect(opsAt("text1", handing()).passedTo?.()).toBeNull();
+  });
+
+  it("gives no call for a result two calls are said to take", () => {
+    expect(opsAt("text2", handing()).passedTo?.()).toBeNull();
+  });
+});
+
+describe("the parts of a string the facts write as neither a literal nor a template", () => {
+  it("asks the adapter, and reads nothing when the adapter cannot say", () => {
+    const evaluated = source({
+      partsOf: (key) => (key === "five" ? null : ["SELECT ", " FROM t"]),
+    });
+
+    expect(factValueOps("opts", evaluated).parts()).toEqual([
+      "SELECT ",
+      " FROM t",
+    ]);
+    expect(factValueOps("five", evaluated).parts()).toBeNull();
+    expect(factValueOps("opts", source()).parts()).toBeNull();
+  });
+});
+
 describe("factCallOps, further", () => {
   it("reads a call with no receiver, and a member read more than one level deep", () => {
     const send = opsAt("sqsSend", moreSource());

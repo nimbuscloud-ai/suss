@@ -883,6 +883,20 @@ export interface CallOps {
    */
   keywordAt?(name: string): ValueOps | null;
   /**
+   * The keywords the call passes, in the order it writes them: `id` and
+   * `name` for `filter_by(id=1, name=n)` in Python, and the keys of the
+   * hash a Ruby call ends with. Unset in a language whose calls take no
+   * keywords.
+   */
+  keywordNames?(): readonly string[];
+  /**
+   * The call this call's result is passed to as an argument, where the
+   * source writes the two in place, and where it is passed: a position,
+   * or a keyword. Null when the result is kept in a name, returned, or
+   * not passed to a call at all, and unset in an adapter that cannot say.
+   */
+  passedTo?(): PassedTo | null;
+  /**
    * The block the call is written with, as a function, or null when it
    * has none. Unset in a language whose calls take no blocks.
    */
@@ -925,6 +939,12 @@ export interface CallOps {
    * on the transition. Leaving it out changes only that record.
    */
   statesSlots?(effect: Effect, slots: readonly StatedSlot[]): void;
+}
+
+/** The call a result is passed to, at a position or under a keyword. */
+export interface PassedTo {
+  readonly call: CallOps;
+  readonly at: number | { readonly keyword: string };
 }
 
 /** A pair a call passes, `key => value`, whose key is a value of its own. */
@@ -1185,6 +1205,13 @@ export interface FactSource {
     key: string,
     bindings: ReadonlyMap<string, string>,
   ): string | number | boolean | null;
+  /**
+   * The text the evaluator settles a string to, split where a piece of
+   * it does not settle, for a value the facts write as neither a literal
+   * nor a template: `"SELECT id" + " FROM users"`. Null when the value is
+   * not a string. Unset leaves such a value with no parts.
+   */
+  partsOf?(key: string): readonly string[] | null;
   /**
    * The calls the class at the key makes in its body, in source order:
    * what the rules' `classBodyCall` gives. Unset reads the body's own

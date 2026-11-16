@@ -46,6 +46,7 @@ import {
 
 import type { Database } from "@suss/datalog";
 import type { EffectArg, FactSource, Typed, ValueForm } from "@suss/extractor";
+import type { Value } from "@suss/values";
 import type { SubjectOrigin } from "./facts/resolve.js";
 import type { PyNode } from "./parser.js";
 
@@ -136,6 +137,10 @@ export function pythonFactSource(db: Database): PythonFactSource {
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
+    },
+    partsOf: (key) => {
+      const node = valueNode(key);
+      return node === null ? null : literalParts(evaluatedValue(node, db));
     },
     comesTo: (key) => {
       resolveCalls(db, [key]);
@@ -422,6 +427,28 @@ function literalOf(node: PyNode | null): string | number | boolean | null {
     return node.type === "true";
   }
   return stringLiteralValue(node) ?? numberLiteralValue(node);
+}
+
+/**
+ * The literal text on either side of each piece of a string the
+ * evaluator did not settle, which is the form the SQL reader takes. Null
+ * for a value that is not a string, so a call passed an unknown name
+ * stays unread instead of becoming a statement made only of parameters.
+ */
+function literalParts(value: Value): string[] | null {
+  if (value.kind !== "string") {
+    return null;
+  }
+  const parts: string[] = [""];
+  for (const piece of value.pieces) {
+    const only = piece.kind === "text" ? piece.options : [];
+    if (only.length === 1) {
+      parts[parts.length - 1] += only[0] ?? "";
+      continue;
+    }
+    parts.push("");
+  }
+  return parts;
 }
 
 /** The name at the end of a name key, `config#table` to `table`. */

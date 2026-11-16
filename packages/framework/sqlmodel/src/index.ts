@@ -8,21 +8,22 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
+  rawStatements,
   sqlalchemyClassBodies,
   sqlalchemyModels,
-  sqlalchemyRawSql,
   sqlalchemyStorage,
+  withStatements,
 } from "@suss/framework-sqlalchemy";
 import { classBody, imported } from "@suss/recognize";
 
 import type {
   PyModelQueries,
   PythonPack,
-  RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { PatternPack } from "@suss/recognize";
 
 /**
  * The CLI checks a `-f sqlmodel=config.json` file against this schema
@@ -142,14 +143,12 @@ export function sqlmodelClassBodies(): ClassBodyDeclaration[] {
 }
 
 /** SQLModel re-exports `text`, so a project may import it from either package. */
-export function sqlmodelRawSql(options: SqlmodelPackOptions): RawSqlPattern[] {
+export function sqlmodelRawStatements(
+  options: SqlmodelPackOptions,
+): PatternPack[] {
   return [
-    {
-      module: "sqlmodel",
-      functions: ["text"],
-      storageSystem: options.storageSystem,
-    },
-    ...sqlalchemyRawSql(options),
+    rawStatements("sqlmodel", options),
+    rawStatements("sqlalchemy", options),
   ];
 }
 
@@ -162,13 +161,15 @@ export function withSqlmodel(
   pack: PythonPack,
   options: SqlmodelPackOptions,
 ): PythonPack {
-  return {
-    ...pack,
-    storage: [...(pack.storage ?? []), ...sqlmodelStorage(options)],
-    models: [...(pack.models ?? []), ...sqlmodelModels()],
-    classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
-    rawSql: [...(pack.rawSql ?? []), ...sqlmodelRawSql(options)],
-  };
+  return withStatements(
+    {
+      ...pack,
+      storage: [...(pack.storage ?? []), ...sqlmodelStorage(options)],
+      models: [...(pack.models ?? []), ...sqlmodelModels()],
+      classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
+    },
+    sqlmodelRawStatements(options),
+  );
 }
 
 export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
@@ -179,15 +180,10 @@ export function sqlmodelFramework(options: SqlmodelPackOptions): PythonPack {
       "it needs `storageSystem`, which database is behind the engine: postgresql, mysql, or sqlite. SQLModel talks to all of them and the connection URL settles which, so the pack cannot.",
     );
   }
-  return {
-    name: "sqlmodel",
-    protocol: options.storageSystem,
-    discovery: [],
-    storage: sqlmodelStorage(options),
-    models: sqlmodelModels(),
-    classBodies: sqlmodelClassBodies(),
-    rawSql: sqlmodelRawSql(options),
-  };
+  return withSqlmodel(
+    { name: "sqlmodel", protocol: options.storageSystem, discovery: [] },
+    options,
+  );
 }
 
 export const declares: PackDeclaration = {

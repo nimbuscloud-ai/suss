@@ -96,7 +96,8 @@ export type CallStep =
   | ToArgument
   | ToMember
   | ToChained
-  | ToBuilder;
+  | ToBuilder
+  | ToPassedTo;
 
 /**
  * The call the receiver is. With a method, the walk keeps going up the
@@ -110,6 +111,14 @@ export interface ToReceiver {
   readonly method?: string;
   /** Where the call reached has to have come from, else the step reaches nothing. */
   readonly origin?: ReceiverOrigin;
+  /**
+   * Every call up the receivers that the rest of the step accepts, in
+   * the order the walk meets them, instead of the first one.
+   * `query(User).filter(a).filter(b).first()` picks rows at both filters.
+   */
+  readonly every?: true;
+  /** Methods whose calls the walk passes over without reaching them. */
+  readonly except?: readonly string[];
 }
 
 /** The call an argument is, when the argument is a call or a construction. */
@@ -143,11 +152,33 @@ export interface ToMember {
  * The nearest call to `method` made on what this call returns, however
  * many calls out: `.where` from `db.update(t)` in
  * `db.update(t).set(v).where(c)`. A query builder takes its table from
- * the first call and its columns from a call further out.
+ * the first call and its columns from a call further out. Without a
+ * method, the call made directly on what this call returns.
  */
 export interface ToChained {
   readonly to: "chained";
-  readonly method: string;
+  readonly method?: string;
+  /**
+   * Every call out along the chain that the rest of the step accepts,
+   * in the order the walk meets them, instead of the first one.
+   * `update(t).where(a).where(b)` picks rows at both calls to `where`.
+   */
+  readonly every?: true;
+  /** Methods whose calls the walk passes over without reaching them. */
+  readonly except?: readonly string[];
+}
+
+/**
+ * The call this call's result is passed to as an argument, where the
+ * source writes the two in place: `session.execute(text(sql), params)`
+ * from `text(sql)`. A result kept in a name first reaches nothing.
+ */
+export interface ToPassedTo {
+  readonly to: "passedTo";
+  /** The method the call has to make, else the step reaches nothing. */
+  readonly method?: string;
+  /** The position the result has to be passed at, else the step reaches nothing. */
+  readonly at?: number;
 }
 
 /**
@@ -193,6 +224,22 @@ export interface MethodsLink<TMeaning> {
    * sending the same command.
    */
   readonly ignoringCase: boolean;
+  /**
+   * What a method the table does not list does, on a receiver the
+   * chain's start accepts. A session whose every other method reads
+   * lists its writes and says so here. Without it, a method the table
+   * does not list does not match.
+   */
+  readonly otherwise?: TMeaning;
+}
+
+/**
+ * The call in hand counts only when it ends its chain, so a chain of
+ * calls is read once, at its last call. `db.query(User).filter(c).first()`
+ * is read at `.first()`, and `db.query(User)` alone at itself.
+ */
+export interface OutermostLink {
+  readonly asks: "outermost";
 }
 
 /**
@@ -475,6 +522,7 @@ export interface ArgumentItemsLeaf {
 export type Link<TMeaning> =
   | StartLink
   | SubjectLink
+  | OutermostLink
   | MethodsLink<TMeaning>
   | CallsLink<TMeaning>
   | ContainerLink
@@ -717,6 +765,22 @@ export interface ArgumentsFrom {
 }
 
 /**
+ * The keyword arguments a call passes, read as one object whose entries
+ * are the keywords: `bindparams(tenant=t)` states `t` under `tenant`.
+ * A language whose calls take no keywords states none.
+ */
+export interface KeywordArguments {
+  /** The steps to the call the keywords belong to. */
+  readonly of?: readonly CallStep[];
+  readonly keywords: true;
+}
+
+/** The calls the steps reach, for a pick that reads the calls themselves. */
+export interface CallsReached {
+  readonly of?: readonly CallStep[];
+}
+
+/**
  * What one method of a storage client does to the store: a read, a
  * write, or whichever of the two one of its arguments asked for.
  */
@@ -788,11 +852,21 @@ export interface StatedRule {
  * reads off the argument `off` points at, through the calls,
  * comparisons and template holes the condition is built from.
  * `eq(users.id, id)` reads `id` off `users`, and so does
- * `User.id == user_id`.
+ * `User.id == user_id`. A pick of every argument from a position reads
+ * each one in turn, so `select(User.id, User.name)` reads both.
  */
 export interface FieldsReadPick {
-  readonly fieldsRead: OneArgument;
+  readonly fieldsRead: OneArgument | ArgumentsFrom;
   readonly off: OneArgument;
+}
+
+/**
+ * The keywords the reached calls pass, each once, in the order the
+ * calls and their keywords are written: `filter_by(id=1)` in Python and
+ * `where(id: 1)` in Ruby both pass `id`.
+ */
+export interface KeywordsOfPick {
+  readonly keywordsOf: CallsReached;
 }
 
 /**
@@ -837,6 +911,7 @@ export type NamesStated =
   | SelectorParamPick
   | FieldsReadPick
   | KeysOfPick
+  | KeywordsOfPick
   | InputRule
   | StatedRule;
 
@@ -864,8 +939,11 @@ export interface SqlMethod {
    * `query({ text: sql, values: [id] })`. Without it the access still
    * reads, and nothing says where a column's value came from.
    */
-  readonly parameters?: OneArgument | readonly OneArgument[];
+  readonly parameters?: ParameterPick | readonly ParameterPick[];
 }
+
+/** Where a call passes a statement's values: one argument, or the keywords a call passes. */
+export type ParameterPick = OneArgument | KeywordArguments;
 
 /** What one send method does, as the message-send ending reads it. */
 export interface MessageSendMethod {

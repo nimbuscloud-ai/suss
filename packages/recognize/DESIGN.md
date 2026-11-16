@@ -285,7 +285,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read off `computedKeyAt` at the entry's position through `nameOf`. A call into a project function is read as the one value it returns, through `writtenAs` on the call, and a library call or a construction stays as written. An object's spread is read in its place, its name or project call followed the same way, or failing that through `comesTo`, and a key written twice keeps its first place and takes the later value. A list built by mapping is one item, read off `eachElement`: what the function a call hands over returns, from its one `returnsValue` row, or the element a comprehension writes. A list's spread is left out |
 | `object()` | the value itself when it is an object written out, or else the one object among the adapter's `comesTo` answers, any function among them left out. `comesTo(x, z)` follows names and calls that return their argument, and never a factory call |
 | `function()` | `func(x)` on the value itself, or else the one function among the `comesTo` answers, or else the adapter's `givesBack`: what `givesBackUnwrapped`, then `givesBack`, says a factory call returns |
-| `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt`, on the value a name was written as, or on what a call into a project function returns, through `writtenAs` on the call, so a statement a helper builds keeps its pieces |
+| `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt`, on the value a name was written as, or on what a call into a project function returns, through `writtenAs` on the call, so a statement a helper builds keeps its pieces. A value written as neither a literal nor a template takes its parts from the adapter's `partsOf`, which Python reads through its evaluator, so `"SELECT id" + " FROM users"` has parts and no holes |
+| `keywordNames()` | the `callKeywordArg(r, n, v)` rows of the call, each `n` once, in the order the adapter states them, which is the order the call writes them |
+| `passedTo()` | the one `callArg(r2, k, r)` or `callKeywordArg(r2, n, r)` row whose value is the call, giving `r2` and the position or keyword. A result kept in a name has none |
 | `text()`, `flag()`, `name()`, `names()`, `asArg()` | the adapter's own reading of the value, `literalOf`, `nameOf`, `namesOf` and `argOf` |
 | `literal()` | the adapter's `literalOf` on the value's own key, where `text()` asks it of what a name was written as |
 | `evaluated()`, `source()`, `importedFrom()` | the adapter's evaluator through `evaluatedOf`, the text at the key through `textOf`, and the module specifier an import statement spells through `importSpecifierOf`. Ruby imports no names, so it gives no specifier |
@@ -647,6 +649,10 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "member" }` | the member read the call is made on, `db.user` in `db.user.findMany()`, or in Ruby the call with no arguments `db.users` is |
 | `{ to: "member", named: "query" }` | the same, when the member is read under that name |
 | `{ to: "chained", method: "where" }` | the nearest call to `where` made out along what the call returns, `.where(c)` from `db.update(t)` in `db.update(t).set(v).where(c)` |
+| `{ to: "chained" }` | the call made directly on what the call returns |
+| `{ to: "receiver", every: true }` | every call up the receivers, in the order the walk meets them; with `method` or `origin`, every one of those it accepts |
+| `{ to: "chained", every: true, except: ["values"] }` | every call out along what the call returns, passing over the calls to `values` |
+| `{ to: "passedTo", at: 0 }` | the call this call's result is passed to in place as its first argument, `session.execute(text(sql), params)` from `text(sql)`; with `method`, only a call to that method |
 | `{ to: "builder", method: "object", from: ["zod"] }` | the call a library's builder made the value with, this call included, through up to eight methods chained on its result: `z.object({ ... })` from `z.object({ ... }).strict()` |
 
 ```ts
@@ -674,6 +680,17 @@ receivers go. A receiver chain can loop back to itself through a
 variable: after `x = x.next()`, the receiver of `x.next()` is
 `x.next()` again. So the walk keeps the `site()` of every call it has
 passed and stops when one comes round a second time.
+
+With `every`, a step keeps going after the first call it accepts and
+reaches each one, so `filter(a).filter(b)` picks rows at both filters.
+`except` lists the methods whose calls the walk passes over without
+reaching them, as a query's `values` call supplies values rather than
+picking rows. The walk stops the same way either way.
+
+A `passedTo` step reaches the call that takes this call's result as an
+argument, through `passedTo()`, one hop like `chainedOn()`. A result
+kept in a name first reaches nothing, since the name, and not the
+call, is what was passed.
 
 A `chained` step searches the other way, out along the calls made on
 what the call returns, through `chainedOn()`. The ops take one hop and
@@ -909,8 +926,33 @@ that settles to what `off` settles to, so `const u = users;
 as with a parameter or `this.table`, the two match when they are
 spelled the same.
 
+`fieldsRead` also takes every argument from a position, `{ from: 1 }`,
+and reads each one in turn, each column once, so `select(User.id,
+User.name)` reads both off `User`.
+
+`keywordsOf` gives the keywords the calls its steps reach pass, each
+once, in the order the calls and their keywords are written, through
+`keywordNames()`: `filter_by(id=x)` in Python and `where(id: x)` in
+Ruby both pass `id`. TypeScript's calls pass no keywords, so it reads
+none there. When somebody listens, each keyword's value is the slot
+for its column.
+
 Neither pick is a function, so pack health counts both as data, and
-neither records what it read as a slot.
+`fieldsRead` records nothing it read as a slot.
+
+A table can say what every method it leaves out does, with
+`.otherwise(meaning)`, for a client whose methods nearly all read: a
+session lists the methods that write, and every other method on a
+receiver the start accepts reads. A call with no receiver still has to
+be listed, or be an export the table lists. A table with an `otherwise`
+cannot say which methods' receivers it asks about, so it does not call
+`readingReceivers`.
+
+A chain built with `{ outermost: true }` reads a call only when nothing
+is chained on what it returns, so `db.query(User).filter(c).first()` is
+read once, at `.first()`, and `db.query(User)` alone at itself. It asks
+`chainedOn()` before anything else, and an adapter that cannot say
+reads every call.
 
 A select states its table on `.from`, which every select chain has
 once, and the operation is the call `.from` is made on. The chain is
@@ -1120,6 +1162,24 @@ adapter through `statesSlots`, so the summary can record where the
 value came from. A template's holes are numbered in order, so there
 the hole is the value, unless the template's text writes placeholders
 of its own. A method without `parameters` still records the access.
+
+A parameter pick can also read the keywords a call passes as one
+object, `{ of: [{ to: "chained", method: "bindparams" }], keywords:
+true }`, which is where SQLAlchemy's `text(sql).bindparams(id=x)`
+binds `:id`. A library that takes its statement through a function it
+exports, rather than a method on a client, states where with
+`.calls(meaning)`, the bare call the start's origin accepts:
+
+```ts
+sqlStatements({ system, dialect: system, client: imported({ from: ["sqlalchemy"], named: ["text"] }) })
+  .calls({
+    statement: { at: 0 },
+    parameters: [
+      { of: [{ to: "chained", method: "bindparams" }], keywords: true },
+      { of: [{ to: "passedTo", at: 0 }], at: 1, keyword: "params" },
+    ],
+  });
+```
 
 ## The value a call states for each column
 

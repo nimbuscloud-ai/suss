@@ -62,6 +62,12 @@ export interface SqlStatements {
     table: Readonly<Record<string, SqlMethod>>,
     options?: { ignoringCase?: boolean },
   ): SqlStatements;
+  /**
+   * Where a bare call of the client itself states the statement, for a
+   * library that takes one through a function it exports, as
+   * SQLAlchemy's `text(sql)` does.
+   */
+  calls(meaning: SqlMethod): SqlStatements;
   /** What the values a statement interpolates come to. */
   interpolating(says: Omit<InterpolatesLink, "asks">): SqlStatements;
   /**
@@ -116,6 +122,7 @@ function chainFrom(declared: Chain<SqlMethod>): SqlStatements {
         table,
         ignoringCase: options?.ignoringCase ?? false,
       }),
+    calls: (meaning) => adding({ asks: "calls", meaning }),
     interpolating: (says) => adding({ asks: "interpolates", ...says }),
     scope: (says) => adding({ asks: "scope", argument: says }),
     container: (says) => adding(memberContainerLink(says)),

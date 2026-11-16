@@ -1452,6 +1452,30 @@ describe("what a pack's storage patterns put in the facts", () => {
     expect(db.size("givesBackOne")).toBe(0);
   });
 
+  it("puts a declared pack's own words beside the ones its patterns give", () => {
+    const db = packFacts([
+      {
+        ...patternFor(["ActiveRecord::Base"], ["find"]),
+        words: {
+          givesBackOne: [{ base: "Sequel::Model", method: "first" }],
+          givesBackOneOfArgument: [
+            { base: "Sequel::Model", method: "get", argument: 0 },
+          ],
+        },
+      },
+    ]);
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["ActiveRecord::Base", "find"],
+      ["ActiveRecord::Base", ".find"],
+      ["Sequel::Model", "first"],
+      ["Sequel::Model", ".first"],
+    ]);
+    expect(
+      db.facts("givesBackOneOfArgument").map((row) => row.map(String)),
+    ).toEqual([["Sequel::Model", "get", "0"]]);
+  });
+
   it("keys a declared wrapper by the module it comes from and its name", () => {
     const db = packFacts([
       {

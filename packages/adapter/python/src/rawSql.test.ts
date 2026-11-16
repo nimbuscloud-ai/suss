@@ -22,25 +22,22 @@ import {
   storageCalls,
 } from "@suss/recognize";
 
+import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bodyCalls } from "./paths/effects.js";
 import { findPythonFiles } from "./project.js";
-import { rawSqlEffects } from "./rawSql.js";
 import { bindModule } from "./scope.js";
 import { bodyStorage, declaredCallIds } from "./storage.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { RawSqlPattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ModuleBinding } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
 
-const SQLALCHEMY: RawSqlPattern[] = [
-  { module: "sqlalchemy", functions: ["text"], storageSystem: "postgresql" },
-];
+const SQL_TEXT = sqlTextTestPack("postgresql");
 
 const HOOK = declaredBy("airflow.providers.google.cloud.hooks.bigquery");
 
@@ -131,13 +128,17 @@ async function readProject(sources: Record<string, string>): Promise<Read> {
   };
 }
 
+/** What the body's storage pass reads of `text(sql)`, declared as the SQLAlchemy pack declares it. */
 async function effectsFor(source: string): Promise<Effect[]> {
   const read = await readProject({ "handler.py": source });
-  return rawSqlEffects(read.calls, {
+  const lookup: StorageLookup = {
     facts: read.facts,
-    filePath: read.filePath,
-    patterns: SQLALCHEMY,
-  }).effects.map((one) => one.effect);
+    factsPath: read.filePath,
+    patterns: [],
+    couldMatch: new Set(),
+    declared: packRecognizers([SQL_TEXT], undefined),
+  };
+  return bodyStorage(read.handler, lookup).effects.map((one) => one.effect);
 }
 
 /** What the body's storage pass reads of the warehouse pack's calls, with the pack's hooks the only thing it runs. */
@@ -284,6 +285,34 @@ describe("a statement a Python body writes as SQL", () => {
     );
 
     expect(storageOf(effects[0] as Effect).semantics.container).toBe("users");
+  });
+
+  it("reads what a + adds from a name it cannot settle as a parameter", async () => {
+    const effects = await effectsFor(
+      [
+        "from sqlalchemy import text",
+        "",
+        "def load(session, tenant):",
+        '    return session.execute(text("SELECT id FROM users WHERE tenant_id = " + tenant))',
+      ].join("\n"),
+    );
+
+    expect(storageOf(effects[0] as Effect).interaction).toMatchObject({
+      selector: ["tenant_id"],
+    });
+  });
+
+  it("says nothing about a statement written as a number", async () => {
+    expect(
+      await effectsFor(
+        [
+          "from sqlalchemy import text",
+          "",
+          "def load(session):",
+          "    return session.execute(text(1 + 2))",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
   });
 
   it("reads a statement held in a module-level name", async () => {

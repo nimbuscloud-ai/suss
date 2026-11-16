@@ -26,6 +26,7 @@ import {
   tupleKeyParts,
   witnesses,
 } from "@suss/datalog";
+import { pooledWords } from "@suss/extractor";
 import {
   ASKING_RELATIONS,
   addPackWords,
@@ -105,6 +106,7 @@ import {
 import type { Atom, Proof } from "@suss/datalog";
 import type {
   PackTally,
+  PackWords,
   ParameterSupplier,
   PatternPack,
   TransparentWrapper,
@@ -408,9 +410,11 @@ export class ResolutionStore {
     runtime: RuntimeSpellings = NO_RUNTIME_SPELLINGS,
     parameterSuppliers: readonly ParameterSupplier[] = [],
     readonly generatedModules: GeneratedModules = NO_GENERATOR,
+    words: PackWords = {},
   ) {
     this.table = createNodeTable(environmentObjects, runtime, generatedModules);
     addPackWords(this.db, {
+      ...words,
       unwrapsByName: [...LANGUAGE_WRAPPERS, ...wrappers],
       returnsReceiver: LANGUAGE_RECEIVER_RETURNS,
       suppliesParameter: parameterSuppliers,
@@ -428,6 +432,7 @@ export class ResolutionStore {
       runtimeSpellingsOf(packs),
       packs.flatMap((pack) => pack.parameterSuppliers ?? []),
       generatedModulesOf(packs, tallies),
+      pooledWords(packs),
     );
   }
 

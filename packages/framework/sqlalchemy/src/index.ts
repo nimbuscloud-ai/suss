@@ -7,16 +7,16 @@
 import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
-import { classBody, imported } from "@suss/recognize";
+import { classBody, imported, pack, sqlStatements } from "@suss/recognize";
 
 import type {
   PyModelQueries,
   PythonPack,
-  RawSqlPattern,
   StoragePattern,
 } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { ParameterPick, PatternPack } from "@suss/recognize";
 
 /**
  * The CLI checks a `-f sqlalchemy=config.json` file against this schema
@@ -168,20 +168,60 @@ export function sqlalchemyClassBodies(): ClassBodyDeclaration[] {
   ];
 }
 
+// The statement `text(sql)` is handed goes where the call that runs it
+// says: `.bindparams(tenant=t)` on the statement, or the argument after
+// it, `session.execute(text(sql), {"tenant": t})`, or under `params=`.
+const BIND_PARAMETERS: readonly ParameterPick[] = [
+  { of: [{ to: "chained", method: "bindparams" }], keywords: true },
+  { of: [{ to: "passedTo", at: 0 }], at: 1, keyword: "params" },
+  {
+    of: [
+      { to: "chained", method: "bindparams" },
+      { to: "passedTo", at: 0 },
+    ],
+    at: 1,
+    keyword: "params",
+  },
+];
+
 /**
- * `text`, imported from the package root, is how a project hands
- * SQLAlchemy a statement it wrote itself.
+ * `text(sql)`, imported from `module`, is how a project hands the
+ * library a statement it wrote itself. The access is recognized under
+ * the module the call imported `text` from.
  */
-export function sqlalchemyRawSql(
+export function rawStatements(
+  module: string,
   options: SqlalchemyPackOptions,
-): RawSqlPattern[] {
-  return [
-    {
-      module: "sqlalchemy",
-      functions: ["text"],
-      storageSystem: options.storageSystem,
-    },
-  ];
+): PatternPack {
+  const statements = sqlStatements({
+    system: options.storageSystem,
+    dialect: options.storageSystem,
+    client: imported({ from: [module], named: ["text"] }),
+  })
+    .calls({ statement: { at: 0 }, parameters: BIND_PARAMETERS })
+    .example('text("SELECT id FROM users")');
+  return pack(`${module}-text`, [statements], {
+    languages: ["python"],
+    recognizedAs: `python-${module}`,
+  });
+}
+
+/** The hooks of each pack, put beside the ones the route pack already has. */
+export function withStatements(
+  base: PythonPack,
+  packs: readonly PatternPack[],
+): PythonPack {
+  return {
+    ...base,
+    invocationRecognizers: [
+      ...(base.invocationRecognizers ?? []),
+      ...packs.flatMap((one) => one.invocationRecognizers ?? []),
+    ],
+    accessRecognizers: [
+      ...(base.accessRecognizers ?? []),
+      ...packs.flatMap((one) => one.accessRecognizers ?? []),
+    ],
+  };
 }
 
 /**
@@ -193,13 +233,15 @@ export function withSqlalchemy(
   pack: PythonPack,
   options: SqlalchemyPackOptions,
 ): PythonPack {
-  return {
-    ...pack,
-    storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
-    models: [...(pack.models ?? []), ...sqlalchemyModels()],
-    classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
-    rawSql: [...(pack.rawSql ?? []), ...sqlalchemyRawSql(options)],
-  };
+  return withStatements(
+    {
+      ...pack,
+      storage: [...(pack.storage ?? []), ...sqlalchemyStorage(options)],
+      models: [...(pack.models ?? []), ...sqlalchemyModels()],
+      classBodies: [...(pack.classBodies ?? []), ...sqlalchemyClassBodies()],
+    },
+    [rawStatements("sqlalchemy", options)],
+  );
 }
 
 export function sqlalchemyFramework(
@@ -212,15 +254,10 @@ export function sqlalchemyFramework(
       "it needs `storageSystem`, which database is behind the engine: postgresql, mysql, or sqlite. SQLAlchemy talks to all of them and the connection URL settles which, so the pack cannot.",
     );
   }
-  return {
-    name: "sqlalchemy",
-    protocol: options.storageSystem,
-    discovery: [],
-    storage: sqlalchemyStorage(options),
-    models: sqlalchemyModels(),
-    classBodies: sqlalchemyClassBodies(),
-    rawSql: sqlalchemyRawSql(options),
-  };
+  return withSqlalchemy(
+    { name: "sqlalchemy", protocol: options.storageSystem, discovery: [] },
+    options,
+  );
 }
 
 export const declares: PackDeclaration = {

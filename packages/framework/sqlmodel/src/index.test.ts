@@ -210,4 +210,45 @@ describe("a FastAPI handler using SQLModel", () => {
       { kind: "write", operation: "commit" },
     ]);
   });
+
+  it("reads a statement written as SQL under the package it imported `text` from", async () => {
+    write(
+      "app/__init__.py",
+      [
+        "import sqlmodel",
+        "from sqlalchemy import text as raw",
+        "from sqlmodel import text",
+        "",
+        "def touch(pool, id):",
+        '    pool.execute(text("UPDATE items SET seen = true WHERE id = :id"), {"id": id})',
+        '    pool.execute(raw("SELECT id FROM tags"))',
+        '    pool.execute(sqlmodel.text("SELECT id FROM notes"))',
+        "",
+      ].join("\n"),
+    );
+
+    const { summaries } = await extractPythonProject({
+      files: [...findPythonFiles(tmpDir)],
+      packs: [sqlmodelFramework({ storageSystem: "postgresql" })],
+      roots: [tmpDir],
+      modules: [{ name: "app", root: path.join(tmpDir, "app") }],
+      workspaceRoot: tmpDir,
+      cacheDir: null,
+    });
+    const accesses = summaries
+      .filter((summary) => summary.identity.name.endsWith("touch"))
+      .flatMap((summary) => summary.transitions)
+      .flatMap((transition) => transition.effects)
+      .flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.binding?.semantics.name === "storage"
+          ? [[effect.binding.recognition, effect.binding.semantics.container]]
+          : [],
+      );
+
+    expect(accesses).toEqual([
+      ["python-sqlmodel", "items"],
+      ["python-sqlalchemy", "tags"],
+    ]);
+  });
 });

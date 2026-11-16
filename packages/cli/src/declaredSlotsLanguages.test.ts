@@ -39,6 +39,7 @@ import {
   constructedFrom,
   pack,
   slotsDeclared,
+  sqlStatements,
   storageCalls,
 } from "@suss/recognize";
 import { factCallOps } from "@suss/recognize/ops";
@@ -90,12 +91,33 @@ function chainOn(client: string): StorageCalls {
     .container({ at: 1 });
 }
 
+// A statement whose values are handed over where it is run, `run(stmt,
+// values)`, or bound by keyword on the statement itself.
+const PREPARED = sqlStatements({
+  system: "records",
+  dialect: "postgresql",
+  client: constructedFrom({
+    from: ["kvcache", "Kvcache"],
+    named: ["Prepared"],
+  }),
+  walk: "invocation",
+}).methods({
+  prepare: {
+    statement: { at: 0 },
+    parameters: [
+      { of: [{ to: "chained", method: "bind" }], keywords: true },
+      { of: [{ to: "passedTo", at: 0 }], at: 1 },
+    ],
+  },
+});
+
 const DECLARED = pack(
   "declared-slots",
   [
     chainOn("Recorded"),
     chainOn("Declared").slots(SLOTS),
     chainOn("Unstated").slots("none"),
+    PREPARED,
   ],
   {
     languages: ["typescript", "python", "ruby"],
@@ -104,11 +126,12 @@ const DECLARED = pack(
 );
 
 const TYPESCRIPT = `
-import { Declared, Recorded, Unstated } from "kvcache";
+import { Declared, Prepared, Recorded, run, Unstated } from "kvcache";
 
 const recorded = new Recorded();
 const declared = new Declared();
 const unstated = new Unstated();
+const prepared = new Prepared();
 
 export function rename(key: number, n: string) {
   recorded.put({ where: { id: key }, data: { name: n } }, "recorded");
@@ -118,13 +141,18 @@ export function rename(key: number, n: string) {
   unstated.put({ where: { id: key }, data: { name: n } }, "unstated");
   unstated.get({ where: { id: key }, select: { name: true } }, "unstated");
 }
+
+export function bind(key: number, n: string) {
+  run(prepared.prepare("UPDATE notes SET body = :body WHERE id = :id"), { body: n, id: key });
+}
 `;
 
-const PYTHON = `from kvcache import Declared, Recorded, Unstated
+const PYTHON = `from kvcache import Declared, Prepared, Recorded, Unstated, run
 
 recorded = Recorded()
 declared = Declared()
 unstated = Unstated()
+prepared = Prepared()
 
 
 def rename(key, n):
@@ -134,6 +162,11 @@ def rename(key, n):
     declared.get({"where": {"id": key}, "select": {"name": True}}, "declared")
     unstated.put({"where": {"id": key}, "data": {"name": n}}, "unstated")
     unstated.get({"where": {"id": key}, "select": {"name": True}}, "unstated")
+
+
+def bind(key, n):
+    run(prepared.prepare("UPDATE notes SET body = :body WHERE id = :id"), {"body": n, "id": key})
+    prepared.prepare("UPDATE drafts SET body = :body WHERE id = :id").bind(body=n, id=key)
 `;
 
 const RUBY = `module Store
@@ -147,6 +180,12 @@ const RUBY = `module Store
     declared.get({ where: { id: key }, select: { name: true } }, "declared")
     unstated.put({ where: { id: key }, data: { name: n } }, "unstated")
     unstated.get({ where: { id: key }, select: { name: true } }, "unstated")
+  end
+
+  def self.bind(key, n)
+    prepared = Kvcache::Prepared.new
+    run(prepared.prepare("UPDATE notes SET body = :body WHERE id = :id"), { body: n, id: key })
+    prepared.prepare("UPDATE drafts SET body = :body WHERE id = :id").bind(body: n, id: key)
   end
 end
 `;
@@ -168,8 +207,11 @@ interface SlotSaid {
   readonly from: readonly ValueRef[];
 }
 
-function slotsOf(summaries: readonly BehavioralSummary[]): SlotSaid[] {
-  return unitOf(summaries).transitions.flatMap((transition) =>
+function slotsOf(
+  summaries: readonly BehavioralSummary[],
+  unit = "rename",
+): SlotSaid[] {
+  return unitOf(summaries, unit).transitions.flatMap((transition) =>
     (transition.provenance ?? []).map(({ at, from }) => ({
       at: accessAt(transition.effects[at.effect]),
       slot: at.slot,
@@ -189,12 +231,15 @@ function accessesOf(summaries: readonly BehavioralSummary[]): string[] {
     });
 }
 
-function unitOf(summaries: readonly BehavioralSummary[]): BehavioralSummary {
+function unitOf(
+  summaries: readonly BehavioralSummary[],
+  name = "rename",
+): BehavioralSummary {
   const unit = summaries.find((summary) =>
-    summary.identity.name.endsWith("rename"),
+    summary.identity.name.endsWith(name),
   );
   if (unit === undefined) {
-    throw new Error("no summary for rename");
+    throw new Error(`no summary for ${name}`);
   }
   return unit;
 }
@@ -223,10 +268,15 @@ function typescriptProject() {
   );
   project.createSourceFile(
     "/node_modules/kvcache/index.d.ts",
-    CLIENTS.map(
-      (name) =>
-        `export declare class ${name} { put(call: unknown, table: string): unknown; get(call: unknown, table: string): unknown; }`,
-    ).join("\n"),
+    [
+      ...CLIENTS.map(
+        (name) =>
+          `export declare class ${name} { put(call: unknown, table: string): unknown; get(call: unknown, table: string): unknown; }`,
+      ),
+      "export declare class Statement { bind(values: unknown): Statement; }",
+      "export declare class Prepared { prepare(sql: string): Statement; }",
+      "export declare function run(statement: Statement, values: unknown): unknown;",
+    ].join("\n"),
   );
   return { project, file: project.createSourceFile("/store.ts", TYPESCRIPT) };
 }
@@ -416,6 +466,23 @@ describe("the slots a declared storage chain states", () => {
     ]);
     expect(declaredIn(await pythonCalls())).toEqual(found);
     expect(declaredIn(await rubyCalls())).toEqual(found);
+  });
+
+  it("finds a statement's values in the call it is handed to, in TypeScript, Python and Ruby", async () => {
+    const bodyAndId = (at: string) => [
+      { at, slot: "field", name: "body", from: fromInput("n") },
+      { at, slot: "selector", name: "id", from: fromInput("key") },
+    ];
+
+    expect(slotsOf(await typescriptSummaries(), "bind")).toEqual(
+      bodyAndId("notes.prepare"),
+    );
+    for (const summaries of [await pythonSummaries(), await rubySummaries()]) {
+      expect(slotsOf(summaries, "bind")).toEqual([
+        ...bodyAndId("notes.prepare"),
+        ...bodyAndId("drafts.prepare"),
+      ]);
+    }
   });
 
   it("gives Python's and Ruby's summaries the same slots as TypeScript's", async () => {

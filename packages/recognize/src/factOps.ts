@@ -56,6 +56,7 @@ import type {
   ModuleMemberName,
   ModuleOps,
   PairArg,
+  PassedTo,
   ReadOff,
   ReceiverOrigin,
   ReturnedBy,
@@ -318,6 +319,38 @@ class FactCall implements CallOps {
     }
     this.source.read(passed);
     return factValueOps(passed, this.source);
+  }
+
+  /** The `callKeywordArg` rows, which each adapter states in the order the call writes them. */
+  keywordNames(): readonly string[] {
+    return [
+      ...new Set(
+        this.source.db
+          .lookup("callKeywordArg", 0, this.key)
+          .map((row) => String(row[1])),
+      ),
+    ];
+  }
+
+  /** The one `callArg` or `callKeywordArg` row whose value is this call. */
+  passedTo(): PassedTo | null {
+    const { db } = this.source;
+    const rows = [
+      ...db.lookup("callArg", 2, this.key).map((row) => ({
+        call: String(row[0]),
+        at: Number(row[1]) as PassedTo["at"],
+      })),
+      ...db.lookup("callKeywordArg", 2, this.key).map((row) => ({
+        call: String(row[0]),
+        at: { keyword: String(row[1]) },
+      })),
+    ];
+    const [one, ...more] = rows;
+    if (one === undefined || more.length > 0) {
+      return null;
+    }
+    const call = factCallOps(one.call, this.source);
+    return call === null ? null : { call, at: one.at };
   }
 
   block(): ValueOps | null {
@@ -875,7 +908,7 @@ class FactValue implements ValueOps {
     }
     const pieces = templatePieces(written, this.facts);
     if (pieces.length === 0) {
-      return null;
+      return this.facts.partsOf?.(written) ?? null;
     }
     const parts = [""];
     for (const piece of pieces) {

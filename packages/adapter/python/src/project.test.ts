@@ -1455,6 +1455,34 @@ describe("what a pack's model declarations put in the facts", () => {
     ).toEqual([["sqlmodel", "Relationship"]]);
   });
 
+  it("puts a declared pack's own words beside the ones its models give", () => {
+    const db = packFacts([
+      {
+        ...packWithModels([]),
+        words: {
+          givesBackOne: [{ base: "SQLModel", method: "first" }],
+          givesBackOneOfArgument: [
+            { base: "SQLModel", method: "get", argument: 0 },
+          ],
+          givesBackOneOfImport: [
+            { module: "sqlmodel", name: "select", argument: 0 },
+          ],
+        },
+      },
+    ]);
+
+    expect(db.facts("givesBackOne").map((row) => row.map(String))).toEqual([
+      ["SQLModel", "first"],
+      ["SQLModel", ".first"],
+    ]);
+    expect(
+      db.facts("givesBackOneOfArgument").map((row) => row.map(String)),
+    ).toEqual([["SQLModel", "get", "0"]]);
+    expect(
+      db.facts("givesBackOneOfImport").map((row) => row.map(String)),
+    ).toEqual([["sqlmodel", "select", "0"]]);
+  });
+
   it("says nothing for a pack that declares no models at all", () => {
     const db = packFacts([flaskRestxLike]);
 

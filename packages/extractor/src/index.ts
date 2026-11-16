@@ -194,6 +194,7 @@ export type {
   MemberPick,
   NamedExportMatch,
   PackDeclarations,
+  PackWords,
   ParameterSupplier,
   PatternPack,
   RedirectDelivery,
@@ -1361,7 +1362,11 @@ export {
   summaryCountsByPack,
   tallyUnit,
 } from "./extractionReport.js";
-export { declaredMatchOf, stampClaimMetadata } from "./framework.js";
+export {
+  declaredMatchOf,
+  pooledWords,
+  stampClaimMetadata,
+} from "./framework.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
 export { KeptParses } from "./keptParses.js";
 export { byOrigin, lastValueWins } from "./ops.js";
@@ -1437,6 +1442,7 @@ export type {
   ModuleOps,
   OpsCarrier,
   PairArg,
+  PassedTo,
   ReadOff,
   ReadOps,
   ReadOpsCarrier,

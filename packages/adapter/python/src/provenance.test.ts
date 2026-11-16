@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
 import { extractPythonProject } from "./project.js";
 
 import type {
@@ -206,18 +207,11 @@ describe("where a FastAPI route's query values came from", () => {
       "    return Session()",
       "",
     ]);
-    const withText: PythonPack = {
-      ...fastapiLike,
-      rawSql: [
-        {
-          module: "sqlalchemy",
-          functions: ["text"],
-          storageSystem: "postgresql",
-        },
-      ],
-    };
-
-    const unit = await unitNamed("list_orders", [route], [withText]);
+    const unit = await unitNamed(
+      "list_orders",
+      [route],
+      [fastapiLike, sqlTextTestPack("postgresql")],
+    );
 
     const tenant = { type: "input", inputRef: "x_tenant_id", path: [] };
     expect(sourcesIn(unit)).toEqual({
@@ -245,14 +239,11 @@ describe("where a FastAPI route's query values came from", () => {
       "    return Session()",
       "",
     ]);
-    const withText: PythonPack = {
-      ...fastapiLike,
-      rawSql: [
-        { module: "sqlalchemy", functions: ["text"], storageSystem: "sqlite" },
-      ],
-    };
-
-    const unit = await unitNamed("list_orders", [route], [withText]);
+    const unit = await unitNamed(
+      "list_orders",
+      [route],
+      [fastapiLike, sqlTextTestPack("sqlite")],
+    );
 
     expect(sourcesIn(unit)).toEqual({
       "selector status": [{ type: "literal", value: "open" }],
