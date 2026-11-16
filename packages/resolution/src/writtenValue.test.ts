@@ -45,6 +45,31 @@ describe("the expression a key was written as", () => {
     expect(writtenValueOf(db, "f.py:1-5", () => {})).toBe("f.py:7-12");
   });
 
+  describe("a call to a function with two returns", () => {
+    /** A call whose function returns `f.py:40-41` and `f.py:50-55`, the first read as itself. */
+    function twoReturns(settled: readonly string[]): string | null {
+      const db = new Database();
+      db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:7-12"]);
+      db.add("call", ["f.py:7-12", "f.py:20-30"]);
+      return writtenValueOf(db, "f.py:1-5", () => {
+        db.add("wantedIsWrittenAs", ["f.py:7-12", "f.py:40-41"]);
+        db.add("wantedResultReturn", ["f.py:7-12", "f.py:40-41"]);
+        db.add("wantedResultReturn", ["f.py:7-12", "f.py:50-55"]);
+        for (const ret of settled) {
+          db.add("wantedSettledReturn", ["f.py:7-12", ret]);
+        }
+      });
+    }
+
+    it("keeps the call when one return settles on nothing", () => {
+      expect(twoReturns(["f.py:40-41"])).toBe("f.py:7-12");
+    });
+
+    it("takes the answer when every return settles", () => {
+      expect(twoReturns(["f.py:40-41", "f.py:50-55"])).toBe("f.py:40-41");
+    });
+  });
+
   it("gives back nothing for a key written two ways", () => {
     const db = new Database();
     db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:7-12"]);

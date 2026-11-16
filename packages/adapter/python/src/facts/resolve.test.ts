@@ -412,6 +412,62 @@ describe("resolving a value across files", () => {
     expect(resolvedFunctions(facts, `${app}#handler`)).toHaveLength(1);
   });
 
+  describe("a call to a function with more than one return", () => {
+    const SIZE = [
+      "import os",
+      "",
+      "",
+      "def dir_size(path):",
+      "    try:",
+      "        total = os.path.getsize(path)",
+      "    except FileNotFoundError:",
+      "        return 0",
+      "    for item in os.listdir(path):",
+      "        total += os.path.getsize(item)",
+      "    return total",
+      "",
+      "",
+      "NOTHING = 0",
+      "",
+      "",
+      "def zero(path):",
+      "    if path:",
+      "        return NOTHING",
+      "    return NOTHING",
+      "",
+      "",
+      'size = dir_size("/tmp")',
+      'empty = zero("/tmp")',
+      "",
+    ].join("\n");
+
+    /** The key of the expression written at `text`'s first place in the source. */
+    function keyAt(file: string, text: string, after = 0): string {
+      const start = SIZE.indexOf(text, after);
+      return `${file}:${start}-${start + text.length}`;
+    }
+
+    it("settles on no return when one of them settles on nothing", async () => {
+      const { facts, dir } = await factsFor({ "app.py": SIZE });
+      const app = path.join(dir, "app.py");
+
+      // `return total` reads a name an augmented write leaves unstated,
+      // so `return 0` alone must not become the call's value.
+      expect(writtenValueOf(facts, `${app}#size`)).toBe(
+        keyAt(app, 'dir_size("/tmp")', SIZE.indexOf("size = ")),
+      );
+    });
+
+    it("settles on the value every return gives", async () => {
+      const { facts, dir } = await factsFor({ "app.py": SIZE });
+      const app = path.join(dir, "app.py");
+
+      expect(writtenValueOf(facts, `${app}#empty`)).toBe(
+        keyAt(app, "0", SIZE.indexOf("NOTHING = ")),
+      );
+    });
+  });
+
   it("reads a returned list back in the order the source writes it", async () => {
     const { facts, dir } = await factsFor({
       "loader.py": [

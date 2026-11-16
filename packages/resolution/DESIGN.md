@@ -1931,6 +1931,18 @@ with the call as the subject, and uses that answer. The TypeScript store
 does this in `resolveWrittenValue` and in `subjectConstructionOf`
 whenever a name resolves to a call.
 
+That rule takes each return of the function on its own, and a return
+the rules read as nothing adds no answer. So a function with `return 0`
+in an `except` and `return total` after a loop over a name an augmented
+write leaves unstated would be written as `0`, which is what it returns
+only when the directory is missing. A call is written as something only
+when every return of its function is. Each written-as question lists,
+for a call it asks about, every return in `wantedResultReturn` and the
+returns that reached an answer in `wantedSettledReturn`, and
+`writtenAnswersFor` gives the call no answer when the two differ. The
+check is in the reader because the demand rewrite refuses the negation
+a rule would need.
+
 ## The calls a body runs
 
 A pack that claims a callback as a unit of its own, such as the

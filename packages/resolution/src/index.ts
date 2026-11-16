@@ -2399,9 +2399,40 @@ const SOURCE_READS = [
  * handler resolves to should not pay for that.
  */
 /**
+ * For a call asked about, every return of the function it runs, and the
+ * returns the rules read as something. The reader takes the call's
+ * answers only when every return has one, since the demand rewrite
+ * refuses the negation a rule would need to say so.
+ */
+function callReturnAnswers(asking: string): Rule[] {
+  return [
+    rule(
+      "wantedResultReturn",
+      [v("x"), v("ret")],
+      [
+        lit(asking, v("x")),
+        lit("invokes", v("x"), v("f")),
+        lit("returnsValue", v("f"), v("ret")),
+      ],
+    ),
+    rule(
+      "wantedSettledReturn",
+      [v("x"), v("ret")],
+      [
+        lit(asking, v("x")),
+        lit("invokes", v("x"), v("f")),
+        lit("returnsValue", v("f"), v("ret")),
+        lit("isWrittenAs", v("ret"), v("z")),
+      ],
+    ),
+  ];
+}
+
+/**
  * What a value is written as, and what reading it needs besides: the
- * fallbacks the walk passed and the members a property read finds or
- * sees overridden, for the values `asking` lists.
+ * fallbacks the walk passed, the members a property read finds or sees
+ * overridden, and the returns a call's answers come through, for the
+ * values `asking` lists.
  */
 function writtenAnswers(asking: string): Rule[] {
   return [
@@ -2410,6 +2441,7 @@ function writtenAnswers(asking: string): Rule[] {
       [v("x"), v("z")],
       [lit(asking, v("x")), lit("isWrittenAs", v("x"), v("z"))],
     ),
+    ...callReturnAnswers(asking),
     rule(
       "wantedFallbackBehind",
       [v("x"), v("f")],
@@ -2956,6 +2988,7 @@ export const RESOLUTION_QUESTIONS = [
     [v("x"), v("r")],
     [lit("wantedSubject", v("x")), lit("isWrittenAs", v("x"), v("r"))],
   ),
+  ...callReturnAnswers("wantedSubject"),
   rule(
     "wantedSubjectConstruction",
     [v("x"), v("r"), v("m"), v("n")],
