@@ -458,17 +458,19 @@ describe("factCallOps, at the runtime's own globals", () => {
     expect(opsAt("set").valueAt(0)?.shape?.()).toBeNull();
   });
 
-  it("reads the one path a value is spelled as, and none for a value spelled as none or two", () => {
+  it("reads the path a value is spelled as, or the one the rules followed into it", () => {
+    const STREAMS = ["process.stdout", "process.stderr"];
     const log = opsAt("log", globals([]));
-    const twice: FactSource = { ...globals([]), spellsGlobal: () => true };
+    const pathOf = (key: string, reaching: readonly string[]) =>
+      factValueOps(key, globals(reaching)).globalPath?.(STREAMS);
 
     expect(
       factValueOps("console", globals([])).globalPath?.(["console", "puts"]),
     ).toBe("console");
-    expect(log.valueAt(0)?.globalPath?.(["console"])).toBeNull();
-    expect(
-      factValueOps("console", twice).globalPath?.(["console", "puts"]),
-    ).toBeNull();
+    expect(log.valueAt(0)?.globalPath?.(["console"])).toBeUndefined();
+    expect(pathOf("out", ["process.stderr"])).toBe("process.stderr");
+    expect(pathOf("out", STREAMS)).toBeNull();
+    expect(pathOf("out", ["console"])).toBeUndefined();
   });
 
   it("counts what a call passes by position as the adapter does, or as every argument", () => {

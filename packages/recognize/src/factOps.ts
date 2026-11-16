@@ -414,26 +414,9 @@ class FactCall implements CallOps {
    * one path, so a spelling settles it without asking the rules.
    */
   receiverGlobal(paths: readonly string[]): string | null | undefined {
-    if (this.calleeRead === null) {
-      return undefined;
-    }
-    const { object } = this.calleeRead;
-    const spelled = paths.find(
-      (path) => this.source.spellsGlobal?.(object, path) === true,
-    );
-    if (spelled !== undefined) {
-      return spelled;
-    }
-    const reaching = new Set(
-      (this.source.globalsReaching?.(object) ?? []).filter((path) =>
-        paths.includes(path),
-      ),
-    );
-    if (reaching.size === 0) {
-      return undefined;
-    }
-    const [one] = reaching;
-    return reaching.size === 1 && one !== undefined ? one : null;
+    return this.calleeRead === null
+      ? undefined
+      : globalAt(this.calleeRead.object, paths, this.source);
   }
 
   /** Whether the call goes to one of the paths with no receiver, `print(x)`. */
@@ -1198,11 +1181,8 @@ class FactValue implements ValueOps {
     return RUNTIME_PATH[object.origin](this.key, object as never, this.facts);
   }
 
-  globalPath(paths: readonly string[]): string | null {
-    const [one, ...more] = paths.filter(
-      (path) => this.facts.spellsGlobal?.(this.key, path) === true,
-    );
-    return one === undefined || more.length > 0 ? null : one;
+  globalPath(paths: readonly string[]): string | null | undefined {
+    return globalAt(this.key, paths, this.facts);
   }
 
   /** Asked of the value as written here, so a name for a schema says nothing. */
@@ -1587,6 +1567,33 @@ export function functionBehind(key: string, source: FactSource): string | null {
 
 function isFunction(key: string, source: FactSource): boolean {
   return source.db.lookup("func", 0, key).length > 0;
+}
+
+/**
+ * The one path among `paths` the value at the key is: the one it is
+ * spelled as, or else the one the rules followed into it, such as a
+ * parameter a caller passed `sys.stderr` to. Null when two of them reach
+ * it, and undefined when none does.
+ */
+function globalAt(
+  key: string,
+  paths: readonly string[],
+  facts: FactSource,
+): string | null | undefined {
+  const spelled = paths.find(
+    (path) => facts.spellsGlobal?.(key, path) === true,
+  );
+  if (spelled !== undefined) {
+    return spelled;
+  }
+  const reaching = new Set(
+    (facts.globalsReaching?.(key) ?? []).filter((path) => paths.includes(path)),
+  );
+  if (reaching.size === 0) {
+    return undefined;
+  }
+  const [one] = reaching;
+  return reaching.size === 1 && one !== undefined ? one : null;
 }
 
 /**
