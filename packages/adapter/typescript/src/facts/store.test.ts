@@ -1123,6 +1123,29 @@ describe("resolveWrittenValue", () => {
     expect(written?.getText()).toContain("query WidgetSettings");
   });
 
+  it("gives no value for a call whose function has a return that settles on nothing", () => {
+    const project = projectOf({
+      "/mod.ts": `
+        declare function run(size: unknown): void;
+        declare const missing: boolean;
+        declare const disk: { size: number };
+        function dirSize(path: string) {
+          if (missing) {
+            return 0;
+          }
+          return disk.size;
+        }
+        export function go() { run(dirSize("/tmp")); }
+      `,
+    });
+    const store = new ResolutionStore();
+
+    const written = store.resolveWrittenValue(
+      usageOf(project, "/mod.ts", 'dirSize("/tmp")'),
+    );
+    expect(written?.getText()).not.toBe("0");
+  });
+
   it("answers with the object literal a name holds", () => {
     const project = projectOf({
       "/mod.ts": `
