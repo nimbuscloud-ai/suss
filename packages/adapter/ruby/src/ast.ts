@@ -257,6 +257,8 @@ export interface BodyBlockKind {
   readonly moduleOnly: boolean;
   /** Whether a `def` in the block defines a method on the class itself instead of on an instance. */
   readonly definesClassMethods: boolean;
+  /** Whether the block is the body of a module the call makes, so a module-only block counts inside it in a class too. */
+  readonly moduleBody: boolean;
 }
 
 /**
@@ -291,6 +293,11 @@ function declaredBlockAt(
   return field(statement, "block") === null ? null : kind;
 }
 
+/** Whether the statements inside a declared block are a module's: the body around it is one, or the block makes one. */
+function insideIsModule(kind: BodyBlockKind, isModule: boolean): boolean {
+  return isModule || kind.moduleBody;
+}
+
 /**
  * The statements a class or module body runs, with the statements of
  * every declared body block read in place of the call. Otherwise a method
@@ -303,11 +310,14 @@ export function bodyStatementsRun(
   blocks: BodyBlocks,
 ): RbNode[] {
   return bodyStatements(body).flatMap((statement) => {
-    if (declaredBlockAt(statement, isModule, blocks) === null) {
+    const kind = declaredBlockAt(statement, isModule, blocks);
+    if (kind === null) {
       return [statement];
     }
     const inner = blockBodyOf(statement);
-    return inner === null ? [] : bodyStatementsRun(inner, isModule, blocks);
+    return inner === null
+      ? []
+      : bodyStatementsRun(inner, insideIsModule(kind, isModule), blocks);
   });
 }
 
@@ -322,13 +332,16 @@ export function bodyBlockCalls(
   blocks: BodyBlocks,
 ): RbNode[] {
   return bodyStatements(body).flatMap((statement) => {
-    if (declaredBlockAt(statement, isModule, blocks) === null) {
+    const kind = declaredBlockAt(statement, isModule, blocks);
+    if (kind === null) {
       return [];
     }
     const inner = blockBodyOf(statement);
     return [
       statement,
-      ...(inner === null ? [] : bodyBlockCalls(inner, isModule, blocks)),
+      ...(inner === null
+        ? []
+        : bodyBlockCalls(inner, insideIsModule(kind, isModule), blocks)),
     ];
   });
 }
@@ -351,16 +364,24 @@ export function definedAtClassLevel(
   if (blocks.size === 0) {
     return false;
   }
-  const isModule = isModuleBody(body);
+  // Read outermost first, since a block that makes a module changes what
+  // the blocks inside it are.
+  const callsAround: RbNode[] = [];
   let current = node.parent;
   while (current !== null && current.id !== body.id) {
     const parent: RbNode | null = current.parent;
     if (BLOCK_TYPES.has(current.type) && parent !== null) {
-      if (declaredBlockAt(parent, isModule, blocks)?.definesClassMethods) {
-        return true;
-      }
+      callsAround.unshift(parent);
     }
     current = parent;
+  }
+  let isModule = isModuleBody(body);
+  for (const call of callsAround) {
+    const kind = declaredBlockAt(call, isModule, blocks);
+    if (kind?.definesClassMethods) {
+      return true;
+    }
+    isModule = kind === null ? isModule : insideIsModule(kind, isModule);
   }
   return false;
 }

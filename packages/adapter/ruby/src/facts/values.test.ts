@@ -18,6 +18,7 @@ const CONCERN_BLOCKS = bodyBlocksIn([
     bodyBlocks: [
       { name: "included", moduleOnly: true },
       { name: "class_methods", moduleOnly: true, definesClassMethods: true },
+      { name: "concerning", moduleBody: true },
       { name: "with_options" },
     ],
   },
@@ -879,6 +880,26 @@ describe("ruby value facts", () => {
       "class Order\n  included do\n    def pay\n    end\n  end\nend\n",
     );
     expect(db.size("holdsProperty")).toBe(0);
+  });
+
+  it("reads a method an included do block declares as the class's own when the block is inside concerning, which makes a concern", async () => {
+    const db = await factsFor(
+      [
+        "class Order",
+        "  concerning :Billing do",
+        "    included do",
+        "      def pay",
+        "        charge",
+        "      end",
+        "    end",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    const [cls] = rows(db, "objectValue");
+    const [func] = rows(db, "func");
+    expect(rows(db, "holdsProperty")).toEqual([[cls?.[0], "pay", func?.[0]]]);
   });
 
   it("says which expression a dynamic definition takes its name from, and what the loop around it gives each variable", async () => {
