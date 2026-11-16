@@ -240,23 +240,41 @@ function methodMatched(
   modules: readonly string[],
   onlyWhereWritten: boolean,
 ): MethodMatch | null {
-  const asWritten = matchedAsWritten(chain, methods, subject);
+  const named = methodCallOf(methods, subject);
+  if (named === null) {
+    return null;
+  }
+  const asWritten = matchedAsWritten(chain, methods, subject, named);
   if (asWritten !== undefined) {
     return asWritten;
   }
-  if (subject.method() !== null && methods.otherwise !== undefined) {
+  if (named.method() !== null && methods.otherwise !== undefined) {
     return startsHere(chain, subject)
-      ? { method: operationOf(subject), meaning: methods.otherwise }
+      ? { method: operationOf(named), meaning: methods.otherwise }
       : null;
   }
   if (
-    subject.method() !== null ||
+    named.method() !== null ||
     (onlyWhereWritten && !mentionsAny(subject, modules)) ||
     !startsHere(chain, subject)
   ) {
     return null;
   }
-  return matchedByExport(methods, subject, modules);
+  return matchedByExport(methods, named, modules);
+}
+
+/**
+ * The call the table is looked up by: the subject, or the call the
+ * table's steps reach from it. Null when the steps reach none.
+ */
+function methodCallOf(
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+): CallOps | null {
+  if (methods.of === undefined) {
+    return subject;
+  }
+  return walk([subject], methods.of)[0] ?? null;
 }
 
 /**
@@ -272,7 +290,7 @@ function claimMatched(
   modules: readonly string[],
   onlyWhereWritten: boolean,
 ): MethodMatch | null {
-  const asWritten = matchedAsWritten(chain, methods, subject);
+  const asWritten = matchedAsWritten(chain, methods, subject, subject);
   if (asWritten !== undefined) {
     return asWritten;
   }
@@ -296,8 +314,9 @@ function matchedAsWritten(
   chain: Chain<MethodMeaning>,
   methods: MethodsLink<MethodMeaning>,
   subject: CallOps,
+  named: CallOps,
 ): MethodMatch | null | undefined {
-  const written = operationOf(subject);
+  const written = operationOf(named);
   const meaning = listed(methods, written);
   if (meaning === null) {
     return undefined;
@@ -366,8 +385,8 @@ function originsIn(chain: Chain<MethodMeaning>): ReceiverOrigin[] {
  * The methods whose receivers the chain asks about, or null when it does
  * not say. A chain asks what made the receiver of every call whose
  * method it lists when the match starts at the receiver of the call in
- * hand and the origin is a construction. A table that ignores case, or
- * that has an `otherwise`, cannot list the methods, so it says nothing.
+ * hand and the origin is a construction. A table that ignores case, has
+ * an `otherwise` or is looked up on another call says nothing.
  */
 function methodsWhoseReceiversAreAsked(
   chain: Chain<MethodMeaning>,
@@ -382,7 +401,8 @@ function methodsWhoseReceiversAreAsked(
     linkIn(chain, "subject") !== null ||
     table === null ||
     table.ignoringCase ||
-    table.otherwise !== undefined
+    table.otherwise !== undefined ||
+    table.of !== undefined
   ) {
     return null;
   }
@@ -931,8 +951,19 @@ const START: Record<
   (start: MatchStart, ops: CallOps) => boolean
 > = {
   receiver: (start, ops) =>
-    walk([ops], start.of ?? []).some((at) => at.receiverIsFrom(start.origin)),
+    walk([ops], start.of ?? []).some(
+      (at) => at.receiverIsFrom(start.origin) || callsClient(at, start.origin),
+    ),
 };
+
+/** Whether a call made on nothing is a call of the client itself, as a bare call is read. */
+function callsClient(ops: CallOps, origin: ReceiverOrigin): boolean {
+  return (
+    ops.method() === null &&
+    ops.namedCallee?.() === true &&
+    byOrigin(BARE_CALL_FROM, origin, ops)
+  );
+}
 
 /** Whether the call is where the chain says its match starts. */
 export function startsHere(

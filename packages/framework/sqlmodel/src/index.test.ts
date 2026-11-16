@@ -8,9 +8,9 @@ import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
 import {
   SQLMODEL_TYPES,
+  STATEMENT_MODULES,
   sqlmodelFramework,
   sqlmodelModels,
-  sqlmodelStorage,
   withSqlmodel,
 } from "./index.js";
 
@@ -45,11 +45,6 @@ describe("the SQLModel pack", () => {
     expect(own.flatMap((one) => one.types)).toEqual(
       expect.arrayContaining(["Session", "AsyncSession", "SelectOfScalar"]),
     );
-    const patterns = sqlmodelStorage({ storageSystem: "postgresql" });
-    expect(
-      patterns.find((pattern) => pattern.module === "sqlmodel")?.queryFunctions,
-    ).toContain("select");
-    expect(patterns.every((p) => p.storageSystem === "postgresql")).toBe(true);
   });
 
   it("treats exec as running a statement rather than as a query of its own", () => {
@@ -59,26 +54,20 @@ describe("the SQLModel pack", () => {
 
   it("includes the SQLAlchemy chains and statements, since a SQLModel project imports from both", () => {
     expect(SQLMODEL_TYPES.map((one) => one.module)).toContain("sqlalchemy.orm");
-    expect(
-      sqlmodelStorage({ storageSystem: "mysql" }).map(
-        (pattern) => pattern.module,
-      ),
-    ).toEqual(["sqlmodel", "sqlalchemy"]);
+    expect(STATEMENT_MODULES).toEqual(["sqlmodel", "sqlalchemy"]);
   });
 
   it("adds itself to a route pack without disturbing its routes", () => {
     const composed = withSqlmodel(fastapiLike, { storageSystem: "sqlite" });
     expect(composed.name).toBe("fastapi");
     expect(composed.discovery).toBe(fastapiLike.discovery);
-    expect(composed.storage?.length).toBeGreaterThan(0);
+    expect(composed.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
   it("stands alone for a run that wants no routes", () => {
     const pack = sqlmodelFramework({ storageSystem: "postgresql" });
     expect(pack.discovery).toEqual([]);
-    expect(pack.storage?.map((pattern) => pattern.module)).toContain(
-      "sqlmodel",
-    );
+    expect(pack.invocationRecognizers?.length).toBeGreaterThan(0);
   });
 
   it("puts its own model base beside the SQLAlchemy ones", () => {

@@ -17,6 +17,8 @@ interface Written {
   callee?: string;
   /** Whether the call's receiver is a session, by the test's own say. */
   onSession?: boolean;
+  /** Whether the call is a call of the client itself, made on nothing. */
+  ofClient?: boolean;
   receiver?: CallOps;
   chained?: CallOps | "unsaid";
   passedTo?: PassedTo;
@@ -35,7 +37,7 @@ function callOps(written: Written): CallOps {
     method: () => written.method ?? null,
     calleeText: () => written.callee ?? "db.call",
     receiverIsFrom: () => written.onSession === true,
-    isFrom: () => written.onSession === true,
+    isFrom: () => written.onSession === true || written.ofClient === true,
     argumentCount: () => args.length,
     nameAt: (index) => args[index]?.name("nothing") ?? null,
     receiver: () => written.receiver ?? null,
@@ -544,6 +546,67 @@ describe("a chain read from the first call on its session", () => {
     expect(accesses(run([valuesFirst], lastOf(picks)).effects)).toEqual([
       ["all", "read", [], []],
     ]);
+  });
+});
+
+describe("a statement a function the file imports builds", () => {
+  const STATEMENT = imported({ from: ["vault"], named: ["pick", "drop"] });
+  const statements = storageCalls(
+    { system: "vault", client: STATEMENT, clientAt: [{ to: "chainStart" }] },
+    { outermost: true },
+  ).methods(
+    { pick: { kind: "read" }, drop: { kind: "write" } },
+    { of: [{ to: "chainStart" }] },
+  );
+
+  it("reads the chain at its last call as the method its first call makes, a call of the client itself", () => {
+    const picked = chainOf(
+      { callee: "pick", ofClient: true },
+      { method: "where" },
+      { method: "all" },
+    );
+    const dropped = chainOf(
+      { callee: "drop", ofClient: true },
+      { method: "where" },
+    );
+    const alone = chainOf({ callee: "pick", ofClient: true });
+
+    expect(accesses(run([statements], lastOf(picked)).effects)).toEqual([
+      ["pick", "read", [], []],
+    ]);
+    expect(accesses(run([statements], lastOf(dropped)).effects)).toEqual([
+      ["drop", "write", [], []],
+    ]);
+    expect(accesses(run([statements], lastOf(alone)).effects)).toEqual([
+      ["pick", "read", [], []],
+    ]);
+  });
+
+  it("reads nothing when the first call is not a call of the client, or makes a method the table leaves out", () => {
+    const other = chainOf({ callee: "pick" }, { method: "all" });
+    const unlisted = chainOf(
+      { callee: "count", ofClient: true },
+      { method: "all" },
+    );
+
+    expect(run([statements], lastOf(other)).effects).toEqual([]);
+    expect(run([statements], lastOf(unlisted)).effects).toEqual([]);
+  });
+
+  it("reads nothing when the table's steps reach no call", () => {
+    const nowhere = storageCalls(
+      { system: "vault", client: STATEMENT, clientAt: [{ to: "chainStart" }] },
+      { outermost: true },
+    ).methods(
+      { pick: { kind: "read" } },
+      { of: [{ to: "receiver", method: "missing" }] },
+    );
+    const picked = chainOf(
+      { callee: "pick", ofClient: true },
+      { method: "all" },
+    );
+
+    expect(run([nowhere], lastOf(picked)).effects).toEqual([]);
   });
 });
 

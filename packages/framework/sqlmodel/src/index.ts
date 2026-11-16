@@ -15,17 +15,12 @@ import {
   SQLALCHEMY_TYPES,
   sqlalchemyClassBodies,
   sqlalchemyModels,
-  sqlalchemyStorage,
-  TABLE_METHODS,
+  statementChains,
   withStatements,
 } from "@suss/framework-sqlalchemy";
 import { classBody, imported } from "@suss/recognize";
 
-import type {
-  PyModelQueries,
-  PythonPack,
-  StoragePattern,
-} from "@suss/adapter-python";
+import type { PyModelQueries, PythonPack } from "@suss/adapter-python";
 import type { ClassBodyDeclaration } from "@suss/extractor";
 import type { QueryTypes } from "@suss/framework-sqlalchemy";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -74,27 +69,11 @@ export const SQLMODEL_TYPES: readonly QueryTypes[] = [
 ];
 
 /**
- * The statements SQLModel builds with a function the file imports from
- * the package root, `select(Item).where(...)`, followed by SQLAlchemy's.
- * A SQLModel project still imports from `sqlalchemy` for anything
- * SQLModel does not re-export.
+ * SQLModel builds a statement with a function the file imports from the
+ * package root, `select(Item).where(...)`, and a SQLModel project still
+ * imports from `sqlalchemy` for anything SQLModel does not re-export.
  */
-export function sqlmodelStorage(
-  options: SqlmodelPackOptions,
-): StoragePattern[] {
-  return [
-    {
-      module: "sqlmodel",
-      queryTypes: [],
-      writes: ["update", "delete", "insert", "commit"],
-      queryFunctions: ["select", "insert", "update", "delete"],
-      valueMethods: ["values"],
-      tableMethods: TABLE_METHODS,
-      storageSystem: options.storageSystem,
-    },
-    ...sqlalchemyStorage(options),
-  ];
-}
+export const STATEMENT_MODULES = ["sqlmodel", "sqlalchemy"];
 
 /**
  * SQLAlchemy's model rules with SQLModel's additions: a model inherits
@@ -149,13 +128,13 @@ export function withSqlmodel(
   return withStatements(
     {
       ...pack,
-      storage: [...(pack.storage ?? []), ...sqlmodelStorage(options)],
       models: [...(pack.models ?? []), ...sqlmodelModels()],
       classBodies: [...(pack.classBodies ?? []), ...sqlmodelClassBodies()],
     },
     [
       ...sqlmodelRawStatements(options),
       queryChains("sqlmodel-queries", SQLMODEL_TYPES, options),
+      statementChains("sqlmodel-statements", STATEMENT_MODULES, options),
     ],
   );
 }

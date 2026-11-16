@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { functionOf, readCallFacts } from "@suss/checker";
+import sqlalchemyFramework from "@suss/packs/sqlalchemy";
 
 import { answerQuestion } from "./ask.js";
 import { relativizeSummaryPaths } from "./extract.js";
@@ -23,7 +24,7 @@ import { touchesOfUnits } from "./target.js";
 import type { PythonPack } from "@suss/adapter-python";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
-const fastapiWithSqlalchemy: PythonPack = {
+const fastapiLike: PythonPack = {
   name: "fastapi",
   protocol: "http",
   discovery: [
@@ -33,15 +34,6 @@ const fastapiWithSqlalchemy: PythonPack = {
       verbAttributeNames: { get: "GET", post: "POST" },
       pathParamSyntax: "braces",
       defaultStatusCode: 200,
-    },
-  ],
-  storage: [
-    {
-      module: "sqlalchemy",
-      queryTypes: ["Select"],
-      writes: ["update", "delete"],
-      queryFunctions: ["select"],
-      storageSystem: "postgresql",
     },
   ],
 };
@@ -87,7 +79,7 @@ function write(relPath: string, lines: string[]): void {
 async function extracted(): Promise<BehavioralSummary[]> {
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(dir),
-    packs: [fastapiWithSqlalchemy],
+    packs: [fastapiLike, sqlalchemyFramework({ storageSystem: "postgresql" })],
     roots: [dir],
     projectRoot: dir,
   });

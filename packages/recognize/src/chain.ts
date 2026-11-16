@@ -50,9 +50,9 @@ export interface FromReceiver {
   readonly starts: "receiver";
   readonly origin: ReceiverOrigin;
   /**
-   * The steps from the call in hand to the one whose receiver is the
-   * client, when that is not the call in hand. `db.user.findMany()` is
-   * on `db.user`, and the client is `db`, one member step along.
+   * The steps from the call in hand to the call made on the client, or to
+   * a call of the client itself: `db.user` in `db.user.findMany()`, one
+   * member step along, or `select(User)` for an imported `select`.
    */
   readonly of?: readonly CallStep[];
 }
@@ -270,6 +270,14 @@ export interface MethodsLink<TMeaning> {
    * does not list does not match.
    */
   readonly otherwise?: TMeaning;
+  /**
+   * The steps to the call whose method the table is looked up by, when
+   * it is not the call in hand. That call's method is the operation. A
+   * statement is what the function that built it says,
+   * `update(User).where(c).values(name=x)` an update however it ends,
+   * while its rows and columns are read from the call in hand.
+   */
+  readonly of?: readonly CallStep[];
 }
 
 /**

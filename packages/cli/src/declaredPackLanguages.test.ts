@@ -345,9 +345,26 @@ const JOURNAL_CALLS = storageCalls(
   .container(ENTRY)
   .example("journal.rows(Entry, Entry.id).where(Entry.id == 1).take()");
 
+// A statement built with a function the journal exports, read at its
+// last call as what that function does. Ruby imports no function, so
+// only TypeScript and Python write one.
+const STATEMENT = imported({ from: ["journal"], named: ["pick", "drop"] });
+const JOURNAL_STATEMENTS = storageCalls(
+  {
+    system: "journal",
+    client: STATEMENT,
+    clientAt: [START],
+    unsettledName: "nothing",
+  },
+  { outermost: true },
+)
+  .methods({ pick: { kind: "read" }, drop: { kind: "write" } }, { of: [START] })
+  .container({ class: { of: [START], at: 0 }, notFrom: ["journal"] })
+  .example("pick(Entry).where(Entry.id == 1).take()");
+
 const LANGUAGES = ["typescript", "python", "ruby"];
 const PACKS = [
-  pack("declared-journal", [JOURNAL_CALLS], {
+  pack("declared-journal", [JOURNAL_CALLS, JOURNAL_STATEMENTS], {
     languages: LANGUAGES,
     recognizedAs: "@suss/declared-test",
   }),
@@ -409,7 +426,7 @@ const TYPESCRIPT = `
   import { Warehouse } from "depot";
   import { Client } from "rows";
   import { Vault } from "vault";
-  import { Journal } from "journal";
+  import { drop, Journal, pick } from "journal";
 
   export class Entry {
     static id = 0;
@@ -496,6 +513,11 @@ const TYPESCRIPT = `
     journal.add(Entry);
     journal.close();
   }
+
+  export function prune(id: number) {
+    pick(Entry).where(Entry.id === id).take();
+    drop(Entry).where(Entry.id === id);
+  }
 `;
 
 const PYTHON = `from kvcache import Admin, Cache, Records
@@ -508,7 +530,7 @@ from qb import Qb, eq, table
 from depot import Warehouse
 from rows import Client
 from vault import Vault
-from journal import Journal
+from journal import Journal, drop, pick
 
 
 class Entry:
@@ -602,6 +624,11 @@ def audit(journal: Journal, id):
     journal.rows(Entry, Entry.id, kind="x").where(Entry.id == id, Entry.n > 2).take()
     journal.add(Entry, kind="y")
     journal.close()
+
+
+def prune(id):
+    pick(Entry).where(Entry.id == id).take()
+    drop(Entry).where(Entry.id == id)
 `;
 
 const RUBY = `class Entry
@@ -747,6 +774,8 @@ const LIBRARIES: Record<string, string> = {
       add(row: unknown): unknown;
       close(): void;
     }
+    export declare function pick(table: unknown): Rows;
+    export declare function drop(table: unknown): Rows;
   `,
   vault: `
     export declare class Sifted {
@@ -1140,6 +1169,22 @@ describe("a pack that reads a chain from the first call on its client", () => {
     expect((await rubyEffects("audit")).map(columnsOf)).toEqual(
       fromPython.map(columnsOf),
     );
+  });
+
+  it("reads a statement a function the file imports builds at its last call, as what that function does, in TypeScript and Python", async () => {
+    const fromTypeScript = typescriptEffects("prune").map(placeless);
+    const fromPython = (await pythonEffects("prune")).map(placeless);
+
+    expect(fromTypeScript.map(addressOf)).toEqual([
+      ["pick", "default", "Entry"],
+      ["drop", "default", "Entry"],
+    ]);
+    expect(fromTypeScript.map(columnsOf)).toEqual([
+      ["read", [], []],
+      ["write", [], []],
+    ]);
+    expect(fromPython.map(addressOf)).toEqual(fromTypeScript.map(addressOf));
+    expect(fromPython.map(columnsOf)).toEqual(fromTypeScript.map(columnsOf));
   });
 
   it("reads no keywords and no comparisons in TypeScript, which states neither", () => {

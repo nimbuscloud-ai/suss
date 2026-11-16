@@ -91,10 +91,13 @@ export interface StorageCalls {
   about(
     ...of: readonly CallStep[] | readonly [...CallStep[], AboutOptions]
   ): StorageCalls;
-  /** Which methods count, and what each one reads or writes. */
+  /**
+   * Which methods count, and what each one reads or writes. With `of`,
+   * the method is the one the call those steps reach makes.
+   */
   methods(
     table: Readonly<Record<string, StorageMethod>>,
-    options?: { ignoringCase?: boolean },
+    options?: { ignoringCase?: boolean; of?: readonly CallStep[] },
   ): StorageCalls;
   /**
    * What every method the table leaves out does, on a receiver the
@@ -282,6 +285,7 @@ function chainFrom(declared: Chain<StorageMethod>): StorageCalls {
         asks: "methods",
         table,
         ignoringCase: options?.ignoringCase ?? false,
+        ...(options?.of === undefined ? {} : { of: options.of }),
       }),
     otherwise: (meaning) => chainFrom(withOtherwise(declared, meaning)),
     calls: (meaning) => adding({ asks: "calls", meaning }),

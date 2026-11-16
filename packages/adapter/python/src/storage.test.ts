@@ -1,3 +1,10 @@
+/**
+ * What the adapter adds to the storage chains a pack declares: running
+ * them over a body's calls, the calls they claim, the order a body lists
+ * their accesses in, and dropping a read that names no table. The
+ * chains' own readings are tested with the SQLAlchemy pack.
+ */
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,74 +14,30 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 import { packRecognizers } from "@suss/extractor";
 
-import { sessionQueryTestPack } from "./__fixtures__/sessionQueryPack.js";
+import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
+import { storageChains } from "./__fixtures__/storageChains.js";
 import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { bodyCalls } from "./paths/effects.js";
 import { findPythonFiles } from "./project.js";
 import { bindModule } from "./scope.js";
-import { bodyStorage, declaredCallIds, storageEffects } from "./storage.js";
+import { bodyStorage, declaredCallIds } from "./storage.js";
 import { bindEvaluator, forgetEvaluations } from "./values/evaluator.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { StoragePattern } from "./pack.js";
 import type { PyNode } from "./parser.js";
+import type { StorageLookup } from "./storage.js";
 import type { EvaluatedFile } from "./values/evaluator.js";
 
-const SQLALCHEMY: StoragePattern[] = [
-  {
-    module: "sqlalchemy.orm",
-    queryTypes: ["Query", "Session"],
-    writes: ["update", "delete", "add", "commit"],
-    recordsNothing: ["execute", "close"],
-    storageSystem: "postgresql",
-  },
-  {
-    module: "sqlalchemy",
-    queryTypes: ["Select"],
-    writes: ["update", "delete", "insert"],
-    queryFunctions: ["select", "update", "delete", "insert"],
-    valueMethods: ["values"],
-    tableMethods: ["select_from", "join"],
-    storageSystem: "postgresql",
-  },
-];
+const MODELS = ["class Orders:", "    pass", ""].join("\n");
 
 /**
- * The shape the measured corpus writes. A project base class wraps the
- * library, every model inherits it, and the file doing the querying imports
- * neither the base nor anything from SQLAlchemy.
+ * The handler module beside the models, with its facts bound for the
+ * evaluator, and the body of `handler` in it.
  */
-const BASE = [
-  "from sqlalchemy.orm import Query",
-  "",
-  "class Base:",
-  "    @classmethod",
-  "    def query(cls) -> Query:",
-  "        return session()",
-  "",
-].join("\n");
-
-const MODELS = [
-  "from base import Base",
-  "",
-  "class Orders(Base):",
-  "    pass",
-  "",
-].join("\n");
-
-/**
- * The handler module beside the base and the models, with its facts, and
- * the body of `inFunction` in it or the module's own body without one.
- */
-async function handlerProject(
-  handler: string,
-  base = BASE,
-  inFunction?: string,
-) {
+async function handlerProject(handler: string) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-storage-"));
-  fs.writeFileSync(path.join(dir, "base.py"), base);
   fs.writeFileSync(path.join(dir, "models.py"), MODELS);
   fs.writeFileSync(
     path.join(dir, "handler.py"),
@@ -84,16 +47,12 @@ async function handlerProject(
   const db = new Database();
   const definitions = new Map<string, PyNode>();
   const files: EvaluatedFile[] = [];
-  let handlerRoot: PyNode | null = null;
   let handlerPath = "";
-
   for (const file of findPythonFiles(dir)) {
     const tree = await parsePython(fs.readFileSync(file, "utf8"));
     const module = bindModule(tree.rootNode);
     files.push({ file, root: tree.rootNode, module });
-    emitModuleImportFacts(db, file, module, {
-      roots: [dir],
-    });
+    emitModuleImportFacts(db, file, module, { roots: [dir] });
     emitValueFacts(db, file, tree.rootNode);
     const index = (node: PyNode): void => {
       if (node.type === "function_definition") {
@@ -107,151 +66,83 @@ async function handlerProject(
     };
     index(tree.rootNode);
     if (file.endsWith("handler.py")) {
-      handlerRoot = tree.rootNode;
       handlerPath = file;
     }
   }
-
-  const scanned =
-    inFunction === undefined
-      ? (handlerRoot as PyNode)
-      : [...definitions.entries()].find(
-          ([key, node]) =>
-            key.startsWith(handlerPath) &&
-            node.childForFieldName("name")?.text === inFunction,
-        )?.[1];
+  bindEvaluator(db, { files, definitions });
+  const scanned = [...definitions.entries()].find(
+    ([key, node]) =>
+      key.startsWith(handlerPath) &&
+      node.childForFieldName("name")?.text === "handler",
+  )?.[1];
   if (scanned === undefined) {
-    throw new Error(`no function ${inFunction} in the handler`);
+    throw new Error("no function handler in the handler module");
   }
-  return { db, definitions, files, handlerPath, scanned };
-}
-
-/**
- * The effects of the handler module's own body, or, when `inFunction` is
- * given, of the body of that function within it.
- */
-async function effectsFor(handler: string, base = BASE, inFunction?: string) {
-  const { db, handlerPath, scanned } = await handlerProject(
-    handler,
-    base,
-    inFunction,
-  );
-  return storageEffects(bodyCalls(scanned, db), {
+  const lookup: StorageLookup = {
     facts: db,
-    filePath: handlerPath,
-    patterns: SQLALCHEMY,
-    couldMatch: new Set(["query", "open_session"]),
-  }).map((one) => one.effect);
+    factsPath: handlerPath,
+    declared: packRecognizers(
+      [
+        {
+          name: "sessions",
+          protocol: "postgresql",
+          discovery: [],
+          invocationRecognizers: storageChains([
+            {
+              module: "sqlalchemy.orm",
+              types: ["Session"],
+              writes: ["add", "commit"],
+              recordsNothing: ["execute"],
+            },
+          ]),
+        },
+        sqlTextTestPack("postgresql"),
+      ],
+      undefined,
+    ),
+  };
+  return { db, lookup, scanned };
 }
 
-function accessOf(effect: Effect | undefined) {
-  return effect?.type === "interaction" &&
-    effect.interaction.class === "storage-access"
-    ? effect.interaction
-    : null;
+function calleeOf(effect: Effect): string | undefined {
+  return effect.type === "interaction" ? effect.callee : undefined;
 }
 
 describe("the database work a Python body does", () => {
-  it("reads a chain through a project base class the library never appears in", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().filter_by(id=1).first()\n",
-    );
-
-    expect(effects).toHaveLength(1);
-    const [effect] = effects;
-    expect(effect?.type === "interaction" ? effect.interaction : null).toEqual({
-      class: "storage-access",
-      kind: "read",
-      fields: [],
-      operation: "first",
-      selector: ["id"],
-    });
-  });
-
-  it("writes the callee as written, without the last call's arguments", async () => {
-    const effects = await effectsFor(
+  it("lists the storage chains' accesses in the order the body makes the calls, before what other packs read", async () => {
+    const { lookup, scanned } = await handlerProject(
       [
-        "from sqlalchemy import select",
+        "from sqlalchemy import text",
+        "from sqlalchemy.orm import Session",
         "",
-        "found = Orders.query().filter_by(id=1).first()",
-        "count = select(User.id).where(User.id == 1)",
+        "def handler(db: Session):",
+        '    db.execute(text("SELECT id FROM orders"))',
+        "    db.query(Orders).first()",
+        "    db.add(Orders())",
         "",
       ].join("\n"),
     );
 
     expect(
-      effects.map((effect) =>
-        effect.type === "interaction" ? effect.callee : null,
+      bodyStorage(scanned, lookup).effects.map(({ effect }) =>
+        calleeOf(effect),
       ),
-    ).toEqual([
-      "Orders.query().filter_by(id=1).first",
-      "select(User.id).where",
-    ]);
-  });
-
-  it("counts a chain once rather than once per call in it", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().filter_by(id=1).all()\n",
-    );
-    expect(effects).toHaveLength(1);
-  });
-
-  it("lists its own accesses and a declared chain's under its name in the order the body makes them", async () => {
-    const { db, definitions, files, handlerPath, scanned } =
-      await handlerProject(
-        [
-          "from sqlalchemy import select",
-          "from sqlalchemy.orm import Session",
-          "",
-          "def handler(db: Session):",
-          "    db.add(Orders())",
-          "    select(Orders).where(Orders.id == 1)",
-          "",
-        ].join("\n"),
-        BASE,
-        "handler",
-      );
-    bindEvaluator(db, { files, definitions });
-    const found = bodyStorage(scanned, {
-      facts: db,
-      factsPath: handlerPath,
-      patterns: SQLALCHEMY.filter((pattern) => pattern.module === "sqlalchemy"),
-      couldMatch: new Set(),
-      declared: packRecognizers([sessionQueryTestPack()], undefined),
-    });
-
-    expect(
-      found.effects.map(({ effect }) =>
-        effect.type === "interaction" ? effect.callee : null,
-      ),
-    ).toEqual(["db.add", "select(Orders).where"]);
+    ).toEqual(["db.query(Orders).first", "db.add", "text"]);
   });
 
   it("claims the call that starts each chain a declared hook reads at its last call, one that records nothing included", async () => {
-    const { db, definitions, files, handlerPath, scanned } =
-      await handlerProject(
-        [
-          "from sqlalchemy.orm import Session",
-          "",
-          "def handler(db: Session, stmt):",
-          "    db.query(Orders).filter_by(id=1).first()",
-          "    db.execute(stmt).scalars().all()",
-          "",
-        ].join("\n"),
-        BASE,
-        "handler",
-      );
-    bindEvaluator(db, { files, definitions });
-    const calls = bodyCalls(scanned, db);
-    const claimed = new Set(
-      declaredCallIds(calls, {
-        facts: db,
-        factsPath: handlerPath,
-        patterns: [],
-        couldMatch: new Set(),
-        declared: packRecognizers([sessionQueryTestPack()], undefined),
-      }),
+    const { db, lookup, scanned } = await handlerProject(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def handler(db: Session, stmt):",
+        "    db.query(Orders).filter_by(id=1).first()",
+        "    db.execute(stmt).scalars().all()",
+        "",
+      ].join("\n"),
     );
+    const calls = bodyCalls(scanned, db);
+    const claimed = new Set(declaredCallIds(calls, lookup));
 
     expect(
       calls.filter((call) => claimed.has(call.id)).map((call) => call.text),
@@ -259,19 +150,15 @@ describe("the database work a Python body does", () => {
   });
 
   it("recognizes a body once until evaluation starts over", async () => {
-    const { db, definitions, files, handlerPath, scanned } =
-      await handlerProject(
-        "def handler(order_id):\n    Orders.query().filter_by(id=order_id).delete()\n",
-        BASE,
-        "handler",
-      );
-    bindEvaluator(db, { files, definitions });
-    const lookup = {
-      facts: db,
-      factsPath: handlerPath,
-      patterns: SQLALCHEMY,
-      couldMatch: new Set(["query"]),
-    };
+    const { db, lookup, scanned } = await handlerProject(
+      [
+        "from sqlalchemy.orm import Session",
+        "",
+        "def handler(db: Session):",
+        "    db.query(Orders).first()",
+        "",
+      ].join("\n"),
+    );
 
     const first = bodyStorage(scanned, lookup);
     expect(first.effects).toHaveLength(1);
@@ -283,926 +170,39 @@ describe("the database work a Python body does", () => {
     expect(again.effects).toEqual(first.effects);
   });
 
-  it("says a chain ending in a write is one", async () => {
-    const effects = await effectsFor(
-      "Orders.query().filter_by(id=1).delete()\n",
+  it("records no read whose table nothing names, and keeps a write that has none", async () => {
+    const { lookup, scanned } = await handlerProject(
+      [
+        "from sqlalchemy import func",
+        "from sqlalchemy.orm import Session",
+        "",
+        "def handler(db: Session):",
+        "    db.query(func.count()).all()",
+        "    db.commit()",
+        "",
+      ].join("\n"),
     );
-    const [effect] = effects;
+
     expect(
-      effect?.type === "interaction" &&
-        effect.interaction.class === "storage-access"
-        ? effect.interaction.kind
-        : null,
-    ).toBe("write");
-  });
-
-  it("says which model the chain was called on", async () => {
-    const effects = await effectsFor("found = Orders.query().first()\n");
-    const [effect] = effects;
-    const semantics =
-      effect?.type === "interaction" ? effect.binding.semantics : null;
-    expect(semantics?.name === "storage" ? semantics.container : null).toBe(
-      "Orders",
-    );
-  });
-
-  it("says nothing about a wrapper that returns something else", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().first()\n",
-      [
-        "from sqlalchemy.orm import Query",
-        "",
-        "class Base:",
-        "    @classmethod",
-        "    def query(cls) -> Report:",
-        "        return build()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("says nothing when the declaring file never imports the library", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().first()\n",
-      [
-        "class Base:",
-        "    @classmethod",
-        "    def query(cls) -> Query:",
-        "        return build()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("says nothing when no pack declares a pattern", async () => {
-    const db = new Database();
-    const tree = await parsePython("found = Orders.query().first()\n");
-    expect(
-      storageEffects(bodyCalls(tree.rootNode, db), {
-        facts: db,
-        filePath: "f.py",
-        patterns: [],
-        couldMatch: new Set(["query"]),
-      }),
-    ).toEqual([]);
-  });
-
-  it("leaves the work a called function does to that function's own summary", async () => {
-    const effects = await effectsFor(
-      [
-        "def load_orders():",
-        "    return Orders.query().filter_by(id=1).first()",
-        "",
-        "found = load_orders()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("reads a query built from a function the file imported", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "found = select(User.email, User.id).where(User.id == 1).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toHaveLength(1);
-    const [effect] = effects;
-    expect(
-      effect?.type === "interaction" &&
-        effect.interaction.class === "storage-access"
-        ? effect.interaction.fields
-        : null,
-    ).toEqual(["email", "id"]);
-  });
-
-  it("takes a column only off the model the chain works on", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "found = select(User.id, Group.name, token.sub).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([{ fields: ["id"] }]);
-  });
-
-  it("reads a query built from a function another module re-exports", async () => {
-    const effects = await effectsFor(
-      ["from base import select", "", "found = select(User.id).all()", ""].join(
-        "\n",
+      bodyStorage(scanned, lookup).effects.map(({ effect }) =>
+        calleeOf(effect),
       ),
-      ["from sqlalchemy import select", ""].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "read", operation: "select", fields: ["id"] },
-    ]);
+    ).toEqual(["db.commit"]);
   });
 
-  it("says nothing about a function of the same name from somewhere else", async () => {
-    const effects = await effectsFor(
-      [
-        "from myapp.helpers import select",
-        "",
-        "found = select(a).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("takes no column from a keyword a statement function is given", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "found = select(User.id, whole=User.email).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(
-      effects[0]?.type === "interaction" &&
-        effects[0].interaction.class === "storage-access"
-        ? effects[0].interaction.fields
-        : null,
-    ).toEqual(["id"]);
-  });
-
-  it("takes no column from a keyword a project method that returns a query is given", async () => {
-    const base = BASE.replace(
-      "def query(cls)",
-      "def query(cls, *, scope=None)",
-    );
-    const effects = await effectsFor(
-      'found = Orders.query(scope="all").first()\n',
-      base,
-    );
-
-    expect(effects.map(accessOf)).toMatchObject([
-      { operation: "first", fields: [] },
-    ]);
-  });
-
-  it("records no read when nothing names a table for it, and keeps a write that has none", async () => {
-    const { db, definitions, files, handlerPath, scanned } =
-      await handlerProject(
-        [
-          "from sqlalchemy import select, update",
-          "",
-          "def handler(table):",
-          "    select(func.count()).all()",
-          "    update(table).values(name=1)",
-          "",
-        ].join("\n"),
-        BASE,
-        "handler",
-      );
-    bindEvaluator(db, { files, definitions });
-    const found = bodyStorage(scanned, {
-      facts: db,
-      factsPath: handlerPath,
-      patterns: SQLALCHEMY,
-      couldMatch: new Set(),
-    });
-
-    expect(found.effects.map(({ effect }) => accessOf(effect))).toMatchObject([
-      { kind: "write", operation: "update", fields: ["name"] },
-    ]);
-  });
-
-  it("says no columns for a query given a bare name", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "found = select(User).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(
-      effects[0]?.type === "interaction" &&
-        effects[0].interaction.class === "storage-access"
-        ? effects[0].interaction.fields
-        : null,
-    ).toEqual([]);
-  });
-
-  it("says nothing about a wrapper that says nothing about what it returns", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().first()\n",
-      [
-        "from sqlalchemy.orm import Query",
-        "",
-        "class Base:",
-        "    @classmethod",
-        "    def query(cls):",
-        "        return session()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("says nothing about a query function the file declares itself", async () => {
-    const effects = await effectsFor(
-      [
-        "def select(*columns):",
-        "    return build()",
-        "",
-        "found = select(User.id).all()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("leaves a query a called function builds from an imported constructor to that function", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "def load_orders():",
-        "    return select(User.id).all()",
-        "",
-        "found = load_orders()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("says a statement function is the write it is named for, whatever it ends with", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import delete, insert, update",
-        "",
-        "update(Orders).where(Orders.id == 1).values(total=2)",
-        "delete(Orders).where(Orders.id == 1)",
-        "insert(Orders).values(id=1, total=3)",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "update", fields: ["total"] },
-      { kind: "write", operation: "delete", fields: [] },
-      { kind: "write", operation: "insert", fields: ["id", "total"] },
-    ]);
-    expect(accessOf(effects[0])?.selector).toEqual(["id"]);
-  });
-
-  it("picks rows by a model column compared in where, filter or and_", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import and_, select",
-        "",
-        "select(Orders).where(Orders.tenant_id == tenant)",
-        "select(Orders).where(and_(status == Orders.status, Orders.kind == 'a'))",
-        "select(Orders).where(Orders.total > 3, tenant.id == other)",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
-      ["tenant_id"],
-      ["status", "kind"],
-      ["total"],
-    ]);
-  });
-
-  it("picks rows by the calls along the chain, and by none written inside an argument", async () => {
-    const effects = await effectsFor(
-      [
-        "from datetime import timedelta",
-        "from sqlalchemy import select",
-        "",
-        "select(Orders).where(Orders.placed_at >= now - timedelta(hours=window))",
-        "select(Orders).where(Orders.id.in_(select(Users.id).where(Users.tenant_id == t)))",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
-      ["placed_at"],
-      undefined,
-      ["tenant_id"],
-    ]);
-  });
-
-  it("picks rows by an equality on another class's column only when it is the chain's model", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "",
-        "select(Orders).join(Users).where(Users.kind == k, Orders.state == s)",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
-      ["state"],
-    ]);
-  });
-
-  it("picks rows by its own model's column however a filter compares it", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import or_, select",
-        "",
-        "Orders.query().filter(Orders.expires >= now).delete()",
-        "select(Orders).where(or_(Orders.closed_at < cutoff, Orders.status != 'open'))",
-        "select(Orders).where(Users.created_at > cutoff)",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map((effect) => accessOf(effect)?.selector)).toEqual([
-      ["expires"],
-      ["closed_at", "status"],
-      undefined,
-    ]);
-  });
-
-  it("reads a session the handler takes as an annotated parameter", async () => {
-    const effects = await effectsFor(
+  it("reads nothing when no pack declares a chain", async () => {
+    const { lookup, scanned } = await handlerProject(
       [
         "from sqlalchemy.orm import Session",
         "",
-        "def create(db: Session):",
-        "    db.add(Orders())",
-        "    db.commit()",
-        "    return db.query(Orders).filter_by(id=1).first()",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-      { kind: "write", operation: "commit" },
-      { kind: "read", operation: "first", selector: ["id"] },
-    ]);
-  });
-
-  it("reads a session annotated as the class a module inside the pattern's module defines", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm.session import Session",
-        "",
-        "def create(db: Session):",
+        "def handler(db: Session):",
         "    db.commit()",
         "",
       ].join("\n"),
-      BASE,
-      "create",
     );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "commit" },
-    ]);
-  });
 
-  it("says nothing about a session from a package whose name only starts with the pattern's module", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy_utils import Session",
-        "",
-        "def create(db: Session):",
-        "    db.commit()",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
+    expect(bodyStorage(scanned, { ...lookup, declared: [] }).effects).toEqual(
+      [],
     );
-    expect(effects).toEqual([]);
-  });
-
-  it("reads a statement built from a function a module inside the pattern's module exports", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.sql import select",
-        "",
-        "found = select(User.id).where(User.id == 1)",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "read", operation: "select" },
-    ]);
-  });
-
-  it("reads a query a project method returns when its file imports the type from a module inside the pattern's module", async () => {
-    const effects = await effectsFor(
-      "found = Orders.query().first()\n",
-      [
-        "from sqlalchemy.orm.query import Query",
-        "",
-        "class Base:",
-        "    @classmethod",
-        "    def query(cls) -> Query:",
-        "        return session()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "read", operation: "first" },
-    ]);
-  });
-
-  it("reads a session through an Annotated alias another module exports", async () => {
-    const effects = await effectsFor(
-      [
-        "from base import SessionDep",
-        "",
-        "def create(db: SessionDep):",
-        "    db.add(Orders())",
-        "    db.commit()",
-        "    return db.query(Orders).filter_by(id=1).first()",
-        "",
-      ].join("\n"),
-      [
-        "from typing import Annotated",
-        "from fastapi import Depends",
-        "from sqlalchemy.orm import Session",
-        "",
-        "def get_db():",
-        "    yield Session()",
-        "",
-        "SessionDep = Annotated[Session, Depends(get_db)]",
-        "",
-      ].join("\n"),
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-      { kind: "write", operation: "commit" },
-      { kind: "read", operation: "first", selector: ["id"] },
-    ]);
-  });
-
-  it("reads a session through an Annotated alias in the same module", async () => {
-    const effects = await effectsFor(
-      [
-        "from typing import Annotated",
-        "from fastapi import Depends",
-        "from sqlalchemy.orm import Session",
-        "",
-        "SessionDep = Annotated[Session, Depends(get_db)]",
-        "",
-        "def create(db: SessionDep):",
-        "    db.add(Orders())",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-    ]);
-  });
-
-  it("reads a session the body builds or opens itself", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def create():",
-        "    session = Session()",
-        "    session.add(Orders())",
-        "    with Session() as opened:",
-        "        opened.commit()",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-      { kind: "write", operation: "commit" },
-    ]);
-  });
-
-  it("reads a session a project function builds without saying it returns one", async () => {
-    const effects = await effectsFor(
-      [
-        "from base import open_session",
-        "",
-        "def create():",
-        "    db = open_session()",
-        "    db.add(Orders())",
-        "",
-      ].join("\n"),
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def open_session():",
-        "    return Session()",
-        "",
-      ].join("\n"),
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-    ]);
-  });
-
-  it("reads a session an alias in the same body stands for", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def create():",
-        "    opened = Session()",
-        "    db = opened",
-        "    db.add(Orders())",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-    ]);
-  });
-
-  it("reads a session a project function says it returns", async () => {
-    const effects = await effectsFor(
-      [
-        "from base import open_session",
-        "",
-        "open_session().add(Orders())",
-        "",
-      ].join("\n"),
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def open_session() -> Session:",
-        "    return Session()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "write", operation: "add" },
-    ]);
-  });
-
-  it("records nothing for a call that only returned a session", async () => {
-    const effects = await effectsFor(
-      ["from base import open_session", "", "open_session()", ""].join("\n"),
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def open_session() -> Session:",
-        "    return Session()",
-        "",
-      ].join("\n"),
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("records nothing for a session method the pack says touches no rows", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import select",
-        "from sqlalchemy.orm import Session",
-        "",
-        "def rows(db: Session):",
-        "    found = db.execute(select(Orders.id)).all()",
-        "    db.close()",
-        "    return found",
-        "",
-      ].join("\n"),
-      BASE,
-      "rows",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { kind: "read", operation: "select", fields: ["id"] },
-    ]);
-  });
-
-  it("reads the session type through a forward reference, Annotated, and Optional", async () => {
-    const effects = await effectsFor(
-      [
-        "from typing import Annotated, Optional",
-        "from sqlalchemy.orm import Session",
-        "",
-        'def create(db: "Session", other: Annotated[Session, 1], third: Optional[Session], fourth: list[Session]):',
-        "    db.add(Orders())",
-        "    other.add(Orders())",
-        "    third.add(Orders())",
-        "    fourth.add(Orders())",
-        "    def inner():",
-        "        db = Store()",
-        "    return inner",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map(accessOf)).toMatchObject([
-      { operation: "add" },
-      { operation: "add" },
-      { operation: "add" },
-    ]);
-  });
-
-  it("says nothing about a parameter of a type the library does not export", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "class Store:",
-        "    pass",
-        "",
-        "def create(db: Store):",
-        "    db.add(Orders())",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects).toEqual([]);
-  });
-
-  it("charges each session call to the model it works on, and commit to none", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm import Session",
-        "",
-        "def create(db: Session, order: Orders, order_id: int, data: dict):",
-        "    db.add(order)",
-        "    db.add(Orders(id=2))",
-        "    db.commit()",
-        "    found = db.get(Orders, order_id)",
-        "    db.refresh(found)",
-        "    built = Orders.model_validate(data)",
-        "    db.add(built)",
-        "    fetched = load_order(order_id)",
-        "    db.add(fetched)",
-        "    return db.query(Orders).filter_by(id=1).first()",
-        "",
-      ].join("\n"),
-      BASE,
-      "create",
-    );
-    expect(effects.map((effect) => containerOf(effect))).toEqual([
-      "Orders",
-      "Orders",
-      null,
-      "Orders",
-      "Orders",
-      "Orders",
-      null,
-      "Orders",
-    ]);
-  });
-
-  it("charges a call on a parameter declared through an Annotated alias to the class behind the alias", async () => {
-    const effects = await effectsFor(
-      [
-        "from typing import Annotated",
-        "from fastapi import Depends",
-        "from sqlalchemy.orm import Session",
-        "from base import CurrentOrder",
-        "",
-        "LocalOrder = Annotated[Orders, Depends(get_order)]",
-        "",
-        "def update(db: Session, order: CurrentOrder, other: LocalOrder):",
-        "    db.add(order)",
-        "    db.refresh(order)",
-        "    db.delete(other)",
-        "",
-      ].join("\n"),
-      [
-        "from typing import Annotated",
-        "from fastapi import Depends",
-        "from models import Orders",
-        "",
-        "def get_order():",
-        "    return Orders()",
-        "",
-        "CurrentOrder = Annotated[Orders, Depends(get_order)]",
-        "",
-      ].join("\n"),
-      "update",
-    );
-    expect(effects.map((effect) => containerOf(effect))).toEqual([
-      "Orders",
-      "Orders",
-      "Orders",
-    ]);
-  });
-
-  it("charges a call on a local a project function returned to what that function says it returns", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy.orm import Session",
-        "from base import load_order",
-        "",
-        "def update(db: Session, order_id: int):",
-        "    found = load_order(db, order_id)",
-        "    db.add(found)",
-        "    missing = unknown(order_id)",
-        "    db.add(missing)",
-        "",
-      ].join("\n"),
-      [
-        "from models import Orders",
-        "",
-        "def load_order(db, order_id: int) -> Orders | None:",
-        "    return db.get(Orders, order_id)",
-        "",
-      ].join("\n"),
-      "update",
-    );
-    expect(effects.map((effect) => containerOf(effect))).toEqual([
-      "Orders",
-      null,
-    ]);
-  });
-
-  it("charges a statement to the model in its first argument, or to the table it selects from", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import func, select",
-        "from models import Orders as models_Orders",
-        "import models",
-        "",
-        "def read(db):",
-        "    a = select(Orders).where(Orders.id == 1)",
-        "    b = select(Orders.id, Orders.total)",
-        "    c = select(models.Orders.id)",
-        "    d = select(func.count()).select_from(Orders)",
-        "    e = select(func.count(Orders.id))",
-        "    f = select(text)",
-        "",
-      ].join("\n"),
-      BASE,
-      "read",
-    );
-    expect(effects.map((effect) => containerOf(effect))).toEqual([
-      "Orders",
-      "Orders",
-      "Orders",
-      "Orders",
-      "Orders",
-      null,
-    ]);
-  });
-
-  it("charges nothing to a statement or a column declared as one of the library's own types", async () => {
-    const effects = await effectsFor(
-      [
-        "from sqlalchemy import ColumnElement, Select, func, select",
-        "",
-        "def count(query: Select):",
-        "    return select(func.count()).select_from(query.order_by(None).subquery())",
-        "",
-        "def ordered(query: Select, column: ColumnElement):",
-        "    return query.order_by(column)",
-        "",
-      ].join("\n"),
-      BASE,
-      "ordered",
-    );
-    expect(effects.map((effect) => containerOf(effect))).toEqual([null]);
-    const counted = await effectsFor(
-      [
-        "from sqlalchemy import Select, func, select",
-        "",
-        "def count(query: Select):",
-        "    return select(func.count()).select_from(query.order_by(None).subquery())",
-        "",
-      ].join("\n"),
-      BASE,
-      "count",
-    );
-    expect(counted.map((effect) => containerOf(effect))).toEqual([null, null]);
   });
 });
-
-/** A helper that takes its session bare, for the callers in `callers` to hand one to. */
-const LOOKUP = [
-  "def lookup(*, db, order_id):",
-  "    return db.query(Orders).filter_by(id=order_id).first()",
-  "",
-  "def lookup_at(db, order_id):",
-  "    return db.query(Orders).filter_by(id=order_id).first()",
-  "",
-].join("\n");
-
-/** The operations `lookup` or `lookup_at` records once its callers are in the run. */
-async function lookupOperations(
-  callers: string[],
-  inFunction = "lookup",
-): Promise<(string | undefined)[]> {
-  const effects = await effectsFor(LOOKUP, callers.join("\n"), inFunction);
-  return effects.map((effect) => accessOf(effect)?.operation);
-}
-
-describe("a session the callers declare", () => {
-  it("reads a session every caller passes by keyword as a Session", async () => {
-    const operations = await lookupOperations([
-      "from sqlalchemy.orm import Session",
-      "from handler import lookup",
-      "",
-      "def read_order(db: Session, order_id: int):",
-      "    return lookup(db=db, order_id=order_id)",
-      "",
-    ]);
-    expect(operations).toEqual(["first"]);
-  });
-
-  it("reads a session a caller passes by position", async () => {
-    const operations = await lookupOperations(
-      [
-        "from sqlalchemy.orm import Session",
-        "from handler import lookup_at",
-        "",
-        "def read_order(session: Session):",
-        "    return lookup_at(session, 1)",
-        "",
-      ],
-      "lookup_at",
-    );
-    expect(operations).toEqual(["first"]);
-  });
-
-  it("reads a session one caller declares through an Annotated alias and another as Session", async () => {
-    const operations = await lookupOperations([
-      "from typing import Annotated",
-      "from fastapi import Depends",
-      "from sqlalchemy.orm import Session",
-      "from handler import lookup",
-      "",
-      "SessionDep = Annotated[Session, Depends(get_db)]",
-      "",
-      "def read_order(db: SessionDep):",
-      "    return lookup(db=db, order_id=1)",
-      "",
-      "def sync_order(session: Session):",
-      "    return lookup(db=session, order_id=2)",
-      "",
-    ]);
-    expect(operations).toEqual(["first"]);
-  });
-
-  it("reads a session handed down through two helpers that take it bare", async () => {
-    const operations = await lookupOperations([
-      "from sqlalchemy.orm import Session",
-      "from handler import lookup",
-      "",
-      "def load(*, db, order_id):",
-      "    return lookup(db=db, order_id=order_id)",
-      "",
-      "def fetch(db, order_id):",
-      "    return load(db=db, order_id=order_id)",
-      "",
-      "def read_order(db: Session):",
-      "    return fetch(db, 1)",
-      "",
-    ]);
-    expect(operations).toEqual(["first"]);
-  });
-
-  it("reads nothing when two callers declare different classes", async () => {
-    const operations = await lookupOperations([
-      "from sqlalchemy.orm import Session",
-      "from redis import Redis",
-      "from handler import lookup",
-      "",
-      "def read_order(db: Session):",
-      "    return lookup(db=db, order_id=1)",
-      "",
-      "def cached_order(db: Redis):",
-      "    return lookup(db=db, order_id=1)",
-      "",
-    ]);
-    expect(operations).toEqual([]);
-  });
-
-  it("reads nothing when a caller passes a value nothing declares", async () => {
-    const operations = await lookupOperations([
-      "from sqlalchemy.orm import Session",
-      "from handler import lookup",
-      "",
-      "def read_order(db: Session):",
-      "    return lookup(db=db, order_id=1)",
-      "",
-      "def job(context):",
-      "    return lookup(db=context.db, order_id=1)",
-      "",
-    ]);
-    expect(operations).toEqual([]);
-  });
-
-  it("reads nothing when no caller is in the run", async () => {
-    expect(await lookupOperations([""])).toEqual([]);
-  });
-});
-
-function containerOf(effect: Effect): string | null {
-  const semantics =
-    effect.type === "interaction" ? effect.binding.semantics : null;
-  return semantics?.name === "storage" ? semantics.container : null;
-}
