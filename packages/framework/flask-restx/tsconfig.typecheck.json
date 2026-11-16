@@ -18,6 +18,9 @@
       "path": "../../checker/tsconfig.typecheck.json"
     },
     {
+      "path": "../../extractor/tsconfig.typecheck.json"
+    },
+    {
       "path": "../fastapi/tsconfig.typecheck.json"
     }
   ]

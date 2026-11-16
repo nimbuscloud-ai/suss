@@ -259,6 +259,7 @@ export type {
 } from "./reading.js";
 export type {
   BaseRole,
+  CarrierRule,
   ChildrenIn,
   DefaultsRole,
   EntryPick,

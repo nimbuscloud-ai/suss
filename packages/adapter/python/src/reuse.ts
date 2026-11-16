@@ -31,12 +31,12 @@ import type {
   StoredFileRecord,
   StoredWalkRecord,
 } from "@suss/resolution";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { ModuleResolution, RelativeModuleSpec } from "./moduleResolver.js";
 import type { PythonDiscoveryPattern, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { StoredScan, StoredTarget } from "./reach/closure.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
-import type { BoundPythonFile, RouterIndex } from "./routers.js";
 import type { DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding } from "./scope.js";
 import type { FormOf, PythonWrapperIndex } from "./wrappers.js";
@@ -168,8 +168,6 @@ export class WalkReplay {
   }
 }
 
-const ROUTER = "router ";
-const ROUTER_BUILT = "routerBuilt ";
 const ROUTES_DECLARED = "routesDeclared ";
 const MODULE_NAMED = "moduleNamed ";
 const SEPARATOR = "\u0000";
@@ -248,41 +246,6 @@ export class PackPositions {
   }
 }
 
-/** A router index whose lookups are noted, keyed by where the pattern and module are. */
-export function watchRouterIndex(
-  index: RouterIndex,
-  db: Database,
-  positions: PackPositions,
-  fileOfModule: ReadonlyMap<ModuleBinding, string>,
-): RouterIndex {
-  const note = (id: string, found: unknown): void => {
-    noteLookup(db, id, JSON.stringify(found));
-  };
-  return {
-    resolve(pattern, module, objectName) {
-      const found = index.resolve(pattern, module, objectName);
-      note(
-        `${ROUTER}${[positions.idOf(pattern), fileOfModule.get(module), objectName].join(SEPARATOR)}`,
-        found,
-      );
-      return found;
-    },
-    resolveConstruction(pattern, module, constructorName, constructionKey) {
-      const found = index.resolveConstruction(
-        pattern,
-        module,
-        constructorName,
-        constructionKey,
-      );
-      note(
-        `${ROUTER_BUILT}${[positions.idOf(pattern), fileOfModule.get(module), constructorName, constructionKey].join(SEPARATOR)}`,
-        found,
-      );
-      return found;
-    },
-  };
-}
-
 /** The run's route tables, with what each decorator declares noted, keyed by where the pattern is and the decorator's call. */
 export function watchRouteTables(
   routes: DeclaredRouteIndex,
@@ -308,29 +271,12 @@ export function watchRouteTables(
 /** Each noted lookup made again over this run's indexes, which must be the ones nothing watches. */
 export function lookAgainIn(args: {
   db: Database;
-  routerIndex: RouterIndex;
   routes: DeclaredRouteIndex;
   wrapperIndex: PythonWrapperIndex;
   positions: PackPositions;
   moduleOfFile: ReadonlyMap<string, ModuleBinding>;
   roots: string[];
 }): (id: string) => string | null {
-  const router = (
-    rest: string,
-    ask: (
-      pattern: PythonDiscoveryPattern,
-      module: ModuleBinding,
-      parts: string[],
-    ) => unknown,
-  ): string | null => {
-    const [patternId, file, ...parts] = rest.split(SEPARATOR);
-    const pattern =
-      patternId === undefined ? undefined : args.positions.patternOf(patternId);
-    const module = file === undefined ? undefined : args.moduleOfFile.get(file);
-    return pattern === undefined || module === undefined
-      ? null
-      : JSON.stringify(ask(pattern, module, parts));
-  };
   return (id) => {
     if (id.startsWith(ROUTES_DECLARED)) {
       const [patternId = "", decorator = ""] = id
@@ -340,23 +286,6 @@ export function lookAgainIn(args: {
       return pattern === undefined
         ? null
         : JSON.stringify(args.routes.routesAt(pattern, decorator));
-    }
-    if (id.startsWith(ROUTER_BUILT)) {
-      return router(
-        id.slice(ROUTER_BUILT.length),
-        (pattern, module, [constructorName, key]) =>
-          args.routerIndex.resolveConstruction(
-            pattern,
-            module,
-            constructorName ?? "",
-            key ?? "",
-          ),
-      );
-    }
-    if (id.startsWith(ROUTER)) {
-      return router(id.slice(ROUTER.length), (pattern, module, [name]) =>
-        args.routerIndex.resolve(pattern, module, name ?? ""),
-      );
     }
     if (id.startsWith(MODULE_NAMED)) {
       const [from = "", module = "", level = "0"] = id

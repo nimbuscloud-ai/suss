@@ -28,8 +28,8 @@ import { libraryUnit } from "./reach/closure.js";
 
 import type { Database } from "@suss/datalog";
 import type { RawCodeStructure } from "@suss/extractor";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyNode } from "./parser.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { StorageLookup } from "./storage.js";
 
 export function settlePythonModules(

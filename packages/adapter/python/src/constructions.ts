@@ -26,8 +26,8 @@ import { resolveCalls } from "./facts/resolve.js";
 import { nodeAt, readKey } from "./facts/values.js";
 
 import type { Database } from "@suss/datalog";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyNode } from "./parser.js";
-import type { BoundPythonFile } from "./routers.js";
 
 type Files = ReadonlyMap<string, BoundPythonFile>;
 

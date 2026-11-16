@@ -18,12 +18,14 @@ import { noteKeyRead, noteLookup } from "@suss/resolution";
 
 import {
   children,
+  enclosingFunction,
   field,
   parameterNameAndType,
   rangeOf,
   spanOf,
   stripDecorators,
 } from "./ast.js";
+import { boundModuleAt } from "./boundFiles.js";
 import {
   classifyDecorator,
   decoratorReceiver,
@@ -36,7 +38,8 @@ import {
   returnBranch,
   withBodyEffects,
 } from "./discovery.js";
-import { nameKeyIn } from "./facts/values.js";
+import { writtenValueOf } from "./facts/resolve.js";
+import { nameKeyIn, nodeAt } from "./facts/values.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
   bodyCalls,
@@ -45,14 +48,15 @@ import {
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
 import { functionNamed } from "./reach/resolveCallee.js";
-import { boundModuleAt, constructionOf, constructorCalled } from "./routers.js";
 import { resolveName } from "./scope.js";
 import { nodeOfResolutionKey } from "./values/evaluator.js";
+import { originOf } from "./values/origin.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { Range } from "./ast.js";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { RouteDecorator } from "./discovery.js";
 import type {
   PyDecoratedWrapperForm,
@@ -65,7 +69,6 @@ import type {
 import type { PyNode } from "./parser.js";
 import type { BodyTerminal, TerminalBranch } from "./paths/bodyBranches.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
@@ -788,6 +791,62 @@ function registrarOf(
   return registrar === undefined
     ? null
     : { registrar, key: construction.key, call };
+}
+
+/**
+ * The call a name was built by, asked of the resolution rules: an
+ * assignment in this file, a name imported from the file that assigned
+ * it, or a project factory's call followed into what it returns. The
+ * call is null when it is written in another file.
+ */
+function constructionOf(
+  name: string,
+  scope: Scope,
+  where: BoundPythonFile,
+  facts: Database | undefined,
+): { key: string; call: PyNode | null } | null {
+  const binding = resolveName(scope, name);
+  if (facts === undefined || binding === null) {
+    return null;
+  }
+  // A parameter, or a name bound some other way, cannot be keyed
+  // correctly here, so it is left alone rather than asked about under
+  // the wrong key.
+  if (binding.kind !== "assignment" && binding.kind !== "importFrom") {
+    return null;
+  }
+
+  // A function's own names are keyed under it, so an app built inside a
+  // factory has to be asked about there rather than at module level.
+  const nameKey = nameKeyIn(
+    where.file,
+    scope.kind === "function" ? scope.node : enclosingFunction(scope.node),
+    name,
+  );
+  const key = writtenValueOf(facts, nameKey);
+  return key === null
+    ? null
+    : { key, call: nodeAt(where.file, where.root, key) };
+}
+
+/**
+ * The constructor a call says it is calling, when it comes out of one of
+ * the modules, as its module exports it, whether the file imports the
+ * name or the module: `APIRouter(...)` and `fastapi.APIRouter(...)` are
+ * the same. Null for anything else, including a same-named constructor
+ * somebody else exports.
+ */
+function constructorCalled(
+  call: PyNode,
+  module: ModuleBinding,
+  importModule: readonly string[],
+): string | null {
+  const callee = field(call, "function");
+  const origin = callee === null ? null : originOf(callee, module);
+  if (origin === null || !importModule.includes(origin.module)) {
+    return null;
+  }
+  return origin.name;
 }
 
 /** Every registration one file writes, through every form the pack declares. */

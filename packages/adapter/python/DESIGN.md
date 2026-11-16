@@ -34,9 +34,9 @@ except RuntimeError:
     pass
 ```
 
-When a name is assigned two constructions, the rules return both. Keying a route on the wrong app is worse than keying it on none, so nothing picks one of the two. If both constructions come from the same module, that is enough to tell which pack the route belongs to: the route is discovered, and the router index reports the name the two share. If they come from different modules, the decorator stays unclassified and the route is not discovered.
+When a name is assigned two constructions, the rules return both. Keying a route on the wrong app is worse than keying it on none, so nothing picks one of the two.
 
-FastAPI's pack finds its routes a different way, through the route table it declares under `routes`. `@suss/recognize` composes that table once over every file of the run: each decorator called on the app or on a router, and each `include_router` call that mounts one router onto another, wherever it is written. Discovery then builds a unit from what the table says each decorator declares, and the table's words say why a route has no path. A name assigned two routers gives a route the router index's reason, and a name assigned two apps serves the route at its own path, since an app adds no prefix. The sections below on prefixes and mounts describe both readers.
+Both packs find their routes through the route table each declares under `routes`. `@suss/recognize` composes that table once over every file of the run: each decorator called on an app, an `Api`, a router or a namespace, and each `include_router` or `add_namespace` call that mounts one onto another, wherever it is written. Discovery then builds a unit from what the table says each decorator declares, and the table's words say why a route has no path. A name assigned two routers gives a route a reason that says so. A name assigned two apps serves the route under the path both put in front of it, and when they put different paths there the route gets none. A decorator written as a name the file imports from one of the pack's modules, such as a wrapper module a dependency stub says re-exports the library, is served at its own path.
 
 The adapter adds three Python facts for this. A method's receiver binds to the class the method is declared in, so `self.app` is the value the class assigns to `app`. An assignment written inside a method body binds its name; the class walk used to skip these. And an import of a package the repo cannot read still records which module the name came from. Without that, the adapter could not tell `FastAPI()` apart from a constructor of the same name that the project wrote itself.
 
@@ -131,7 +131,7 @@ That leaves one case the reader cannot see. If the dictionary sets the prefix ke
 
 ### Repeated slashes
 
-A prefix written with a trailing slash leaves the composed path with two slashes. Werkzeug serves such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`. The pack declares this, and the reader then merges repeated slashes in every path it composes. Starlette does not merge them, so FastAPI's pack declares nothing and its paths stay as composed.
+A prefix written with a trailing slash leaves the composed path with two slashes. Werkzeug serves such a rule at the merged path and redirects the written one, so `/api/v1//orders` is reached at `/api/v1/orders`. flask-restx's table declares `joins: "merged"`, and every path the table composes, and every route path discovery puts after a prefix, has its repeated slashes merged. Starlette does not merge them, so FastAPI's table declares `asWritten` and its paths stay as composed.
 
 ## What a body lowers to
 
@@ -355,7 +355,7 @@ def create_app():
     return app
 ```
 
-So suss looks for mounts inside function bodies as well as at the top level. The router index, which reads flask-restx's namespaces, still reads constructor calls only at the top level, which is where people write them. It misses a mount inside an `if`, a `try`, a `with`, a `while`, or a class method, because the binder records no name written inside one of those, and a mount there would resolve to nothing anyway. FastAPI's route table reads every router and every mount the facts follow, a class method's included, and a name the mount reads after it is assigned a second router is the second router, as Python runs it.
+So suss looks for mounts inside function bodies as well as at the top level. The route table reads every router, namespace and mount the facts follow, a class method's included, and a name the mount reads after it is assigned a second router is the second router, as Python runs it.
 
 A mount inside a `for` goes one of two ways, depending on whether the source lists the routers the loop covers.
 
@@ -364,7 +364,7 @@ A mount inside a `for` goes one of two ways, depending on whether the source lis
 | a list or tuple of bare names, `for ns in [orders, users]` | mounts each of those names, exactly as a mount call that named it would | every element is a name the existing one-hop rule already follows |
 | anything else, `for ns in loader.load_namespaces()` | mounts nothing, and every router it never saw mounted by name records the loop as the reason | no file shows which routers the call returns |
 
-Both readers take a loop over a call the rules settle on a list, such as `for r in loader.load_routers()` where `load_routers` returns `[orders.router, users.router]`, as that list. FastAPI's route table reads the first row a little wider: a list mounts each item that comes to a router, so `[orders, build_extra()]` still mounts `orders`, and a list that has an item the table cannot follow is read as the second row. A loop that takes each element apart, `for name, router in pairs`, is the second row too.
+The table takes a loop over a call the rules settle on a list, such as `for r in loader.load_routers()` where `load_routers` returns `[orders.router, users.router]`, as that list. It reads the first row a little wider: a list mounts each item that comes to a router, so `[orders, build_extra()]` still mounts `orders`, and a list that has an item the table cannot follow is read as the second row. A loop that takes each element apart, `for name, router in pairs`, is the second row too.
 
 Claiming a path for the second row would mean two guesses at once: that this router is in the collection at all, and that the mount states no prefix that would replace or extend the router's own. A wrong path is worse than no path here. A claimed path pairs the route with a contract on the other side, and every check after that treats the path as fact, with no way to tell it apart from a path suss followed all the way.
 
@@ -396,7 +396,7 @@ Both conditions matter. Counting only loops keeps the ordinary case working: two
 
 A module-level mount is never dropped this way. It runs whichever factory the app calls.
 
-The router index checks this only for the mounts of the router a route is declared on. FastAPI's route table also checks it for every mount above that router, so a route on a router mounted at the top level onto one that is mounted inside such a function claims no path either. Its reason says the router is mounted through a chain of routers suss cannot compose.
+The route table checks it for every mount above the router a route is declared on as well as that router's own, so a route on a router mounted at the top level onto one that is mounted inside such a function claims no path either. Its reason says the router is mounted through a chain of routers suss cannot compose.
 
 ### A mount on an app that its function drops
 
@@ -418,7 +418,7 @@ Calling a method on the app keeps the mount unless the pack registers something 
 
 A read the facts do not record looks like no read at all, and then the mount is dropped when it may serve. So a spelling that passes a value on needs a fact before this check can see it.
 
-A pack that declares a mount object is left out, which today is flask-restx. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
+flask-restx's table drops nothing. Its `Api` serves through the app or blueprint it was built from or handed, so what happens to the `Api`'s own variable says nothing about whether the app is served.
 
 A route declared straight on such an app is left out the same way, since no request can reach it either:
 
@@ -672,7 +672,7 @@ A run with a cache writes a record for every file beside the summaries: the unit
 
 A route registers the wrappers it depends on as it is discovered, and the wrapper index builds a unit for each one the first time. A replayed file registers the same wrappers again at the same point, so the wrapper units come out in the same order as before. The wrapper units themselves are built again every run. The walk replays a function's stored scan at the same place in the same round, so the summaries come out in the order a run without the cache writes them.
 
-The indexes the run builds over every file are built again each time, and each lookup a record made in one is repeated and compared: a router's composed prefix, by pattern and module and name or by the call that built it; what a route table says a decorator declares, by pattern and the decorator's call; what the app and each router registered around their routes; which method names a storage chain may start from; and which parameters end up naming an environment variable. A mount added in `main.py` changes the prefix a route in another file gets, and the route's file is discovered again because its lookup comes back different.
+The indexes the run builds over every file are built again each time, and each lookup a record made in one is repeated and compared: what a route table says a decorator declares, by pattern and the decorator's call; what the app and each router registered around their routes; which method names a storage chain may start from; and which parameters end up naming an environment variable. A mount added in `main.py` changes the prefix a route in another file gets, and the route's file is discovered again because its lookup comes back different.
 
 Python has no binding by name across the whole run like Ruby's constants. A name resolves inside its own module or through an explicit import, and each `imports` row says which file the module is. So a definition added to one file reaches only the work that asked about a key in that file, and that work is checked on the key. What remains are the indexes above, which are compared, and a wildcard import, whose module is read as a whole file and charged as one.
 

@@ -98,9 +98,9 @@ import type {
   RawParameter,
 } from "@suss/extractor";
 import type { CalleeOutcome } from "@suss/resolution";
+import type { BoundPythonFile } from "../boundFiles.js";
 import type { PyNode } from "../parser.js";
 import type { WalkReplay } from "../reuse.js";
-import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 import type { StorageLookup } from "../storage.js";
 import type { PythonTestIndex } from "../testCases.js";

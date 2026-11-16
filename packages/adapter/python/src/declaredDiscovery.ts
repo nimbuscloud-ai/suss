@@ -35,10 +35,11 @@ import type {
   RawCodeStructure,
 } from "@suss/extractor";
 import type { DeclaredUnit } from "@suss/recognize";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ReachOptions } from "./reach/closure.js";
-import type { BoundPythonFile } from "./routers.js";
+import type { Binding } from "./scope.js";
 
 export function declaredDiscoveryUnits(
   file: BoundPythonFile,
@@ -196,23 +197,38 @@ function importedNamesOf(
   return names;
 }
 
-/** The names `import m` and `import m as x` bind to one of the modules, as the module scope binds them. */
+/**
+ * The names `import m`, `import m as x` and `from p import m` bind to one
+ * of the modules, as the module scope binds them. Python looks a name up
+ * in the package before it looks for a submodule, so `from p import m`
+ * counts only when `p.m` is one of the modules.
+ */
 function importedWholeIn(
   file: BoundPythonFile,
   modules: readonly string[],
 ): Set<string> {
   const names = new Set<string>();
   for (const [local, binding] of file.module.moduleScope.bindings) {
-    if (
-      binding.kind === "import" &&
-      binding.bindsWholeModule &&
-      binding.relativeLevel === 0 &&
-      modules.includes(binding.module)
-    ) {
+    if (bindsModule(binding, modules)) {
       names.add(local);
     }
   }
   return names;
+}
+
+function bindsModule(binding: Binding, modules: readonly string[]): boolean {
+  if (binding.kind === "import") {
+    return (
+      binding.relativeLevel === 0 &&
+      binding.bindsWholeModule &&
+      modules.includes(binding.module)
+    );
+  }
+  return (
+    binding.kind === "importFrom" &&
+    binding.relativeLevel === 0 &&
+    modules.includes(`${binding.module}.${binding.importedName}`)
+  );
 }
 
 /** Every class the module writes, however deep, in source order. */

@@ -29,9 +29,9 @@ import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { FactSource, PackRecognizer } from "@suss/extractor";
 import type { HeardSlot } from "@suss/recognize/ops";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
-import type { BoundPythonFile } from "./routers.js";
 
 /** The name the storage chains' accesses are recognized under. */
 const STORAGE_RECOGNITION = "python-storage";
