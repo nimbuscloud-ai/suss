@@ -140,6 +140,7 @@ function under(
 ): DecoratedDefinition {
   return {
     definition,
+    name: null,
     decorators: decorators.map((decorator) =>
       "method" in decorator
         ? { form: "call", call: decorator as CallOps }

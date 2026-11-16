@@ -160,11 +160,17 @@ function receiverWith(
 }
 
 /** Every function and class the module writes under a decorator, however deep, in source order. */
-function decoratedIn(file: BoundPythonFile): string[] {
-  const found: string[] = [];
+function decoratedIn(
+  file: BoundPythonFile,
+): { key: string; name: string | null }[] {
+  const found: { key: string; name: string | null }[] = [];
   const visit = (node: PyNode): void => {
     if (node.type === "decorated_definition") {
-      found.push(nodeId(file.file, stripDecorators(node).definition));
+      const { definition } = stripDecorators(node);
+      found.push({
+        key: nodeId(file.file, definition),
+        name: field(definition, "name")?.text ?? null,
+      });
     }
     for (const child of node.namedChildren) {
       if (child !== null) {

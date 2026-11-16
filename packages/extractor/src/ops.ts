@@ -739,6 +739,8 @@ export interface ModuleOps {
 /** A function or class written under decorators, with each decorator in source order, the top one first. */
 export interface DecoratedDefinition {
   readonly definition: ValueOps;
+  /** The name the function or class is declared under, or null where the adapter cannot say. */
+  readonly name: string | null;
   readonly decorators: readonly Decorator[];
 }
 

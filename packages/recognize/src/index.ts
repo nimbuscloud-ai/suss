@@ -212,7 +212,7 @@ export type { AssociationTarget, ClassDeclaration } from "./classBody.js";
 export type { CompileOptions } from "./compile.js";
 export type { ReadSpellings, SiteRead } from "./compileReads.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
-export type { DeclaredUnit } from "./discovery.js";
+export type { DeclaredUnit, DecoratedBy } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
 export type { HttpRequests, HttpRequestsSpec } from "./httpRequests.js";
 export type {
