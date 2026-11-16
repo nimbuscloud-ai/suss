@@ -2,32 +2,25 @@
  * Makes a function that calls out over the network a client of the
  * method and path that call states.
  *
- * A pack lists the callables its library provides for making a request,
- * and where each one takes the method and the URL. This module reads the
- * calls in each function body, evaluates the URL the same way a route's
- * path is evaluated, and reports the enclosing function as a client of
- * that method and path. A call at module level has no function to belong
- * to, so it is skipped. A URL that says nothing about where it goes
- * makes its function a client with no path, which pairs with nothing.
+ * A pack declares the requests its library sends with `@suss/recognize`,
+ * and this module hands every call in each function body to those hooks,
+ * with the ops over the run's facts. Each request a hook finds makes the
+ * enclosing function a client of that method and path, so a function
+ * that makes two calls gets two units. A call at module level has no
+ * function to belong to, so it is skipped. A URL that says nothing about
+ * where it goes makes its function a client with no path, which pairs
+ * with nothing. What the caller does with the response is read off the
+ * function's body here.
  */
 
-import {
-  hasNameHole,
-  restBinding,
-  statusMembersOf,
-  testsStatus,
-} from "@suss/behavioral-ir";
-import { redirectDeliveryWhenSet } from "@suss/extractor";
-import { hostOf, pathOf, scalarOf, statedRequestPath } from "@suss/values";
+import { restBinding, statusMembersOf, testsStatus } from "@suss/behavioral-ir";
+import { runPackHook } from "@suss/extractor";
+import { factCallOps } from "@suss/recognize/ops";
 
-import {
-  children,
-  field,
-  isFunction,
-  rangeOf,
-  spanOf,
-  stringLiteralValue,
-} from "./ast.js";
+import { children, field, isFunction, rangeOf, spanOf } from "./ast.js";
+import { packRequestHooks } from "./declaredClients.js";
+import { factSourceOf } from "./factSource.js";
+import { nodeId } from "./facts/values.js";
 import { claimsNamedAfter } from "./lambdaClaims.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
@@ -42,95 +35,128 @@ import {
   type HandOffOptions,
   throughResponseHelpers,
 } from "./responseHandOff.js";
-import {
-  constructionBehind,
-  constructionSitesOf,
-  evaluatedValue,
-  moduleOf,
-} from "./values/evaluator.js";
+import { moduleOf } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
+  ClientResponse,
+  PackTally,
   RawBranch,
   RawCodeStructure,
   RawEffect,
-  RedirectDelivery,
+  RequestClaim,
+  RequestRecognizer,
 } from "@suss/extractor";
-import type { PyClientCall, PythonPack } from "./pack.js";
+import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { TerminalBranch } from "./paths/bodyBranches.js";
 import type { ModuleBinding } from "./scope.js";
 
-/**
- * Where a URL goes: its path, and its host when it is absolute. The path
- * is null when it says nothing about where the request goes.
- */
-interface Target {
-  path: string | null;
-  host: string | undefined;
-}
-
-/** What one request call states about the boundary it reaches. */
-interface RequestCall extends Target {
-  method: string;
-  range: ReturnType<typeof rangeOf>;
-  /** The call itself, so a helper the caller hands the response to can be told apart. */
-  node: PyNode;
-  /** What this call does with a redirect, when it passes the pack's option. */
-  redirectDelivery?: RedirectDelivery;
-}
-
 export interface ClientCallOptions {
   filePath: string;
+  /** The path the facts key this file's nodes under, when it differs from `filePath`. */
+  factsPath?: string | undefined;
   facts?: Database | undefined;
+  /** Each pack's tally, which a hook that throws is charged to. */
+  tallies?: ReadonlyMap<string, PackTally> | undefined;
+}
+
+/** One pack's request hooks, each with the units it found so far. */
+interface Requesting {
+  readonly pack: PythonPack;
+  readonly hooks: readonly {
+    readonly hook: RequestRecognizer;
+    readonly units: RawCodeStructure[];
+  }[];
 }
 
 /**
- * One unit per request call a function in this file makes. A function
- * that makes two calls is a client of both boundaries, so it gets two.
- * A request in a lambda a pack claims is made by that lambda, so the
- * lambda is the client, under the name its own unit has.
+ * One unit per request a function in this file makes. A request in a
+ * lambda a pack claims is made by that lambda, so the lambda is the
+ * client, under the name its own unit has. Each hook's units come
+ * together, in pack order, with each in the order the file writes it.
  */
 export function clientCallUnits(
   root: PyNode,
-  module: ModuleBinding,
-  pack: PythonPack,
-  pattern: PyClientCall,
+  packs: readonly PythonPack[],
   options: ClientCallOptions,
 ): RawCodeStructure[] {
-  const requestsBy = (caller: PyNode, name: string, calls: PyNode[]) =>
-    calls.flatMap((call) =>
-      requestCalls(call, pattern, module, options).map((request) =>
-        clientUnit(caller, name, request, pattern, pack, options),
-      ),
-    );
-  return functionDefinitions(root).flatMap((definition) => {
+  const { facts } = options;
+  const requesting: Requesting[] = packs.flatMap((pack) => {
+    const hooks = packRequestHooks(pack);
+    return hooks.length === 0
+      ? []
+      : [{ pack, hooks: hooks.map((hook) => ({ hook, units: [] })) }];
+  });
+  if (facts === undefined || requesting.length === 0) {
+    return [];
+  }
+  const source = factSourceOf(facts);
+  const factsPath = options.factsPath ?? options.filePath;
+  const requestsBy = (caller: PyNode, name: string, calls: PyNode[]) => {
+    for (const call of calls) {
+      const ops = factCallOps(nodeId(factsPath, call), source);
+      if (ops === null) {
+        continue;
+      }
+      for (const { pack, hooks } of requesting) {
+        for (const { hook, units } of hooks) {
+          for (const claim of claimsAt(hook, call, ops, pack, options)) {
+            units.push(
+              clientUnit(caller, name, { claim, call }, hook.response, pack, {
+                ...options,
+                facts,
+              }),
+            );
+          }
+        }
+      }
+    }
+  };
+  for (const definition of functionDefinitions(root)) {
     const name = field(definition, "name")?.text;
     if (name === undefined) {
-      return [];
+      continue;
     }
-    return [
-      ...requestsBy(definition, name, bodyCalls(definition, options.facts)),
-      ...claimsNamedAfter(definition, name, options.facts).flatMap((claim) =>
-        requestsBy(
-          claim.lambda,
-          claim.name,
-          ownBodyCalls(claim.lambda, options.facts),
-        ),
-      ),
-    ];
-  });
+    requestsBy(definition, name, bodyCalls(definition, facts));
+    for (const claim of claimsNamedAfter(definition, name, facts)) {
+      requestsBy(claim.lambda, claim.name, ownBodyCalls(claim.lambda, facts));
+    }
+  }
+  return requesting.flatMap(({ hooks }) => hooks.flatMap(({ units }) => units));
+}
+
+/** The requests one hook reads at the call. A hook that throws is charged to its pack, and the call makes none. */
+function claimsAt(
+  hook: RequestRecognizer,
+  call: PyNode,
+  ops: NonNullable<ReturnType<typeof factCallOps>>,
+  pack: PythonPack,
+  options: ClientCallOptions,
+): readonly RequestClaim[] {
+  return (
+    runPackHook(
+      options.tallies?.get(pack.name),
+      {
+        pack: pack.name,
+        hook: "requestRecognizers",
+        file: options.filePath,
+        line: rangeOf(call).start,
+      },
+      () => hook(call, { ops }),
+      null,
+    ) ?? []
+  );
 }
 
 /**
- * Every receiver in this file's functions that `calledAttribute` will ask
- * the rules about. A caller settles them all in one round before reading
- * any, because each round runs over the whole project's facts.
- *
- * The receivers do not depend on the pattern, so one walk covers every
- * pack in the run.
+ * Every receiver in this file's functions whose origin the request hooks
+ * may ask about. A caller settles what each was written as in one round
+ * before reading any, because each round runs over the whole project's
+ * facts. The receivers do not depend on the pack, so one walk covers
+ * every pack in the run.
  */
 export function clientCallReceivers(
   root: PyNode,
@@ -163,230 +189,6 @@ function functionDefinitions(node: PyNode, found: PyNode[] = []): PyNode[] {
     functionDefinitions(child, found);
   }
   return found;
-}
-
-/**
- * The request this call makes, once per method and path it can reach. A
- * URL the enclosing class takes in `__init__` can differ between
- * constructions, so each construction gives a request of its own.
- */
-function requestCalls(
-  call: PyNode,
-  pattern: PyClientCall,
-  module: ModuleBinding,
-  options: ClientCallOptions,
-): RequestCall[] {
-  const callee = field(call, "function");
-  const attribute =
-    callee === null
-      ? null
-      : calledAttribute(callee, pattern, module, options.facts);
-  if (attribute === null) {
-    return [];
-  }
-  const plain = requestCall(call, attribute, pattern, options);
-  if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
-    return [plain];
-  }
-
-  // Two constructions with the same method and path give one request,
-  // since the boundary is the same for both. A request with no path is
-  // the one left when no construction says where it goes.
-  const byBoundary = new Map<string, RequestCall>();
-  for (const site of constructionSitesOf(call, options.facts)) {
-    const stated = requestCall(call, attribute, pattern, options, site);
-    if (stated === null || stated.path === null) {
-      continue;
-    }
-    const key = `${stated.method} ${stated.host ?? ""} ${stated.path}`;
-    if (!byBoundary.has(key)) {
-      byBoundary.set(key, stated);
-    }
-  }
-  if (byBoundary.size > 0) {
-    return [...byBoundary.values()];
-  }
-  return plain === null ? [] : [plain];
-}
-
-/** The method and path this call states, or null when either cannot be read. */
-function requestCall(
-  call: PyNode,
-  attribute: string,
-  pattern: PyClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): RequestCall | null {
-  const stated = methodAndPath(call, attribute, pattern, options, site);
-  if (stated === null) {
-    return null;
-  }
-  const redirectDelivery = redirectDeliveryAt(call, pattern, options, site);
-  return redirectDelivery === undefined
-    ? stated
-    : { ...stated, redirectDelivery };
-}
-
-/**
- * What the call does with a redirect when it passes the pack's redirect
- * option with a value the evaluator settles, as `allow_redirects=False`
- * does. Undefined leaves the pack's default.
- */
-function redirectDeliveryAt(
-  call: PyNode,
-  pattern: PyClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): RedirectDelivery | undefined {
-  const option = pattern.response?.redirectOption;
-  const argument =
-    option === undefined ? null : argumentAt(call, null, option.name);
-  if (option === undefined || argument === null) {
-    return undefined;
-  }
-  const value = scalarOf(evaluatedValue(argument, options.facts, site));
-  return value === null ? undefined : redirectDeliveryWhenSet(option, value);
-}
-
-function methodAndPath(
-  call: PyNode,
-  attribute: string,
-  pattern: PyClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): RequestCall | null {
-  const verb = pattern.verbAttributeNames[attribute];
-  if (verb !== undefined) {
-    const target = urlAt(
-      call,
-      pattern.url.position,
-      pattern.url.keyword,
-      options,
-      site,
-    );
-    return target === null
-      ? null
-      : { method: verb, ...target, range: rangeOf(call), node: call };
-  }
-
-  const methodCall = pattern.methodCall;
-  if (methodCall === undefined || methodCall.attribute !== attribute) {
-    return null;
-  }
-  const stated = argumentAt(
-    call,
-    methodCall.methodPosition,
-    methodCall.methodKeyword,
-  );
-  const method = stated === null ? null : stringLiteralValue(stated);
-  if (method === null) {
-    return null;
-  }
-  const target = urlAt(
-    call,
-    methodCall.urlPosition,
-    pattern.url.keyword,
-    options,
-    site,
-  );
-  return target === null
-    ? null
-    : {
-        method: method.toUpperCase(),
-        ...target,
-        range: rangeOf(call),
-        node: call,
-      };
-}
-
-/**
- * The library callable a call reaches, by its attribute name:
- * `requests.get`, a bare `get` imported from it, or `session.get` on a
- * value the library's own constructor built.
- */
-function calledAttribute(
-  callee: PyNode,
-  pattern: PyClientCall,
-  module: ModuleBinding,
-  facts: Database | undefined,
-): string | null {
-  const origin = originOf(callee, module);
-  if (origin !== null) {
-    return pattern.importModule.includes(origin.module) ? origin.name : null;
-  }
-
-  const object = field(callee, "object");
-  const attribute = field(callee, "attribute")?.text;
-  if (object === null || attribute === undefined) {
-    return null;
-  }
-  const constructorName = receiverConstructor(
-    object,
-    pattern.importModule,
-    facts,
-  );
-  const constructors = pattern.receiverConstructors ?? [];
-  return constructorName !== null && constructors.includes(constructorName)
-    ? attribute
-    : null;
-}
-
-/** The constructor a receiver was built by, whether it was assigned or opened with `with`. */
-function receiverConstructor(
-  object: PyNode,
-  importModule: readonly string[],
-  facts: Database | undefined,
-): string | null {
-  const built = constructionBehind(object, facts);
-  if (built.type !== "oneCall") {
-    return null;
-  }
-  const { origin } = built.construction;
-  return importModule.includes(origin.module) ? origin.name : null;
-}
-
-/** Where the URL argument goes, or null when the call has no URL argument. */
-function urlAt(
-  call: PyNode,
-  position: number,
-  keyword: string,
-  options: ClientCallOptions,
-  site?: string,
-): Target | null {
-  const argument = argumentAt(call, position, keyword);
-  if (argument === null) {
-    return null;
-  }
-  const value = evaluatedValue(argument, options.facts, site);
-  const host = hostOf(value);
-  return { path: statedRequestPath(pathOf(value), host) ?? null, host };
-}
-
-/**
- * The argument written under a keyword, or the one at a position. A null
- * position reads the keyword only.
- */
-function argumentAt(
-  call: PyNode,
-  position: number | null,
-  keyword?: string,
-): PyNode | null {
-  const args = field(call, "arguments");
-  if (args === null) {
-    return null;
-  }
-  const positional: PyNode[] = [];
-  for (const child of children(args)) {
-    if (child.type === "keyword_argument") {
-      const name = field(child, "name")?.text;
-      if (keyword !== undefined && name === keyword) {
-        return field(child, "value");
-      }
-      continue;
-    }
-    positional.push(child);
-  }
-  return position === null ? null : (positional[position] ?? null);
 }
 
 /**
@@ -486,25 +288,23 @@ function handsBack(
 }
 
 /** The response members the pack declares for the body, the status and the success flag. */
-function responseAccessors(pattern: PyClientCall): {
+function responseAccessors(response: ClientResponse): {
   bodyAccessors?: string[];
   statusAccessors?: string[];
   successAccessors?: string[];
   failureDelivery?: "response" | "exception";
   redirectDelivery?: "followed" | "response";
 } {
-  const response = pattern.response;
-  if (response === undefined) {
-    return {};
-  }
   return {
-    ...(response.body === undefined ? {} : { bodyAccessors: response.body }),
+    ...(response.body === undefined
+      ? {}
+      : { bodyAccessors: [...response.body] }),
     ...(response.statusCode === undefined
       ? {}
-      : { statusAccessors: response.statusCode }),
+      : { statusAccessors: [...response.statusCode] }),
     ...(response.success === undefined
       ? {}
-      : { successAccessors: response.success }),
+      : { successAccessors: [...response.success] }),
     ...(response.failureDelivery === undefined
       ? {}
       : { failureDelivery: response.failureDelivery }),
@@ -514,29 +314,36 @@ function responseAccessors(pattern: PyClientCall): {
   };
 }
 
+/** One request a hook found, and the call that makes it. */
+interface FoundRequest {
+  readonly claim: RequestClaim;
+  readonly call: PyNode;
+}
+
 /** The unit for the function the call is written in. */
 function clientUnit(
   definition: PyNode,
   name: string,
-  request: RequestCall,
-  pattern: PyClientCall,
+  request: FoundRequest,
+  response: ClientResponse,
   pack: PythonPack,
-  options: ClientCallOptions,
+  options: ClientCallOptions & { facts: Database },
 ): RawCodeStructure {
   const range = rangeOf(definition);
-  const accessors = responseAccessors(pattern);
+  const accessors = responseAccessors(response);
   const statusMembers = statusMembersOf(accessors);
   const reading: CallerReading = {
     facts: options.facts,
     statusMembers,
     handOff: {
-      request: request.node,
+      request: request.call,
       bodyMethods: accessors.bodyAccessors ?? [],
       facts: options.facts,
       readHelper: (helper) =>
         callerBranches(helper, { facts: options.facts, statusMembers }),
     },
   };
+  const { claim } = request;
   return {
     identity: {
       name,
@@ -550,17 +357,17 @@ function clientUnit(
     },
     boundaryBinding: restBinding({
       transport: pack.protocol,
-      method: request.method,
-      path: request.path,
-      host: request.host,
+      method: claim.method,
+      path: claim.path,
+      host: claim.host,
       recognition: pack.name,
     }),
     parameters: [],
     branches: callerBranches(definition, reading),
     ...accessors,
-    ...(request.redirectDelivery === undefined
+    ...(claim.redirectDelivery === undefined
       ? {}
-      : { redirectDelivery: request.redirectDelivery }),
+      : { redirectDelivery: claim.redirectDelivery }),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,

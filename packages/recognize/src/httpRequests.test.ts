@@ -5,7 +5,7 @@ import { httpRequests, verbs } from "./httpRequests.js";
 import { anyOf, constructedFrom, imported, modulesOf } from "./ops.js";
 import { declarationsIn, pack, requestRecognizersOf } from "./pack.js";
 
-import type { RequestClaim, UrlTarget } from "@suss/extractor";
+import type { RequestClaim, Splats, UrlTarget } from "@suss/extractor";
 import type { HttpRequests } from "./httpRequests.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
@@ -47,6 +47,7 @@ interface Call {
   readonly receiver?: CallOps;
   readonly built?: Readonly<Record<number, CallOps>>;
   readonly writtenAs?: CallOps;
+  readonly splats?: Splats;
 }
 
 function callOps(call: Call, asked: string[] = []): CallOps {
@@ -83,6 +84,7 @@ function callOps(call: Call, asked: string[] = []): CallOps {
     receiver: () => call.receiver ?? null,
     argument: (index: number) => call.built?.[index] ?? null,
     callee: () => call.writtenAs ?? null,
+    splats: () => call.splats ?? { positionalFrom: null, keywords: false },
   } as unknown as CallOps;
 }
 
@@ -239,6 +241,22 @@ describe("a request chain", () => {
         keywords: { url: at("/orders/{id}") },
       }),
     ).toEqual([{ method: "DELETE", path: "/orders/{id}", host: undefined }]);
+  });
+
+  it("reads a URL a splat fills as a URL suss cannot read", () => {
+    const withSplats = (splats: Splats) =>
+      claimsOf(REQUESTS, {
+        method: "request",
+        from: ["httplib"],
+        args: [{ evaluated: "get" }],
+        splats,
+      });
+    const unread = [{ method: "GET", path: null, host: undefined }];
+    expect(withSplats({ positionalFrom: 1, keywords: false })).toEqual(unread);
+    expect(withSplats({ positionalFrom: null, keywords: true })).toEqual(
+      unread,
+    );
+    expect(withSplats({ positionalFrom: 2, keywords: false })).toEqual([]);
   });
 
   it("makes no request when the method an argument states does not settle", () => {

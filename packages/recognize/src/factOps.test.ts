@@ -2893,6 +2893,22 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     expect(ops?.constructionSites?.()).toEqual(["c1"]);
   });
 
+  it("says where a call unpacks its arguments, and that it unpacks none when the adapter does not say", () => {
+    const { facts } = requesting();
+    const unpacking = {
+      ...facts,
+      splatsOf: () => ({ positionalFrom: 1, keywords: true }),
+    };
+    expect(factCallOps("viaModule", unpacking)?.splats?.()).toEqual({
+      positionalFrom: 1,
+      keywords: true,
+    });
+    expect(factCallOps("viaModule", facts)?.splats?.()).toEqual({
+      positionalFrom: null,
+      keywords: false,
+    });
+  });
+
   it("settles a receiver an import binds by the import", () => {
     expect(settled("viaModule", REQUESTS)).toBe(true);
     expect(settled("viaModule", SESSION)).toBe(false);

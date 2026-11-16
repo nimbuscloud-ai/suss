@@ -2189,7 +2189,7 @@ export function statedValue(
  * left out still runs, because only the pack knows what leaving it out
  * means: a Mongoose read with no projection reads every field there is.
  */
-const NOTHING_STATED: ValueOps = {
+export const NOTHING_STATED: ValueOps = {
   text: () => null,
   name: () => null,
   asArg: () => null,

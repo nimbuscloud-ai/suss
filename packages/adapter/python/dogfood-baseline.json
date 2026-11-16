@@ -1,7 +1,7 @@
 {
   "name": "@suss/adapter-python",
-  "exports": 91,
-  "internal": 950,
-  "consumers": 475,
-  "unfollowedCalls": 126
+  "exports": 92,
+  "internal": 947,
+  "consumers": 484,
+  "unfollowedCalls": 127
 }

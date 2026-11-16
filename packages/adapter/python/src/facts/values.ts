@@ -60,6 +60,7 @@ import {
 } from "./languageWords.js";
 
 import type { Database } from "@suss/datalog";
+import type { Splats } from "@suss/extractor";
 import type { ChainReads, NameReads, NameWrite } from "@suss/resolution";
 import type { Parameter } from "@suss/values";
 import type { PyNode } from "../parser.js";
@@ -441,7 +442,10 @@ export type CallArgument =
  * neither counts as an argument here. A positional argument after `*args`
  * has no position that can be counted, so it is left out too.
  */
-export function callArguments(call: PyNode): CallArgument[] {
+export function callArguments(
+  call: PyNode,
+  splats?: { positionalFrom: number | null; keywords: boolean },
+): CallArgument[] {
   const args = field(call, "arguments");
   if (args === null) {
     return [];
@@ -458,8 +462,14 @@ export function callArguments(call: PyNode): CallArgument[] {
       continue;
     }
     if (argument.type === "list_splat") {
+      if (splats !== undefined && splats.positionalFrom === null) {
+        splats.positionalFrom = position;
+      }
       position = null;
       continue;
+    }
+    if (argument.type === "dictionary_splat" && splats !== undefined) {
+      splats.keywords = true;
     }
     if (NOT_AN_ARGUMENT.has(argument.type) || position === null) {
       continue;
@@ -468,6 +478,19 @@ export function callArguments(call: PyNode): CallArgument[] {
     position += 1;
   }
   return written;
+}
+
+/**
+ * Where the call unpacks a collection into its arguments: the position
+ * its first `*args` takes, and whether it passes a `**kwargs`.
+ */
+export function callSplats(call: PyNode): Splats {
+  const splats: { positionalFrom: number | null; keywords: boolean } = {
+    positionalFrom: null,
+    keywords: false,
+  };
+  callArguments(call, splats);
+  return splats;
 }
 
 /** Written in an argument list without taking a position of its own. */

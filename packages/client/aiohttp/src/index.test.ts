@@ -7,7 +7,7 @@ import {
   parsePython,
 } from "@suss/adapter-python";
 
-import { aiohttpClient } from "./index.js";
+import { AIOHTTP, aiohttpClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
@@ -113,5 +113,20 @@ describe("what a session call does with a redirect", () => {
   it("follows a redirect from every other call, request with HEAD included", async () => {
     expect(await deliveryOf('get("/orders")')).toBe("followed");
     expect(await deliveryOf('request("HEAD", "/orders")')).toBe("followed");
+  });
+});
+
+describe("the declaration's example", () => {
+  it("makes the function it is written in a client", async () => {
+    const units = await unitsIn(
+      [
+        "import aiohttp",
+        "",
+        "def example():",
+        `    return ${AIOHTTP.declared.example}`,
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 });

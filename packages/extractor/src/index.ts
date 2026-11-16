@@ -1463,6 +1463,7 @@ export type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Splats,
   StatedSlot,
   SubUnitOpsCarrier,
   SuppliedKey,

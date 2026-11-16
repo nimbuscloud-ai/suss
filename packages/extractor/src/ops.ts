@@ -959,6 +959,8 @@ export interface CallOps {
    * or for a class nothing in the run constructs.
    */
   constructionSites?(): readonly string[];
+  /** Where the call unpacks a collection into its arguments, or unset where the adapter cannot say. */
+  splats?(): Splats;
   /**
    * Whether the call goes to a name the program bound, rather than to
    * an expression written in place. `useAppStore(...)` does;
@@ -1403,6 +1405,8 @@ export interface FactSource {
   urlOf?(key: string, site?: string, at?: ArgumentRead): UrlTarget | null;
   /** What `CallOps.constructionSites` gives for the call at the key. */
   constructionSitesOf?(call: string): readonly string[];
+  /** What `CallOps.splats` gives for the call at the key. */
+  splatsOf?(call: string): Splats;
   /**
    * The text the evaluator settles a string to, split where a piece of
    * it does not settle, for a value the facts write as neither a literal
@@ -1529,6 +1533,17 @@ export interface FactSource {
    * statement. Unset reads the `imports` rows.
    */
   importedUnder?(key: string, modules: readonly string[]): readonly string[];
+}
+
+/**
+ * The collections a call unpacks into its arguments. `positionalFrom` is
+ * the position a `*args` takes, so it fills that position and every one
+ * after it, or null for none. `keywords` says whether a `**kwargs` passes
+ * keywords nobody can list.
+ */
+export interface Splats {
+  readonly positionalFrom: number | null;
+  readonly keywords: boolean;
 }
 
 /** The argument of one call a value was read off, by position or keyword. */

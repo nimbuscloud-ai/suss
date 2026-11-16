@@ -2,6 +2,6 @@
   "name": "@suss/client-httpx",
   "exports": 2,
   "internal": 0,
-  "consumers": 4,
+  "consumers": 5,
   "unfollowedCalls": 0
 }
