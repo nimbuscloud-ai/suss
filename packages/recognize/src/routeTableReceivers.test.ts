@@ -43,6 +43,8 @@ interface ValueSpec {
   readonly element?: ValueOps;
   /** The collection a loop takes each element of apart, with this value one of the parts. */
   readonly elementPart?: ValueOps;
+  /** For a call, the items of the collection the rules settle it on returning. */
+  readonly returned?: readonly ValueOps[];
   readonly list?: readonly ValueOps[];
   /** A class's methods, by name. */
   readonly methods?: readonly string[];
@@ -59,6 +61,7 @@ function value(spec: ValueSpec): ValueOps {
       how === undefined ? null : (spec.built ?? null),
     element: () => spec.element ?? null,
     elementPart: () => spec.elementPart ?? null,
+    returnedItems: () => spec.returned ?? null,
     items: () => spec.list ?? [],
     shape: () => (spec.list === undefined ? null : { type: "array" }),
     asClass: () =>
@@ -1192,6 +1195,42 @@ describe("the files a table whose entries are made on a value reads", () => {
         ]),
       ),
     ).toEqual(["unlistedLoop list (1 loops)"]);
+  });
+
+  it("mounts each item of the list a call the rules settle returns to a loop, and reads a call that returns none as one it cannot list", () => {
+    const root = app();
+    const a = router(path("/a"));
+    const b = router(path("/b"));
+    const looping = (returned?: readonly ValueOps[]) =>
+      value({
+        source: "r",
+        element: value({
+          source: "load()",
+          ...(returned === undefined ? {} : { returned }),
+        }),
+      });
+    const files = (over: ValueOps): FileSpec[] => [
+      {
+        path: MAIN,
+        calls: [root, a, b, include(root, over)],
+        decorated: [
+          under(fn("inA"), get(a, "/x")),
+          under(fn("inB"), get(b, "/y")),
+        ],
+      },
+    ];
+    expect(said(compose(files(looping([ref(a, "a"), ref(b, "b")]))))).toEqual([
+      "GET /a/x inA",
+      "GET /b/y inB",
+    ]);
+    expect(said(compose(files(looping([]))))).toEqual([
+      "unlistedLoop inA (1 loops)",
+      "unlistedLoop inB (1 loops)",
+    ]);
+    expect(said(compose(files(looping([ref(a, "a"), opaque("x")]))))).toEqual([
+      "unlistedLoop inA (1 loops)",
+      "unlistedLoop inB (1 loops)",
+    ]);
   });
 
   it("says once in each file which decorators and which calls it will ask about the receivers of", () => {

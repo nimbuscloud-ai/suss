@@ -2763,6 +2763,19 @@ describe("what a route table asks of the facts", () => {
     ).toEqual([]);
   });
 
+  it("gives each value in the collection a call returns, and nothing where the adapter settles none", () => {
+    const returning = source({
+      returnedItemsOf: (call) => (call === "send" ? ["a", "b"] : null),
+    });
+    expect(
+      factValueOps("send", returning)
+        .returnedItems?.()
+        ?.map((item) => item.source?.()),
+    ).toEqual(["a", "b"]);
+    expect(factValueOps("put", returning).returnedItems?.()).toBeNull();
+    expect(factValueOps("send", source()).returnedItems?.()).toBeNull();
+  });
+
   it("says which collection a loop takes an element apart from, and nothing for a value it does not", () => {
     const db = new Database();
     db.add("elementPartOf", ["router", "pairs", "1"]);

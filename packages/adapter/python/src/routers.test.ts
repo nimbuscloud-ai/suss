@@ -1410,6 +1410,72 @@ describe("a loop that mounts what a call handed it", () => {
     expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
+  it("mounts each router a call the rules settle returns, under the mount's prefix and each router's own", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'items = APIRouter(prefix="/items")',
+        'users = APIRouter(prefix="/users")',
+        "",
+        "",
+        '@items.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        '@users.get("/{user_id}")',
+        "def read_user(user_id: int):",
+        "    pass",
+        "",
+        "",
+        "def all_routers():",
+        "    return [items, users]",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for mounted in all_routers():",
+        '        app.include_router(mounted, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
+    expect(pathOf(units, "read_user")).toBe("/api/users/{user_id}");
+  });
+
+  it("claims no path for a router a settled call's list mounts beside a value it cannot follow", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        'items = APIRouter(prefix="/items")',
+        "",
+        "",
+        '@items.get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "def all_routers():",
+        "    return [items, extra]",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for mounted in all_routers():",
+        "        app.include_router(mounted)",
+        "    return app",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "is not mounted by name in the files read, and a loop at main.py:17 mounts routers read out of a call this reading does not follow",
+    );
+  });
+
   it("mounts each router a list names beside a call it cannot read", async () => {
     const units = await unitsOf(
       [

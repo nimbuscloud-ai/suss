@@ -364,7 +364,7 @@ A mount inside a `for` goes one of two ways, depending on whether the source lis
 | a list or tuple of bare names, `for ns in [orders, users]` | mounts each of those names, exactly as a mount call that named it would | every element is a name the existing one-hop rule already follows |
 | anything else, `for ns in loader.load_namespaces()` | mounts nothing, and every router it never saw mounted by name records the loop as the reason | no file shows which routers the call returns |
 
-FastAPI's route table reads the first row a little wider: a list mounts each item that comes to a router, so `[orders, build_extra()]` still mounts `orders`, and a list that has an item the table cannot follow is read as the second row. A loop that takes each element apart, `for name, router in pairs`, is the second row too.
+Both readers take a loop over a call the rules settle on a list, such as `for r in loader.load_routers()` where `load_routers` returns `[orders.router, users.router]`, as that list. FastAPI's route table reads the first row a little wider: a list mounts each item that comes to a router, so `[orders, build_extra()]` still mounts `orders`, and a list that has an item the table cannot follow is read as the second row. A loop that takes each element apart, `for name, router in pairs`, is the second row too.
 
 Claiming a path for the second row would mean two guesses at once: that this router is in the collection at all, and that the mount states no prefix that would replace or extend the router's own. A wrong path is worse than no path here. A claimed path pairs the route with a contract on the other side, and every check after that treats the path as fact, with no way to tell it apart from a path suss followed all the way.
 

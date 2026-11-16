@@ -686,9 +686,11 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   `APIRouter(...)` the module assigns, and the call that built it is
   walked as an entry, named the way its own file imports the name. With
   `for` among the `loops`, a mount whose table is a loop's variable
-  mounts each item of the list the loop goes over, through `element()`.
-  A loop that takes each element apart, which `elementPart()` says, is
-  one the table cannot list.
+  mounts each item of the list the loop goes over, through `element()`,
+  whether the list is written out in place or returned by a call the
+  rules settle, through `returnedItems()`. A loop that takes each
+  element apart, which `elementPart()` says, is one the table cannot
+  list.
   `prefix: "inFront"` puts the mount's path in front of the value's own;
   `"replaces"`, which the table does not follow, leaves every route
   under it unread.

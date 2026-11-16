@@ -2244,8 +2244,9 @@ const UNLISTED: Mounted = { kind: "unlisted" };
 /**
  * The values a mount's table comes to: the call that built it, through
  * names and fields, or for the variable of a `for` loop, the call behind
- * each item of the list the loop goes over. A loop over anything else,
- * or over an item that comes to no call, is one the table cannot list.
+ * each item of the list the loop goes over, written out in place or
+ * returned by a call the rules settle. A loop over anything else, or
+ * over an item that comes to no call, is one the table cannot list.
  */
 function mountedOf(value: ValueOps | undefined, walk: Walk): Mounted {
   const built = value?.asCall?.({ follow: "namesAndFields" }) ?? null;
@@ -2263,14 +2264,27 @@ function mountedOf(value: ValueOps | undefined, walk: Walk): Mounted {
       ? { kind: "values", calls: [] }
       : UNLISTED;
   }
-  if (!writtenAsList(over)) {
+  const items = itemsLooped(over);
+  if (items === null) {
     return UNLISTED;
   }
-  const items = over
-    .items()
-    .map((item) => item.asCall?.({ follow: "namesAndFields" }) ?? null);
-  const calls = items.filter((item): item is CallOps => item !== null);
+  const calls = items.flatMap(
+    (item) => item.asCall?.({ follow: "namesAndFields" }) ?? [],
+  );
   return calls.length === items.length ? { kind: "values", calls } : UNLISTED;
+}
+
+/**
+ * The items of what a loop goes over: a list written out in place, or a
+ * call the rules settle on one. A call that returns no item says no more
+ * about what the loop mounts than one they do not settle.
+ */
+function itemsLooped(over: ValueOps): readonly ValueOps[] | null {
+  if (writtenAsList(over)) {
+    return over.items();
+  }
+  const returned = over.returnedItems?.() ?? null;
+  return returned === null || returned.length === 0 ? null : returned;
 }
 
 /** What a mount of a value the source built comes to, or null for an entry that is no such mount. */

@@ -1122,6 +1122,13 @@ class FactValue implements ValueOps {
     return over === null ? null : factValueOps(over, this.facts);
   }
 
+  returnedItems(): readonly ValueOps[] | null {
+    const keys = this.facts.returnedItemsOf?.(this.key) ?? null;
+    return keys === null
+      ? null
+      : keys.map((key) => factValueOps(key, this.facts));
+  }
+
   elementPart(): ValueOps | null {
     const over = only(this.facts.db.lookup("elementPartOf", 0, this.key), 1);
     return over === null ? null : factValueOps(over, this.facts);

@@ -450,6 +450,12 @@ export interface ValueOps {
    */
   listed?(): ListedValues | null;
   /**
+   * For a call, each value in the collection it returns, in order, when
+   * the rules settle the call on one collection: `[items, users]` for
+   * `load_routers()`. Null when they settle it on none.
+   */
+  returnedItems?(): readonly ValueOps[] | null;
+  /**
    * The position of `fn`'s parameter this value is, named as the parameter
    * itself or as the rest of a destructure written for it. Null for any
    * other value.
@@ -1221,6 +1227,8 @@ export interface FactSource {
   writtenAs(key: string): string | null;
   /** Every key a name or field was written as, for one written as more than one, where `writtenAs` gives none. Unset says nothing. */
   writtenAsEach?(key: string): readonly string[];
+  /** The keys of the values in the collection a call returns, in order, or null when the rules settle the call on no one collection. Unset says nothing. */
+  returnedItemsOf?(call: string): readonly string[] | null;
   /**
    * Every call the anchor rules reach behind a value. An adapter may leave
    * out the calls its own check of the origin turns down; the ops check

@@ -103,6 +103,39 @@ const ordersModule = [
 ].join("\n");
 
 describe("a mount written through the module that defines the router", () => {
+  it("mounts each `module.router` a loader in another file returns to a loop", async () => {
+    const summaries = await summariesOf({
+      "app/__init__.py": "",
+      "app/routes/__init__.py": "",
+      "app/routes/orders.py": ordersModule,
+      "app/routes/users.py": ordersModule
+        .replace('"/orders"', '"/users"')
+        .replace("read_order(order_id", "read_user(order_id"),
+      "app/loader.py": [
+        "from app.routes import orders, users",
+        "",
+        "",
+        "def load_routers():",
+        "    return [orders.router, users.router]",
+        "",
+      ].join("\n"),
+      "app/main.py": [
+        "from fastapi import FastAPI",
+        "from app import loader",
+        "",
+        "",
+        "def create_app():",
+        "    app = FastAPI()",
+        "    for mounted in loader.load_routers():",
+        '        app.include_router(mounted, prefix="/api")',
+        "    return app",
+        "",
+      ].join("\n"),
+    });
+    expect(pathOf(summaries, "read_order")).toBe("/api/orders/{order_id}");
+    expect(pathOf(summaries, "read_user")).toBe("/api/users/{order_id}");
+  });
+
   it("follows `orders.router` to the construction in the orders module", async () => {
     const summaries = await summariesOf({
       "orders.py": ordersModule,
