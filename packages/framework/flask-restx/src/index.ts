@@ -12,7 +12,13 @@
 
 import { z } from "zod";
 
-import type { PythonPack, RouterUnreadWords } from "@suss/adapter-python";
+import { constructedFrom } from "@suss/recognize";
+
+import type {
+  PythonPack,
+  PyWrapperForm,
+  RouterUnreadWords,
+} from "@suss/adapter-python";
 import type { RouteTableDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
@@ -20,7 +26,7 @@ import type { PackDeclaration } from "@suss/ir-core";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 /**
  * The CLI checks a `-f flask-restx=config.json` file against this schema.
@@ -111,6 +117,46 @@ export function flaskRestxRoutes(
   };
 }
 
+/**
+ * What Flask and flask-restx run around a resource: the Flask app's
+ * `before_request` hooks, and the error handlers the app, the API or the
+ * resource's namespace registers.
+ */
+export function flaskRestxWrappers(
+  modules: readonly string[],
+): PyWrapperForm[] {
+  const app = constructedFrom({ from: ["flask"], named: ["Flask"] });
+  return [
+    {
+      type: "decoratedWrapper",
+      attribute: "before_request",
+      // A blueprint's own hook is skipped, because a route is decorated
+      // on a namespace and the blueprint only mounts it.
+      registrars: [{ made: app, covers: "everyRoute" }],
+      // Flask sends whatever a before_request hook returns, and goes on
+      // to the view only when it returns None.
+      returnedValueResponds: true,
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "errorhandler",
+      registrars: [
+        { made: app, covers: "everyRoute" },
+        {
+          made: constructedFrom({ from: modules, named: ["Api"] }),
+          covers: "everyRoute",
+        },
+        {
+          made: constructedFrom({ from: modules, named: ["Namespace"] }),
+          covers: "ownRoutes",
+        },
+      ],
+      // `def handle(error)`.
+      throwParam: 0,
+    },
+  ];
+}
+
 /** Why a route the table found has no path, said of the namespace or the API it is declared on. */
 export const ROUTER_UNREAD: RouterUnreadWords = {
   unreached:
@@ -174,39 +220,7 @@ export function flaskRestxFramework(
           { callee: "flask.abort", statusArgument: 0 },
           { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
         ],
-        wrappers: [
-          {
-            type: "decoratedWrapper",
-            attribute: "before_request",
-            // A blueprint's own hook is skipped, because a route is decorated
-            // on a namespace and the blueprint only mounts it.
-            registrars: [
-              {
-                constructorName: "Flask",
-                importModule: ["flask"],
-                covers: "everyRoute",
-              },
-            ],
-            // Flask sends whatever a before_request hook returns, and
-            // goes on to the view only when it returns None.
-            returnedValueResponds: true,
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "errorhandler",
-            registrars: [
-              {
-                constructorName: "Flask",
-                importModule: ["flask"],
-                covers: "everyRoute",
-              },
-              { constructorName: "Api", covers: "everyRoute" },
-              { constructorName: "Namespace", covers: "ownRoutes" },
-            ],
-            // `def handle(error)`.
-            throwParam: 0,
-          },
-        ],
+        wrappers: flaskRestxWrappers(modules),
       },
     ],
     // A resource method reads the request off Flask's module-level object.

@@ -17,6 +17,7 @@ import type {
 } from "@suss/behavioral-ir";
 import type {
   ClassBodyDeclaration,
+  ConstructedFrom,
   DeclaredDiscoveryPattern,
   InvocationRecognizer,
   LibraryEnvVars,
@@ -26,6 +27,7 @@ import type {
   RequestRecognizer,
   RouteTableDeclaration,
 } from "@suss/extractor";
+import type { CallbackMethod, Chain } from "@suss/recognize";
 import type { UnwrapsByName } from "@suss/resolution";
 
 export interface PythonPack {
@@ -396,10 +398,8 @@ export type PyWrapperForm = PyDependencyForm | PyDecoratedWrapperForm;
 
 /** Where a wrapper is registered, and which routes the registration reaches. */
 export interface PyWrapperRegistrar {
-  /** The constructor of the object the registration is written on, as the library exports it: `FastAPI`, `APIRouter`. */
-  constructorName: string;
-  /** Where the constructor is imported from, when that differs from the pattern's own `importModule`: `flask` for the app that serves a flask-restx API. */
-  importModule?: string[];
+  /** The construction the registration is written on: `constructedFrom({ from: ["fastapi"], named: ["APIRouter"] })`. */
+  made: ConstructedFrom;
   /**
    * `everyRoute` for the app, whose registration reaches every route of
    * the pack in the run. `ownRoutes` for a router or a blueprint, whose
@@ -409,17 +409,17 @@ export interface PyWrapperRegistrar {
 }
 
 /**
- * A project function the library calls before the handler, passed to one
+ * A project function the library calls before the handler, handed to one
  * of the library's callables, as in FastAPI's `Depends(get_user)`. It can
  * be written as a parameter default, inside `Annotated[...]` on the route,
- * or in a list under `keyword` on the route decorator or a registrar. It
- * ends a request only by raising, so every return passes control on to
- * the route.
+ * or in a list under `keyword` on the route decorator, a mount call or a
+ * registrar. It ends a request only by raising, so every return passes
+ * control on to the route.
  */
 export interface PyDependencyForm {
   type: "dependency";
-  /** The callables that take the function: `Depends`, `Security`. */
-  callees: string[];
+  /** The callables that take the function, and where each takes it, as a callbacks chain declares them: `callbacks(...).methods({ Depends: ... }).declared`. */
+  handedTo: Chain<CallbackMethod>;
   /** The keyword a list of them is written under: `dependencies`. */
   keyword: string;
   registrars: PyWrapperRegistrar[];
@@ -427,13 +427,14 @@ export interface PyDependencyForm {
 
 /**
  * A project function decorated with a method on the app or a router, such
- * as `@app.middleware("http")` or `@app.before_request`. Which of the three
- * optional fields below is set decides what the function's returns mean.
- * With none set, every return passes the request on.
+ * as `@app.middleware("http")` or `@app.before_request`, which the
+ * `decorated` discovery member in `@suss/recognize` finds. Which of the
+ * three optional fields below is set decides what the function's returns
+ * mean. With none set, every return passes the request on.
  */
 export interface PyDecoratedWrapperForm {
   type: "decoratedWrapper";
-  /** The decorator's attribute name on the registrar: `middleware`. */
+  /** The decorator's method on the registrar: `middleware`. */
   attribute: string;
   registrars: PyWrapperRegistrar[];
   /**

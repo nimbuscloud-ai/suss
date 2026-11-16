@@ -5,8 +5,14 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
-import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
+import {
+  fastapiTestRoutes,
+  fastapiTestWrappers,
+} from "./__fixtures__/fastapiPattern.js";
+import {
+  flaskRestxTestRoutes,
+  flaskRestxTestWrappers,
+} from "./__fixtures__/flaskRestxPattern.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -42,29 +48,7 @@ const fastapiLike: PythonPack = {
           statusKeyword: "status_code",
         },
       ],
-      wrappers: [
-        {
-          type: "dependency",
-          callees: ["Depends", "Security"],
-          keyword: "dependencies",
-          registrars: [
-            { constructorName: "FastAPI", covers: "everyRoute" },
-            { constructorName: "APIRouter", covers: "ownRoutes" },
-          ],
-        },
-        {
-          type: "decoratedWrapper",
-          attribute: "middleware",
-          registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-          continuationParam: 1,
-        },
-        {
-          type: "decoratedWrapper",
-          attribute: "exception_handler",
-          registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-          throwParam: 1,
-        },
-      ],
+      wrappers: fastapiTestWrappers(),
     },
   ],
 };
@@ -81,29 +65,7 @@ const flaskRestxLike: PythonPack = {
       defaultStatusCode: 200,
       statusFromReturnedTuple: true,
       responseStatusCalls: [{ callee: "flask.abort", statusArgument: 0 }],
-      wrappers: [
-        {
-          type: "decoratedWrapper",
-          attribute: "before_request",
-          registrars: [
-            {
-              constructorName: "Flask",
-              importModule: ["flask"],
-              covers: "everyRoute",
-            },
-          ],
-          returnedValueResponds: true,
-        },
-        {
-          type: "decoratedWrapper",
-          attribute: "errorhandler",
-          registrars: [
-            { constructorName: "Api", covers: "everyRoute" },
-            { constructorName: "Namespace", covers: "ownRoutes" },
-          ],
-          throwParam: 0,
-        },
-      ],
+      wrappers: flaskRestxTestWrappers(),
     },
   ],
 };
@@ -532,6 +494,77 @@ describe("FastAPI wrappers", () => {
     // The dependency list is written on the call, and that call is in
     // the other file.
     expect(wrappersOf(routeFor(summaries, "GET", "/orders"))).toBeUndefined();
+  });
+
+  it("registers no middleware on an app another file builds, whether imported or handed to a function", async () => {
+    const summaries = await extractWritten({
+      "app/__init__.py": "",
+      "app/handlers.py": [
+        "from fastapi import FastAPI",
+        "",
+        "",
+        "def register(app: FastAPI):",
+        "    @app.exception_handler(ValueError)",
+        "    async def handed(request, exc):",
+        "        return None",
+        "",
+      ].join("\n"),
+      "app/hooks.py": [
+        "from app.main import app",
+        "",
+        "",
+        "@app.middleware('http')",
+        "async def imported(request, call_next):",
+        "    return await call_next(request)",
+        "",
+      ].join("\n"),
+      "app/main.py": [
+        "from fastapi import FastAPI",
+        "from app.handlers import register",
+        "",
+        "app = FastAPI()",
+        "register(app)",
+        "",
+        "",
+        "@app.get('/orders')",
+        "def orders():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/orders"))).toBeUndefined();
+    expect(summaries.map((one) => one.identity.name)).not.toContain("handed");
+  });
+
+  it("reads a list's Depends through the library's import, under any name, and a dependency written alone", async () => {
+    const summaries = await extractWritten({
+      "app/main.py": [
+        "from fastapi import FastAPI, Depends as Needs",
+        "from other.lib import Depends",
+        "",
+        "",
+        "def tag_request():",
+        "    return None",
+        "",
+        "",
+        "def unrelated():",
+        "    return None",
+        "",
+        "",
+        "app = FastAPI(dependencies=[Needs(tag_request), Depends(unrelated)])",
+        "",
+        "",
+        "@app.get('/orders', dependencies=Needs(tag_request))",
+        "def orders():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    });
+
+    expect(wrappersOf(routeFor(summaries, "GET", "/orders"))).toEqual({
+      applied: [{ file: "app/main.py", name: "tag_request" }],
+    });
   });
 });
 

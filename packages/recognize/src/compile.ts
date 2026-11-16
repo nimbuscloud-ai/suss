@@ -1203,6 +1203,26 @@ function formOf(value: ValueOps): ValueForm {
   return value.form?.() ?? "other";
 }
 
+/**
+ * The callback a call hands over, when the chain's start and methods
+ * take the call, for a reader that finds the call itself: FastAPI's
+ * `Depends(get_user)` in a route's `dependencies` list. Null for a call
+ * the chain does not take, and for one that hands over nothing.
+ */
+export function callbackHandedOver(
+  chain: Chain<CallbackMethod>,
+  call: CallOps,
+): ValueOps | null {
+  const methods = methodsIn(chain);
+  const matched =
+    methods === null
+      ? null
+      : methodMatched(chain, methods, call, modulesOfChain(chain), false);
+  return matched === null
+    ? null
+    : callbackIn(call, (matched.meaning as CallbackMethod).callback);
+}
+
 /** The first value one of the picks finds, in the order the method lists them. */
 function callbackIn(
   subject: CallOps,

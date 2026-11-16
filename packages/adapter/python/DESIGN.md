@@ -569,10 +569,14 @@ A pack declares each way its library attaches something around a route, in `wrap
 
 | Form | Reads | Example |
 | --- | --- | --- |
-| `dependency` | a function passed to one of `callees` inside a `keyword` list, on the app or router construction, on the route decorator, or in a parameter default | `Depends(require_caller)` |
+| `dependency` | a function handed to a call the `handedTo` callbacks chain takes, inside a `keyword` list on the app or router construction, on a mount call or on the route decorator, or in a parameter default | `Depends(require_caller)` |
 | `decoratedWrapper` | a function decorated with `attribute` on the app or router object | `@app.middleware("http")`, `@app.exception_handler(ValueError)`, `@app.before_request` |
 
-Each form declares which constructions register it and how far the registration reaches. A registrar with `covers: "everyRoute"` (the app) reaches every route the pack discovers. One with `covers: "ownRoutes"` (a router or namespace) reaches the routes decorated on that same object, told apart by where the object was constructed. The adapter reads a registration only where it recognizes the object the same way it recognizes a route decorator's object. So `app = FastAPI(...)` in one module and `@app.middleware` in another are joined through the import, the same way a route on an imported router is.
+Each form declares which constructions register it and how far the registration reaches. A registrar says which construction it is with `made`, a `constructedFrom` origin such as `FastAPI` from `fastapi`. One with `covers: "everyRoute"` (the app) reaches every route the pack discovers. One with `covers: "ownRoutes"` (a router or namespace) reaches the routes decorated on that same object, told apart by where the object was constructed, and the route table says which object a route is decorated on.
+
+The registrations are read through the module ops. A construction's `dependencies` list is read on each name the module binds at its top level to a registrar's construction. A decorated wrapper is found by `@suss/recognize`'s `decorated` discovery member, which reads every decorated function in the file and the construction its decorator is called on. A list's `Depends(f)` is read through the pack's callbacks chain, which takes the call only when its callee comes from the library, and gives the function it hands over by name. A parameter's default and annotation state no call facts, so `Depends(f)` there is read as written: a callee whose last name the chain lists, handing over a name at the position the chain says.
+
+A decorated wrapper is read only on a name the file binds to a construction the file writes itself. `@app.middleware` on an app imported from another module, or on an app handed to a function as a parameter, registers nothing yet.
 
 A router's routes also get what is registered above it on the way to the app: the `dependencies` an `include_router` call lists, and those of each router it is mounted onto. The route table says where each router is mounted. When a router on the way is mounted more than once, a request through one mount does not run the other mount's dependencies, so the route gets none of the registrations above that router.
 

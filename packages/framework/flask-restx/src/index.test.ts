@@ -9,6 +9,7 @@ import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import {
   flaskRestxFramework,
   flaskRestxRoutes,
+  flaskRestxWrappers,
   ROUTER_UNREAD,
 } from "./index.js";
 
@@ -16,7 +17,7 @@ describe("flaskRestxFramework", () => {
   it("accepts flask_restx's own module by default", () => {
     const pack = flaskRestxFramework();
     expect(pack.name).toBe("flask-restx");
-    expect(pack.version).toBe("1");
+    expect(pack.version).toBe("2");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
@@ -34,34 +35,7 @@ describe("flaskRestxFramework", () => {
           { callee: "flask.abort", statusArgument: 0 },
           { callee: "werkzeug.exceptions.abort", statusArgument: 0 },
         ],
-        wrappers: [
-          {
-            type: "decoratedWrapper",
-            attribute: "before_request",
-            registrars: [
-              {
-                constructorName: "Flask",
-                importModule: ["flask"],
-                covers: "everyRoute",
-              },
-            ],
-            returnedValueResponds: true,
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "errorhandler",
-            registrars: [
-              {
-                constructorName: "Flask",
-                importModule: ["flask"],
-                covers: "everyRoute",
-              },
-              { constructorName: "Api", covers: "everyRoute" },
-              { constructorName: "Namespace", covers: "ownRoutes" },
-            ],
-            throwParam: 0,
-          },
-        ],
+        wrappers: flaskRestxWrappers(["flask_restx"]),
       },
     ]);
   });

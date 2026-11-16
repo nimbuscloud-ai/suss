@@ -34,9 +34,10 @@ import type {
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
 
-/** One mount above a router: the call that mounts it, and the router it mounts it on, null for the app. */
+/** One mount above a router: the call that mounts it, as a node and as call ops, and the router it mounts it on, null for the app. */
 export interface MountHop {
   call: PyNode;
+  mount: CallOps;
   file: string;
   parentKey: string | null;
 }
@@ -45,12 +46,13 @@ export interface MountHop {
  * What one decorator declares for one method: the prefixes its route is
  * served under, or why it has no path. `through` is the key of the
  * library call a project wrapper the decorator calls returns, which the
- * route's wrappers are read off.
+ * route's wrappers are read off. `router` is the key of the call that
+ * built the router the decorator is made on, unset for the app itself.
  */
 export type DeclaredRoute = (
   | { kind: "served"; method: string; prefixes: readonly string[] }
   | { kind: "unread"; method: string; reason: string }
-) & { through?: string };
+) & { through?: string; router?: string };
 
 export interface DeclaredRouteIndex {
   /** By the key of the decorator's call, what it declares for each method it serves, in the order the table gives them. */
@@ -190,6 +192,7 @@ function hopsOf(
     const parent = at === 0 ? undefined : mounts[at - 1];
     hops.push({
       call,
+      mount: hop.call,
       file: hop.call.file?.() ?? "",
       parentKey: parent?.value.site?.() ?? null,
     });
@@ -231,7 +234,11 @@ function foldedRoute(
   sentences: Sentences,
 ): DeclaredRoute {
   const made = outcomes[0]?.made?.site?.();
-  const through = made === undefined ? {} : { through: made };
+  const router = routerOf(outcomes[0]);
+  const through = {
+    ...(made === undefined ? {} : { through: made }),
+    ...(router === undefined ? {} : { router }),
+  };
   const said = outcomes.flatMap((outcome) =>
     outcome.kind === "unread" && outcome.reason !== "pathUnread"
       ? [reasonOf(outcome, sentences)]
@@ -245,6 +252,21 @@ function foldedRoute(
     ...new Set(outcomes.map((outcome) => outcome.prefix ?? "")),
   ];
   return { kind: "served", method, prefixes, ...through };
+}
+
+/**
+ * The key of the call that built what a route's decorator is made on:
+ * the value the last mount down to it mounts, or for an entry no walk
+ * reached, the one its receiver comes to. Unset for a route on the root.
+ */
+function routerOf(outcome: Walked | undefined): string | undefined {
+  const mounts = outcome?.mounts;
+  if (mounts === undefined) {
+    return outcome !== undefined && "on" in outcome
+      ? outcome.on?.site?.()
+      : undefined;
+  }
+  return mounts[mounts.length - 1]?.value.site?.();
 }
 
 /** Where along the mounts to a route the router an outcome's reason is about is. */

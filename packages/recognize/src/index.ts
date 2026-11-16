@@ -9,7 +9,7 @@ export {
   declareClassBody,
   definesMethod,
 } from "./classBody.js";
-export { compile } from "./compile.js";
+export { callbackHandedOver, compile } from "./compile.js";
 export { readSpellingsOf, siteReadOf } from "./compileReads.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared, discoverEntryObject } from "./discovery.js";

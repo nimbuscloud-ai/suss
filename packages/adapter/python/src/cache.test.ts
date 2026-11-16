@@ -25,7 +25,10 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
-import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import {
+  fastapiTestRoutes,
+  fastapiTestWrappers,
+} from "./__fixtures__/fastapiPattern.js";
 import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
@@ -190,17 +193,9 @@ describe("extractPythonProject's on-disk cache", () => {
           pathParamSyntax: "braces",
           injectedParameterCallees: ["Depends"],
           defaultStatusCode: 200,
-          wrappers: [
-            {
-              type: "dependency",
-              callees: ["Depends"],
-              keyword: "dependencies",
-              registrars: [
-                { constructorName: "FastAPI", covers: "everyRoute" },
-                { constructorName: "APIRouter", covers: "ownRoutes" },
-              ],
-            },
-          ],
+          wrappers: fastapiTestWrappers().filter(
+            (form) => form.type === "dependency",
+          ),
         } as PythonPack["discovery"][number],
       ],
     };
