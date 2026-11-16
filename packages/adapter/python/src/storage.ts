@@ -57,7 +57,12 @@ interface Chain {
   readonly subject: string;
   /** The method the last call makes. It decides whether the chain reads or writes. */
   readonly operation: string;
-  /** The calls between the first and the last, where `filter_by(id=x)` picks rows. */
+  /**
+   * The calls the chain makes between the first and the last, where
+   * `filter_by(id=x)` picks rows, from the one the last is made on back
+   * to the one made on the first. A call written inside an argument is
+   * not one of them.
+   */
   readonly between: readonly PyNode[];
 }
 
@@ -119,16 +124,23 @@ function chainsIn(calls: readonly PyNode[]): Chain[] {
       last,
       subject: subjectOf(call),
       operation: calledName(last),
-      between: calls.filter(
-        (other) =>
-          other !== call &&
-          other !== last &&
-          other.startIndex >= call.startIndex &&
-          other.endIndex <= last.endIndex,
-      ),
+      between: receiversBetween(last, call),
     });
   }
   return chains;
+}
+
+/** The calls `last` is made on, one receiver after another, until `root`. */
+function receiversBetween(last: PyNode, root: PyNode): PyNode[] {
+  const found: PyNode[] = [];
+  for (
+    let at = last.id === root.id ? null : receiverCall(last);
+    at !== null && at.id !== root.id;
+    at = receiverCall(at)
+  ) {
+    found.push(at);
+  }
+  return found;
 }
 
 /**
@@ -345,7 +357,11 @@ function keywordValues(call: PyNode): Array<{ name: string; value: PyNode }> {
  * and what the calls after the root pick rows by. These are the same
  * keywords `fieldsOf` and `selectorOf` read the columns from.
  */
-function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
+function slotsOf(
+  chain: Chain,
+  valueMethods: readonly string[],
+  model: string | null,
+): SlotValue[] {
   const later = laterCalls(chain);
   const written = [
     chain.root,
@@ -353,7 +369,7 @@ function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
   ].flatMap(keywordValues);
   const picked = later
     .filter((call) => !valueMethods.includes(calledName(call)))
-    .flatMap(pickedBy);
+    .flatMap((call) => pickedBy(call, model));
   return [
     ...written.map((one) => ({ slot: "field" as const, ...one })),
     ...picked.map((one) => ({ slot: "selector" as const, ...one })),
@@ -363,23 +379,32 @@ function slotsOf(chain: Chain, valueMethods: readonly string[]): SlotValue[] {
 /**
  * The columns a call picks rows by, with the value each is compared
  * with: `filter_by(tenant_id=t)` by keyword, and `where(Order.tenant_id
- * == t)` or `filter(t == Order.tenant_id)` by comparison.
+ * == t)` or `filter(t == Order.tenant_id)` by comparison, when `Order`
+ * is the chain's own model.
  */
-function pickedBy(call: PyNode): Array<{ name: string; value: PyNode }> {
+function pickedBy(
+  call: PyNode,
+  model: string | null,
+): Array<{ name: string; value: PyNode }> {
   const args = field(call, "arguments");
   return [
     ...keywordValues(call),
-    ...(args === null ? [] : children(args)).flatMap(columnComparisons),
+    ...(model === null || args === null ? [] : children(args)).flatMap(
+      (argument) => columnComparisons(argument, model as string),
+    ),
   ];
 }
 
-/** The `==` comparisons of a model's column in an argument, `and_(...)` taken apart. */
+/** The `==` comparisons of the model's column in an argument, `and_(...)` taken apart. */
 function columnComparisons(
   node: PyNode,
+  model: string,
 ): Array<{ name: string; value: PyNode }> {
   if (node.type === "call" && calledName(node) === "and_") {
     const args = field(node, "arguments");
-    return (args === null ? [] : children(args)).flatMap(columnComparisons);
+    return (args === null ? [] : children(args)).flatMap((argument) =>
+      columnComparisons(argument, model),
+    );
   }
   const operator = allChildren(node).find((child) => !child.isNamed);
   const [left, right, ...rest] = children(node);
@@ -392,21 +417,12 @@ function columnComparisons(
   ) {
     return [];
   }
-  const leftColumn = modelColumn(left);
+  const leftColumn = columnOfModel(left, model);
   if (leftColumn !== null) {
     return [{ name: leftColumn, value: right }];
   }
-  const rightColumn = modelColumn(right);
+  const rightColumn = columnOfModel(right, model);
   return rightColumn === null ? [] : [{ name: rightColumn, value: left }];
-}
-
-/** The column `Order.tenant_id` reads off a model class, or null for anything else. */
-function modelColumn(node: PyNode): string | null {
-  const object = node.type === "attribute" ? field(node, "object") : null;
-  if (object?.type !== "identifier" || !isClassName(object.text)) {
-    return null;
-  }
-  return field(node, "attribute")?.text ?? null;
 }
 
 /** A column a storage effect writes or picks rows by, and the value passed for it. */
@@ -445,7 +461,9 @@ function selectorOf(
   );
   return [
     ...new Set([
-      ...picking.flatMap((call) => pickedBy(call).map((one) => one.name)),
+      ...picking.flatMap((call) =>
+        pickedBy(call, model).map((one) => one.name),
+      ),
       ...(model === null
         ? []
         : picking.flatMap((call) => columnsComparedBy(call, model))),
@@ -653,7 +671,7 @@ function effectFor(
     effect.containerByConstruction = byConstruction;
   }
   if (options.statesSlots !== undefined) {
-    const slots = slotsOf(chain, valueMethods);
+    const slots = slotsOf(chain, valueMethods, model);
     if (slots.length > 0) {
       options.statesSlots(effect, slots);
     }
