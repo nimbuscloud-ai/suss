@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { factsForFile, parseRuby } from "@suss/adapter-ruby";
+
 import {
   activeRecordClassBodies,
   activeRecordFramework,
@@ -106,6 +108,10 @@ describe("the ActiveRecord pack", () => {
     expect(composed.discovery).toBe(graphqlPack.discovery);
     expect(composed.storage).toHaveLength(1);
     expect(composed.rawSql).toHaveLength(1);
+    expect(composed.bodyBlocks?.map((block) => block.name)).toEqual([
+      "included",
+      "with_options",
+    ]);
   });
 
   it("keeps a storage pattern the pack already had", () => {
@@ -124,6 +130,33 @@ describe("the ActiveRecord pack", () => {
     expect(
       withActiveRecord(already, { storageSystem: "postgresql" }).storage,
     ).toHaveLength(2);
+  });
+
+  it("reads an association inside a concern's `included do` and a `with_options do` in a run without the rails pack", async () => {
+    const source = [
+      "class Status; end",
+      "class Owner; end",
+      "",
+      "module Account::Associations",
+      "  extend ActiveSupport::Concern",
+      "",
+      "  included do",
+      "    has_many :statuses",
+      "    with_options dependent: :destroy do",
+      "      has_one :owner",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = factsForFile({
+      file: "/app/models/account.rb",
+      root: (await parseRuby(source)).rootNode,
+      packs: [activeRecordFramework({ storageSystem: "postgresql" })],
+    });
+    expect(
+      db.facts("declaresAssociation").map((row) => String(row[1])),
+    ).toEqual(["statuses", "owner"]);
   });
 
   it("stands alone for a run that wants no discovery", () => {

@@ -121,7 +121,11 @@ recorded for it.
 
 Concerns are covered too. A `has_many` inside an `included do` belongs
 to the module, and the module is in the ancestry of every model that
-includes it.
+includes it. The pack declares ActiveSupport's `included do` and
+`with_options do` as blocks that run with the body, so a run without
+the rails pack reads the declarations inside them. A declaration inside
+any other block, such as `after_commit do`, runs later and is not the
+class body's.
 
 The pack reads these calls only in a class whose ancestry reaches
 `ActiveRecord::Base`, in a module, and in a class reopened without its

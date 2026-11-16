@@ -1931,6 +1931,38 @@ describe("ruby value facts", () => {
     expect(rows(db, "func")).not.toContainEqual([block]);
   });
 
+  it("says which calls run their block in place: a declared body block, a loop and class_eval, and not a callback or a module-only block in a class", async () => {
+    const source = [
+      "module Auditing",
+      "  included do",
+      "    %i[a].each { |name| track name }",
+      "    class_eval do",
+      "      audit(:all)",
+      "    end",
+      "    after_commit do",
+      "      notify(:all)",
+      "    end",
+      "  end",
+      "  with_options if: :admin? do",
+      "    log(:all)",
+      "  end",
+      "end",
+      "",
+      "class Order",
+      "  included do",
+      "    track(:all)",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    expect(
+      rows(db, "runsBlockInPlace").map(
+        ([call = ""]) => textAt(source, call).split(/[\s{]/)[0],
+      ),
+    ).toEqual(["included", "with_options", "%i[a].each", "class_eval"]);
+  });
+
   it("states the container and the key of a read the source works out", async () => {
     const source = [
       "def read(settings, name)",
