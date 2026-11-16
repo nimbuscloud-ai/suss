@@ -541,8 +541,10 @@ export interface ManifestEntry {
 }
 
 /**
- * A class the file exports whose ancestry reaches a library base. Its
- * methods of one kind are the units, each named `Class.method`.
+ * A class the file exports whose ancestry reaches a library base, or a
+ * Ruby class written inside a module, as `module Billing; class Nightly`
+ * writes one. Its methods of one kind are the units, each named
+ * `Class.method`, with a Ruby class under its full name.
  */
 export interface SubclassOfMatch {
   type: "subclassOf";

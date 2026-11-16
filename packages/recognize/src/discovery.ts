@@ -21,6 +21,7 @@ import { readRouteTable } from "./routeTableDiscovery.js";
 import type {
   AstCapableValueOps,
   CallOps,
+  ClassValueOps,
   DeclaredDiscoveryMatch,
   DiscoveredCustomUnit,
   EntryMember,
@@ -217,34 +218,59 @@ function memberUnits(
   return units;
 }
 
+/**
+ * The exported classes, then each class in `classes()` whose `name()` no
+ * export has. Only Ruby gives a class a name of its own, as
+ * `Billing::Nightly` inside `module Billing`. TypeScript and Python give
+ * a class the name it is exported under, or none.
+ */
 function readSubclasses(
   match: SubclassOfMatch,
   kind: string,
   module: ModuleOps,
 ): DeclaredUnit[] {
-  const takes = nameFilter(match.members.names, match.members.pattern);
-  return module.exports().flatMap(({ name, value }) => {
+  const exported = module.exports();
+  const exportedNames = new Set(exported.map(({ name }) => name));
+  const fromExports = exported.flatMap(({ name, value }) => {
     const cls = value.asClass?.() ?? null;
-    if (cls === null || !cls.inherits(match.inherits)) {
-      return [];
-    }
-    return cls
-      .members(match.members.kind)
-      .filter((member) => takes(member.name))
-      .flatMap((member) => {
-        const func = nodeOfFunction(member.value);
-        return func === null
-          ? []
-          : [
-              {
-                func,
-                kind,
-                name: `${name}.${member.name}`,
-                foundAt: [name, member.name],
-              },
-            ];
-      });
+    return cls === null ? [] : subclassUnits(match, kind, name, cls);
   });
+  const nested = module.classes().flatMap((cls) => {
+    const name = cls.name();
+    return name === null || exportedNames.has(name)
+      ? []
+      : subclassUnits(match, kind, name, cls);
+  });
+  return [...fromExports, ...nested];
+}
+
+/** A unit for each member the match takes, when the class's ancestry reaches the base. */
+function subclassUnits(
+  match: SubclassOfMatch,
+  kind: string,
+  name: string,
+  cls: ClassValueOps,
+): DeclaredUnit[] {
+  if (!cls.inherits(match.inherits)) {
+    return [];
+  }
+  const takes = nameFilter(match.members.names, match.members.pattern);
+  return cls
+    .members(match.members.kind)
+    .filter((member) => takes(member.name))
+    .flatMap((member) => {
+      const func = nodeOfFunction(member.value);
+      return func === null
+        ? []
+        : [
+            {
+              func,
+              kind,
+              name: `${name}.${member.name}`,
+              foundAt: [name, member.name],
+            },
+          ];
+    });
 }
 
 /**
