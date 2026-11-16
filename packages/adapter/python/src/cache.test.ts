@@ -25,6 +25,7 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
@@ -138,6 +139,51 @@ describe("extractPythonProject's on-disk cache", () => {
     });
   });
 
+  it("replays a namespace route whose router lookup comes back the same after another file changes", async () => {
+    write(
+      "myapp/routes/todos.py",
+      'from flask_restx import Namespace\n\napi = Namespace("todos", path="/todos")\n\n\n@api.route("/")\nclass TodoList:\n    def get(self):\n        return []\n',
+    );
+    write("myapp/other.py", "x = 1\n");
+    const files = findPythonFiles(tmpDir);
+    const packs: PythonPack[] = [
+      {
+        ...flaskRestxLike,
+        discovery: [
+          {
+            type: "decoratedClassRoute",
+            importModule: ["flask_restx"],
+            decoratorName: "route",
+            verbMethodNames: { get: "GET" },
+            routerComposition: {
+              routerConstructorName: "Namespace",
+              includeMethodName: "add_namespace",
+              prefixKeyword: "path",
+            },
+          },
+        ],
+      },
+    ];
+    const diagnostics: CacheDiagnostic[] = [];
+    const options = { files, roots: [tmpDir], packs, projectRoot: tmpDir };
+    await extractPythonProject({
+      ...options,
+      onCacheDiagnostic: (d) => diagnostics.push(d),
+    });
+    write("myapp/other.py", "x = 2\n");
+    const cached = await extractPythonProject({
+      ...options,
+      onCacheDiagnostic: (d) => diagnostics.push(d),
+    });
+    const cold = await extractPythonProject({ ...options, cacheDir: null });
+
+    expect(JSON.stringify(cached.summaries)).toBe(
+      JSON.stringify(cold.summaries),
+    );
+    expect(diagnostics[1]?.kind).toBe("partial");
+    expect(diagnostics[1]?.partial?.rootsReused).toBeGreaterThan(0);
+  });
+
   describe("a run that replays part of the entry", () => {
     const fastapiLike: PythonPack = {
       name: "fastapi-test",
@@ -146,16 +192,10 @@ describe("extractPythonProject's on-disk cache", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET", post: "POST" },
+          routes: fastapiTestRoutes(),
           pathParamSyntax: "braces",
           injectedParameterCallees: ["Depends"],
           defaultStatusCode: 200,
-          routerComposition: {
-            routerConstructorName: "APIRouter",
-            includeMethodName: "include_router",
-            routerKeyword: "router",
-            prefixKeyword: "prefix",
-          },
           wrappers: [
             {
               type: "dependency",

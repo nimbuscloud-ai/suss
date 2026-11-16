@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { extractPythonProject, findPythonFiles } from "./index.js";
 
 import type { PythonPack } from "./pack.js";
@@ -16,13 +17,8 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
-      routerComposition: {
-        routerConstructorName: "APIRouter",
-        includeMethodName: "include_router",
-        prefixKeyword: "prefix",
-      },
     },
   ],
 };

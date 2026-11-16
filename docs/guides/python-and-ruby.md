@@ -130,7 +130,7 @@ With `api.add_namespace(ns)` somewhere in the files the run reads, that comes ou
 
 - The verb comes from the decorator's own attribute name, so `@app.post("/orders")` is a POST. The app or router is recognized by construction, `app = FastAPI()` or `router = APIRouter()`, one assignment back from an import of `fastapi`.
 - `response_model=` and `status_code=` are taken as what the route declares. With neither written, the return annotation supplies the body. With a body read and no status written, the status is 200.
-- A route on a router composes its path from the router's own `prefix` and the `prefix` at the `include_router(...)` call that mounts it, one hop deep, when both are string literals.
+- A route on a router composes its path from the `prefix` at each `include_router(...)` call on the way from the app and each router's own `prefix`, when every one of them settles on a string.
 
 Dependencies, middleware and mounted sub-apps are not read yet.
 

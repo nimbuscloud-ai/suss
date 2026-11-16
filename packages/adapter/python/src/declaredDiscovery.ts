@@ -18,10 +18,11 @@ import { discoverDeclared } from "@suss/recognize";
 import { factCallOps, factModuleOps } from "@suss/recognize/ops";
 import { stateHandedIn } from "@suss/resolution";
 
-import { stripDecorators } from "./ast.js";
+import { field, stripDecorators } from "./ast.js";
 import { pythonFactSource } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
 import { libraryUnit } from "./reach/closure.js";
+import { askWrittenValues } from "./values/evaluator.js";
 
 import type { CodeUnitKind } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -116,8 +117,45 @@ export function pythonModuleOps(
     calls: (scope) => callsWritten(file, source, scope),
     classes: () => classesIn(file),
     importedNames: (modules) => importedNamesOf(file, modules),
+    importedWhole: (modules) => importedWholeIn(file, modules),
     decorated: () => decoratedIn(file),
+    readingReceivers: (methods, of) => {
+      askWrittenValues(RECEIVERS_OF[of](file.root, methods), db);
+    },
+    mentions: (word) => file.root.text.includes(word),
   });
+}
+
+/** What each decorator, or each call, the file writes with one of the methods is made on, `router` in `@router.get(...)`. */
+const RECEIVERS_OF: Readonly<
+  Record<
+    "decorators" | "calls",
+    (root: PyNode, methods: ReadonlySet<string>) => PyNode[]
+  >
+> = {
+  decorators: (root, methods) =>
+    root
+      .descendantsOfType("decorator")
+      .flatMap((decorator) =>
+        receiverWith(decorator?.namedChild(0) ?? null, methods),
+      ),
+  calls: (root, methods) =>
+    root
+      .descendantsOfType("call")
+      .flatMap((call) => receiverWith(call, methods)),
+};
+
+/** The object a call to one of the methods is made on, or nothing for any other node. */
+function receiverWith(
+  node: PyNode | null,
+  methods: ReadonlySet<string>,
+): PyNode[] {
+  const callee = node?.type === "call" ? field(node, "function") : null;
+  const object = callee?.type === "attribute" ? field(callee, "object") : null;
+  const method = callee === null ? null : field(callee, "attribute");
+  return object !== null && method !== null && methods.has(method.text)
+    ? [object]
+    : [];
 }
 
 /** Every function and class the module writes under a decorator, however deep, in source order. */
@@ -153,6 +191,25 @@ function importedNamesOf(
       modules.includes(binding.module)
     ) {
       names.set(local, binding.importedName);
+    }
+  }
+  return names;
+}
+
+/** The names `import m` and `import m as x` bind to one of the modules, as the module scope binds them. */
+function importedWholeIn(
+  file: BoundPythonFile,
+  modules: readonly string[],
+): Set<string> {
+  const names = new Set<string>();
+  for (const [local, binding] of file.module.moduleScope.bindings) {
+    if (
+      binding.kind === "import" &&
+      binding.bindsWholeModule &&
+      binding.relativeLevel === 0 &&
+      modules.includes(binding.module)
+    ) {
+      names.add(local);
     }
   }
   return names;

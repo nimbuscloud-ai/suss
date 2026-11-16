@@ -23,6 +23,7 @@ import type {
   PackWords,
   PatternPack,
   RedirectOption,
+  RouteTableDeclaration,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 
@@ -358,8 +359,6 @@ export interface RouteConventions {
    * returning anything else keeps the declared one.
    */
   responseConstructors?: PyStatusCall[];
-  /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
-  routerComposition?: RouterComposition;
   /**
    * The callables that say which part of the request a parameter is read
    * from, by the callee's name, written as the default or inside
@@ -480,19 +479,21 @@ export interface DecoratedClassRoute extends RouteConventions {
   decoratorName: string;
   /** Method name written in the class body, mapped to the HTTP verb it dispatches. */
   verbMethodNames: Record<string, string>;
+  /** Unset means the library has no router mounting, and a route's decorator path is used as written. */
+  routerComposition?: RouterComposition;
 }
 
 /**
- * A route written as a function decorated with `@app.get(path)`: the
- * decorator's attribute name is the HTTP verb and its first argument is the
- * route path. The object the decorator is called on can be imported, or
- * built by a call to something imported.
+ * A route written as a function decorated with `@app.get(path)` on an app
+ * or a router, which the route table in `routes` finds and serves under
+ * the prefixes of the routers it is mounted through. The decorator's
+ * first argument is the route's own path.
  */
 export interface DecoratedFunctionRoute extends RouteConventions {
   type: "decoratedFunctionRoute";
+  /** The library's own module, plus any wrapper module the pack lists alongside it, for the wrappers registered around a route. */
   importModule: string[];
-  /** Decorator attribute name, mapped to the HTTP verb it means. */
-  verbAttributeNames: Record<string, string>;
+  routes: DeclaredRoutes;
   /** Unset leaves the return annotation as the only source for the response shape. */
   responseModelKeyword?: string;
   statusCodeKeyword?: string;
@@ -506,6 +507,43 @@ export interface DecoratedFunctionRoute extends RouteConventions {
 }
 
 /**
+ * A library's routes as a route table, composed over every file of the
+ * run: the decorators called on an app or a router, and the calls that
+ * mount one router onto another, wherever each is written.
+ */
+export interface DeclaredRoutes {
+  table: RouteTableDeclaration;
+  unread: RouterUnreadWords;
+}
+
+/**
+ * Why a route the table found has no path, said of the router it is
+ * declared on, each worded to follow "The router this route is declared
+ * on". A reason about a router higher up than the one it is mounted onto
+ * is said with `chain`. `{loops}` is where the loops that may mount the
+ * router go, as "a loop at main.py:4 mounts" or "loops at a.py:2, b.py:9
+ * mount".
+ */
+export interface RouterUnreadWords {
+  /** Nothing mounts the router. */
+  unreached: string;
+  /** The name the route is declared on is assigned more than one router, so it is on none of them in particular. */
+  shared: string;
+  /** Nothing mounts it by name, and loops the table cannot list may. */
+  unlistedLoop: string;
+  /** Its mount is in a function, and loops the table cannot list may mount it in that mount's place. */
+  rivalledMount: string;
+  /** The prefix its mount states does not read. */
+  mountUnread: string;
+  /** Its own prefix does not read. */
+  prefixUnread: string;
+  /** The prefix of the router it is mounted onto does not read. */
+  ontoPrefixUnread: string;
+  /** The router it is mounted onto, or one above that, gives it no path. */
+  chain: string;
+}
+
+/**
  * The names a library gives the parts of router mounting, so a route's
  * served path can be built from the prefixes written along the way: the
  * router constructor's, the one on the call that mounts it, and, where the
@@ -514,16 +552,10 @@ export interface DecoratedFunctionRoute extends RouteConventions {
  * route abstains.
  */
 export interface RouterComposition {
-  /** Constructor whose call builds a mountable router, FastAPI's `APIRouter`. */
+  /** Constructor whose call builds a mountable router, flask-restx's `Namespace`. */
   routerConstructorName: string;
-  /** Method that mounts a router onto the app, FastAPI's `include_router`. */
+  /** Method that mounts a router onto the app, flask-restx's `add_namespace`. */
   includeMethodName: string;
-  /**
-   * The mount method's name for its router parameter, FastAPI's `router`,
-   * used to read a call that passes the router by keyword. Unset reads the
-   * first positional argument only.
-   */
-  routerKeyword?: string;
   /** The prefix keyword, the same at the constructor and the mount. A library that uses two different keywords would need two fields here. */
   prefixKeyword: string;
   /** Whether a prefix written at the mount goes in front of the constructor's ("prefixes") or replaces it ("replaces"). Default "prefixes". */
@@ -537,8 +569,8 @@ export interface RouterComposition {
   /**
    * Where the object the mount is called on states a prefix of its own,
    * in front of everything the constructor and the mount state. Unset
-   * means it states none. That matches FastAPI, where an app serves a
-   * mounted router exactly where the two prefixes put it.
+   * means it states none, and an app serves a mounted router exactly
+   * where the two prefixes put it.
    */
   mountObjectPrefix?: MountObjectPrefix;
 }

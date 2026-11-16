@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { fastapiFramework } from "./index.js";
+import { fastapiFramework, fastapiRoutes, ROUTER_UNREAD } from "./index.js";
+
+const SERVES = (method: string) => ({
+  role: "serves",
+  methods: [method],
+  path: [{ at: 0 }],
+  handler: { decorated: true },
+});
 
 describe("fastapiFramework", () => {
   it("accepts fastapi's own module by default", () => {
     const pack = fastapiFramework();
     expect(pack.name).toBe("fastapi");
+    expect(pack.version).toBe("1");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
         type: "decoratedFunctionRoute",
         importModule: ["fastapi"],
-        verbAttributeNames: {
-          get: "GET",
-          post: "POST",
-          put: "PUT",
-          patch: "PATCH",
-          delete: "DELETE",
-          head: "HEAD",
-          options: "OPTIONS",
-        },
+        routes: { table: fastapiRoutes(["fastapi"]), unread: ROUTER_UNREAD },
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
         injectedParameterCallees: ["Depends", "Security"],
@@ -74,12 +74,6 @@ describe("fastapiFramework", () => {
             statusKeyword: "status_code",
           },
         ],
-        routerComposition: {
-          routerConstructorName: "APIRouter",
-          includeMethodName: "include_router",
-          routerKeyword: "router",
-          prefixKeyword: "prefix",
-        },
         wrappers: [
           {
             type: "dependency",
@@ -114,6 +108,46 @@ describe("fastapiFramework", () => {
     expect(
       pattern?.type === "decoratedFunctionRoute" && pattern.importModule,
     ).toEqual(["fastapi", "myapp.compat"]);
+    expect(
+      pattern?.type === "decoratedFunctionRoute" && pattern.routes.table.from,
+    ).toEqual(["fastapi", "myapp.compat"]);
+  });
+
+  it("reads each verb decorator, include_router and APIRouter as the table's roles", () => {
+    expect(fastapiRoutes(["fastapi"])).toEqual({
+      roots: {
+        kinds: { FastAPI: 0 },
+        children: { in: "receiver" },
+        in: "file",
+        unlessDropped: { owned: ["middleware", "exception_handler"] },
+      },
+      from: ["fastapi"],
+      joins: "asWritten",
+      loops: ["for"],
+      throughWrappers: true,
+      roles: {
+        get: SERVES("GET"),
+        post: SERVES("POST"),
+        put: SERVES("PUT"),
+        patch: SERVES("PATCH"),
+        delete: SERVES("DELETE"),
+        head: SERVES("HEAD"),
+        options: SERVES("OPTIONS"),
+        include_router: {
+          role: "mount",
+          table: [{ at: 0 }, { keyword: "router" }],
+          at: [{ keyword: "prefix" }],
+          prefix: "inFront",
+        },
+        APIRouter: {
+          role: "scopes",
+          path: [{ keyword: "prefix" }],
+          children: { in: "receiver" },
+          noValue: "unreadable",
+          trailingSlash: "kept",
+        },
+      },
+    });
   });
 
   it("is the module's default export too", async () => {

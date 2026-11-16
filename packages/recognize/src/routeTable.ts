@@ -28,6 +28,7 @@ import type {
   FragmentRole,
   IncludeRole,
   ModuleOps,
+  MountHop,
   MountRole,
   PairArg,
   ReceiverUnread,
@@ -55,6 +56,7 @@ export type {
   ExpansionRow,
   FragmentRole,
   IncludeRole,
+  MountHop,
   MountRole,
   ReceiverUnread,
   ReplayRole,
@@ -96,6 +98,8 @@ interface ReceiverEntry {
   readonly decorated: ValueOps | null;
   /** The call that built the value, or null when the receiver comes to no one call. */
   readonly value: CallOps | null;
+  /** When the receiver comes to no one call, each call it is written as, such as a name assigned two routers. */
+  readonly shared: readonly CallOps[];
 }
 
 interface ReceiverItem {
@@ -122,15 +126,19 @@ interface Receivers {
   /** Each entry whose handler is decorated, so the ones no walk reads are said to be unreached. */
   readonly decorated: readonly ReceiverEntry[];
   /** Each mount written in a loop the table cannot list. */
-  readonly unlisted: readonly CallOps[];
+  readonly unlisted: readonly ReceiverEntry[];
+  /** By the site of the call that built a value, each mount entry that mounts it, so a value no walk reaches can say what it is mounted onto. */
+  readonly mountedBy: ReadonlyMap<string, readonly ReceiverEntry[]>;
   /** The names each file imports from the table's modules, by its path, so a value built in another file is named the way that file names it. */
   readonly names: ReadonlyMap<string, ReadonlyMap<string, string>>;
 }
 
-/** Why an entry whose handler is a value gave no route, with the loops that may mount it. */
+/** Why an entry whose handler is a value gave no route, with the loops that may mount it and the value the reason is about. */
 interface UnreadWhy {
   readonly reason: "pathUnread" | "prefixUnread" | ReceiverUnread;
   readonly loops?: readonly CallOps[];
+  readonly router?: CallOps;
+  readonly shared?: true;
 }
 
 /** Why no path under a scope is claimed: something above it, never the entry itself or its reach. */
@@ -166,6 +174,8 @@ interface Scope {
   readonly shallowPath: string;
   /** Why no path inside an enclosing entry is claimed, or null while every path above reads. */
   readonly unread: ScopeUnread | null;
+  /** The mounts of values the walk went through to get here, outermost first. */
+  readonly mounts: readonly MountHop[];
 }
 
 /** An entry's arguments, as the picks read them. */
@@ -184,6 +194,8 @@ interface Entry {
   readonly args: EntryArgs;
   /** The function or class a decorator entry is written over. */
   readonly decorated?: ValueOps | null;
+  /** For an entry made on a value, the call that built it. */
+  readonly on?: CallOps | null;
 }
 
 interface Walk {
@@ -215,6 +227,8 @@ interface Walk {
   readonly cycled: Set<string>;
   /** The sites of the roots left out because their function drops them. */
   readonly dropped: Set<string>;
+  /** By site, whether a value a root would mount is kept by its function, once asked. */
+  readonly kept: Map<string, boolean>;
 }
 
 interface Root {
@@ -232,9 +246,27 @@ const EMPTY_SCOPE: Scope = {
   shallow: false,
   shallowPath: "",
   unread: null,
+  mounts: [],
 };
 
 const NO_KEYS = (): undefined => undefined;
+
+/**
+ * Reads the files into the app's route set, for a table whose roots are
+ * all the app's and whose entries include no file and inflect no name,
+ * as a table whose handlers are values is.
+ */
+export function composeAppRoutes(
+  table: RouteTableDeclaration,
+  files: RouteSources["files"],
+): RouteSet {
+  return composeRoutes(table, {
+    files,
+    ownerOf: () => ({ table: "app" }),
+    include: () => null,
+    naming: { singular: (word) => word, plural: (word) => word },
+  });
+}
 
 /**
  * Reads every root the files write into one route set. The app's roots
@@ -263,6 +295,7 @@ export function composeRoutes(
     read: new Set(),
     cycled: new Set(),
     dropped: new Set(),
+    kept: new Map(),
   };
   const appRoots: Root[] = [];
   for (const { module, displayPath } of sources.files) {
@@ -303,7 +336,9 @@ export function composeRoutes(
 /**
  * The names the file imports from the table's modules, by the name the
  * file uses, or null when it imports none the table starts from or reads
- * as an entry. The file's text is asked first, since stating a file's
+ * as an entry. A module imported whole gives each name a root or a scope
+ * is built by under the module's name, `fastapi.APIRouter` after `import
+ * fastapi`. The file's text is asked first, since stating a file's
  * imports to learn it writes none of them costs more than the answer.
  * A table with no modules matches names as written, in every file.
  */
@@ -317,12 +352,27 @@ function namesImported(
   if (!table.from.some((name) => module.mentions(name))) {
     return null;
   }
-  const names = module.importedNames(table.from);
+  const names = new Map(module.importedNames(table.from));
+  for (const alias of module.importedWhole?.(table.from) ?? []) {
+    for (const name of builtNames(table)) {
+      names.set(`${alias}.${name}`, name);
+    }
+  }
   const read = new Set([
     ...Object.keys(table.roles),
     ...Object.keys(table.roots.kinds),
   ]);
   return [...names.values()].some((name) => read.has(name)) ? names : null;
+}
+
+/** The names of the calls a root or a scope is built by, which a walk reads by the call rather than through a receiver. */
+function builtNames(table: RouteTableDeclaration): string[] {
+  return [
+    ...Object.keys(table.roots.kinds),
+    ...Object.entries(table.roles)
+      .filter(([, role]) => role.role === "scopes")
+      .map(([name]) => name),
+  ];
 }
 
 /** The elements of the file that no element written with children encloses, as one root walked in place. */
@@ -431,7 +481,7 @@ function asRoot(
   ) {
     return null;
   }
-  const owner = ownerWritten(call, rule);
+  const owner = ownerWritten(call, rule, walk);
   const children =
     owner === null
       ? null
@@ -464,6 +514,18 @@ function dropped(call: CallOps, walk: Walk): boolean {
   return true;
 }
 
+/** Whether a value a root would mount is dropped by its function the way a root can be, asked once per value. */
+function droppedValue(value: CallOps, walk: Walk): boolean {
+  const site = value.site?.() ?? "";
+  const known = walk.kept.get(site);
+  if (known !== undefined) {
+    return !known;
+  }
+  const isDropped = dropped(value, walk);
+  walk.kept.set(site, !isDropped);
+  return isDropped;
+}
+
 /** A root's own list that did not read is said at the root call, where the router is created. */
 function rootListAt(children: Children, call: CallOps): Children {
   return {
@@ -479,15 +541,16 @@ function rootListAt(children: Children, call: CallOps): Children {
 
 /**
  * The owner as the source writes it before `.<calledOn>`, such as
- * `Rails.application`, or "" for a root called bare. Null when the call
- * is not made where the rule says.
+ * `Rails.application`, or "" for a root called bare or on a module the
+ * file imports whole. Null when the call is not made where the rule says.
  */
 function ownerWritten(
   call: CallOps,
   rule: RouteTableDeclaration["roots"],
+  walk: Walk,
 ): string | null {
   if (rule.calledOn === undefined) {
-    return hasReceiver(call) ? null : "";
+    return hasReceiver(call) && !walk.names.has(call.calleeText()) ? null : "";
   }
   const receiver = call.receiver();
   const suffix = `.${rule.calledOn}`;
@@ -507,7 +570,8 @@ function nameOf(call: CallOps): string {
  * The name a call is matched against the roots and roles by. Where the
  * table says which modules its names come from, that is the name the
  * module exports, for a call made bare on a name the file imports from
- * one of them, and null for any other call.
+ * one of them or made on a module the file imports whole, and null for
+ * any other call.
  */
 function callName(call: CallOps, walk: Walk): string | null {
   return callNameIn(call, walk.names, walk.table);
@@ -521,7 +585,8 @@ function callNameIn(
   if (table.from === undefined) {
     return nameOf(call);
   }
-  return hasReceiver(call) ? null : (names.get(nameOf(call)) ?? null);
+  const written = hasReceiver(call) ? call.calleeText() : nameOf(call);
+  return names.get(written) ?? null;
 }
 
 /** The name an element is matched against the roles by: its tag, read the way a call's name is. */
@@ -706,7 +771,8 @@ function indexReceivers(walk: Walk): Receivers {
   const calledRoles = rolesFoundBy("call", walk.table);
   const byValue = new Map<string, ReceiverEntry[]>();
   const decorated: ReceiverEntry[] = [];
-  const unlisted: CallOps[] = [];
+  const unlisted: ReceiverEntry[] = [];
+  const mountedBy = new Map<string, ReceiverEntry[]>();
   const names = new Map<string, ReadonlyMap<string, string>>();
   for (const { module } of walk.sources.files) {
     const imported = namesImported(module, walk.table);
@@ -722,19 +788,27 @@ function indexReceivers(walk: Walk): Receivers {
     for (const entry of inFile) {
       const value = entry.value?.site?.();
       if (value !== undefined) {
-        const onValue = byValue.get(value) ?? [];
-        onValue.push(entry);
-        byValue.set(value, onValue);
+        pushTo(byValue, value, entry);
       }
       if (entry.decorated !== null) {
         decorated.push(entry);
       }
-      if (inUnlistedLoop(entry, walk)) {
-        unlisted.push(entry.call);
+      const mounted = valueMounted(entry, walk);
+      if (mounted?.kind === "unlisted") {
+        unlisted.push(entry);
+      }
+      for (const call of mounted?.kind === "values" ? mounted.calls : []) {
+        pushTo(mountedBy, call.site?.() ?? "", entry);
       }
     }
   }
-  return { byValue, decorated, unlisted, names };
+  return { byValue, decorated, unlisted, mountedBy, names };
+}
+
+function pushTo<V>(map: Map<string, V[]>, key: string, value: V): void {
+  const list = map.get(key) ?? [];
+  list.push(value);
+  map.set(key, list);
 }
 
 /** The roles whose entries made on a value are found by their decorators, or by their calls. */
@@ -765,6 +839,7 @@ function decoratedEntries(
   if (roles.size === 0) {
     return [];
   }
+  module.readingReceivers?.(roles, "decorators");
   return module.decorated().flatMap(({ definition, decorators }) =>
     decorators.flatMap((decorator) => {
       if (decorator.form !== "call") {
@@ -779,7 +854,7 @@ function decoratedEntries(
               call: decorator.call,
               made,
               decorated: definition,
-              value: made.receiver(),
+              ...receiverOf(made),
             },
           ]
         : [];
@@ -802,15 +877,26 @@ function calledEntries(
   module: ModuleOps,
   roles: ReadonlySet<string>,
 ): ReceiverEntry[] {
-  if (roles.size === 0) {
+  // Listing a file's calls costs more than asking its text for a name.
+  if (![...roles].some((name) => module.mentions(name))) {
     return [];
   }
+  module.readingReceivers?.(roles, "calls");
   return module.calls("file").flatMap((call) => {
     const name = call.method();
     return name !== null && roles.has(name)
-      ? [{ name, call, made: call, decorated: null, value: call.receiver() }]
+      ? [{ name, call, made: call, decorated: null, ...receiverOf(call) }]
       : [];
   });
+}
+
+/** The call a receiver comes to, or when it comes to none, each call it is written as. */
+function receiverOf(made: CallOps): Pick<ReceiverEntry, "value" | "shared"> {
+  const value = made.receiver();
+  return {
+    value,
+    shared: value === null ? (made.receiverCalls?.() ?? []) : [],
+  };
 }
 
 const ARGS_OF: {
@@ -1105,7 +1191,15 @@ function walkCycle(
     return;
   }
   walk.cycled.add(value);
-  walkEntries(children.entries, withUnread(scope, { reason: "cycle" }), walk);
+  const router = scope.mounts[scope.mounts.length - 1]?.value;
+  walkEntries(
+    children.entries,
+    withUnread(scope, {
+      reason: "cycle",
+      ...(router === undefined ? {} : { router }),
+    }),
+    walk,
+  );
 }
 
 /** The scope with no path claimed under it, for the first reason found on the way down. */
@@ -1174,6 +1268,7 @@ function readReceiverEntry(
       name: found.name,
       args: callArgs(found.call, walk.keywords, scope.defaults),
       decorated: found.decorated,
+      on: found.value,
     },
     scope,
     walk,
@@ -1395,8 +1490,16 @@ function readServesDecorated(
   const served = servedBy(role, definition, entry.args, scope, walk);
   const unread = unreadAt(scope, own);
   if (unread !== null) {
-    for (const one of distinctHandlers(served)) {
-      walk.outcomes.push(unreadEntry(unread, one, entry.source));
+    const prefix = scope.unread === null ? { prefix: scope.pathPrefix } : {};
+    for (const one of served) {
+      walk.outcomes.push({
+        ...unreadEntry(unread, one, entry.source, {
+          mounts: scope.mounts,
+          on: entry.on ?? null,
+        }),
+        method: one.method,
+        ...prefix,
+      });
     }
     return;
   }
@@ -1409,6 +1512,8 @@ function readServesDecorated(
       handler: one.handler,
       entry: entry.source,
       ...(one.owner === undefined ? {} : { owner: one.owner }),
+      mounts: scope.mounts,
+      prefix: scope.pathPrefix,
     });
   }
 }
@@ -1436,13 +1541,6 @@ function servedBy(
     }));
 }
 
-function distinctHandlers(served: readonly Served[]): Served[] {
-  return served.filter(
-    (one, at) =>
-      served.findIndex((other) => other.handler === one.handler) === at,
-  );
-}
-
 /** Why the path an entry would serve is not claimed: something above it, or its own path. Null when it reads. */
 function unreadAt(scope: Scope, own: OwnPath): UnreadWhy | null {
   if (scope.unread !== null) {
@@ -1451,11 +1549,18 @@ function unreadAt(scope: Scope, own: OwnPath): UnreadWhy | null {
   return own.kind === "unread" ? { reason: "pathUnread" } : null;
 }
 
+/** Where an entry found through a receiver is: the mounts the walk came down, and the value it is made on. */
+interface ReceiverPlace {
+  readonly mounts?: readonly MountHop[];
+  readonly on: CallOps | null;
+}
+
 function unreadEntry(
   unread: UnreadWhy,
   served: Omit<Served, "method">,
   entry: EntrySource,
-): RouteOutcome {
+  place?: ReceiverPlace,
+): Extract<RouteOutcome, { kind: "unread"; handler: ValueOps }> {
   return {
     kind: "unread",
     reason: unread.reason,
@@ -1463,6 +1568,10 @@ function unreadEntry(
     entry,
     ...(served.owner === undefined ? {} : { owner: served.owner }),
     ...(unread.loops === undefined ? {} : { loops: unread.loops }),
+    ...(place?.mounts === undefined ? {} : { mounts: place.mounts }),
+    ...(place === undefined || place.on === null ? {} : { on: place.on }),
+    ...(unread.router === undefined ? {} : { router: unread.router }),
+    ...(unread.shared === undefined ? {} : { shared: unread.shared }),
   };
 }
 
@@ -1868,7 +1977,7 @@ function readScopes(
   if (role.noValue !== undefined) {
     walkChildren(
       children,
-      prefixedScope(role, role.noValue, entry.args, scope, walk),
+      prefixedScope(role, role.noValue, entry, scope, walk),
       walk,
     );
     return;
@@ -1896,24 +2005,47 @@ function readScopes(
 function prefixedScope(
   role: ScopesRole,
   noValue: "unstated" | "unreadable",
-  args: EntryArgs,
+  entry: Entry,
   scope: Scope,
   walk: Walk,
 ): Scope {
-  const prefix = prefixRead(firstPicked(args, role.path ?? []), noValue, scope);
-  if (prefix.kind === "unreadable") {
-    return { ...scope, unread: { reason: "prefixUnread" } };
+  const prefix = prefixRead(
+    firstPicked(entry.args, role.path ?? []),
+    noValue,
+    scope,
+  );
+  const unread = unreadPrefix(
+    role,
+    prefix,
+    entry.source.form === "call" ? entry.source.call : null,
+  );
+  if (unread !== null) {
+    return { ...scope, unread };
   }
-  if (prefix.kind === "unstated") {
-    return role.prefixRequired === true
-      ? { ...scope, unread: { reason: "prefixUnstated" } }
-      : scope;
+  if (prefix.kind !== "stated") {
+    return scope;
   }
   const path =
     role.trailingSlash === "trimmed"
       ? prefix.value.replace(/\/+$/, "")
       : prefix.value;
   return { ...scope, pathPrefix: joinTablePath(walk, scope.pathPrefix, path) };
+}
+
+/** Why a library's router claims no path for what is under it from its own prefix alone, or null when the prefix gives it one. */
+function unreadPrefix(
+  role: ScopesRole,
+  prefix: PrefixRead,
+  router: CallOps | null,
+): ScopeUnread | null {
+  const about = router === null ? {} : { router };
+  if (prefix.kind === "unreadable") {
+    return { reason: "prefixUnread", ...about };
+  }
+  if (prefix.kind === "unstated" && role.prefixRequired === true) {
+    return { reason: "prefixUnstated", ...about };
+  }
+  return null;
 }
 
 /** What a library prefix says where it is written: a path, none at all, or something that does not read as a string. */
@@ -2112,38 +2244,57 @@ const UNLISTED: Mounted = { kind: "unlisted" };
 /**
  * The values a mount's table comes to: the call that built it, through
  * names and fields, or for the variable of a `for` loop, the call behind
- * each item of the list the loop goes over. A loop over anything else,
- * or over an item that comes to no call, is one the table cannot list.
+ * each item of the list the loop goes over, written out in place or
+ * returned by a call the rules settle. A loop over anything else, or
+ * over an item that comes to no call, is one the table cannot list.
  */
 function mountedOf(value: ValueOps | undefined, walk: Walk): Mounted {
   const built = value?.asCall?.({ follow: "namesAndFields" }) ?? null;
   if (built !== null) {
     return { kind: "values", calls: [built] };
   }
-  const over = walk.table.loops.includes(FOR_LOOP)
-    ? (value?.element?.() ?? null)
-    : null;
-  if (over === null) {
+  if (!walk.table.loops.includes(FOR_LOOP)) {
     return { kind: "values", calls: [] };
   }
-  if (!writtenAsList(over)) {
+  const over = value?.element?.() ?? null;
+  if (over === null) {
+    // A loop that takes each element apart says no more about which value
+    // a part is than a loop over a list the table cannot read.
+    return (value?.elementPart?.() ?? null) === null
+      ? { kind: "values", calls: [] }
+      : UNLISTED;
+  }
+  const items = itemsLooped(over);
+  if (items === null) {
     return UNLISTED;
   }
-  const items = over
-    .items()
-    .map((item) => item.asCall?.({ follow: "namesAndFields" }) ?? null);
-  const calls = items.filter((item): item is CallOps => item !== null);
+  const calls = items.flatMap(
+    (item) => item.asCall?.({ follow: "namesAndFields" }) ?? [],
+  );
   return calls.length === items.length ? { kind: "values", calls } : UNLISTED;
 }
 
-/** Whether the entry mounts a value from a loop the table cannot list. */
-function inUnlistedLoop(entry: ReceiverEntry, walk: Walk): boolean {
+/**
+ * The items of what a loop goes over: a list written out in place, or a
+ * call the rules settle on one. A call that returns no item says no more
+ * about what the loop mounts than one they do not settle.
+ */
+function itemsLooped(over: ValueOps): readonly ValueOps[] | null {
+  if (writtenAsList(over)) {
+    return over.items();
+  }
+  const returned = over.returnedItems?.() ?? null;
+  return returned === null || returned.length === 0 ? null : returned;
+}
+
+/** What a mount of a value the source built comes to, or null for an entry that is no such mount. */
+function valueMounted(entry: ReceiverEntry, walk: Walk): Mounted | null {
   const role = walk.table.roles[entry.name];
   if (role?.role !== "mount" || role.prefix === undefined) {
-    return false;
+    return null;
   }
   const args = callArgs(entry.call, walk.keywords, {});
-  return mountedOf(firstPicked(args, role.table), walk).kind === "unlisted";
+  return mountedOf(firstPicked(args, role.table), walk);
 }
 
 /**
@@ -2189,33 +2340,33 @@ function mountedScope(
   scope: Scope,
   walk: Walk,
 ): Scope {
+  const mount = entry.source.form === "call" ? entry.source.call : null;
+  const through: Scope =
+    mount === null
+      ? scope
+      : { ...scope, mounts: [...scope.mounts, { call: mount, value }] };
   if (at.kind === "unreadable") {
-    return withUnread(scope, { reason: "mountUnread" });
+    return withUnread(through, { reason: "mountUnread", router: value });
   }
   if (at.kind === "stated" && prefix === "replaces") {
-    return withUnread(scope, { reason: "prefixReplaced" });
+    return withUnread(through, { reason: "prefixReplaced", router: value });
   }
   const placed =
     at.kind === "stated"
       ? {
-          ...scope,
-          pathPrefix: joinTablePath(walk, scope.pathPrefix, at.value),
+          ...through,
+          pathPrefix: joinTablePath(walk, through.pathPrefix, at.value),
         }
-      : scope;
-  const loops =
-    entry.source.form === "call"
-      ? rivalsOf(entry.source.call, value, walk)
-      : [];
+      : through;
+  const loops = mount === null ? [] : rivalsOf(mount, value, walk);
   return loops.length === 0
     ? placed
-    : withUnread(placed, { reason: "rivalledMount", loops });
+    : withUnread(placed, { reason: "rivalledMount", loops, router: value });
 }
 
 /** A mounted value, read by the role for the call that built it, named the way that call's own file names it. */
 function walkMountedValue(value: CallOps, scope: Scope, walk: Walk): void {
-  const names = receiversOf(walk).names.get(value.file?.() ?? "");
-  const name =
-    names === undefined ? null : callNameIn(value, names, walk.table);
+  const name = builtName(value, walk);
   if (name === null || !Object.hasOwn(walk.table.roles, name)) {
     return;
   }
@@ -2243,9 +2394,16 @@ function rivalsOf(mount: CallOps, value: CallOps, walk: Walk): CallOps[] {
     return [];
   }
   const file = value.file?.() ?? null;
-  return receiversOf(walk).unlisted.filter(
+  return loopsOnTable(walk).filter(
     (loop) => (loop.callerSite?.() ?? null) !== site && mayMount(loop, file),
   );
+}
+
+/** The mounts in a loop the table cannot list that are made on a value the table reads, as a mount the walk would follow is. */
+function loopsOnTable(walk: Walk): CallOps[] {
+  return receiversOf(walk)
+    .unlisted.filter((loop) => onTableValue(loop, walk))
+    .map((loop) => loop.call);
 }
 
 /** Whether a loop may mount a value written in the file. A loader reads what it mounts from near itself, the directory it is in. */
@@ -2273,13 +2431,17 @@ function sayUnreached(walk: Walk): void {
       continue;
     }
 
-    const loops = receivers.unlisted.filter((loop) =>
-      mayMount(loop, found.call.file?.() ?? null),
-    );
-    const unread: UnreadWhy =
-      loops.length === 0
-        ? { reason: "unreached" }
-        : { reason: "unlistedLoop", loops };
+    // A root adds no path, so whichever of the roots a name is assigned
+    // runs serves the entry at its own path.
+    if (
+      found.shared.length > 0 &&
+      found.shared.every((one) => isRoot(one, walk))
+    ) {
+      readReceiverEntry(found, EMPTY_SCOPE, walk);
+      continue;
+    }
+
+    const unread = whyUnreached(found, walk);
     const served = servedBy(
       walk.table.roles[found.name] as ServesRole,
       found.decorated as ValueOps,
@@ -2287,12 +2449,104 @@ function sayUnreached(walk: Walk): void {
       EMPTY_SCOPE,
       walk,
     );
-    for (const one of distinctHandlers(served)) {
-      walk.outcomes.push(
-        unreadEntry(unread, one, { form: "call", call: found.call }),
-      );
+    for (const one of served) {
+      walk.outcomes.push({
+        ...unreadEntry(
+          unread,
+          one,
+          { form: "call", call: found.call },
+          { on: found.value },
+        ),
+        method: one.method,
+      });
     }
   }
+}
+
+/**
+ * Why no walk reached an entry, in the order a library would stop
+ * serving it: the value's own prefix, which it is built with wherever it
+ * is mounted; then each mount of the value, by the prefix of the value it
+ * mounts it onto, its own prefix, and a loop that may mount the value in
+ * its place; then the value it is mounted onto, which no walk reached
+ * either. A value nothing mounts gives the loops that may mount it.
+ */
+function whyUnreached(found: ReceiverEntry, walk: Walk): UnreadWhy {
+  const { value } = found;
+  if (value === null) {
+    return found.shared.length > 0
+      ? { reason: "unreached", shared: true }
+      : { reason: "unreached" };
+  }
+  const own = scopeUnreadOf(value, walk);
+  if (own !== null) {
+    return own;
+  }
+  const mounts = (
+    receiversOf(walk).mountedBy.get(value.site?.() ?? "") ?? []
+  ).filter((mount) => mount.value !== null && onTableValue(mount, walk));
+  for (const mount of mounts) {
+    const unread = mountUnreadOf(mount, value, walk);
+    if (unread !== null) {
+      return unread;
+    }
+  }
+  const onto = mounts[0]?.value ?? null;
+  if (onto !== null) {
+    return { reason: "unreached", router: onto };
+  }
+  const loops = loopsOnTable(walk).filter((loop) =>
+    mayMount(loop, found.call.file?.() ?? null),
+  );
+  return loops.length === 0
+    ? { reason: "unreached" }
+    : { reason: "unlistedLoop", loops };
+}
+
+/** Why one mount of a value would leave it with no path, read the way the walk reads a mount it reaches, or null when it would not. */
+function mountUnreadOf(
+  mount: ReceiverEntry,
+  value: CallOps,
+  walk: Walk,
+): UnreadWhy | null {
+  const onto = mount.value === null ? null : scopeUnreadOf(mount.value, walk);
+  if (onto !== null) {
+    return onto;
+  }
+  const role = walk.table.roles[mount.name] as MountRole;
+  const at = prefixRead(
+    firstPicked(callArgs(mount.call, walk.keywords, {}), role.at),
+    role.noValue ?? "unreadable",
+    EMPTY_SCOPE,
+  );
+  if (at.kind === "unreadable") {
+    return { reason: "mountUnread", router: value };
+  }
+  if (at.kind === "stated" && role.prefix === "replaces") {
+    return { reason: "prefixReplaced", router: value };
+  }
+  const loops = rivalsOf(mount.call, value, walk);
+  return loops.length === 0
+    ? null
+    : { reason: "rivalledMount", loops, router: value };
+}
+
+/** Why a value a scopes role is written as claims no path under it from its own prefix, or null when it is no such value or its prefix reads. */
+function scopeUnreadOf(value: CallOps, walk: Walk): ScopeUnread | null {
+  const name = builtName(value, walk);
+  const role =
+    name !== null && Object.hasOwn(walk.table.roles, name)
+      ? walk.table.roles[name]
+      : undefined;
+  if (role?.role !== "scopes" || role.noValue === undefined) {
+    return null;
+  }
+  const prefix = prefixRead(
+    firstPicked(callArgs(value, walk.keywords, {}), role.path ?? []),
+    role.noValue,
+    EMPTY_SCOPE,
+  );
+  return unreadPrefix(role, prefix, value);
 }
 
 /** Whether some entry's children are the entries made on a value, which only such a table finds. */
@@ -2312,25 +2566,44 @@ function childrenRulesOf(role: RouteRole): readonly ChildrenIn[] {
 
 /**
  * Whether an entry is made on a value the table reads, and so belongs to
- * it: one a root or a role is written as, not on a root its function
- * drops. A receiver that comes to no one call counts when
- * `receiverIsFrom` says the table's modules built it.
+ * it: one a root or a role is written as, and not one its function
+ * builds and drops, whether a root or a value a root would mount. A
+ * receiver that comes to no one call counts when `receiverIsFrom` says
+ * the table's modules built it.
  */
 function onTableValue(found: ReceiverEntry, walk: Walk): boolean {
   const { value } = found;
   const { from } = walk.table;
+  if (value === null && found.shared.length > 0) {
+    return found.shared.every((one) => tableValue(one, walk));
+  }
   if (value === null) {
     return (
       from !== undefined && found.made.receiverIsFrom(constructedFrom(...from))
     );
   }
-  const names = walk.receivers?.names.get(value.file?.() ?? "");
-  const name =
-    names === undefined ? null : callNameIn(value, names, walk.table);
-  return (
-    name !== null &&
-    !walk.dropped.has(value.site?.() ?? "") &&
-    (Object.hasOwn(walk.table.roots.kinds, name) ||
-      Object.hasOwn(walk.table.roles, name))
-  );
+  return tableValue(value, walk);
+}
+
+/** Whether a call builds a value the table reads: a root or a role, kept by its function. */
+function tableValue(value: CallOps, walk: Walk): boolean {
+  const name = builtName(value, walk);
+  if (name === null || walk.dropped.has(value.site?.() ?? "")) {
+    return false;
+  }
+  if (Object.hasOwn(walk.table.roots.kinds, name)) {
+    return true;
+  }
+  return Object.hasOwn(walk.table.roles, name) && !droppedValue(value, walk);
+}
+
+function isRoot(value: CallOps, walk: Walk): boolean {
+  const name = builtName(value, walk);
+  return name !== null && Object.hasOwn(walk.table.roots.kinds, name);
+}
+
+/** The name the call that built a value is matched by, read the way its own file names it. */
+function builtName(value: CallOps, walk: Walk): string | null {
+  const names = receiversOf(walk).names.get(value.file?.() ?? "");
+  return names === undefined ? null : callNameIn(value, names, walk.table);
 }

@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
 import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject } from "./project.js";
@@ -26,7 +27,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
       injectedParameterCallees: ["Depends"],
       responseStatusCalls: [

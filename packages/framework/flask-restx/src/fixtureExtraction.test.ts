@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { restBinding } from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
+import { fastapiRoutes, ROUTER_UNREAD } from "@suss/framework-fastapi";
 
 import { flaskRestxFramework } from "./index.js";
 
@@ -21,7 +22,7 @@ const repoRoot = path.resolve(
 );
 const fixtureRoot = path.join(repoRoot, "fixtures", "python-webapp");
 
-/** Inline rather than the shipped `@suss/framework-fastapi`, which has its own extraction test. */
+/** The shipped `@suss/framework-fastapi` routes with fewer conventions, since that pack has its own extraction test. */
 const fastapiPack: PythonPack = {
   name: "fastapi-inline-test-pack",
   protocol: "http",
@@ -29,13 +30,7 @@ const fastapiPack: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: {
-        get: "GET",
-        post: "POST",
-        put: "PUT",
-        delete: "DELETE",
-        patch: "PATCH",
-      },
+      routes: { table: fastapiRoutes(["fastapi"]), unread: ROUTER_UNREAD },
       pathParamSyntax: "braces",
       annotatedClassIsRequestBody: true,
       defaultStatusCode: 200,

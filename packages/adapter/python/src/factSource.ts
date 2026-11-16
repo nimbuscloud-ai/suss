@@ -27,13 +27,16 @@ import { copingAt, keysSuppliedAt } from "./envReads.js";
 import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
+  containedValues,
   environmentsAt,
   handedNamesAt,
+  objectReturnedBy,
   originsOf,
   resolveCalls,
   resolveStreamObjects,
   usesOf,
   writtenValueOf,
+  writtenValuesOf,
 } from "./facts/resolve.js";
 import { callArguments } from "./facts/values.js";
 import {
@@ -103,6 +106,12 @@ export function pythonFactSource(db: Database): PythonFactSource {
     db,
     read: () => undefined,
     writtenAs: (key) => writtenValueOf(db, key),
+    writtenAsEach: (key) => writtenValuesOf(db, key),
+    returnedItemsOf: (call) => {
+      resolveCalls(db, [call]);
+      const returned = objectReturnedBy(db, call);
+      return returned === null ? null : containedValues(db, returned);
+    },
     anchorCalls: (key) => anchorCallsOf(db, key),
     importedFrom: (key, module) =>
       originsOf(db, key).some(

@@ -210,6 +210,15 @@ class FactCall implements CallOps {
     return factCallOps(made, this.source);
   }
 
+  receiverCalls(): readonly CallOps[] {
+    if (this.calleeRead === null || this.receiver() !== null) {
+      return [];
+    }
+    return (this.source.writtenAsEach?.(this.calleeRead.object) ?? []).flatMap(
+      (key) => factCallOps(key, this.source) ?? [],
+    );
+  }
+
   /** The object the callee reads the method off, as written, without following a name. */
   receiverValue(): ValueOps | null {
     return this.calleeRead === null
@@ -1113,6 +1122,18 @@ class FactValue implements ValueOps {
     return over === null ? null : factValueOps(over, this.facts);
   }
 
+  returnedItems(): readonly ValueOps[] | null {
+    const keys = this.facts.returnedItemsOf?.(this.key) ?? null;
+    return keys === null
+      ? null
+      : keys.map((key) => factValueOps(key, this.facts));
+  }
+
+  elementPart(): ValueOps | null {
+    const over = only(this.facts.db.lookup("elementPartOf", 0, this.key), 1);
+    return over === null ? null : factValueOps(over, this.facts);
+  }
+
   /**
    * Whether the program declares the value as one of the origin's types.
    * A language that declares none settles it by the construction the
@@ -1988,6 +2009,8 @@ export interface ModuleWritten {
   elements?(): readonly string[];
   /** The file's named imports of the modules, the name the file uses to the name the module exports. Unset lists none. */
   importedNames?(modules: readonly string[]): ReadonlyMap<string, string>;
+  /** The names the file binds to one of the modules imported whole. Unset lists none. */
+  importedWhole?(modules: readonly string[]): ReadonlySet<string>;
   /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
   functions?(): readonly {
     readonly key: string;
@@ -2000,6 +2023,11 @@ export interface ModuleWritten {
    * decorators.
    */
   decorated?(): readonly string[];
+  /** Asks about the receivers of the file's decorators or calls with these methods in one go, as `ModuleOps.readingReceivers` says. Unset asks about each when it is read. */
+  readingReceivers?(
+    methods: ReadonlySet<string>,
+    of: "decorators" | "calls",
+  ): void;
   /** How the language writes a nested name in one piece, `::` in Ruby, so `class Reports::Nightly` is found at the path `Reports`, `Nightly`. */
   qualifier?: string;
   /**
@@ -2104,6 +2132,10 @@ class FactModule implements ModuleOps {
     return this.written.importedNames?.(modules) ?? new Map();
   }
 
+  importedWhole(modules: readonly string[]): ReadonlySet<string> {
+    return this.written.importedWhole?.(modules) ?? new Set();
+  }
+
   marked(word: string): boolean {
     if (!this.mentions(word)) {
       return false;
@@ -2144,6 +2176,13 @@ class FactModule implements ModuleOps {
             },
           ];
     });
+  }
+
+  readingReceivers(
+    methods: ReadonlySet<string>,
+    of: "decorators" | "calls",
+  ): void {
+    this.written.readingReceivers?.(methods, of);
   }
 
   private listExports(): ModuleMember[] {

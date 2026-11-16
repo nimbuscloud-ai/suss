@@ -32,6 +32,7 @@ import {
   ResolutionStore,
   statedFactKey,
 } from "@suss/adapter-typescript";
+import fastapiFramework from "@suss/packs/fastapi";
 import { spanOfKey } from "@suss/resolution";
 
 import type { PythonPack } from "@suss/adapter-python";
@@ -166,19 +167,7 @@ const RUBY: LanguageProject = {
 };
 
 // Python reads value facts only for a run whose packs discover something.
-const DISCOVERING: PythonPack = {
-  name: "fastapi",
-  protocol: "http",
-  discovery: [
-    {
-      type: "decoratedFunctionRoute",
-      importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET" },
-      pathParamSyntax: "braces",
-      defaultStatusCode: 200,
-    },
-  ],
-};
+const DISCOVERING: PythonPack = fastapiFramework();
 
 async function typescriptReading(layout: Layout): Promise<string[]> {
   const root = onDisk(TYPESCRIPT, layout);

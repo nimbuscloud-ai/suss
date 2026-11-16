@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
+import { fastapiTestRoutes } from "../__fixtures__/fastapiPattern.js";
 import { storageChains } from "../__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "../project.js";
 
@@ -19,7 +20,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
       defaultStatusCode: 200,
     },

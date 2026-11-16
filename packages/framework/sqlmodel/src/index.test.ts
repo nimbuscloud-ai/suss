@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { fastapiRoutes, ROUTER_UNREAD } from "@suss/framework-fastapi";
 import { modelWords } from "@suss/framework-sqlalchemy";
 
 import {
@@ -25,15 +26,9 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST", delete: "DELETE" },
+      routes: { table: fastapiRoutes(["fastapi"]), unread: ROUTER_UNREAD },
       pathParamSyntax: "braces",
       injectedParameterCallees: ["Depends"],
-      routerComposition: {
-        routerConstructorName: "APIRouter",
-        includeMethodName: "include_router",
-        routerKeyword: "router",
-        prefixKeyword: "prefix",
-      },
     },
   ],
 };

@@ -264,6 +264,7 @@ export type {
   ExpansionRow,
   FragmentRole,
   IncludeRole,
+  MountHop,
   MountRole,
   ReceiverUnread,
   ReplayRole,
