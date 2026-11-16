@@ -60,7 +60,7 @@ import {
   type InputMappingPattern,
   type InvocationRecognizer,
   type LanguageAdapter,
-  libraryEnvReadMarker,
+  libraryEnvReadMarkers,
   mergeReadShapes,
   type PackRecognizer,
   type PartialPlan,
@@ -1916,29 +1916,7 @@ function unfollowedStopsOf(
   return [...stops, ...wrappers.unfollowedFor(unit.registrationSubjectId)];
 }
 
-/**
- * One marker summary per pack-declared library whose module some
- * project file imports. The marker's metadata says which env vars the
- * library reads from inside node_modules, where no walk looks, so the
- * runtime-config pairing can consult it before calling a declared
- * variable unused. Anchored at the first importing file found.
- */
-function emitLibraryEnvReadMarkers(
-  summaries: BehavioralSummary[],
-  project: Project,
-  frameworks: PatternPack[],
-): void {
-  for (const pack of frameworks) {
-    for (const declared of pack.libraryEnvVars ?? []) {
-      const importer = fileImporting(project, declared.module);
-      if (importer === undefined) {
-        continue;
-      }
-      summaries.push(libraryEnvReadMarker(pack.name, declared, importer));
-    }
-  }
-}
-
+/** The first project file with an import whose module starts with the prefix. */
 function fileImporting(
   project: Project,
   modulePrefix: string,
@@ -3384,7 +3362,11 @@ function readWalkedFiles(reading: FileReading): FilesRead {
     }),
   );
   timer.time("emitLibraryEnvReadMarkers", () =>
-    emitLibraryEnvReadMarkers(enriched, project, frameworks),
+    enriched.push(
+      ...libraryEnvReadMarkers(frameworks, (prefix) =>
+        fileImporting(project, prefix),
+      ),
+    ),
   );
   timer.time("liftSchemasOntoDocuments", () =>
     liftSchemasOntoDocuments(enriched),

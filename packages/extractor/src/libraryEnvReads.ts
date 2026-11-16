@@ -20,8 +20,29 @@ export interface LibraryEnvVars {
   names?: string[];
 }
 
-/** The marker for one library, placed at the first project file found importing it. */
-export function libraryEnvReadMarker(
+/**
+ * One marker for each library a pack declares that some project file
+ * imports, in pack order, at the first file `firstImporter` finds whose
+ * import starts with the library's `module`.
+ */
+export function libraryEnvReadMarkers(
+  packs: ReadonlyArray<{
+    readonly name: string;
+    readonly libraryEnvVars?: readonly LibraryEnvVars[];
+  }>,
+  firstImporter: (modulePrefix: string) => string | undefined,
+): BehavioralSummary[] {
+  return packs.flatMap((pack) =>
+    (pack.libraryEnvVars ?? []).flatMap((declared) => {
+      const importer = firstImporter(declared.module);
+      return importer === undefined
+        ? []
+        : [libraryEnvReadMarker(pack.name, declared, importer)];
+    }),
+  );
+}
+
+function libraryEnvReadMarker(
   recognition: string,
   declared: LibraryEnvVars,
   importer: string,
