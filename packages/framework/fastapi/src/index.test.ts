@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { fastapiFramework, fastapiRoutes, ROUTER_UNREAD } from "./index.js";
+import {
+  fastapiFramework,
+  fastapiRoutes,
+  fastapiWrappers,
+  ROUTER_UNREAD,
+} from "./index.js";
 
 const SERVES = (method: string) => ({
   role: "serves",
@@ -13,7 +18,7 @@ describe("fastapiFramework", () => {
   it("accepts fastapi's own module by default", () => {
     const pack = fastapiFramework();
     expect(pack.name).toBe("fastapi");
-    expect(pack.version).toBe("1");
+    expect(pack.version).toBe("2");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
@@ -74,29 +79,7 @@ describe("fastapiFramework", () => {
             statusKeyword: "status_code",
           },
         ],
-        wrappers: [
-          {
-            type: "dependency",
-            callees: ["Depends", "Security"],
-            keyword: "dependencies",
-            registrars: [
-              { constructorName: "FastAPI", covers: "everyRoute" },
-              { constructorName: "APIRouter", covers: "ownRoutes" },
-            ],
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "middleware",
-            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-            continuationParam: 1,
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "exception_handler",
-            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-            throwParam: 1,
-          },
-        ],
+        wrappers: fastapiWrappers(["fastapi"]),
       },
     ]);
   });

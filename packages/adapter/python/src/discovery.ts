@@ -110,7 +110,7 @@ import type {
 import type { EffectAt } from "./paths/effects.js";
 import type { DeclaredRoute, DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding, Scope } from "./scope.js";
-import type { PythonWrapperIndex } from "./wrappers.js";
+import type { PythonWrapperIndex, RouteWrapperQuery } from "./wrappers.js";
 
 export interface DiscoveryOptions {
   packs: PythonPack[];
@@ -140,11 +140,15 @@ interface DecoratedStatement {
   decorators: PyNode[];
 }
 
-/** What a route's own conventions and its wrappers read off the decorator that declares it. */
+/**
+ * What a route's own conventions and its wrappers read off the decorator
+ * that declares it, with the key of its call and of the router the route
+ * table says it is made on.
+ */
 export type RouteDecorator = Pick<
   DecoratorClassification,
-  "range" | "objectName" | "objectModule" | "args" | "keywordArgs"
->;
+  "range" | "objectName" | "args" | "keywordArgs"
+> & { key: string; router: string | null };
 
 /**
  * Every decorated definition in the file, wherever it is written. A route
@@ -311,8 +315,7 @@ function unitsFor(
 /**
  * What a route's conventions read off the decorator: its own arguments,
  * with the object the library call is made on, which is the decorator's
- * own receiver, or the one the call a project wrapper returns is made on,
- * in the wrapper's module.
+ * own receiver, or the one the call a project wrapper returns is made on.
  */
 function routeDecoratorOf(
   decoratorNode: PyNode,
@@ -332,9 +335,11 @@ function routeDecoratorOf(
   return {
     range: rangeOf(decoratorNode),
     objectName: object?.type === "identifier" ? object.text : null,
-    ...(made === null || through === undefined
-      ? {}
-      : { objectModule: moduleOf(made) }),
+    key:
+      call === null
+        ? ""
+        : nodeId(options.absoluteFile ?? options.filePath, call),
+    router: routes[0]?.router ?? null,
     ...written,
   };
 }
@@ -1050,14 +1055,35 @@ function wrappersAround(
   if (options.wrappers === undefined) {
     return [];
   }
-  return options.wrappers.wrappersFor({
+  return options.wrappers.wrappersFor(
+    wrapperQuery(
+      pattern,
+      pack,
+      classification,
+      definitionNode,
+      module,
+      options,
+    ),
+  );
+}
+
+/** The route as the wrapper index asks about it. */
+function wrapperQuery(
+  pattern: PythonDiscoveryPattern,
+  pack: PythonPack,
+  classification: RouteDecorator,
+  definitionNode: PyNode,
+  module: ModuleBinding,
+  options: DiscoveryOptions,
+): RouteWrapperQuery {
+  return {
     pack,
     pattern,
     file: options.absoluteFile ?? options.filePath,
     module,
     classification,
     definitionNode,
-  });
+  };
 }
 
 /**
@@ -1078,14 +1104,16 @@ function declaredStatusesOf(
     return [];
   }
   const above =
-    options.wrappers?.callsAbove({
-      pack,
-      pattern,
-      file: options.absoluteFile ?? options.filePath,
-      module,
-      classification,
-      definitionNode,
-    }) ?? [];
+    options.wrappers?.callsAbove(
+      wrapperQuery(
+        pattern,
+        pack,
+        classification,
+        definitionNode,
+        module,
+        options,
+      ),
+    ) ?? [];
   const dictionaries = [
     classification.keywordArgs[keyword]?.node,
     ...above.map(

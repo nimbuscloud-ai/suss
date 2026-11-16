@@ -12,21 +12,25 @@
 
 import { z } from "zod";
 
+import { callbacks, constructedFrom, imported } from "@suss/recognize";
+
 import { STATUS_CONSTANTS } from "./statusConstants.js";
 
 import type {
   ParameterSource,
   PythonPack,
+  PyWrapperForm,
   RouterUnreadWords,
 } from "@suss/adapter-python";
 import type { RouteTableDeclaration, ServesRole } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { CallbackMethod } from "@suss/recognize";
 
 /**
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 /**
  * The CLI checks a `-f fastapi=config.json` file against this schema. A
@@ -107,6 +111,54 @@ export function fastapiRoutes(
       },
     },
   };
+}
+
+/** FastAPI takes the function a dependency runs as `Depends`' and `Security`'s first argument. */
+const HANDED_FIRST: CallbackMethod = {
+  callback: { written: "callback", at: 0 },
+};
+
+/**
+ * What FastAPI runs around a route: a dependency handed to `Depends` or
+ * `Security` in a `dependencies` list on the app, a router, a mount or
+ * the route, or as a parameter's default, and a function decorated with
+ * the app's `middleware` or `exception_handler`.
+ */
+export function fastapiWrappers(modules: readonly string[]): PyWrapperForm[] {
+  const app = constructedFrom({ from: modules, named: ["FastAPI"] });
+  const router = constructedFrom({ from: modules, named: ["APIRouter"] });
+  return [
+    {
+      type: "dependency",
+      handedTo: callbacks({
+        client: imported({
+          from: modules,
+          named: ["*", "Depends", "Security"],
+        }),
+      })
+        .methods({ Depends: HANDED_FIRST, Security: HANDED_FIRST })
+        .example("Depends(get_current_user)").declared,
+      keyword: "dependencies",
+      registrars: [
+        { made: app, covers: "everyRoute" },
+        { made: router, covers: "ownRoutes" },
+      ],
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "middleware",
+      registrars: [{ made: app, covers: "everyRoute" }],
+      // `async def m(request, call_next)`.
+      continuationParam: 1,
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "exception_handler",
+      registrars: [{ made: app, covers: "everyRoute" }],
+      // `async def h(request, exc)`.
+      throwParam: 1,
+    },
+  ];
 }
 
 /** Why a route the table found has no path, said of the router it is declared on. */
@@ -233,31 +285,7 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
             statusKeyword: "status_code",
           },
         ],
-        wrappers: [
-          {
-            type: "dependency",
-            callees: ["Depends", "Security"],
-            keyword: "dependencies",
-            registrars: [
-              { constructorName: "FastAPI", covers: "everyRoute" },
-              { constructorName: "APIRouter", covers: "ownRoutes" },
-            ],
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "middleware",
-            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-            // `async def m(request, call_next)`.
-            continuationParam: 1,
-          },
-          {
-            type: "decoratedWrapper",
-            attribute: "exception_handler",
-            registrars: [{ constructorName: "FastAPI", covers: "everyRoute" }],
-            // `async def h(request, exc)`.
-            throwParam: 1,
-          },
-        ],
+        wrappers: fastapiWrappers(modules),
       },
     ],
   };
