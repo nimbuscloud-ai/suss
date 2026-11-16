@@ -4,15 +4,97 @@
 
 import { Node } from "ts-morph";
 
+import { factValueOps } from "@suss/recognize/ops";
+
+import { toFunctionRoot } from "../discovery/shared.js";
 import { endLineOf, startLineOf } from "../lines.js";
-import { functionTargetOf } from "../resolve/functionBehind.js";
+import { nodeOfValue } from "../resolve/callOps.js";
+import { factSourceFor, statedFactKey } from "../resolve/factSource.js";
+import { hasBody, isInExternalCode } from "../resolve/unfollowedCall.js";
 import { writesUndefined } from "../walk/undefinedValue.js";
 import { peelParens } from "../walk/unwrap.js";
 
 import type { RenderNode } from "@suss/behavioral-ir";
-import type { RawTerminal, TerminalPattern } from "@suss/extractor";
-import type { JsxOpeningElement, JsxSelfClosingElement } from "ts-morph";
+import type {
+  FactSource,
+  RawTerminal,
+  TerminalPattern,
+  ValueOps,
+} from "@suss/extractor";
+import type { JsxOpeningElement, JsxSelfClosingElement, ts } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 import type { FoundTerminal } from "./shared.js";
+
+/** Where a component tag's declaration is, as the render edge keys it. */
+interface RenderTarget {
+  file: string;
+  name: string;
+}
+
+/**
+ * The target the store gave each binding a tag refers to, for each run's
+ * store. Every tag that refers to one binding settles to the same
+ * component, so a file that renders a component many times asks once.
+ */
+const TARGETS_BY_BINDING = new WeakMap<
+  ResolutionStore,
+  WeakMap<ts.Symbol, RenderTarget | null>
+>();
+
+/**
+ * Where each component tag's declaration is, for the render edge, read
+ * over one fact source for the whole tree. The checker joins this to the
+ * child summary's file and name, which is how a parent's passed props
+ * meet the props the child reads. A tag written as a capitalised name is
+ * asked of the store, and any other tag, such as `div` or `Menu.Item`,
+ * has no target.
+ */
+class ComponentTargets {
+  private readonly resolution: ResolutionStore | undefined;
+  private source: FactSource | undefined;
+
+  constructor(resolution: ResolutionStore | undefined) {
+    this.resolution = resolution;
+  }
+
+  of(tag: Node): RenderTarget | null {
+    if (
+      this.resolution === undefined ||
+      !Node.isIdentifier(tag) ||
+      !/^[A-Z]/.test(tag.getText())
+    ) {
+      return null;
+    }
+    const binding = tag.getSymbol()?.compilerSymbol;
+    if (binding === undefined) {
+      return this.asked(tag, this.resolution);
+    }
+    const known = targetsKnownTo(this.resolution);
+    if (!known.has(binding)) {
+      known.set(binding, this.asked(tag, this.resolution));
+    }
+    const target = known.get(binding) ?? null;
+    return target === null ? null : { ...target };
+  }
+
+  private asked(tag: Node, resolution: ResolutionStore): RenderTarget | null {
+    this.source ??= factSourceFor(resolution);
+    const value = factValueOps(statedFactKey(tag, resolution), this.source);
+    return componentTargetOf(value, tag.getText());
+  }
+}
+
+function targetsKnownTo(
+  resolution: ResolutionStore,
+): WeakMap<ts.Symbol, RenderTarget | null> {
+  const known = TARGETS_BY_BINDING.get(resolution);
+  if (known !== undefined) {
+    return known;
+  }
+  const fresh = new WeakMap<ts.Symbol, RenderTarget | null>();
+  TARGETS_BY_BINDING.set(resolution, fresh);
+  return fresh;
+}
 
 /**
  * Match a return statement whose expression is a JSX element, JSX
@@ -22,6 +104,7 @@ import type { FoundTerminal } from "./shared.js";
 export function tryMatchJsxReturn(
   node: Node,
   pattern: TerminalPattern,
+  resolution: ResolutionStore | undefined,
 ): FoundTerminal | null {
   // Normal `return <X />`, returns JSX from a block-body function.
   // Expression-body arrow `() => <X />`, the body expression IS JSX.
@@ -42,7 +125,7 @@ export function tryMatchJsxReturn(
   if (expr === undefined || source === undefined) {
     return null;
   }
-  const tree = jsxToRenderNode(expr);
+  const tree = jsxToRenderNode(expr, new ComponentTargets(resolution));
   if (tree === null) {
     return null;
   }
@@ -72,33 +155,50 @@ export function tryMatchJsxReturn(
 }
 
 /**
- * Where a component tag's declaration is, for the render edge. The
- * checker joins this to the child summary's file and name, which is
- * how a parent's passed props meet the props the child reads.
+ * The file of the function the tag settles to, under the name the tag's
+ * value is declared under, since the checker keys a child summary that
+ * way: `export const TextInput = forwardRef(Inner)` is `TextInput` at
+ * `Inner`'s file. A component declared with no name of its own, such as
+ * an anonymous default export, goes by the tag as written. A function
+ * with no body, or one in a library, is no target.
  */
 function componentTargetOf(
-  tagNode: Node,
-): { file: string; name: string } | null {
-  if (!Node.isIdentifier(tagNode) || !/^[A-Z]/.test(tagNode.getText())) {
+  tag: ValueOps,
+  written: string,
+): RenderTarget | null {
+  const found = tag.function?.() ?? null;
+  const node = found === null ? null : nodeOfValue(found);
+  const func = node === null ? null : toFunctionRoot(node);
+  if (
+    func === null ||
+    !hasBody(func) ||
+    isInExternalCode(func.getSourceFile())
+  ) {
     return null;
   }
-  const target = functionTargetOf(tagNode);
-  return target === null ? null : { file: target.file, name: target.name };
+  return {
+    file: func.getSourceFile().getFilePath(),
+    name: tag.declaration?.()?.name ?? written,
+  };
 }
 
 /**
  * Convert a JSX expression to a RenderNode recursively. Returns null
  * if the expression isn't JSX (callers use that to reject the match).
  */
-function jsxToRenderNode(node: Node): RenderNode | null {
+function jsxToRenderNode(
+  node: Node,
+  targets: ComponentTargets,
+): RenderNode | null {
+  const childOf = (child: Node) => jsxChildToRenderNode(child, targets);
   if (Node.isJsxElement(node)) {
     const opening = node.getOpeningElement();
     const tag = opening.getTagNameNode().getText();
     const attrs = collectJsxAttributes(opening);
-    const target = componentTargetOf(opening.getTagNameNode());
+    const target = targets.of(opening.getTagNameNode());
     const children = node
       .getJsxChildren()
-      .map(jsxChildToRenderNode)
+      .map(childOf)
       .filter((n): n is RenderNode => n !== null);
     return {
       type: "element",
@@ -111,7 +211,7 @@ function jsxToRenderNode(node: Node): RenderNode | null {
   if (Node.isJsxSelfClosingElement(node)) {
     const tag = node.getTagNameNode().getText();
     const attrs = collectJsxAttributes(node);
-    const target = componentTargetOf(node.getTagNameNode());
+    const target = targets.of(node.getTagNameNode());
     return {
       type: "element",
       tag,
@@ -126,12 +226,12 @@ function jsxToRenderNode(node: Node): RenderNode | null {
     // fragment node.
     const children = node
       .getJsxChildren()
-      .map(jsxChildToRenderNode)
+      .map(childOf)
       .filter((n): n is RenderNode => n !== null);
     return { type: "element", tag: "Fragment", children };
   }
   if (Node.isParenthesizedExpression(node)) {
-    return jsxToRenderNode(node.getExpression());
+    return jsxToRenderNode(node.getExpression(), targets);
   }
   return null;
 }
@@ -187,7 +287,10 @@ function collectJsxAttributes(
  * (which appears between siblings) returns null so it doesn't
  * pollute the tree with empty nodes.
  */
-function jsxChildToRenderNode(child: Node): RenderNode | null {
+function jsxChildToRenderNode(
+  child: Node,
+  targets: ComponentTargets,
+): RenderNode | null {
   if (Node.isJsxText(child)) {
     const text = child.getLiteralText().trim();
     if (text.length === 0) {
@@ -200,14 +303,14 @@ function jsxChildToRenderNode(child: Node): RenderNode | null {
     if (inner === undefined) {
       return null;
     }
-    return jsxExpressionToRenderNode(inner);
+    return jsxExpressionToRenderNode(inner, targets);
   }
   if (
     Node.isJsxElement(child) ||
     Node.isJsxSelfClosingElement(child) ||
     Node.isJsxFragment(child)
   ) {
-    return jsxToRenderNode(child);
+    return jsxToRenderNode(child, targets);
   }
   return null;
 }
@@ -231,15 +334,18 @@ function jsxChildToRenderNode(child: Node): RenderNode | null {
  * which is already captured by treating it as an expression whose
  * source text tells the reader what's happening.
  */
-function jsxExpressionToRenderNode(expr: Node): RenderNode {
+function jsxExpressionToRenderNode(
+  expr: Node,
+  targets: ComponentTargets,
+): RenderNode {
   if (Node.isParenthesizedExpression(expr)) {
-    return jsxExpressionToRenderNode(expr.getExpression());
+    return jsxExpressionToRenderNode(expr.getExpression(), targets);
   }
 
   if (Node.isBinaryExpression(expr)) {
     const op = expr.getOperatorToken().getText();
     if (op === "&&") {
-      const right = renderAlternative(peelParens(expr.getRight()));
+      const right = renderAlternative(peelParens(expr.getRight()), targets);
       if (right.kind === "jsx") {
         return {
           type: "conditional",
@@ -252,8 +358,8 @@ function jsxExpressionToRenderNode(expr: Node): RenderNode {
   }
 
   if (Node.isConditionalExpression(expr)) {
-    const truthy = renderAlternative(peelParens(expr.getWhenTrue()));
-    const falsy = renderAlternative(peelParens(expr.getWhenFalse()));
+    const truthy = renderAlternative(peelParens(expr.getWhenTrue()), targets);
+    const falsy = renderAlternative(peelParens(expr.getWhenFalse()), targets);
 
     if (truthy.kind === "jsx") {
       return {
@@ -291,7 +397,10 @@ type AlternativeResult =
  *     own "no render" conventions).
  *   - Anything else → don't decompose the enclosing conditional.
  */
-function renderAlternative(node: Node): AlternativeResult {
+function renderAlternative(
+  node: Node,
+  targets: ComponentTargets,
+): AlternativeResult {
   if (Node.isNullLiteral(node)) {
     return { kind: "noRender" };
   }
@@ -306,7 +415,7 @@ function renderAlternative(node: Node): AlternativeResult {
     Node.isJsxSelfClosingElement(node) ||
     Node.isJsxFragment(node)
   ) {
-    const tree = jsxToRenderNode(node);
+    const tree = jsxToRenderNode(node, targets);
     if (tree !== null) {
       return { kind: "jsx", node: tree };
     }
