@@ -691,7 +691,7 @@ A file added or removed since the stored run is handled the way the resolution D
 
 ## What a file imports from the project
 
-Every summary has `metadata.moduleImports`: the project files that its own file's imports resolved to, relative to the workspace root and sorted. A file whose imports all resolve outside the project gets an empty list instead of a missing field. That way a Lambda handler that imports only the standard library still shows the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads. The entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.
+Every summary has `metadata.moduleImports`: the project files that its own file's imports resolved to, relative to the workspace root and sorted. `from shop import orders` counts `shop/orders.py` when that file exists, beside the package's `__init__.py`, because Python loads the submodule when the package does not bind `orders` itself. The adapter does not check whether the package binds it. A file whose imports all resolve outside the project gets an empty list instead of a missing field. That way a Lambda handler that imports only the standard library still shows the checker that its closure is the handler module alone. A checker rebuilds the import graph from that field to work out which modules a template's handler entry loads. The entry `app.handler` under `CodeUri: src/` matches `src/app.py`, and a dotted module such as `shop.app.handler` matches `src/shop/app.py`.
 
 ## Where an absolute import is looked for
 
