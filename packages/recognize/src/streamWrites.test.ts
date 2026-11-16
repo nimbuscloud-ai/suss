@@ -31,16 +31,22 @@ interface Written {
   encodes?: Written;
   /** A template that puts this text either side of one hole. */
   around?: { parts: [string, string]; hole: Written };
-  /** The global path the value is spelled as. */
-  spells?: string;
+  /** The global paths the value is spelled as or reached by, as `globalPath` reads them. */
+  is?: readonly string[];
+}
+
+/** The one path, or null for several and undefined for none, as `globalPath` gives it. */
+function onePathOf(paths: readonly string[]): string | null | undefined {
+  if (paths.length === 0) {
+    return undefined;
+  }
+  return paths.length === 1 ? paths[0] : null;
 }
 
 function writtenValue(written: Written): ValueOps {
   return {
     globalPath: (paths) =>
-      written.spells !== undefined && paths.includes(written.spells)
-        ? written.spells
-        : null,
+      onePathOf((written.is ?? []).filter((path) => paths.includes(path))),
     text: () => null,
     name: () => null,
     flag: () => null,
@@ -276,12 +282,27 @@ describe("a stream-write chain", () => {
           keywords,
         }),
       );
-    expect(targetsOf(printed({ file: { spells: "sys.stderr" } }))).toEqual([
+    expect(targetsOf(printed({ file: { is: ["sys.stderr"] } }))).toEqual([
       "stderr",
     ]);
     expect(printed({ file: {} })).toBeNull();
-    expect(printed({ file: { spells: "sys.stdin" } })).toBeNull();
+    expect(printed({ file: { is: ["sys.stdin"] } })).toBeNull();
     expect(targetsOf(printed({ sep: TEXT }))).toEqual(["stdout"]);
+  });
+
+  it("writes to no stream in particular when two streams reach the keyword's value", () => {
+    const PRINT = streamWrites({
+      streams: { "sys.stdout": "stdout", "sys.stderr": "stderr" },
+      client: global("print"),
+    }).methods({ print: { to: "stdout", streamAt: { keyword: "file" } } });
+    const call = writeCall({
+      method: null,
+      callee: "print",
+      bareGlobal: "print",
+      args: [TEXT],
+      keywords: { file: { is: ["sys.stdout", "sys.stderr"] } },
+    });
+    expect(targetsOf(writes(PRINT, call))).toEqual([null]);
   });
 
   it("writes nothing for a call with no argument when the method says so", () => {

@@ -191,6 +191,34 @@ describe("what a Python body prints", () => {
     ]);
   });
 
+  it("prints to the stream a caller hands the parameter passed as file, and to no stream for a file", async () => {
+    const source = [
+      "import sys",
+      "",
+      "def warn(line, out):",
+      "    print(line, file=out)",
+      "",
+      "def either(line, out):",
+      "    print(line, file=out)",
+      "",
+      "def to_file(line, out):",
+      "    print(line, file=out)",
+      "",
+      "def run():",
+      '    warn("x", sys.stderr)',
+      '    either("y", sys.stdout)',
+      '    either("z", sys.stderr)',
+      '    to_file("w", open("log.txt", "w"))',
+    ].join("\n");
+    expect(summarized(await writesIn(source, "warn"))).toEqual([
+      { target: "stderr", callee: "print", serialized: "text" },
+    ]);
+    expect(summarized(await writesIn(source, "either"))).toEqual([
+      { target: null, callee: "print", serialized: "text" },
+    ]);
+    expect(await writesIn(source, "to_file")).toEqual([]);
+  });
+
   it("reads a json.dumps report a template puts only whitespace around as JSON", async () => {
     const [write] = await writesIn(
       ["import json", 'print(f"{json.dumps({"ok": True})}\\n")'].join("\n"),

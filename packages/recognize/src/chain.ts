@@ -1034,10 +1034,8 @@ export interface CallbackMethod {
 export interface StreamWriteMethod {
   readonly to: string;
   /**
-   * A keyword whose value says which stream the call writes to instead:
-   * `print(x, file=sys.stderr)` writes to the stream its value spells,
-   * looked up in the ending's `streams`. A value that spells none is a
-   * file, so the call writes to no stream.
+   * The keyword whose value is the stream written to, spelled or passed in,
+   * as `err` in `print(x, file=err)`. A value no stream reaches is a file.
    */
   readonly streamAt?: { readonly keyword: string };
   /** A call that passes no argument writes nothing, as Ruby's `abort` with no message. */

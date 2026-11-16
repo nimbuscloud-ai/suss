@@ -100,6 +100,14 @@ def keywords(handle):
     print("f", "g", sep=",")
 
 
+def relay(line, out):
+    print(line, file=out)
+
+
+def relays():
+    relay("r", sys.stderr)
+
+
 def reports():
     report()
     report("h")
@@ -122,6 +130,14 @@ module Out
     log("d", to: $stderr)
     log("e", to: handle)
     log("f", "g")
+  end
+
+  def self.relay(line, out)
+    log(line, to: out)
+  end
+
+  def self.relays
+    relay("r", $stderr)
   end
 
   def self.reports
@@ -357,6 +373,17 @@ describe("the stream-write ending, in every language", () => {
     expect(
       streamWritesIn(effectsOf(await rubySummaries(), "keywords"), RECOGNITION),
     ).toEqual(written);
+  });
+
+  it("writes to the stream a caller hands the parameter the keyword passes on", async () => {
+    const targetsIn = (summaries: BehavioralSummary[], recognition: string) =>
+      streamWritesIn(effectsOf(summaries, "relay"), recognition).map(
+        (write) => write.target,
+      );
+    expect(targetsIn(await pythonSummaries(), "python-stdlib")).toEqual([
+      "stderr",
+    ]);
+    expect(targetsIn(await rubySummaries(), RECOGNITION)).toEqual(["stderr"]);
   });
 
   // The fact ops read the method off any member read, so this matches

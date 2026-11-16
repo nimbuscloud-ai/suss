@@ -1612,8 +1612,11 @@ imports a type the runtime declares.
 A method can say two more things. `streamAt: { keyword: "file" }` takes
 the stream from a keyword when the call passes one, so Python's
 `print(x, file=sys.stderr)` writes to the stream `streams` gives for the
-path the value is spelled as (`ValueOps.globalPath`). A value spelled as
-no stream is a file, and the call writes to no stream at all.
+path the value is (`ValueOps.globalPath`). The value is read the way
+`receiverGlobal` reads a receiver: spelled as the path, or a parameter
+a caller passed that stream to. A value two streams reach writes to no
+stream in particular. A value no stream reaches is a file, and the call
+writes to no stream at all.
 `onlyWithArguments: true` says a call that passes no argument writes
 nothing, as Ruby's `abort` with no message exits without printing.
 
