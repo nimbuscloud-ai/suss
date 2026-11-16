@@ -84,7 +84,6 @@ export type {
   PyTaskArguments,
   PyTestCases,
   PyTestMocks,
-  PyTestSetUp,
   PythonDiscoveryPattern,
   PythonPack,
   PyWrapperForm,

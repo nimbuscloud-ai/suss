@@ -9,20 +9,12 @@ import { readTestMetadata } from "@suss/behavioral-ir";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { TestCasesMatch } from "@suss/extractor";
 import type { PyTestCases, PythonPack } from "./pack.js";
 
 /** What a pytest pack declares, written out here since the adapter cannot depend on the pack. */
 const RUNNER: PyTestCases = {
-  filePatterns: ["test_*.py", "*_test.py"],
-  functionPrefix: "test",
-  classPrefix: "Test",
-  caseBaseClasses: ["unittest.TestCase"],
-  setUp: {
-    module: ["setup_module"],
-    function: ["setup_function"],
-    testClass: ["setup_class", "setup_method"],
-    caseClass: ["setUpClass", "setUp"],
-  },
+  cases: cases(),
   usesFixtureMarkers: ["pytest.mark.usefixtures"],
   fixtureDecorators: ["pytest.fixture"],
   fixtureNameKeyword: "name",
@@ -39,6 +31,31 @@ const RUNNER: PyTestCases = {
     ],
   },
 };
+
+/** The cases pytest collects, reading only the listed files when there is a list. */
+function cases(listed?: string[]): TestCasesMatch {
+  return {
+    type: "testCases",
+    files: {
+      matching: ["test_*.py", "*_test.py"],
+      ...(listed === undefined ? {} : { listed }),
+    },
+    functions: { pattern: "^test" },
+    classes: {
+      named: "^Test",
+      inherits: [{ from: ["unittest"], named: ["TestCase"] }],
+      nested: true,
+      methods: { pattern: "^test" },
+    },
+    before: {
+      module: { always: ["setup_module"], forFunctions: ["setup_function"] },
+      methods: {
+        byName: ["setup_class", "setup_method"],
+        byAncestry: ["setUpClass", "setUp"],
+      },
+    },
+  };
+}
 
 function runner(extra: Partial<PyTestCases> = {}): PythonPack {
   return {
@@ -191,7 +208,7 @@ describe("pytest tests as test units", () => {
     write("tests/test_refunds.py", "def test_unlisted():\n    pass");
     write("tests/helpers.py", "def test_not_a_test_file():\n    pass");
     const summaries = await extract([
-      runner({ files: ["tests/test_orders.py"] }),
+      runner({ cases: cases(["tests/test_orders.py"]) }),
     ]);
     expect(
       summaries

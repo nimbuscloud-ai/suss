@@ -26,6 +26,7 @@ import type {
   RedirectOption,
   RequestRecognizer,
   RouteTableDeclaration,
+  TestCasesMatch,
 } from "@suss/extractor";
 import type { CallbackMethod, Chain } from "@suss/recognize";
 import type { UnwrapsByName } from "@suss/resolution";
@@ -180,20 +181,12 @@ export interface PySendByName {
 /**
  * How a test runner finds tests and what it runs around each one. Every
  * name here is one the runner itself defines or documents; a project's
- * own conventions come through `files`, which lists the files to read.
- * DESIGN.md says how the adapter reads each field.
+ * own conventions come through the files the cases list. DESIGN.md says
+ * how the adapter reads each field.
  */
 export interface PyTestCases {
-  /** Base-name patterns of the files the runner collects, `*` matching any run of characters: `test_*.py`. */
-  filePatterns: string[];
-  /** What a test function or method name starts with: `test`. */
-  functionPrefix: string;
-  /** What a class of tests is named starting with: `Test`. */
-  classPrefix: string;
-  /** Base classes whose subclasses contain tests whatever the class is called, as dotted names: `unittest.TestCase`. */
-  caseBaseClasses: string[];
-  /** The functions and methods the runner calls before a test, by where they are written. */
-  setUp: PyTestSetUp;
+  /** The cases the runner collects and what it calls before each, which `@suss/recognize` reads. */
+  cases: TestCasesMatch;
   /** Markers whose string arguments are the fixtures every test under them runs through, as dotted names: `pytest.mark.usefixtures`. */
   usesFixtureMarkers: string[];
   /** Decorators that declare a fixture, as dotted names: `pytest.fixture`. */
@@ -212,24 +205,6 @@ export interface PyTestCases {
   reservedParameters: string[];
   /** How a test replaces something before it runs. */
   mocks: PyTestMocks;
-  /** Read only these files, matched on whole path segments from the end. Left out, every collected file is read. */
-  files?: string[];
-}
-
-/**
- * The setup a runner calls before a test, listed in the order it calls
- * them. A method is looked for on the class and then on the project
- * classes it extends, since the setup is often written on a base class.
- */
-export interface PyTestSetUp {
-  /** Functions in the test's module that run before any test in it: `setup_module`. */
-  module: string[];
-  /** Functions in the test's module that run before each test written as a function: `setup_function`. */
-  function: string[];
-  /** Methods of a class of tests that run before each test in it: `setup_class`, `setup_method`. */
-  testClass: string[];
-  /** Methods of a `caseBaseClasses` subclass that run before each test in it: `setUpClass`, `setUp`. */
-  caseClass: string[];
 }
 
 /**
