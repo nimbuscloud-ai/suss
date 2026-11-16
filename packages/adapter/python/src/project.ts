@@ -91,8 +91,10 @@ import {
   storedFunction,
   WalkReplay,
   watchRouterIndex,
+  watchRouteTables,
 } from "./reuse.js";
-import { buildRouterIndex } from "./routers.js";
+import { buildRouterIndex, routerCompositionOf } from "./routers.js";
+import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
 import { stdlibReads } from "./stdlib/dispatch.js";
@@ -565,7 +567,9 @@ async function runPython(
   // the value facts, so those are emitted once here for the whole run.
   // Discovery, router mounting and the packs' hooks ask them too.
   const mountsRouters = options.packs.some((pack) =>
-    pack.discovery.some((pattern) => pattern.routerComposition !== undefined),
+    pack.discovery.some(
+      (pattern) => routerCompositionOf(pattern) !== undefined,
+    ),
   );
   const declaredHooks = packRecognizers(options.packs, tallies);
   // A module's public exports are discovered like a pack's routes.
@@ -624,6 +628,13 @@ async function runPython(
           positions,
           new Map(bound.map((one) => [one.module, one.file])),
         );
+  const plainRoutes = timer.time("discover", () =>
+    buildRouteTables(bound, options.packs, db),
+  );
+  const routes =
+    ledger === null
+      ? plainRoutes
+      : watchRouteTables(plainRoutes, db, positions);
 
   const filesByPath = new Map(bound.map((one) => [one.file, one]));
   const storageFor = (file: BoundPythonFile): StorageLookup | undefined =>
@@ -643,7 +654,7 @@ async function runPython(
       facts: db,
       definitions,
       storageFor,
-      routers: plainRouterIndex,
+      routes: plainRoutes,
     }),
   );
 
@@ -667,6 +678,7 @@ async function runPython(
             lookAgain: lookAgainIn({
               db,
               routerIndex: plainRouterIndex,
+              routes: plainRoutes,
               wrapperIndex,
               positions,
               moduleOfFile: new Map(bound.map((one) => [one.file, one.module])),
@@ -719,6 +731,7 @@ async function runPython(
         filePath: displayPathOf(file),
         absoluteFile: file,
         routerIndex,
+        routes,
         gapHandling,
         wrappers: wrapperIndex,
         importedDefinition,

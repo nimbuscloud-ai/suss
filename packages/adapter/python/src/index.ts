@@ -69,6 +69,7 @@ export type {
   RelativeModuleSpec,
 } from "./moduleResolver.js";
 export type {
+  DeclaredRoutes,
   DecoratedClassRoute,
   DecoratedFunctionRoute,
   MountObjectCarrier,
@@ -93,6 +94,7 @@ export type {
   RequestObject,
   RouteConventions,
   RouterComposition,
+  RouterUnreadWords,
 } from "./pack.js";
 export type { PyNode, PyTree } from "./parser.js";
 export type {

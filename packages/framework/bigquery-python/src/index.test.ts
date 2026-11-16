@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { fastapiRoutes, ROUTER_UNREAD } from "@suss/framework-fastapi";
 
 import { bigqueryFramework, bigqueryPacks, withBigquery } from "./index.js";
 
@@ -18,7 +19,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST", delete: "DELETE" },
+      routes: { table: fastapiRoutes(["fastapi"]), unread: ROUTER_UNREAD },
       pathParamSyntax: "braces",
     },
   ],

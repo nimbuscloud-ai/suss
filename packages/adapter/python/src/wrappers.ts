@@ -53,7 +53,7 @@ import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawBranch, RawCodeStructure } from "@suss/extractor";
 import type { Range } from "./ast.js";
-import type { DecoratorClassification } from "./decorators.js";
+import type { RouteDecorator } from "./discovery.js";
 import type {
   PyDecoratedWrapperForm,
   PyDependencyForm,
@@ -65,7 +65,8 @@ import type {
 import type { PyNode } from "./parser.js";
 import type { BodyTerminal, TerminalBranch } from "./paths/bodyBranches.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
-import type { BoundPythonFile, RouterIndex } from "./routers.js";
+import type { BoundPythonFile } from "./routers.js";
+import type { DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding, Scope } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
 
@@ -77,7 +78,7 @@ export interface WrapperIndexOptions {
   definitions: ReadonlyMap<string, PyNode>;
   storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
   /** Where each router is mounted, so a dependency registered on the way reaches the routes below it. */
-  routers?: RouterIndex;
+  routes?: DeclaredRouteIndex;
 }
 
 /** The route asking which wrappers reach it: the decorator it was found by, and where that decorator was read. */
@@ -87,7 +88,7 @@ export interface RouteWrapperQuery {
   /** The absolute path of the file the route is written in. */
   file: string;
   module: ModuleBinding;
-  classification: DecoratorClassification;
+  classification: RouteDecorator;
   definitionNode: PyNode;
 }
 
@@ -509,7 +510,7 @@ export class PythonWrapperIndex {
     pattern: PythonDiscoveryPattern,
     key: string,
   ): Registered[] {
-    const hops = this.options.routers?.mountsAbove(pattern, key) ?? null;
+    const hops = this.options.routes?.mountsAbove(pattern, key) ?? null;
     if (hops === null) {
       return [];
     }
@@ -602,7 +603,7 @@ export class PythonWrapperIndex {
     const hops =
       own === null
         ? []
-        : (this.options.routers?.mountsAbove(query.pattern, own.key) ?? []);
+        : (this.options.routes?.mountsAbove(query.pattern, own.key) ?? []);
     const parents = hops.flatMap((hop) => {
       const node =
         hop.parentKey === null
@@ -955,7 +956,7 @@ function dependencyNameOf(node: PyNode, form: PyDependencyForm): string | null {
 
 /** `dependencies=[Depends(f)]` on the route decorator. */
 function decoratorDependencies(
-  classification: DecoratorClassification,
+  classification: RouteDecorator,
   form: PyDependencyForm,
 ): string[] {
   const listed = classification.keywordArgs[form.keyword];

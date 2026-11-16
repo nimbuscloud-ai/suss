@@ -1,20 +1,32 @@
 /**
  * FastAPI routes for the Python adapter. The app and the router are local
- * variables, so the adapter finds them by the call that built them
- * (`app = FastAPI()`, `router = APIRouter()`), one assignment back from an
- * import of `fastapi`.
+ * variables, so the routes are found by the call that built them
+ * (`app = FastAPI()`, `router = APIRouter()`), from an import of
+ * `fastapi`.
  *
- * `routerComposition` lets the adapter put the router's prefix and the
- * `include_router` prefix in front of a route's path, one mount deep. The
- * README lists the cases where a route keeps its name and gets no path.
+ * The route table puts each router's prefix and each `include_router`
+ * prefix in front of a route's path, through however many routers are
+ * mounted on one another. The README lists the cases where a route keeps
+ * its name and gets no path.
  */
 
 import { z } from "zod";
 
 import { STATUS_CONSTANTS } from "./statusConstants.js";
 
-import type { ParameterSource, PythonPack } from "@suss/adapter-python";
+import type {
+  ParameterSource,
+  PythonPack,
+  RouterUnreadWords,
+} from "@suss/adapter-python";
+import type { RouteTableDeclaration, ServesRole } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
 
 /**
  * The CLI checks a `-f fastapi=config.json` file against this schema. A
@@ -41,6 +53,76 @@ const VERB_ATTRIBUTE_NAMES: Record<string, string> = {
   delete: "DELETE",
   head: "HEAD",
   options: "OPTIONS",
+};
+
+/** The decorators FastAPI registers a wrapper with on the app, which leave an app its function builds where it is. */
+const WRAPPER_DECORATORS = ["middleware", "exception_handler"];
+
+const SERVES = (method: string): ServesRole => ({
+  role: "serves",
+  methods: [method],
+  path: [{ at: 0 }],
+  handler: { decorated: true },
+});
+
+/**
+ * FastAPI's app and routers as a route table. A route is a decorator
+ * called on either, and `include_router` mounts a router onto the app or
+ * onto another router. Starlette serves a route at the mount's prefix,
+ * then the router's own, then the route's path, joined as written.
+ */
+export function fastapiRoutes(
+  modules: readonly string[],
+): RouteTableDeclaration {
+  return {
+    roots: {
+      kinds: { FastAPI: 0 },
+      children: { in: "receiver" },
+      in: "file",
+      unlessDropped: { owned: WRAPPER_DECORATORS },
+    },
+    from: modules,
+    joins: "asWritten",
+    loops: ["for"],
+    throughWrappers: true,
+    roles: {
+      ...Object.fromEntries(
+        Object.entries(VERB_ATTRIBUTE_NAMES).map(([name, method]) => [
+          name,
+          SERVES(method),
+        ]),
+      ),
+      include_router: {
+        role: "mount",
+        table: [{ at: 0 }, { keyword: "router" }],
+        at: [{ keyword: "prefix" }],
+        prefix: "inFront",
+      },
+      APIRouter: {
+        role: "scopes",
+        path: [{ keyword: "prefix" }],
+        children: { in: "receiver" },
+        noValue: "unreadable",
+        trailingSlash: "kept",
+      },
+    },
+  };
+}
+
+/** Why a route the table found has no path, said of the router it is declared on. */
+export const ROUTER_UNREAD: RouterUnreadWords = {
+  unreached:
+    "is never mounted through a single variable binding in the files read",
+  shared: "shares its variable name with a second router construction",
+  unlistedLoop:
+    "is not mounted by name in the files read, and {loops} routers read out of a call this reading does not follow",
+  rivalledMount:
+    "is mounted inside a function, while {loops} routers this reading cannot name, and which of them the app runs is not written down",
+  mountUnread: "is mounted with a prefix that is not a string literal",
+  prefixUnread: "declares a prefix that is not a string literal",
+  ontoPrefixUnread:
+    "is mounted onto a router that declares a prefix that is not a string literal",
+  chain: "is mounted through a chain of routers this reading cannot compose",
 };
 
 /**
@@ -89,8 +171,10 @@ const INJECTED_PARAMETER_TYPES = [
 ];
 
 export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
+  const modules = ["fastapi", ...(options.wrapperModules ?? [])];
   return {
     name: "fastapi",
+    version: VERSION,
     protocol: "http",
     requestSpelling: REQUEST_SPELLING,
     ...(options.wrapperModules !== undefined
@@ -99,8 +183,8 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
     discovery: [
       {
         type: "decoratedFunctionRoute",
-        importModule: ["fastapi", ...(options.wrapperModules ?? [])],
-        verbAttributeNames: VERB_ATTRIBUTE_NAMES,
+        importModule: modules,
+        routes: { table: fastapiRoutes(modules), unread: ROUTER_UNREAD },
         pathParamSyntax: "braces",
         annotatedClassIsRequestBody: true,
         // FastAPI resolves both of these itself and calls the handler with
@@ -149,12 +233,6 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
             statusKeyword: "status_code",
           },
         ],
-        routerComposition: {
-          routerConstructorName: "APIRouter",
-          includeMethodName: "include_router",
-          routerKeyword: "router",
-          prefixKeyword: "prefix",
-        },
         wrappers: [
           {
             type: "dependency",

@@ -39,7 +39,7 @@ export {
   subUnitsOf,
 } from "./pack.js";
 export { renderedProps } from "./renderedProps.js";
-export { composeRoutes, rowRoutes } from "./routeTable.js";
+export { composeAppRoutes, composeRoutes, rowRoutes } from "./routeTable.js";
 export { runtimeReads } from "./runtimeReads.js";
 export { schemaReads } from "./schemaReads.js";
 export { slotsDeclared } from "./slots.js";

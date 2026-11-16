@@ -398,6 +398,12 @@ export interface ValueOps {
    * `for (const record of event.Records)`. Null for anything else.
    */
   element?(): ValueOps | null;
+  /**
+   * The collection whose elements a loop takes apart into names, when
+   * this value is one of those names: `router` in `for name, router in
+   * pairs`. Null for anything else.
+   */
+  elementPart?(): ValueOps | null;
   /** Whether the program declares this value as one of the origin's types, as `receiverIsFrom` asks of a receiver. */
   typed?(origin: Typed): boolean;
   /**
@@ -654,6 +660,12 @@ export interface ModuleOps {
    * does not say.
    */
   importedNames(modules: readonly string[]): ReadonlyMap<string, string>;
+  /**
+   * The names the file binds to one of the modules imported whole, as
+   * `import fastapi` binds `fastapi` and `import fastapi as fa` binds
+   * `fa`. Empty where the adapter does not say.
+   */
+  importedWhole?(modules: readonly string[]): ReadonlySet<string>;
   /** Whether the file opens with the directive. */
   marked(word: string): boolean;
   /** The functions the file writes whose body opens with the directive, in source order. */
@@ -664,6 +676,17 @@ export interface ModuleOps {
    * decorators.
    */
   decorated(): readonly DecoratedDefinition[];
+  /**
+   * Said by a reader before it asks what made the receiver of every
+   * decorator, or every call, the file writes whose method is one of
+   * `methods`. An adapter that asks a separate question for each receiver
+   * can ask about all of them at once. Leaving it out changes only how
+   * fast a run is.
+   */
+  readingReceivers?(
+    methods: ReadonlySet<string>,
+    of: "decorators" | "calls",
+  ): void;
   /**
    * Whether the file's text has the word anywhere. A file whose adapter
    * cannot answer from the text says yes, so a reader that asks first
@@ -830,6 +853,12 @@ export interface CallOps {
    * it was written as.
    */
   receiver(): CallOps | null;
+  /**
+   * Each call the receiver may have been written as, for a receiver
+   * written as more than one, such as a name assigned twice, where
+   * `receiver` gives none. Empty where the adapter does not say.
+   */
+  receiverCalls?(): readonly CallOps[];
   /**
    * The value the method is called on, as the source writes it: `db` in
    * `db.query(User)`, and `Orders.query()` in `Orders.query().first()`.
@@ -1190,6 +1219,8 @@ export interface FactSource {
   read(key: string): void;
   /** The key a name or field was written as, by the adapter's own rules, or null. */
   writtenAs(key: string): string | null;
+  /** Every key a name or field was written as, for one written as more than one, where `writtenAs` gives none. Unset says nothing. */
+  writtenAsEach?(key: string): readonly string[];
   /**
    * Every call the anchor rules reach behind a value. An adapter may leave
    * out the calls its own check of the origin turns down; the ops check

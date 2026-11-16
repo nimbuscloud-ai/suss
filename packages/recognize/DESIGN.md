@@ -662,7 +662,18 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   `decorated()`, the decorators that call the role's method, so a
   dictionary's `.get(...)` is never one, and its handler is the
   definition under the decorator. Every other serves role and every
-  mount role takes the calls of its method from `calls("file")`.
+  mount role takes the calls of its method from `calls("file")`, in a
+  file whose text has one of those methods. Before it reads a file's
+  entries, the composer says through `readingReceivers` which
+  decorators and which calls it will ask the receivers of, so an
+  adapter that asks the rules once per question can ask once per file.
+  A receiver written as two values, a name assigned two routers, comes
+  to none, and `receiverCalls()` lists both: an entry on two roots
+  serves at its own path, since a root adds none, and one on two
+  routers is `unreached` with `shared` set.
+- A module the file imports whole, `import fastapi`, which the module
+  ops list through `importedWhole`, names each root and scope under its
+  own name, so `fastapi.APIRouter(...)` is a router.
 - `methods: { members }` serves each method of a decorated class whose
   name the list has, upper-cased, with the method as the handler and the
   class as the outcome's `owner`, which is how flask-restx writes a
@@ -676,6 +687,8 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   walked as an entry, named the way its own file imports the name. With
   `for` among the `loops`, a mount whose table is a loop's variable
   mounts each item of the list the loop goes over, through `element()`.
+  A loop that takes each element apart, which `elementPart()` says, is
+  one the table cannot list.
   `prefix: "inFront"` puts the mount's path in front of the value's own;
   `"replaces"`, which the table does not follow, leaves every route
   under it unread.
@@ -691,7 +704,8 @@ const FASTAPI_ROUTES: RouteTableDeclaration = {
   writes one after the other, as FastAPI does, and `merged` then merges
   repeated slashes, as Werkzeug serves a path.
 - `unlessDropped` leaves out a root its function drops, as
-  `CallOps.dropped` says, with every entry made on it. It takes the
+  `CallOps.dropped` says, with every entry made on it, and a value a
+  root would mount that its function drops the same way. It takes the
   methods the library may call on the app besides the roles, `owned`,
   because FastAPI's middleware and exception handler decorators are
   registrations that are no role of the table, and an app that only
@@ -712,6 +726,24 @@ with no path where to look, so each cause has its own.
 | `prefixUnstated` | a scope above it states no path where its library makes one up, as flask-restx does for a namespace, so the path served is one the source never states |
 | `prefixReplaced` | a mount above it states a path that replaces the scope's own, which flask-restx does and the table does not follow |
 | `cycle` | a mount above it leads back into a value the walk is already inside. The value's entries are walked once more with no path claimed, so every route on the cycle, and under it, is unread, since the cycle gives it no one path |
+
+An outcome also says where it is, so a reader can word the reason the
+way the library's users would and run what is registered on the way.
+A route, and an entry whose own path does not read, has the `mounts`
+the walk came down, outermost first, each the mount call and the value
+it mounts, and the `prefix` in front of its own path. An unread one
+has `on`, the value it is made on, and `router`, the value its reason
+is about: the scope whose path did not read, the value a mount that
+did not read or that a loop rivals mounts, or the value a cycle leads
+back into. A decorated entry's unread outcome has its `method`, one
+for each method it would serve.
+
+An entry no walk reaches is read the way a walk would have read it, in
+the order a library stops serving a route: its value's own prefix,
+then each mount of the value, by the prefix of the value it is mounted
+onto, its own path and a loop that may rival it, and then the value it
+is mounted onto, which no walk reached either. Only a value nothing
+mounts is `unlistedLoop` when a loop may mount it.
 
 `packages/cli/src/routeTableReceiversLanguages.test.ts` reads one app
 written in Python and in TypeScript, with decorated functions and class

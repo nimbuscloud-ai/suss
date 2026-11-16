@@ -37,6 +37,7 @@ import type { PyNode } from "./parser.js";
 import type { StoredScan, StoredTarget } from "./reach/closure.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
 import type { BoundPythonFile, RouterIndex } from "./routers.js";
+import type { DeclaredRouteIndex } from "./routeTables.js";
 import type { ModuleBinding } from "./scope.js";
 import type { FormOf, PythonWrapperIndex } from "./wrappers.js";
 
@@ -169,6 +170,7 @@ export class WalkReplay {
 
 const ROUTER = "router ";
 const ROUTER_BUILT = "routerBuilt ";
+const ROUTES_DECLARED = "routesDeclared ";
 const MODULE_NAMED = "moduleNamed ";
 const SEPARATOR = "\u0000";
 
@@ -278,11 +280,28 @@ export function watchRouterIndex(
       );
       return found;
     },
+  };
+}
+
+/** The run's route tables, with what each decorator declares noted, keyed by where the pattern is and the decorator's call. */
+export function watchRouteTables(
+  routes: DeclaredRouteIndex,
+  db: Database,
+  positions: PackPositions,
+): DeclaredRouteIndex {
+  return {
+    routesAt(pattern, decorator) {
+      const found = routes.routesAt(pattern, decorator);
+      noteLookup(
+        db,
+        `${ROUTES_DECLARED}${[positions.idOf(pattern), decorator].join(SEPARATOR)}`,
+        JSON.stringify(found),
+      );
+      return found;
+    },
     // The wrapper index notes what it reads through the mounts, in terms
     // it can look up again.
-    mountsAbove(pattern, constructionKey) {
-      return index.mountsAbove(pattern, constructionKey);
-    },
+    mountsAbove: routes.mountsAbove,
   };
 }
 
@@ -290,6 +309,7 @@ export function watchRouterIndex(
 export function lookAgainIn(args: {
   db: Database;
   routerIndex: RouterIndex;
+  routes: DeclaredRouteIndex;
   wrapperIndex: PythonWrapperIndex;
   positions: PackPositions;
   moduleOfFile: ReadonlyMap<string, ModuleBinding>;
@@ -312,6 +332,15 @@ export function lookAgainIn(args: {
       : JSON.stringify(ask(pattern, module, parts));
   };
   return (id) => {
+    if (id.startsWith(ROUTES_DECLARED)) {
+      const [patternId = "", decorator = ""] = id
+        .slice(ROUTES_DECLARED.length)
+        .split(SEPARATOR);
+      const pattern = args.positions.patternOf(patternId);
+      return pattern === undefined
+        ? null
+        : JSON.stringify(args.routes.routesAt(pattern, decorator));
+    }
     if (id.startsWith(ROUTER_BUILT)) {
       return router(
         id.slice(ROUTER_BUILT.length),

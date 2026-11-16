@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
+import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
@@ -71,7 +73,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
       annotatedClassIsRequestBody: true,
       defaultStatusCode: 200,
@@ -81,20 +83,7 @@ const fastapiLike: PythonPack = {
   ],
 };
 
-const fastapiWithRouters: PythonPack = {
-  ...fastapiLike,
-  discovery: [
-    {
-      ...fastapiLike.discovery[0],
-      routerComposition: {
-        routerConstructorName: "APIRouter",
-        includeMethodName: "include_router",
-        routerKeyword: "router",
-        prefixKeyword: "prefix",
-      },
-    } as PythonPack["discovery"][number],
-  ],
-};
+const fastapiWithRouters: PythonPack = fastapiLike;
 
 /** flask-restx is the library that puts a prefix on the object a mount is called on. */
 const flaskRestxWithNamespaces: PythonPack = {
@@ -312,6 +301,7 @@ async function unitsWithRulesOf(
     packs,
     filePath: file,
     facts: db,
+    routes: buildRouteTables(bound, packs, db),
     ...(options.routers === true
       ? {
           routerIndex: buildRouterIndex(bound, packs, { roots: [], facts: db }),
@@ -1118,7 +1108,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
         {
           type: "decoratedFunctionRoute",
           importModule: ["fastapi"],
-          verbAttributeNames: { get: "GET", post: "POST" },
+          routes: fastapiTestRoutes(),
           pathParamSyntax: "braces",
           annotatedClassIsRequestBody: true,
           responseModelKeyword: "response_model",

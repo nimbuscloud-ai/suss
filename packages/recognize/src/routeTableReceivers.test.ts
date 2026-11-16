@@ -8,12 +8,14 @@ import { composeRoutes } from "./routeTable.js";
 import { readRouteTable } from "./routeTableDiscovery.js";
 
 import type {
+  AstCapableOps,
   CallOps,
   DecoratedDefinition,
   ModuleOps,
   RouteOutcome,
   RouteTableDeclaration,
   RouteTableMatch,
+  ScopesRole,
   ServesRole,
   ValueOps,
 } from "@suss/extractor";
@@ -39,6 +41,8 @@ interface ValueSpec {
   readonly built?: CallOps;
   /** The collection a loop variable takes its elements from. */
   readonly element?: ValueOps;
+  /** The collection a loop takes each element of apart, with this value one of the parts. */
+  readonly elementPart?: ValueOps;
   readonly list?: readonly ValueOps[];
   /** A class's methods, by name. */
   readonly methods?: readonly string[];
@@ -54,6 +58,7 @@ function value(spec: ValueSpec): ValueOps {
     asCall: (how?: { follow: string }) =>
       how === undefined ? null : (spec.built ?? null),
     element: () => spec.element ?? null,
+    elementPart: () => spec.elementPart ?? null,
     items: () => spec.list ?? [],
     shape: () => (spec.list === undefined ? null : { type: "array" }),
     asClass: () =>
@@ -91,17 +96,23 @@ interface CallSpec {
   readonly dropped?: boolean;
   /** What `receiverIsFrom` says. */
   readonly fromTable?: boolean;
+  /** The calls a receiver that comes to no one value is written as. */
+  readonly shared?: readonly CallOps[];
+  /** A module the file imports whole that the call is made on, `lib` in `lib.App()`. */
+  readonly onModule?: string;
 }
 
 function call(spec: CallSpec): CallOps {
   const file = spec.file ?? MAIN;
   const key = siteIn(file);
   const args = spec.args ?? [];
-  const bare = spec.on === undefined;
+  const bare = spec.on === undefined && spec.onModule === undefined;
   return {
     method: () => (bare ? null : spec.name),
-    calleeText: () => (bare ? spec.name : `value.${spec.name}`),
+    calleeText: () =>
+      bare ? spec.name : `${spec.onModule ?? "value"}.${spec.name}`,
     receiver: () => spec.on ?? null,
+    receiverCalls: () => spec.shared ?? [],
     site: () => key,
     file: () => file,
     argumentCount: () => args.length,
@@ -135,6 +146,10 @@ interface FileSpec {
   readonly calls?: readonly CallOps[];
   readonly decorated?: readonly DecoratedDefinition[];
   readonly imports?: Readonly<Record<string, string>>;
+  /** The names the file binds to the table's modules imported whole. */
+  readonly whole?: readonly string[];
+  /** Each set of methods the composer says it will ask about the receivers of, by whether they are decorators or calls. */
+  readonly asked?: string[];
 }
 
 const IMPORTS = { App: "App", Router: "Router", Namespace: "Namespace" };
@@ -146,6 +161,10 @@ function file(spec: FileSpec): { module: ModuleOps; displayPath: string } {
     decorated: () => spec.decorated ?? [],
     mentions: () => true,
     importedNames: () => new Map(Object.entries(spec.imports ?? IMPORTS)),
+    importedWhole: () => new Set(spec.whole ?? []),
+    readingReceivers: (methods: ReadonlySet<string>, of: string) => {
+      spec.asked?.push(`${of}: ${[...methods].sort().join(" ")}`);
+    },
   } as unknown as ModuleOps;
   return { module, displayPath: spec.path };
 }
@@ -886,6 +905,309 @@ describe("the units a table whose entries are made on a value declares", () => {
     expect(units({ ...match, unread })).toEqual([
       ["pathless", "path"],
       ["lost", null],
+    ]);
+  });
+});
+
+/** The handler's name and where an outcome is: its method, the path in front of its own, the routers it came down through, and the routers its reason is about. */
+function placed(outcomes: readonly RouteOutcome[]): string[] {
+  const named = (one: CallOps | undefined) =>
+    one === undefined
+      ? "-"
+      : String((one as Partial<AstCapableOps>).ast?.()).split("@")[0];
+  return outcomes.map((outcome) => {
+    if (!("handler" in outcome)) {
+      return outcome.reason;
+    }
+    const mounts = (outcome.mounts ?? [])
+      .map((hop) => `${named(hop.call)}>${named(hop.value)}`)
+      .join(",");
+    const where = `${outcome.handler.source?.()} ${outcome.method ?? "-"} prefix=${outcome.prefix ?? "-"} mounts=${mounts}`;
+    if (outcome.kind === "route") {
+      return where;
+    }
+    const shared = outcome.shared === true ? " shared" : "";
+    return `${outcome.reason} ${where} on=${named(outcome.on)} router=${named(outcome.router)}${shared}`;
+  });
+}
+
+/** A router built with a prefix, named so `placed` can tell it apart. */
+function named(name: string, prefix?: ValueOps, spec: Partial<CallSpec> = {}) {
+  const built = router(prefix, spec);
+  return { ...built, ast: () => name } as CallOps;
+}
+
+describe("where a table whose entries are made on a value says a route is", () => {
+  it("gives a route and an entry whose own path does not read the mounts down to their router and the path in front of their own", () => {
+    const root = { ...app(), ast: () => "app" } as CallOps;
+    const outer = named("outer", path("/o"));
+    const inner = named("inner", path("/i"));
+    const mountOuter = {
+      ...include(root, ref(outer), path("/api")),
+      ast: () => "mountOuter",
+    } as CallOps;
+    const mountInner = {
+      ...include(outer, ref(inner)),
+      ast: () => "mountInner",
+    } as CallOps;
+    expect(
+      placed(
+        compose([
+          {
+            path: MAIN,
+            calls: [root, outer, inner, mountOuter, mountInner],
+            decorated: [
+              under(fn("route"), get(inner, "/x")),
+              under(
+                fn("pathless"),
+                call({ name: "post", on: inner, args: [opaque("p")] }),
+              ),
+            ],
+          },
+        ]),
+      ),
+    ).toEqual([
+      "route GET prefix=/api/o/i mounts=mountOuter>outer,mountInner>inner",
+      "pathUnread pathless POST prefix=/api/o/i mounts=mountOuter>outer,mountInner>inner on=inner router=-",
+    ]);
+  });
+
+  it("says which router a reason is about as a walk reaches it", () => {
+    const root = app();
+    const unread = named("unread", opaque("prefix()"));
+    const below = named("below", path("/below"));
+    const badMount = named("badMount", path("/m"));
+    const a = named("a", path("/a"));
+    const b = named("b", path("/b"));
+    expect(
+      placed(
+        compose([
+          {
+            path: MAIN,
+            calls: [
+              root,
+              include(root, ref(unread)),
+              include(unread, ref(below)),
+              include(root, ref(badMount), opaque("computed()")),
+              include(root, ref(a)),
+              include(a, ref(b)),
+              include(b, ref(a)),
+            ],
+            decorated: [
+              under(fn("onUnread"), get(unread, "/x")),
+              under(fn("onBelow"), get(below, "/y")),
+              under(fn("onBadMount"), get(badMount, "/z")),
+              under(fn("inB"), get(b, "/w")),
+            ],
+          },
+        ]),
+      ).map((line) => line.replace(/ prefix=\S+ mounts=\S*/, "")),
+    ).toEqual([
+      "prefixUnread onBelow GET on=below router=unread",
+      "prefixUnread onUnread GET on=unread router=unread",
+      "mountUnread onBadMount GET on=badMount router=badMount",
+      "cycle inB GET on=b router=a",
+      "inB GET",
+    ]);
+  });
+});
+
+describe("why a table whose entries are made on a value says a router no walk reaches has no path", () => {
+  it("reads the router's own prefix and each of its mounts the way a walk reads them, then the router it is mounted onto", () => {
+    const root = app();
+    const ownUnread = named("ownUnread", opaque("prefix()"));
+    const lonely = named("lonely", path("/lonely"));
+    const onLonely = named("onLonely", path("/x"));
+    const badMount = named("badMount", path("/m"));
+    const unreadParent = named("unreadParent", opaque("prefix()"));
+    const onUnreadParent = named("onUnreadParent", path("/y"));
+    const orphan = named("orphan");
+    const foreign = call({ name: "Registry" });
+    expect(
+      placed(
+        compose([
+          {
+            path: MAIN,
+            calls: [
+              root,
+              include(lonely, ref(onLonely)),
+              include(lonely, ref(badMount), opaque("computed()")),
+              include(unreadParent, ref(onUnreadParent)),
+              include(foreign, ref(orphan)),
+            ],
+            decorated: [
+              under(fn("own"), get(ownUnread, "/a")),
+              under(fn("onLonely"), get(onLonely, "/b")),
+              under(fn("badMount"), get(badMount, "/c")),
+              under(fn("onUnreadParent"), get(onUnreadParent, "/d")),
+              under(fn("orphan"), get(orphan, "/e")),
+            ],
+          },
+        ]),
+      ).map((line) => line.replace(/ prefix=\S+ mounts=\S*/, "")),
+    ).toEqual([
+      "prefixUnread own GET on=ownUnread router=ownUnread",
+      "unreached onLonely GET on=onLonely router=lonely",
+      "mountUnread badMount GET on=badMount router=badMount",
+      "prefixUnread onUnreadParent GET on=onUnreadParent router=unreadParent",
+      "unreached orphan GET on=orphan router=-",
+    ]);
+  });
+
+  it("says a router mounted in a function onto a router no walk reaches is rivalled by a loop elsewhere, and leaves out a loop on a value the table does not read", () => {
+    const root = app();
+    const lonely = named("lonely", path("/lonely"));
+    const items = named("items", path("/items"));
+    const registry = call({ name: "Registry" });
+    const outcomes = compose([
+      {
+        path: MAIN,
+        calls: [
+          root,
+          include(lonely, ref(items), undefined, { caller: "main" }),
+          include(root, unlistable(), undefined, { caller: "load" }),
+          include(registry, unlistable(), undefined, { caller: "load" }),
+        ],
+        decorated: [under(fn("list"), get(items, "/"))],
+      },
+    ]);
+    expect(said(outcomes)).toEqual(["rivalledMount list (1 loops)"]);
+  });
+
+  it("says a mount whose path replaces the mounted value's own, and reads no prefix of a scope that reads none the library's way", () => {
+    const root = app();
+    const lonely = named("lonely", path("/lonely"));
+    const ns = call({ name: "Namespace", keywords: { path: path("/ns") } });
+    const plain = named("plain");
+    const orphan = named("orphan", opaque("prefix()"));
+    const files: FileSpec[] = [
+      {
+        path: MAIN,
+        calls: [
+          root,
+          add(lonely, ref(ns), path("/over")),
+          include(root, ref(plain)),
+        ],
+        decorated: [
+          under(fn("replaced"), get(ns, "/a")),
+          under(fn("plain"), get(plain, "/b")),
+          under(fn("orphan"), get(orphan, "/c")),
+        ],
+      },
+    ];
+    expect(said(compose(files))).toEqual([
+      "GET /b plain",
+      "prefixReplaced replaced",
+      "prefixUnread orphan",
+    ]);
+    const { noValue: _noValue, ...asWritten } = TABLE.roles
+      .Router as ScopesRole;
+    expect(
+      said(
+        compose(files, {
+          ...TABLE,
+          roles: { ...TABLE.roles, Router: asWritten },
+        }),
+      ),
+    ).toEqual(["GET /b plain", "prefixReplaced replaced", "unreached orphan"]);
+  });
+
+  it("leaves out a router its function builds and drops, as it leaves out a root", () => {
+    const root = app();
+    const dropped = router(path("/d"), { dropped: true });
+    expect(
+      said(
+        compose([
+          {
+            path: MAIN,
+            calls: [root, dropped],
+            decorated: [under(fn("gone"), get(dropped, "/x"))],
+          },
+        ]),
+      ),
+    ).toEqual([]);
+  });
+
+  it("serves an entry on a name assigned two roots at its own path, and says one on a name assigned two routers is shared", () => {
+    const root = app();
+    const other = app();
+    const first = router(path("/first"));
+    const second = router(path("/second"));
+    const outcomes = compose([
+      {
+        path: MAIN,
+        calls: [root, other, first, second, include(root, ref(second))],
+        decorated: [
+          under(fn("onApps"), get(null, "/x", { shared: [root, other] })),
+          under(fn("onRouters"), get(null, "/y", { shared: [first, second] })),
+          under(
+            fn("onForeign"),
+            get(null, "/z", { shared: [first, call({ name: "Registry" })] }),
+          ),
+        ],
+      },
+    ]);
+    expect(said(outcomes)).toEqual(["GET /x onApps", "unreached onRouters"]);
+    expect(
+      outcomes.map((outcome) => "shared" in outcome && outcome.shared === true),
+    ).toEqual([false, true]);
+  });
+});
+
+describe("the files a table whose entries are made on a value reads", () => {
+  it("reads a root and a router built on a module the file imports whole", () => {
+    const root = app({ onModule: "lib" });
+    const items = router(path("/items"), { onModule: "lib" });
+    const notBuilt = call({ name: "get", onModule: "lib", args: [path("/x")] });
+    expect(
+      said(
+        compose([
+          {
+            path: MAIN,
+            calls: [root, items, notBuilt, include(root, ref(items))],
+            decorated: [under(fn("list"), get(items, "/"))],
+            imports: {},
+            whole: ["lib"],
+          },
+        ]),
+      ),
+    ).toEqual(["GET /items/ list"]);
+  });
+
+  it("reads a loop that takes each element apart as one it cannot list", () => {
+    const root = app();
+    const items = router(path("/items"));
+    const part = value({
+      source: "r",
+      elementPart: value({ source: "pairs()" }),
+    });
+    expect(
+      said(
+        compose([
+          {
+            path: MAIN,
+            calls: [root, items, include(root, part)],
+            decorated: [under(fn("list"), get(items, "/"))],
+          },
+        ]),
+      ),
+    ).toEqual(["unlistedLoop list (1 loops)"]);
+  });
+
+  it("says once in each file which decorators and which calls it will ask about the receivers of", () => {
+    const root = app();
+    const asked: string[] = [];
+    compose([
+      {
+        path: MAIN,
+        calls: [root],
+        decorated: [under(fn("health"), get(root, "/health"))],
+        asked,
+      },
+    ]);
+    expect(asked).toEqual([
+      "decorators: get post route",
+      "calls: add handle include listed",
     ]);
   });
 });

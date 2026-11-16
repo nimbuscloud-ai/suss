@@ -409,6 +409,12 @@ export type ReceiverUnread =
   /** A mount above it leads back into a value the walk is already inside. */
   | "cycle";
 
+/** One mount a walk went through on its way down from a root: the mount call, and the call that built the value it mounts. */
+export interface MountHop {
+  readonly call: CallOps;
+  readonly value: CallOps;
+}
+
 /** What one entry of a table whose handlers are values came to, in the order the walk met it. */
 export type RouteOutcome =
   | {
@@ -419,16 +425,40 @@ export type RouteOutcome =
       readonly entry: EntrySource;
       /** For a route a decorated class's method serves, the class. */
       readonly owner?: ValueOps;
+      /** For an entry found through a receiver, the mounts from the root down to the value it is made on, outermost first. */
+      readonly mounts?: readonly MountHop[];
+      /** For a decorated entry, the path in front of its own, so a reader that reads the entry's path its own way can serve it. */
+      readonly prefix?: string;
     }
   | {
       readonly kind: "unread";
       readonly reason: "pathUnread" | "prefixUnread" | ReceiverUnread;
       readonly handler: ValueOps;
       readonly entry: EntrySource;
+      /** For a decorated entry, the method it would serve, one outcome for each. */
+      readonly method?: string;
       /** For a route a decorated class's method serves, the class. */
       readonly owner?: ValueOps;
       /** For `unlistedLoop` and `rivalledMount`, each mount written in a loop the table cannot list that may mount it. */
       readonly loops?: readonly CallOps[];
+      /** For an entry found through a receiver, the mounts from the root down to the value it is made on, outermost first. */
+      readonly mounts?: readonly MountHop[];
+      /** For a decorated entry whose own path is what did not read, the path in front of it. */
+      readonly prefix?: string;
+      /** For an entry found through a receiver, the call that built the value it is made on, when its receiver comes to one. */
+      readonly on?: CallOps;
+      /** For `unreached`, set when the receiver is written as more than one value, so no one of them is the one the entry is made on. */
+      readonly shared?: true;
+      /**
+       * The value the reason is about, for a reader that says which one:
+       * the scope whose path did not read, the value a mount that did not
+       * read or that a loop rivals mounts, the value a cycle leads back
+       * into, and for `unreached`, the value a mount no walk reached
+       * mounts it onto. An entry no walk reached has no mounts, so a
+       * reason about a value other than `on` is about the value it is
+       * mounted onto.
+       */
+      readonly router?: CallOps;
     }
   | {
       readonly kind: "unread";

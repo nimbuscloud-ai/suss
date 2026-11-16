@@ -34,6 +34,7 @@ import {
   resolveStreamObjects,
   usesOf,
   writtenValueOf,
+  writtenValuesOf,
 } from "./facts/resolve.js";
 import { callArguments } from "./facts/values.js";
 import {
@@ -103,6 +104,7 @@ export function pythonFactSource(db: Database): PythonFactSource {
     db,
     read: () => undefined,
     writtenAs: (key) => writtenValueOf(db, key),
+    writtenAsEach: (key) => writtenValuesOf(db, key),
     anchorCalls: (key) => anchorCallsOf(db, key),
     importedFrom: (key, module) =>
       originsOf(db, key).some(

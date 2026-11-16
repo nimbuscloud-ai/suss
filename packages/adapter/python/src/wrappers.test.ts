@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -22,7 +23,7 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST", delete: "DELETE" },
+      routes: fastapiTestRoutes({ get: "GET", post: "POST", delete: "DELETE" }),
       pathParamSyntax: "braces",
       injectedParameterCallees: ["Depends", "Security"],
       defaultStatusCode: 200,
@@ -40,12 +41,6 @@ const fastapiLike: PythonPack = {
           statusKeyword: "status_code",
         },
       ],
-      routerComposition: {
-        routerConstructorName: "APIRouter",
-        includeMethodName: "include_router",
-        routerKeyword: "router",
-        prefixKeyword: "prefix",
-      },
       wrappers: [
         {
           type: "dependency",

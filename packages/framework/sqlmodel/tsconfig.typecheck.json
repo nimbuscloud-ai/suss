@@ -15,6 +15,9 @@
       "path": "../sqlalchemy/tsconfig.typecheck.json"
     },
     {
+      "path": "../fastapi/tsconfig.typecheck.json"
+    },
+    {
       "path": "../../behavioral-ir/tsconfig.typecheck.json"
     },
     {

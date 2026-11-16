@@ -3,18 +3,19 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
+import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
 import { buildRouterIndex } from "./routers.js";
+import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 import type {
   DecoratedClassRoute,
-  DecoratedFunctionRoute,
   PythonPack,
   RouterComposition,
 } from "./pack.js";
@@ -35,14 +36,8 @@ const fastapiLike: PythonPack = {
     {
       type: "decoratedFunctionRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET", post: "POST" },
+      routes: fastapiTestRoutes(),
       pathParamSyntax: "braces",
-      routerComposition: {
-        routerConstructorName: "APIRouter",
-        includeMethodName: "include_router",
-        routerKeyword: "router",
-        prefixKeyword: "prefix",
-      },
     },
   ],
 };
@@ -71,9 +66,9 @@ const namespaceLike: PythonPack = {
 };
 
 /**
- * The router index and the facts behind it, built the way a project run
- * builds them, since every construction a mount reads comes back through
- * the resolution rules.
+ * The router index, the route tables and the facts behind them, built the
+ * way a project run builds them, since every construction a mount reads
+ * comes back through the resolution rules.
  */
 async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
   const tree = await parsePython(source);
@@ -86,17 +81,15 @@ async function unitsOf(source: string, packs: PythonPack[] = [fastapiLike]) {
     files: [{ file, root: tree.rootNode, module }],
     definitions: new Map(),
   });
-  const routerIndex = buildRouterIndex(
-    [{ file, displayPath: "main.py", root: tree.rootNode, module }],
-    packs,
-    { roots: [], facts },
-  );
+  const bound = [{ file, displayPath: "main.py", root: tree.rootNode, module }];
+  const routerIndex = buildRouterIndex(bound, packs, { roots: [], facts });
   return discoverUnits(tree.rootNode, module, {
     packs,
     filePath: "main.py",
     absoluteFile: file,
     facts,
     routerIndex,
+    routes: buildRouteTables(bound, packs, facts),
   });
 }
 
@@ -608,13 +601,13 @@ describe("router prefix composition: abstentions", () => {
     expect(pathOf(units, "ping")).toBe("/outer/o/inner/i/ping");
   });
 
-  it("abstains when the includer's name refers to a second construction", async () => {
-    const reason = await abstained(
+  it("mounts onto the router an includer's name refers to where the mount reads it", async () => {
+    const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
         "",
         "app = FastAPI()",
-        "outer = APIRouter()",
+        'outer = APIRouter(prefix="/first")',
         "outer = APIRouter()",
         "inner = APIRouter()",
         "",
@@ -628,11 +621,8 @@ describe("router prefix composition: abstentions", () => {
         'app.include_router(outer, prefix="/outer")',
         "",
       ].join("\n"),
-      "ping",
     );
-    expect(reason).toContain(
-      "is mounted onto a router this reading never saw constructed",
-    );
+    expect(pathOf(units, "ping")).toBe("/outer/inner/ping");
   });
 
   it("abstains when the includer's own prefix is not a literal", async () => {
@@ -712,6 +702,77 @@ describe("router prefix composition: abstentions", () => {
     );
   });
 
+  it.each([
+    [
+      "a mount above whose prefix does not read",
+      ["outer = APIRouter()", "middle = APIRouter()"],
+      "app.include_router(outer, prefix=compute())",
+    ],
+    [
+      "a router two mounts above whose own prefix does not read",
+      ["outer = APIRouter(prefix=compute())", "middle = APIRouter()"],
+      "app.include_router(outer)",
+    ],
+    [
+      "a cycle the app's mounts lead into",
+      ["outer = APIRouter()", "middle = APIRouter()"],
+      "app.include_router(outer)\nmiddle.include_router(outer)",
+    ],
+  ])(
+    "says a router below %s is mounted through a chain it cannot compose",
+    async (_case, routers, mounts) => {
+      const units = await unitsOf(
+        [
+          "from fastapi import FastAPI, APIRouter",
+          "",
+          "app = FastAPI()",
+          ...routers,
+          "inner = APIRouter()",
+          "",
+          "",
+          '@inner.get("/ping")',
+          "def ping():",
+          "    pass",
+          "",
+          "",
+          mounts,
+          "outer.include_router(middle)",
+          "middle.include_router(inner)",
+          "",
+        ].join("\n"),
+      );
+      expect(pathOf(units, "ping")).toBeNull();
+      expect(unreadTextOf(units[0])).toContain(
+        "is mounted through a chain of routers this reading cannot compose",
+      );
+    },
+  );
+
+  it("serves a route a project wrapper declares on a router", async () => {
+    const units = await unitsOf(
+      [
+        "from fastapi import FastAPI, APIRouter",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/items")',
+        "",
+        "",
+        "def api_get(path):",
+        "    return router.get(path)",
+        "",
+        "",
+        '@api_get("/{item_id}")',
+        "def read_item(item_id: int):",
+        "    pass",
+        "",
+        "",
+        "app.include_router(router)",
+        "",
+      ].join("\n"),
+    );
+    expect(pathOf(units, "read_item")).toBe("/items/{item_id}");
+  });
+
   it("reads nothing from statements shaped past its one-hop rules", async () => {
     const reason = await abstained(
       [
@@ -761,10 +822,11 @@ describe("router prefix composition: abstentions", () => {
       [fastapiLike],
       { roots: [] },
     );
-    const bare: DecoratedFunctionRoute = {
-      type: "decoratedFunctionRoute",
+    const bare: DecoratedClassRoute = {
+      type: "decoratedClassRoute",
       importModule: ["fastapi"],
-      verbAttributeNames: { get: "GET" },
+      decoratorName: "route",
+      verbMethodNames: { get: "GET" },
     };
     expect(routerIndex.resolve(bare, module, "router")).toEqual({
       kind: "notRouter",
@@ -1348,7 +1410,7 @@ describe("a loop that mounts what a call handed it", () => {
     expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
-  it("reads a list holding anything but a bare name as a list it cannot enumerate", async () => {
+  it("mounts each router a list names beside a call it cannot read", async () => {
     const units = await unitsOf(
       [
         "from fastapi import FastAPI, APIRouter",
@@ -1369,10 +1431,7 @@ describe("a loop that mounts what a call handed it", () => {
         "",
       ].join("\n"),
     );
-    expect(pathOf(units, "read_item")).toBeNull();
-    expect(unreadTextOf(units[0])).toContain(
-      "mounts routers read out of a call this reading does not follow",
-    );
+    expect(pathOf(units, "read_item")).toBe("/items/{item_id}");
   });
 
   it("reads a loop whose target is a tuple as naming no router either", async () => {
@@ -1440,6 +1499,22 @@ describe("a mount whose function may not be the one the app calls", () => {
     const units = await unitsOf(twoFactories);
     expect(unreadTextOf(units[0])).toContain(
       "is mounted inside a function, while a loop at main.py:20 mounts routers this reading cannot name, and which of them the app runs is not written down",
+    );
+  });
+
+  it("claims no path for a router mounted at the top level onto one a rivalled mount mounts", async () => {
+    const units = await unitsOf(
+      twoFactories
+        .replace('@router.get("/{item_id}")', '@inner.get("/{item_id}")')
+        .replace(
+          "import loader\n",
+          'import loader\n\ninner = APIRouter(prefix="/inner")\n',
+        )
+        .concat("router.include_router(inner)\n"),
+    );
+    expect(pathOf(units, "read_item")).toBeNull();
+    expect(unreadTextOf(units[0])).toContain(
+      "is mounted through a chain of routers this reading cannot compose",
     );
   });
 
@@ -1649,19 +1724,19 @@ describe("blocks the mount walk enters in the scope they are written in", () => 
   });
 });
 
-describe("blocks the mount walk does not enter", () => {
-  it("does not read a mount written in a class method", async () => {
+describe("mounts written where the binder keeps no names", () => {
+  it("reads a mount written in a class method", async () => {
     const units = await unitsOf(
       mountInside("class Factory:\n    def build(self):", "        "),
     );
-    expect(pathOf(units, "read_item")).toBeNull();
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
-  it("does not read a mount inside a function the binder never scoped", async () => {
+  it("reads a mount inside a function written in a loop", async () => {
     const units = await unitsOf(
       mountInside("for _ in range(1):\n    def build():", "        "),
     );
-    expect(pathOf(units, "read_item")).toBeNull();
+    expect(pathOf(units, "read_item")).toBe("/api/items/{item_id}");
   });
 
   it("reads a function whose body the parse never closed as holding no mount", async () => {
