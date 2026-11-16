@@ -2046,6 +2046,28 @@ describe("ruby value facts", () => {
     expect(textAt(source, compared[0]?.[1] ?? "")).toBe("price");
     expect(compared[0]?.[2]).toBe(keyOf(source, "100"));
   });
+
+  it("states an append as a call of << read off its left side, its right side the one argument, in no body's list", async () => {
+    const source = 'def report(out)\n  out << "done"\nend\n';
+    const db = await factsFor(source);
+    const call = keyOf(source, 'out << "done"');
+    const callees = rows(db, "call")
+      .filter((row) => row[0] === call)
+      .map((row) => row[1] ?? "");
+
+    expect(callees.map((callee) => textAt(source, callee))).toEqual(["<<"]);
+    expect(
+      rows(db, "readsProperty")
+        .filter((row) => row[0] === callees[0])
+        .map((row) => row[2]),
+    ).toEqual(["<<"]);
+    expect(
+      rows(db, "callArg")
+        .filter((row) => row[0] === call)
+        .map((row) => [row[1], textAt(source, row[2] ?? "")]),
+    ).toEqual([["0", '"done"']]);
+    expect(rows(db, "makesCall").map((row) => row[1])).not.toContain(call);
+  });
 });
 
 describe("the calls a body writes as statements, and the pairs a call passes", () => {

@@ -45,6 +45,16 @@ const DEFERRED_BODY_TYPES = new Set(["method", "singleton_method", "lambda"]);
 /** The nodes a read can be at: a key and a call. */
 const SITE_TYPES = new Set(["element_reference", "call"]);
 
+/** `out << line`, which Ruby runs as the method `<<` on `out` and the facts state as that call. */
+function isAppend(node: RbNode): boolean {
+  return node.type === "binary" && field(node, "operator")?.text === "<<";
+}
+
+/** A node the facts state as a call. */
+function isCall(node: RbNode): boolean {
+  return node.type === "call" || isAppend(node);
+}
+
 /** The ops a chain asks of one site. */
 interface SiteContext {
   readonly read: ReadOps;
@@ -88,7 +98,9 @@ export function stdlibEffects(
 }
 
 function readsAt(all: readonly Site[], db: Database): EffectAt[] {
-  const sites = all.filter((site) => !site.inOwnDefault);
+  const sites = all.filter(
+    (site) => !site.inOwnDefault && !isAppend(site.node),
+  );
   const defaults = hasDefaultReads(db);
   const callees = calleesOfCalls(
     db,
@@ -111,7 +123,7 @@ function readsAt(all: readonly Site[], db: Database): EffectAt[] {
 function writesAt(sites: readonly Site[], db: Database): EffectAt[] {
   const calls = sites.filter(
     (site): site is Site & { context: SiteContext } =>
-      site.node.type === "call" && site.context !== null,
+      isCall(site.node) && site.context !== null,
   );
   askWhatBareWritesRun(calls, db);
   return numberRepeatedCallSites(
@@ -156,7 +168,7 @@ function sitesUnder(
   const sites: Site[] = [];
   walkDescendants<RbNode, boolean>(root, false, children, {
     at: (node, inOwnDefault) => {
-      if (!SITE_TYPES.has(node.type)) {
+      if (!SITE_TYPES.has(node.type) && !isAppend(node)) {
         return;
       }
       const key = resolutionKeyOf(node);
@@ -235,7 +247,7 @@ function siteContext(
     },
     get ops() {
       if (ops === undefined) {
-        ops = node.type === "call" ? factCallOps(key, source) : null;
+        ops = isCall(node) ? factCallOps(key, source) : null;
       }
       return ops;
     },
