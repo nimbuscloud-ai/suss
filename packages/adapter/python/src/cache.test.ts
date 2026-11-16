@@ -275,7 +275,9 @@ describe("extractPythonProject's on-disk cache", () => {
 
       expect(cached).toBe(cold);
       expect(diagnostics[1]?.kind).toBe("partial");
-      expect(diagnostics[1]?.partial?.rootsReextracted).toBe(1);
+      // main.py's app dependency covers every route, and main.py reaches
+      // items.py's router through `items.router`, so both files run again.
+      expect(diagnostics[1]?.partial?.rootsReextracted).toBe(2);
     });
 
     it("gives what a run without the cache gives after the mount prefix changes in another file", async () => {

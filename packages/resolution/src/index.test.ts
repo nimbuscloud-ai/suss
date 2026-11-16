@@ -2012,6 +2012,68 @@ describe("a value reached through a property", () => {
   });
 });
 
+describe("a member read off a whole-module import", () => {
+  it("steps to what the module exports under that name", () => {
+    // import settings; settings.TIMEOUT, where settings.py writes TIMEOUT = 30
+    expect(
+      writtenAsOf(
+        [
+          ["writtenValue", "thirty"],
+          ["binds", "timeout", "thirty"],
+          ["exportsAs", "settings.py", "TIMEOUT", "timeout"],
+          ["imports", "ns", "settings.py", "*"],
+          ["readsProperty", "x", "ns", "TIMEOUT"],
+        ],
+        "x",
+      ),
+    ).toEqual(["thirty"]);
+  });
+
+  it("follows a barrel that re-exports the name", () => {
+    expect(
+      resolutionsOf(
+        [
+          ["func", "f"],
+          ["exportsAs", "impl", "handler", "f"],
+          ["reExports", "barrel", "handler", "impl", "handler"],
+          ["imports", "ns", "barrel", "*"],
+          ["readsProperty", "x", "ns", "handler"],
+        ],
+        "x",
+      ),
+    ).toEqual(["f"]);
+  });
+
+  it("steps under a receiver context as well", () => {
+    expect(
+      derive(
+        [
+          ["writtenValue", "thirty"],
+          ["exportsAs", "settings.py", "TIMEOUT", "thirty"],
+          ["imports", "ns", "settings.py", "*"],
+          ["readsProperty", "x", "ns", "TIMEOUT"],
+        ],
+        "reachesUnder",
+        "x",
+      ).map((t) => String(t[2])),
+    ).toContain("thirty");
+  });
+
+  it("says nothing about a member read off a named import", () => {
+    expect(
+      writtenAsOf(
+        [
+          ["writtenValue", "thirty"],
+          ["exportsAs", "settings.py", "TIMEOUT", "thirty"],
+          ["imports", "ns", "settings.py", "settings"],
+          ["readsProperty", "x", "ns", "TIMEOUT"],
+        ],
+        "x",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("a wrapper the caller declared transparent", () => {
   /** handler = wrapHandler(body), with the word on `tracing`'s wrapHandler. */
   const WRAPPED: Array<[string, ...string[]]> = [

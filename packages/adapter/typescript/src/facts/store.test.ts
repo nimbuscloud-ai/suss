@@ -1146,6 +1146,43 @@ describe("resolveWrittenValue", () => {
     expect(written?.getText()).not.toBe("0");
   });
 
+  // The type checker settles both member reads by itself. A member read
+  // off `import(...)` also steps through the module's export, and the
+  // two routes have to land on the one value.
+  it.each([
+    {
+      form: "a namespace import",
+      mod: `
+        import * as settings from "./settings.js";
+        declare function run(value: unknown): void;
+        export function go() { run(settings.ALGORITHM); }
+      `,
+      read: "settings.ALGORITHM",
+    },
+    {
+      form: "an import call",
+      mod: `
+        declare function run(value: unknown): void;
+        export async function go() { run((await import("./settings.js")).ALGORITHM); }
+      `,
+      read: `(await import("./settings.js")).ALGORITHM`,
+    },
+  ])(
+    "reads a member of $form as the one value the module exports",
+    ({ mod, read }) => {
+      const project = projectOf({
+        "/settings.ts": `export const ALGORITHM = "HS256";`,
+        "/mod.ts": mod,
+      });
+      const store = new ResolutionStore();
+
+      const written = store.resolveWrittenValue(
+        usageOf(project, "/mod.ts", read),
+      );
+      expect(written?.getText()).toBe(`"HS256"`);
+    },
+  );
+
   it("answers with the object literal a name holds", () => {
     const project = projectOf({
       "/mod.ts": `

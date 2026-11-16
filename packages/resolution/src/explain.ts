@@ -141,6 +141,14 @@ const DEFAULT_PHRASES: Record<string, StepPhrase> = {
       notes: exportTrail(premises[1], describe),
     };
   },
+  "namespace member value": ({ tuple, premises, describe }) => {
+    const [, namespace, name] = premises[0].tuple;
+    const module = premises[1].tuple[1];
+    return {
+      reason: `${describe(tuple[0])} reads ${String(name)} off ${describe(namespace)}, which imports ${describe(module)} whole, and ${describe(module)} exports ${describe(tuple[1])} under that name`,
+      notes: exportTrail(premises[2], describe),
+    };
+  },
   argument: ({ premises, describe }) => ({
     reason: argumentReason(premises[0], describe),
   }),
