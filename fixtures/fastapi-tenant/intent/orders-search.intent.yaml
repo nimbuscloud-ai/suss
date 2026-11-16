@@ -17,7 +17,7 @@ transitions:
     response:
       status: 200
     results:
-      - reads: postgresql:Order
+      - reads: postgresql:orders
         by: [tenant_id]
         from: { tenant_id: input.headers.x-tenant-id }
   - id: invalid

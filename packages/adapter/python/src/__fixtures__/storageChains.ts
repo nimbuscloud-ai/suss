@@ -11,6 +11,7 @@ import { imported, pack, storageCalls, typed } from "@suss/recognize";
 
 import type {
   CallStep,
+  ClassContainer,
   ClassPick,
   Match,
   NamePick,
@@ -33,6 +34,11 @@ export interface TestStorage {
 }
 
 const START: CallStep = { to: "chainStart" };
+
+/** A mapped class is stored in the table its `__tablename__` says, as the pack names it. */
+function tableOf(model: ClassPick): ClassContainer {
+  return { ...model, named: [{ attribute: "__tablename__" }, "className"] };
+}
 
 function reading(
   origin: ReceiverOrigin,
@@ -111,7 +117,7 @@ function sessionCalls(
   )
     .methods(Object.fromEntries(one.writes.map((name) => [name, writes])))
     .otherwise(reads)
-    .container(model);
+    .container(tableOf(model));
   if (nothing.length === 0) {
     return [accesses];
   }
@@ -157,7 +163,7 @@ function statementCalls(
       ),
       { of: [START] },
     )
-    .container(model);
+    .container(tableOf(model));
 }
 
 /** The hooks that read each described library's chains, for a test pack's `invocationRecognizers`. */

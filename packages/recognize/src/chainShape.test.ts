@@ -637,6 +637,45 @@ describe("a step that reaches the calls of several methods", () => {
   });
 });
 
+describe("the name a class container gives the class it found", () => {
+  const tabled = (name: string, table: string | null): ValueOps => ({
+    ...classNamed(name),
+    classAttribute: (attribute) => (attribute === "table" ? table : null),
+  });
+  const queries = storageCalls(
+    { system: "vault", client: SESSION, clientAt: FIRST },
+    { outermost: true },
+  )
+    .otherwise({ kind: "read" })
+    .container({
+      class: { of: [{ to: "chainStart" }], at: 0 },
+      notFrom: [],
+      named: [{ attribute: "table" }, "className"],
+    });
+  const containerFor = (model: ValueOps) =>
+    containers(
+      run(
+        [queries],
+        lastOf(chainOf({ method: "query", onSession: true, args: [model] })),
+      ).effects,
+    );
+
+  it("is the string the class assigns to the first attribute listed, and else the class's name", () => {
+    expect(containerFor(tabled("Orders", "orders"))).toEqual(["orders"]);
+    expect(containerFor(tabled("Notes", null))).toEqual(["Notes"]);
+  });
+
+  it("tells the adapter the attributes it names a class by", () => {
+    const [hook] =
+      pack("vault", [queries], {
+        languages: ["python"],
+        recognizedAs: "@suss/vault-test",
+      }).invocationRecognizers ?? [];
+
+    expect(hook?.containerAttributes).toEqual(["table"]);
+  });
+});
+
 describe("the class a chain works on", () => {
   it("is the first class one of the sources reaches, in the order the pick lists them", () => {
     const calls = chainOf(

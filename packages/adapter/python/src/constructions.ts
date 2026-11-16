@@ -78,17 +78,28 @@ export function classesNamed(
   facts: Database,
   files: Files,
 ): Map<string, PyNode> {
+  return new Map(
+    [...classesAt(keys, facts, files)].map(([key, found]) => [key, found.node]),
+  );
+}
+
+/** The same classes, each with its own key, which the facts state its body under. */
+export function classesAt(
+  keys: readonly string[],
+  facts: Database,
+  files: Files,
+): Map<string, { node: PyNode; key: string }> {
   const asked = [...new Set(keys)];
   if (asked.length === 0) {
     return new Map();
   }
   resolveCalls(facts, asked);
-  const found = new Map<string, PyNode>();
+  const found = new Map<string, { node: PyNode; key: string }>();
   for (const key of asked) {
     const classes = answersFor(facts, "wantedComesTo", key).flatMap(
       (answer) => {
         const node = nodeOfKey(answer, files);
-        return node?.type === "class_definition" ? [node] : [];
+        return node?.type === "class_definition" ? [{ node, key: answer }] : [];
       },
     );
     const [only] = classes;

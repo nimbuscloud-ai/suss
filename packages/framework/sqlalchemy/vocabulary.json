@@ -44,6 +44,8 @@
   "and_": "language: Python spells operator.and_ the same way. SQLAlchemy: sqlalchemy.and_, which joins conditions that must all be true",
   "or_": "language: Python spells operator.or_ the same way. SQLAlchemy: sqlalchemy.or_, which joins conditions of which one must be true",
   "not_": "language: Python spells operator.not_ the same way. SQLAlchemy: sqlalchemy.not_, which negates a condition",
+  "__tablename__": "SQLAlchemy: the class attribute that names a mapped class's table",
+  "className": "suss: a class container naming, the class's own name",
   "read": "suss: storage access kind",
   "write": "suss: storage access kind",
   "outerjoin": "SQLAlchemy: the method that left outer joins another mapped class or table",
