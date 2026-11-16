@@ -2192,49 +2192,136 @@ function markedBody(before: Transition, after: Transition): string | null {
     return null;
   }
 
-  const marked = Object.entries(now).map(([field, shape]) =>
-    markedField(field, was[field], shape),
+  const marked = fieldNames(was, now).flatMap((field) =>
+    markedField(field, was[field], now[field]),
   );
-  for (const field of Object.keys(was)) {
-    if (now[field] === undefined) {
-      marked.push(`-${field}`);
-    }
-  }
-
-  return marked.some((field) => /^[-+~]/.test(field))
+  return marked.some((field) => field.moved)
     ? `{ ${trimmed(marked).join(", ")} }`
     : null;
 }
 
-/** A field of the body, marked when it came, went or changed type. */
+/** A field as the marked body prints it, and whether it moved. */
+interface MarkedField {
+  readonly text: string;
+  readonly moved: boolean;
+}
+
+/** The fields of the later record in order, then the ones it lost. */
+function fieldNames(
+  was: Record<string, TypeShape>,
+  now: Record<string, TypeShape>,
+): string[] {
+  const gone = Object.keys(was).filter((field) => now[field] === undefined);
+  return [...Object.keys(now), ...gone];
+}
+
+/**
+ * A field of the body, plain when it did not change, or else each place
+ * inside it that came, went or changed type, with the rest counted after
+ * the first few.
+ */
 function markedField(
   field: string,
   was: TypeShape | undefined,
-  now: TypeShape,
-): string {
-  if (was === undefined) {
-    return `+${field}: ${formatBodyShape(now)}`;
+  now: TypeShape | undefined,
+): MarkedField[] {
+  if (sameJson(was, now)) {
+    return [{ text: field, moved: false }];
   }
-  return sameJson(was, now)
-    ? field
-    : `~${field}: ${formatBodyShape(was)} -> ${formatBodyShape(now)}`;
+  const leaves = changedLeaves(field, was, now);
+  const listed = leaves.slice(0, LEAVES_LISTED);
+  const rest = leaves.length - listed.length;
+  const texts = rest > 0 ? [...listed, `and ${rest} more in ${field}`] : listed;
+  return texts.map((text) => ({ text, moved: true }));
+}
+
+/**
+ * Each place under `path` that came, went or changed type, such as
+ * `~meta.metric: any -> string`. Printing the two records whole would
+ * show the same field names on both sides and hide what moved.
+ */
+function changedLeaves(
+  path: string,
+  was: TypeShape | undefined,
+  now: TypeShape | undefined,
+): string[] {
+  if (was === undefined) {
+    return [`+${path}: ${formatBodyShape(now)}`];
+  }
+  if (now === undefined) {
+    return [`-${path}`];
+  }
+  if (sameJson(was, now)) {
+    return [];
+  }
+  const whole = `~${path}: ${formatBodyShape(was)} -> ${formatBodyShape(now)}`;
+  const inside = sharedFields(was, now);
+  if (inside === null) {
+    return [whole];
+  }
+  const leaves = fieldNames(inside.was, inside.now).flatMap((field) =>
+    changedLeaves(
+      `${path}${inside.separator}${field}`,
+      inside.was[field],
+      inside.now[field],
+    ),
+  );
+  // Two records with the same fields in another order differ as JSON and
+  // in no one field.
+  return leaves.length > 0 ? leaves : [whole];
+}
+
+/** The fields of two records, and what comes between a path and a field's name. */
+interface SharedFields {
+  readonly separator: string;
+  readonly was: Record<string, TypeShape>;
+  readonly now: Record<string, TypeShape>;
+}
+
+/**
+ * The fields of two records to compare one by one, or of the records in
+ * two lists, which print as `data[].id`. Null when the two are not both
+ * records with the same spreads, so the change prints as the whole shape.
+ */
+function sharedFields(was: TypeShape, now: TypeShape): SharedFields | null {
+  if (was.type === "array" && now.type === "array") {
+    const items = sharedFields(was.items, now.items);
+    return items === null
+      ? null
+      : { ...items, separator: `[]${items.separator}` };
+  }
+  if (
+    was.type !== "record" ||
+    now.type !== "record" ||
+    !sameJson(was.spreads ?? [], now.spreads ?? [])
+  ) {
+    return null;
+  }
+  return { separator: ".", was: was.properties, now: now.properties };
 }
 
 /**
  * Every field that moved, and enough of the others for the reader to
  * recognise the body.
  */
-function trimmed(fields: readonly string[]): string[] {
-  const moved = fields.filter((field) => /^[-+~]/.test(field));
+function trimmed(fields: readonly MarkedField[]): string[] {
+  const moved = fields.filter((field) => field.moved);
   if (fields.length <= FIELDS_LISTED + moved.length) {
-    return [...fields];
+    return fields.map((field) => field.text);
   }
-  const held = fields.filter((field) => !/^[-+~]/.test(field));
-  return [...held.slice(0, FIELDS_LISTED), "...", ...moved];
+  const held = fields.filter((field) => !field.moved);
+  return [
+    ...held.slice(0, FIELDS_LISTED).map((field) => field.text),
+    "...",
+    ...moved.map((field) => field.text),
+  ];
 }
 
 /** How many unchanged fields print beside the ones that moved. */
 const FIELDS_LISTED = 4;
+
+/** How many changed places inside one field print before the rest are counted. */
+const LEAVES_LISTED = 3;
 
 /** The wrapper whose body produced this outcome, if a wrapper did. */
 function wrapperOf(transition: Transition): WrapperReference | undefined {
