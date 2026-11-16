@@ -123,16 +123,20 @@ export interface StatementCall {
  * The calls written as statements of a body, in order, through the
  * branches of any `if`, `unless`, `case`, `begin` or loop among them and
  * not into a block or a definition. A call reached through one of those
- * is nested. A bare name Ruby runs as a method is not a `call` node, and
- * is left out.
+ * is nested. A bare name is a call when `runsAsMethod` says Ruby runs it
+ * as one, which only the scope around it can tell.
  */
-export function callStatementsOf(body: RbNode): StatementCall[] {
+export function callStatementsOf(
+  body: RbNode,
+  runsAsMethod: (name: RbNode) => boolean,
+): StatementCall[] {
   const inOrder = (
     statements: readonly RbNode[],
     nested: boolean,
   ): StatementCall[] =>
     statements.flatMap((statement) =>
-      statement.type === "call"
+      statement.type === "call" ||
+      (statement.type === "identifier" && runsAsMethod(statement))
         ? [{ call: statement, nested }]
         : inOrder(nestedStatements(statement), true),
     );
