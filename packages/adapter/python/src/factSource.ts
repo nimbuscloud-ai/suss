@@ -38,7 +38,7 @@ import {
   writtenValueOf,
   writtenValuesOf,
 } from "./facts/resolve.js";
-import { callArguments } from "./facts/values.js";
+import { callArguments, callSplats } from "./facts/values.js";
 import {
   isClassName,
   modelNamed,
@@ -212,6 +212,12 @@ export function pythonFactSource(db: Database): PythonFactSource {
     constructionSitesOf: (call) => {
       const node = nodeAt(call);
       return node === null ? [] : constructionSitesOf(node, db);
+    },
+    splatsOf: (call) => {
+      const node = nodeAt(call);
+      return node?.type === "call"
+        ? callSplats(node)
+        : { positionalFrom: null, keywords: false };
     },
     partsOf: (key) => {
       const node = valueNode(key);

@@ -7,7 +7,7 @@ import {
   parsePython,
 } from "@suss/adapter-python";
 
-import { requestsClient } from "./index.js";
+import { REQUESTS, requestsClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
@@ -232,5 +232,48 @@ describe("what a call does with a redirect", () => {
     expect(await deliveryOf('requests.request("HEAD", "/orders")')).toBe(
       "followed",
     );
+  });
+});
+
+describe("a URL a splat fills", () => {
+  it("makes a client with no path, for *args and for **kwargs", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "def fetch(*args):",
+        "    return requests.get(*args)",
+        "",
+        "def create(**kwargs):",
+        "    return requests.post(**kwargs)",
+      ].join("\n"),
+    );
+
+    expect(
+      units.map((unit) => {
+        const semantics = unit.boundaryBinding?.semantics;
+        return semantics?.name === "rest"
+          ? [semantics.method, semantics.path]
+          : null;
+      }),
+    ).toEqual([
+      ["GET", null],
+      ["POST", null],
+    ]);
+  });
+});
+
+describe("the declaration's example", () => {
+  it("makes the function it is written in a client", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "def example():",
+        `    return ${REQUESTS.declared.example}`,
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
   });
 });

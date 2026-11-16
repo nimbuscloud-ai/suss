@@ -23,6 +23,7 @@ import type {
   PackWords,
   PatternPack,
   RedirectOption,
+  RequestRecognizer,
   RouteTableDeclaration,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
@@ -58,8 +59,14 @@ export interface PythonPack {
    * otherwise it would match no decorator and nothing would say why (#188).
    */
   projectModules?: string[];
-  /** The callables the library gives a project for making a request. */
+  /**
+   * The callables the library gives a project for making a request, as
+   * a pack wrote them before `requestRecognizers`. Each pattern is read
+   * as the request chain that says the same thing.
+   */
   clients?: PyClientCall[];
+  /** The requests the library sends, as a pack declared with `@suss/recognize` compiles them. */
+  requestRecognizers?: readonly RequestRecognizer[];
   /**
    * What the library reads out of a model's class body: a field assigned
    * from the library's own relationship callable reaches another model.

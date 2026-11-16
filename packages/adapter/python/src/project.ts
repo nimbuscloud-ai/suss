@@ -736,6 +736,7 @@ async function runPython(
         wrappers: wrapperIndex,
         importedDefinition,
         facts: db,
+        tallies,
         ...(storage === undefined ? {} : { storage }),
       }),
       ...moduleExportUnits(boundFile, {

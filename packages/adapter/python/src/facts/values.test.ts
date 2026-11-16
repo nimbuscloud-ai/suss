@@ -4,7 +4,12 @@ import { Database } from "@suss/datalog";
 
 import { children } from "../ast.js";
 import { parsePython } from "../parser.js";
-import { emitValueFacts, parameterList, parameterShapes } from "./values.js";
+import {
+  callSplats,
+  emitValueFacts,
+  parameterList,
+  parameterShapes,
+} from "./values.js";
 
 import type { PyNode } from "../parser.js";
 
@@ -1124,6 +1129,21 @@ describe("python value facts", () => {
     ]);
     const unpacked = await factsFor("build(*rest, last)\n");
     expect(rows(unpacked, "callArg")).toEqual([]);
+  });
+
+  it("says where a call unpacks a collection into its arguments", async () => {
+    const splatsIn = async (source: string) => {
+      const tree = await parsePython(source);
+      const call = tree.rootNode.descendantsOfType("call")[0];
+      return call === undefined ? null : callSplats(call);
+    };
+    expect(await splatsIn("build(first, *rest, **options)\n")).toEqual({
+      positionalFrom: 1,
+      keywords: true,
+    });
+    expect(
+      await splatsIn("build(  # the first\n    first,\n    second)\n"),
+    ).toEqual({ positionalFrom: null, keywords: false });
   });
 
   it("counts every argument a call writes, a splat and a generator included", async () => {

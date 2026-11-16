@@ -8,10 +8,25 @@
  * The README lists what the pack reads and where it stops.
  */
 
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { OneArgument, RequestMethod } from "@suss/recognize";
 
-const VERB_FUNCTIONS: Record<string, string> = {
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "1";
+
+const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
+
+const VERBS: Record<string, string> = {
   get: "GET",
   post: "POST",
   put: "PUT",
@@ -21,38 +36,42 @@ const VERB_FUNCTIONS: Record<string, string> = {
   options: "OPTIONS",
 };
 
+const METHODS: Record<string, RequestMethod> = {
+  ...verbs(VERBS, URL_FIRST),
+  request: {
+    sends: { from: { at: 0, keyword: "method" } },
+    url: { at: 1, keyword: "url" },
+  },
+};
+
+/** The module's own functions, and the same calls on a `Client` or an `AsyncClient`. */
+export const HTTPX = httpRequests({
+  client: anyOf(
+    imported({ from: ["httpx"], named: ["*", ...Object.keys(METHODS)] }),
+    constructedFrom({ from: ["httpx"], named: ["Client", "AsyncClient"] }),
+  ),
+})
+  .methods(METHODS)
+  // httpx copies the requests response API, with `is_success` in place
+  // of `ok`, and hands a 3xx back unless the call passes
+  // `follow_redirects=True`.
+  .response({
+    statusCode: ["status_code"],
+    success: ["is_success"],
+    body: ["json", "text", "content"],
+    failureDelivery: "response",
+    redirectDelivery: "response",
+    redirectOption: { name: "follow_redirects", handsBack: [false] },
+  })
+  .example('httpx.get("https://api.example.com/orders")');
+
 export function httpxClient(): PythonPack {
   return {
     name: "httpx",
+    version: PACK_VERSION,
     protocol: "http",
     discovery: [],
-    clients: [
-      {
-        type: "clientCall",
-        importModule: ["httpx"],
-        verbAttributeNames: VERB_FUNCTIONS,
-        url: { position: 0, keyword: "url" },
-        methodCall: {
-          attribute: "request",
-          methodPosition: 0,
-          methodKeyword: "method",
-          urlPosition: 1,
-        },
-        receiverConstructors: ["Client", "AsyncClient"],
-        // httpx copies the requests response API, with `is_success` in
-        // place of `ok`.
-        response: {
-          statusCode: ["status_code"],
-          success: ["is_success"],
-          body: ["json", "text", "content"],
-          failureDelivery: "response",
-          // httpx hands a 3xx back unless the call passes
-          // `follow_redirects=True`.
-          redirectDelivery: "response",
-          redirectOption: { name: "follow_redirects", handsBack: [false] },
-        },
-      },
-    ],
+    requestRecognizers: requestRecognizersOf([HTTPX]),
     // Both classes document `__enter__` as returning the client, so
     // `with httpx.Client() as c` puts the constructed client in c.
     contextManagers: [

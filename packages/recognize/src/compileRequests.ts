@@ -34,6 +34,7 @@ import type {
   HttpRequestEnding,
   MethodMeaning,
   MethodsLink,
+  OneArgument,
   RequestMethod,
   StartLink,
 } from "./chain.js";
@@ -228,7 +229,7 @@ function sentBy(
   ops: CallOps,
 ): { method: string; url: ValueOps } | null {
   if ("url" in meaning) {
-    const url = statedValue(ops, meaning.url);
+    const url = urlArgument(ops, meaning.url);
     const { sends } = meaning;
     if (typeof sends === "string") {
       return withUrl(sends, url);
@@ -246,9 +247,40 @@ function sentBy(
   const requestClass = written.slice(0, written.length - ".new".length);
   return withUrl(
     sends.classes[requestClass] ?? null,
-    statedValue(built, sends.url),
+    urlArgument(built, sends.url),
   );
 }
+
+/**
+ * The value the call states the URL as. A URL a `*args` fills, or one a
+ * `**kwargs` could pass under its keyword, is a URL suss cannot read, so
+ * the call still makes a request, with no path.
+ */
+function urlArgument(ops: CallOps, pick: OneArgument): ValueOps | null {
+  const stated = statedValue(ops, pick);
+  if (stated !== null || pick.of !== undefined) {
+    return stated;
+  }
+  const splats = ops.splats?.();
+  const from = splats?.positionalFrom ?? null;
+  const positional = from !== null && from <= pick.at;
+  const keyword = splats?.keywords === true && pick.keyword !== undefined;
+  return positional || keyword ? SPLATTED : null;
+}
+
+/** A URL argument a splat fills, which reads as no URL at all. */
+const SPLATTED: ValueOps = {
+  text: () => null,
+  name: () => null,
+  flag: () => null,
+  entries: () => [],
+  items: () => [],
+  property: () => null,
+  asArg: () => null,
+  parts: () => null,
+  holes: () => [],
+  url: () => NOWHERE,
+};
 
 function withUrl(
   method: string | null,

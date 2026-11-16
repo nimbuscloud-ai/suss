@@ -88,6 +88,7 @@ import type {
   ChosenReading,
   DefaultedReading,
   ExtractorOptions,
+  PackTally,
   PlacedEffect,
   RawBranch,
   RawCodeStructure,
@@ -139,6 +140,8 @@ export interface DiscoveryOptions {
   wrappers?: PythonWrapperIndex | undefined;
   /** Where a name another file defines is written, so an imported model or alias reads as the class or value behind it. Absent when a caller reads one file on its own. */
   importedDefinition?: ImportedDefinitionLookup | undefined;
+  /** Each pack's tally, which a hook that throws is charged to. */
+  tallies?: ReadonlyMap<string, PackTally> | undefined;
 }
 
 /** One decorated definition, with the decorators written over it, top first. */
@@ -227,24 +230,13 @@ export function discoverUnits(
     ...decorated.flatMap((decoratedStatement) =>
       decoratedUnits(decoratedStatement, classified, module, options),
     ),
-    ...clientUnits(root, module, options),
+    ...clientCallUnits(root, options.packs, {
+      filePath: options.filePath,
+      factsPath: options.absoluteFile,
+      facts: options.facts,
+      tallies: options.tallies,
+    }),
   ];
-}
-
-/** Every request call a pack in this run recognizes, one unit each. */
-function clientUnits(
-  root: PyNode,
-  module: ModuleBinding,
-  options: DiscoveryOptions,
-): RawCodeStructure[] {
-  return options.packs.flatMap((pack) =>
-    (pack.clients ?? []).flatMap((pattern) =>
-      clientCallUnits(root, module, pack, pattern, {
-        filePath: options.filePath,
-        ...(options.facts === undefined ? {} : { facts: options.facts }),
-      }),
-    ),
-  );
 }
 
 /**

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import { clientCallUnits } from "./clientCalls.js";
 import { parsePython } from "./parser.js";
 import { factsForFile } from "./project.js";
@@ -36,19 +45,25 @@ const FILE = "app/orders.py";
 /**
  * The units, with the facts a project run hands discovery, since the
  * rules are what say a receiver was built by the library's constructor.
+ * The pack lists the pattern under `clients`, which the adapter reads as
+ * the request chain that says the same thing.
  */
 async function unitsIn(
   source: string,
   pattern: PyClientCall = REQUEST_CALLS,
 ): Promise<RawCodeStructure[]> {
+  return unitsOf(source, [{ ...PACK, clients: [pattern] }]);
+}
+
+async function unitsOf(
+  source: string,
+  packs: PythonPack[],
+): Promise<RawCodeStructure[]> {
   const tree = await parsePython(source);
   const root = tree.rootNode;
   const module = bindModule(root);
-  const facts = factsForFile({ file: FILE, root, module, packs: [PACK] });
-  return clientCallUnits(root, module, PACK, pattern, {
-    filePath: FILE,
-    facts,
-  });
+  const facts = factsForFile({ file: FILE, root, module, packs });
+  return clientCallUnits(root, packs, { filePath: FILE, facts });
 }
 
 /** The method and path of the first unit, for the common case. */
@@ -767,6 +782,113 @@ describe("a URL the constructor was given", () => {
   });
 });
 
+describe("a pack that declares its requests with @suss/recognize", () => {
+  const DECLARED = httpRequests({
+    client: anyOf(
+      imported({ from: ["httpclient"], named: ["*", "get", "fetch"] }),
+      constructedFrom({ from: ["httpclient"], named: ["Session"] }),
+    ),
+  })
+    .methods({
+      ...verbs({ get: "GET" }, { at: 0, keyword: "url" }),
+      fetch: {
+        sends: { from: { at: 0 }, default: "GET" },
+        url: { at: 1 },
+      },
+    })
+    .response({ statusCode: ["status_code"], redirectDelivery: "followed" });
+
+  function declaredPack(name: string): PythonPack {
+    return {
+      name,
+      protocol: "http",
+      discovery: [],
+      requestRecognizers: requestRecognizersOf([DECLARED]),
+    };
+  }
+
+  function requestsOf(units: RawCodeStructure[]): string[] {
+    return units.map((unit) => {
+      const binding = unit.boundaryBinding;
+      const semantics = binding?.semantics;
+      return semantics?.name === "rest"
+        ? `${binding?.recognition} ${unit.identity.name} ${semantics.method} ${semantics.path ?? "(no path)"}`
+        : "";
+    });
+  }
+
+  it("makes a client of each request, with the response members it declared", async () => {
+    const units = await unitsOf(
+      [
+        "from httpclient import get",
+        "",
+        "def load():",
+        '    return get("/orders")',
+      ].join("\n"),
+      [declaredPack("httpclient")],
+    );
+
+    expect(requestsOf(units)).toEqual(["httpclient load GET /orders"]);
+    expect(units[0]?.statusAccessors).toEqual(["status_code"]);
+    expect(units[0]?.redirectDelivery).toBe("followed");
+  });
+
+  it("reads a URL kept in a name at the assignment that reaches each call", async () => {
+    const units = await unitsOf(
+      [
+        "import httpclient",
+        "",
+        "def sync():",
+        '    url = "/users"',
+        "    httpclient.get(url)",
+        '    url = "/teams"',
+        "    httpclient.get(url)",
+      ].join("\n"),
+      [declaredPack("httpclient")],
+    );
+
+    expect(requestsOf(units)).toEqual([
+      "httpclient sync GET /users",
+      "httpclient sync GET /teams",
+    ]);
+  });
+
+  it("gives each pack's units together, in the order the packs run", async () => {
+    const units = await unitsOf(
+      [
+        "import httpclient",
+        "",
+        "def first():",
+        '    return httpclient.get("/a")',
+        "",
+        "def second():",
+        '    return httpclient.get("/b")',
+      ].join("\n"),
+      [declaredPack("one"), declaredPack("two")],
+    );
+
+    expect(requestsOf(units)).toEqual([
+      "one first GET /a",
+      "one second GET /b",
+      "two first GET /a",
+      "two second GET /b",
+    ]);
+  });
+
+  it("makes no unit without the facts a run states", async () => {
+    const tree = await parsePython(
+      ["import httpclient", "", "def load():", '    httpclient.get("/x")'].join(
+        "\n",
+      ),
+    );
+    expect(
+      clientCallUnits(tree.rootNode, [declaredPack("httpclient")], {
+        filePath: FILE,
+      }),
+    ).toEqual([]);
+  });
+});
+
 describe("a URL that says nothing about where the request goes", () => {
   /** The method, host and path of each unit in a file that imports the library. */
   async function requestsIn(lines: string[]): Promise<string[]> {
@@ -798,6 +920,43 @@ describe("a URL that says nothing about where the request goes", () => {
         '    return httpclient.get(f"{base_url}/{path}")',
       ]),
     ).toEqual(["GET (no path)", "GET (no path)"]);
+  });
+
+  it("makes a client with no path for a URL a *args fills", async () => {
+    expect(
+      await requestsIn([
+        "def fetch(*args):",
+        "    return httpclient.get(*args)",
+        "",
+        "def remove(*rest):",
+        '    return httpclient.send("DELETE", *rest)',
+      ]),
+    ).toEqual(["GET (no path)", "DELETE (no path)"]);
+  });
+
+  it("makes a client with no path for a URL a **kwargs could pass", async () => {
+    expect(
+      await requestsIn([
+        "def fetch(**options):",
+        "    return httpclient.get(**options)",
+        "",
+        "def create(**options):",
+        '    return httpclient.send("POST", **options)',
+      ]),
+    ).toEqual(["GET (no path)", "POST (no path)"]);
+  });
+
+  it("counts neither a comment nor a **kwargs as a positional argument", async () => {
+    expect(
+      await requestsIn([
+        "def create(options):",
+        "    return httpclient.send(  # the method comes first",
+        '        "POST",',
+        '        "/orders",',
+        "        **options,",
+        "    )",
+      ]),
+    ).toEqual(["POST /orders"]);
   });
 
   it("keeps a path made only of holes at a host suss read", async () => {

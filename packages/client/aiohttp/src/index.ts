@@ -7,15 +7,25 @@
  * README lists what the pack reads and where it stops.
  */
 
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import type { PythonPack } from "@suss/adapter-python";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { OneArgument, RequestMethod } from "@suss/recognize";
 
-type PyClientCall = NonNullable<PythonPack["clients"]>[number];
-type RedirectDelivery = NonNullable<
-  NonNullable<PyClientCall["response"]>["redirectDelivery"]
->;
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "1";
 
-const VERB_METHODS_THAT_FOLLOW: Record<string, string> = {
+const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
+
+const VERBS: Record<string, string> = {
   get: "GET",
   post: "POST",
   put: "PUT",
@@ -24,47 +34,38 @@ const VERB_METHODS_THAT_FOLLOW: Record<string, string> = {
   options: "OPTIONS",
 };
 
-/**
- * The verb methods in `verbs` on a `ClientSession`, which do
- * `redirectDelivery` with a redirect unless the call passes
- * `allow_redirects` to say otherwise.
- */
-function verbCalls(
-  verbs: Record<string, string>,
-  redirectDelivery: RedirectDelivery,
-): PyClientCall {
-  return {
-    type: "clientCall",
-    importModule: ["aiohttp"],
-    verbAttributeNames: verbs,
-    url: { position: 0, keyword: "url" },
-    receiverConstructors: ["ClientSession"],
-    response: {
-      redirectDelivery,
-      redirectOption: { name: "allow_redirects", handsBack: [false] },
-    },
-  };
-}
+// `head` defaults `allow_redirects` to False, and every other call,
+// `request("HEAD", url)` included, defaults it to True.
+const METHODS: Record<string, RequestMethod> = {
+  ...verbs(VERBS, URL_FIRST),
+  head: { sends: "HEAD", url: URL_FIRST, redirects: "response" },
+  request: {
+    sends: { from: { at: 0, keyword: "method" } },
+    url: { at: 1, keyword: "url" },
+  },
+};
+
+/** The request methods on a `ClientSession`. */
+export const AIOHTTP = httpRequests({
+  client: anyOf(
+    imported({ from: ["aiohttp"], named: ["*", ...Object.keys(METHODS)] }),
+    constructedFrom({ from: ["aiohttp"], named: ["ClientSession"] }),
+  ),
+})
+  .methods(METHODS)
+  .response({
+    redirectDelivery: "followed",
+    redirectOption: { name: "allow_redirects", handsBack: [false] },
+  })
+  .example('aiohttp.ClientSession().get("https://api.example.com/orders")');
 
 export function aiohttpClient(): PythonPack {
   return {
     name: "aiohttp",
+    version: PACK_VERSION,
     protocol: "http",
     discovery: [],
-    // `head` defaults `allow_redirects` to False, and every other call,
-    // `request("HEAD", url)` included, defaults it to True.
-    clients: [
-      {
-        ...verbCalls(VERB_METHODS_THAT_FOLLOW, "followed"),
-        methodCall: {
-          attribute: "request",
-          methodPosition: 0,
-          methodKeyword: "method",
-          urlPosition: 1,
-        },
-      },
-      verbCalls({ head: "HEAD" }, "response"),
-    ],
+    requestRecognizers: requestRecognizersOf([AIOHTTP]),
     // `ClientSession.__aenter__` returns the session, so `async with
     // aiohttp.ClientSession() as s` puts the constructed session in s.
     contextManagers: [{ module: "aiohttp", returnsSelf: ["ClientSession"] }],
