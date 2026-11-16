@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { extractRubyProject } from "@suss/adapter-ruby";
 
-import { netHttpClient } from "./index.js";
+import { NET_HTTP, NET_HTTP_CONNECTION, netHttpClient } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -285,5 +285,16 @@ describe("what a caller does with the response", () => {
       left: { type: "dependency", accessChain: ["code"] },
       right: { value: 404 },
     });
+  });
+});
+
+describe("the declarations' examples", () => {
+  it("make the method each is written in a client", async () => {
+    expect(await requestIn([`    ${NET_HTTP.declared.example}`])).toBe(
+      "GET api.example.com/orders",
+    );
+    expect(
+      await requestIn([`    ${NET_HTTP_CONNECTION.declared.example}`]),
+    ).toBe("GET api.example.com/orders");
   });
 });

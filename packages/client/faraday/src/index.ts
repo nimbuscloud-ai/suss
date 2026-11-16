@@ -8,8 +8,20 @@
  * where it stops.
  */
 
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
+
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "2";
 
 /** Faraday has these methods on both the module and a connection. */
 const VERB_METHODS: Record<string, string> = {
@@ -22,34 +34,37 @@ const VERB_METHODS: Record<string, string> = {
   options: "OPTIONS",
 };
 
+/** The module's own request methods, and the same calls on a connection `Faraday.new` built. */
+export const FARADAY = httpRequests({
+  client: anyOf(
+    imported({ from: ["Faraday"], named: ["*"] }),
+    constructedFrom({ from: ["Faraday"], named: ["Faraday"] }),
+  ),
+})
+  .methods(verbs(VERB_METHODS, { at: 0 }))
+  // On a connection from `Faraday.new(url: ".../v1")`, `get("orders")`
+  // goes to `/v1/orders` and `get("/orders")` to `/orders`.
+  .baseUrl({ keyword: "url", at: 0, joins: "resolved" })
+  // A caller's condition on one of these members shows which statuses
+  // it handles.
+  .response({
+    statusCode: ["status"],
+    success: ["success?"],
+    body: ["body"],
+    failureDelivery: "response",
+    // Faraday follows a redirect only with the follow_redirects
+    // middleware added, so a plain connection hands the 3xx back.
+    redirectDelivery: "response",
+  })
+  .example('Faraday.new(url: "https://api.example.com/v1").get("orders")');
+
 export function faradayClient(): RubyPack {
   return {
     name: "faraday",
-    version: "1",
+    version: PACK_VERSION,
     protocol: "http",
     discovery: [],
-    clients: [
-      {
-        constantName: "Faraday",
-        verbMethodNames: VERB_METHODS,
-        url: { position: 0 },
-        receiverBuilders: ["new"],
-        // On a connection from `Faraday.new(url: ".../v1")`, `get("orders")`
-        // goes to `/v1/orders` and `get("/orders")` to `/orders`.
-        builderUrlKeyword: "url",
-        // A caller's condition on one of these members shows which
-        // statuses it handles.
-        response: {
-          statusCode: ["status"],
-          success: ["success?"],
-          body: ["body"],
-          failureDelivery: "response",
-          // Faraday follows a redirect only with the follow_redirects
-          // middleware added, so a plain connection hands the 3xx back.
-          redirectDelivery: "response",
-        },
-      },
-    ],
+    requestRecognizers: requestRecognizersOf([FARADAY]),
   };
 }
 

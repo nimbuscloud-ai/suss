@@ -2882,11 +2882,13 @@ function constructorName(key: string, source: FactSource): string {
 /**
  * Whether the value at `key` was imported as the origin asks, by the
  * file's own import statements: a name an import binds, a member read
- * off a whole module, or a name written as one of those. A parameter is
- * from no import, as a callee is, since following one through its
- * callers would ask the rules at every site. Undefined only when an
- * import binds the name to a project file, whose own names the rules
- * follow.
+ * off a whole module, or a name written as one of those. An adapter that
+ * reads the statements itself can say a name is imported where no row
+ * does, as Ruby says of a library constant the project reopens. A
+ * parameter is from no import, as a callee is, since following one
+ * through its callers would ask the rules at every site. Undefined only
+ * when an import binds the name to a project file, whose own names the
+ * rules follow.
  */
 function importSettled(
   origin: Imported,
@@ -2896,6 +2898,9 @@ function importSettled(
   const rows = importRowsOf(key, source.db);
   if (rows.length > 0) {
     return importsSettle(rows, importsAsked(origin, key, source), source);
+  }
+  if (source.importedUnder !== undefined && importsAsked(origin, key, source)) {
+    return true;
   }
   const read = memberRead(key, source);
   const objectRows = read === null ? [] : importRowsOf(read.object, source.db);
@@ -2978,13 +2983,17 @@ function madeSettled(
   }
   const root = rootOf(written, source);
   const rows = importRowsOf(root, source.db);
-  return rows.length === 0
-    ? undefined
-    : importsSettle(
-        rows,
-        importNamesOf(root, modules, source).length > 0,
-        source,
-      );
+  if (rows.length > 0) {
+    return importsSettle(
+      rows,
+      importNamesOf(root, modules, source).length > 0,
+      source,
+    );
+  }
+  return source.importedUnder !== undefined &&
+    importNamesOf(root, modules, source).length > 0
+    ? true
+    : undefined;
 }
 
 /** Whether the value at `key` was imported from one of the origin's modules under a name it asks for. */

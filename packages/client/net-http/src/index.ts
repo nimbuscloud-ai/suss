@@ -9,10 +9,22 @@
  * stops.
  */
 
+import {
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
+
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { PackDeclaration } from "@suss/ir-core";
+import type { RequestMethod, UrlArgument } from "@suss/recognize";
 
-/** Module methods that send a request without a request object. */
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "2";
+
+/** Methods that send a request without a request object. */
 const VERB_METHODS: Record<string, string> = {
   get: "GET",
   get_response: "GET",
@@ -36,49 +48,64 @@ const REQUEST_CLASSES: Record<string, string> = {
   "Net::HTTP::Options": "OPTIONS",
 };
 
+// These methods take a URI object. `URI(...)` and `URI.parse(...)` are
+// part of Ruby, so the adapter already evaluates them and the pack adds
+// nothing for them.
+const URL_FIRST: UrlArgument = { at: 0 };
+
+// `Net::HTTP.get("api.example.com", "/orders", 8080)` passes the host
+// and the path apart. The get methods decide by the second argument: a
+// path means this form, and a hash means headers.
+const HOST_FIRST: UrlArgument = {
+  ...URL_FIRST,
+  hostFirst: { host: { at: 0 }, path: { at: 1 }, port: { at: 2 } },
+};
+
+const REQUEST_OBJECT: RequestMethod = {
+  sends: { object: 0, classes: REQUEST_CLASSES, url: { at: 0 } },
+};
+
+// `code` is a string, so callers write `response.code.to_i == 404`. That
+// comparison is read the same way as one on any other member.
+const RESPONSE = {
+  statusCode: ["code"],
+  body: ["body"],
+  failureDelivery: "response",
+  // Net::HTTP never follows a redirect.
+  redirectDelivery: "response",
+} as const;
+
+/** The calls on `Net::HTTP` itself. */
+export const NET_HTTP = httpRequests({
+  client: imported({ from: ["Net::HTTP"], named: ["*"] }),
+})
+  .methods({
+    ...verbs(VERB_METHODS, URL_FIRST),
+    ...verbs({ get: "GET", get_response: "GET", get_print: "GET" }, HOST_FIRST),
+    request: REQUEST_OBJECT,
+  })
+  .response(RESPONSE)
+  .example('Net::HTTP.get(URI("https://api.example.com/orders"))');
+
+/**
+ * The same calls on a connection `Net::HTTP.new(host, port)` opened,
+ * which take a path and go to the connection's host.
+ */
+export const NET_HTTP_CONNECTION = httpRequests({
+  client: constructedFrom({ from: ["Net::HTTP"], named: ["HTTP"] }),
+})
+  .methods({ ...verbs(VERB_METHODS, URL_FIRST), request: REQUEST_OBJECT })
+  .baseUrl({ at: 0, reads: "host", port: { at: 1 }, joins: "resolved" })
+  .response(RESPONSE)
+  .example('Net::HTTP.new("api.example.com").get("/orders")');
+
 export function netHttpClient(): RubyPack {
   return {
     name: "net-http",
-    version: "1",
+    version: PACK_VERSION,
     protocol: "http",
     discovery: [],
-    clients: [
-      {
-        constantName: "Net::HTTP",
-        verbMethodNames: VERB_METHODS,
-        // These methods take a URI object. `URI(...)` and `URI.parse(...)`
-        // are part of Ruby, so the adapter already evaluates them and the
-        // pack adds nothing for them.
-        url: { position: 0 },
-        // `Net::HTTP.get("api.example.com", "/orders", 8080)` passes the
-        // host and the path apart. The get methods decide by the second
-        // argument: a path means this form, and a hash means headers.
-        hostThenPath: {
-          methods: ["get", "get_response", "get_print"],
-          host: 0,
-          path: 1,
-          port: 2,
-        },
-        receiverBuilders: ["new"],
-        // `Net::HTTP.new(host, port)` takes no path, so a call on it goes
-        // to that host with the call's own path.
-        builderHost: { host: 0, port: 1 },
-        requestObject: {
-          attribute: "request",
-          constructors: REQUEST_CLASSES,
-          urlPosition: 0,
-        },
-        // `code` is a string, so callers write `response.code.to_i == 404`.
-        // That comparison is read the same way as one on any other member.
-        response: {
-          statusCode: ["code"],
-          body: ["body"],
-          failureDelivery: "response",
-          // Net::HTTP never follows a redirect.
-          redirectDelivery: "response",
-        },
-      },
-    ],
+    requestRecognizers: requestRecognizersOf([NET_HTTP, NET_HTTP_CONNECTION]),
   };
 }
 

@@ -2910,7 +2910,19 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     call("viaSubmodule", "requests.adapters");
     add("readsProperty", "requests.adapters", "requests", "adapters");
     add("call", "bare", "get");
-    const written: Record<string, string> = { params: "dict", s: "made" };
+    add("imports", "other", "other", "*");
+    call("viaOtherSession", "t");
+    add("call", "otherMade", "other.Session");
+    add("readsProperty", "other.Session", "other", "Session");
+    call("viaUnimportedSession", "u");
+    add("call", "madeHere", "here.Session");
+    add("readsProperty", "here.Session", "here", "Session");
+    const written: Record<string, string> = {
+      params: "dict",
+      s: "made",
+      t: "otherMade",
+      u: "madeHere",
+    };
     const urls: { key: string; site?: string; at?: unknown }[] = [];
     return {
       urls,
@@ -3046,6 +3058,15 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
 
   it("settles a member read off a whole module by the member's name", () => {
     expect(settled("viaSubmodule", REQUESTS)).toBe(false);
+    expect(
+      factCallOps("viaSubmodule", requesting().facts)?.receiverSettledFrom?.(
+        imported({ from: ["requests"], named: ["adapters"] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("settles a construction of the same name from another module as no client", () => {
+    expect(settled("viaOtherSession", SESSION)).toBe(false);
   });
 
   it("settles a parameter as from no import, without following its callers", () => {
@@ -3054,6 +3075,29 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
 
   it("leaves open a name imported from a project file", () => {
     expect(settled("viaProject", REQUESTS)).toBeUndefined();
+  });
+
+  it("settles a receiver as imported where the adapter says so and no row does", () => {
+    const { facts } = requesting();
+    const reading: FactSource = {
+      ...facts,
+      importedUnder: (key, modules) =>
+        modules.includes("requests") && key === "arg" ? ["*"] : [],
+    };
+    expect(
+      factCallOps("viaParameter", reading)?.receiverSettledFrom?.(REQUESTS),
+    ).toBe(true);
+    expect(settled("viaParameter", REQUESTS)).toBe(false);
+    const constructing: FactSource = {
+      ...facts,
+      importedUnder: (key) => (key === "here" ? ["*"] : []),
+    };
+    expect(
+      factCallOps("viaUnimportedSession", constructing)?.receiverSettledFrom?.(
+        SESSION,
+      ),
+    ).toBe(true);
+    expect(settled("viaUnimportedSession", SESSION)).toBeUndefined();
   });
 
   it("settles a call with no receiver, and one into a project method, as from no client", () => {

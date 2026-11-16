@@ -45,7 +45,7 @@ suss extract --dir app -f rails -f net-http
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-ruby`, for the `RubyPack` type and the client-call declaration it fills in.
+The pack declares its calls with `@suss/recognize`'s `httpRequests`, as two chains: the calls on `Net::HTTP` itself, and the same calls on a connection `Net::HTTP.new` opened. It depends on `@suss/adapter-ruby` for the `RubyPack` type, and the adapter's client walk hands each call in a method body to both.
 
 ## License
 

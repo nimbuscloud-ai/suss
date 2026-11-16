@@ -7,7 +7,7 @@ import {
   parseRuby,
 } from "@suss/adapter-ruby";
 
-import { faradayClient } from "./index.js";
+import { FARADAY, faradayClient } from "./index.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
 
@@ -196,5 +196,21 @@ describe("a class given its path prefix when it was made", () => {
         })
         .sort(),
     ).toEqual(["/orders", "/users"]);
+  });
+});
+
+describe("the declaration's example", () => {
+  it("makes the method it is written in a client", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def example",
+        `    ${FARADAY.declared.example}`,
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: "GET", path: "/v1/orders" });
   });
 });
