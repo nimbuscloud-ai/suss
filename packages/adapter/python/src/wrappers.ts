@@ -13,33 +13,29 @@
  * reaches those below it when each router on the way is mounted once.
  */
 
-import { absentReading, walkDescendants } from "@suss/extractor";
+import { absentReading } from "@suss/extractor";
+import { anyOf, callbackHandedOver, discoverDeclared } from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
 import { noteKeyRead, noteLookup } from "@suss/resolution";
 
 import {
   children,
-  enclosingFunction,
   field,
   parameterNameAndType,
   rangeOf,
   spanOf,
   stripDecorators,
 } from "./ast.js";
-import { boundModuleAt } from "./boundFiles.js";
-import {
-  classifyDecorator,
-  decoratorReceiver,
-  readCallArguments,
-  unwrapDecorator,
-} from "./decorators.js";
+import { pythonModuleOps } from "./declaredDiscovery.js";
+import { classifyDecorator, unwrapDecorator } from "./decorators.js";
 import {
   bodyContentOf,
   recognizedBodyEffects,
   returnBranch,
   withBodyEffects,
 } from "./discovery.js";
-import { writtenValueOf } from "./facts/resolve.js";
-import { nameKeyIn, nodeAt } from "./facts/values.js";
+import { factSourceOf } from "./factSource.js";
+import { nameKeyIn } from "./facts/values.js";
 import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
   bodyCalls,
@@ -48,13 +44,18 @@ import {
 } from "./paths/effects.js";
 import { raisedResponses } from "./paths/raisedResponses.js";
 import { functionNamed } from "./reach/resolveCallee.js";
-import { resolveName } from "./scope.js";
 import { nodeOfResolutionKey } from "./values/evaluator.js";
-import { originOf } from "./values/origin.js";
 
 import type { WrapperReference } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure } from "@suss/extractor";
+import type {
+  CallOps,
+  DecoratedMatch,
+  ModuleOps,
+  RawBranch,
+  RawCodeStructure,
+  ValueOps,
+} from "@suss/extractor";
 import type { Range } from "./ast.js";
 import type { BoundPythonFile } from "./boundFiles.js";
 import type { RouteDecorator } from "./discovery.js";
@@ -70,7 +71,7 @@ import type { PyNode } from "./parser.js";
 import type { BodyTerminal, TerminalBranch } from "./paths/bodyBranches.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
 import type { DeclaredRouteIndex } from "./routeTables.js";
-import type { ModuleBinding, Scope } from "./scope.js";
+import type { ModuleBinding } from "./scope.js";
 import type { StorageLookup } from "./storage.js";
 
 export interface WrapperIndexOptions {
@@ -140,10 +141,12 @@ export function buildWrapperIndex(
   const forms = declaredForms(options.packs);
   const filesByPath = new Map(files.map((file) => [file.file, file]));
   const index = new PythonWrapperIndex(options, filesByPath);
-  if (forms.length > 0) {
+  const facts = options.facts;
+  if (forms.length > 0 && facts !== undefined) {
     for (const file of files) {
+      const module = pythonModuleOps(file, facts);
       for (const declared of forms) {
-        registerFrom(file, declared, index);
+        registerFrom({ file, module, declared, index });
       }
     }
   }
@@ -176,6 +179,11 @@ export class PythonWrapperIndex {
     { file: string; names: string[]; declaresSource: boolean }
   >();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
+  /** By pattern and router key: whether a form registers on that router for its own routes. */
+  private readonly routersAsked = new Map<
+    PythonDiscoveryPattern,
+    Map<string, boolean>
+  >();
   /**
    * Told about every registration, a pack's form or a project decorator's
    * closure, so a cache can repeat the ones a file's discovery made.
@@ -364,12 +372,13 @@ export class PythonWrapperIndex {
       ...(own === null ? [] : this.mountedAbove(query, own.key)),
       ...(own?.registered ?? []),
     ];
+    const decorator = this.callAt(query.classification.key);
     for (const declared of forms) {
       if (declared.form.type !== "dependency") {
         continue;
       }
       const targets = [
-        ...decoratorDependencies(query.classification, declared.form),
+        ...dependenciesListed(decorator, declared.form),
         ...parameterDependencies(query.definitionNode, declared.form),
       ];
       for (const name of targets) {
@@ -527,14 +536,8 @@ export class PythonWrapperIndex {
           ? []
           : (this.ownRoutes.get(hop.parentKey) ?? [])),
       );
-      const { keywordArgs } = readCallArguments(field(hop.call, "arguments"));
       for (const declared of forms) {
-        const listed = keywordArgs[declared.form.keyword];
-        const names =
-          listed === undefined
-            ? []
-            : dependencyNamesIn(listed.node, declared.form);
-        for (const name of names) {
+        for (const name of dependenciesListed(hop.mount, declared.form)) {
           const target = this.functionCalled(hop.file, name);
           if (target !== null) {
             found.push(this.registered(target, declared));
@@ -548,43 +551,45 @@ export class PythonWrapperIndex {
   private ownRoutesOf(
     query: RouteWrapperQuery,
   ): { key: string; registered: readonly Registered[] } | null {
-    const match = this.ownRouterOf(query);
-    return match === null
+    const key = this.ownRouterOf(query);
+    return key === null
       ? null
       : {
-          key: match.key,
-          registered: this.noted(
-            OWN_ROUTES,
-            match.key,
-            this.ownRoutes.get(match.key),
-          ),
+          key,
+          registered: this.noted(OWN_ROUTES, key, this.ownRoutes.get(key)),
         };
   }
 
-  /** The construction call of the router a route is decorated on, when a registrar reads it. */
-  private ownRouterOf(query: RouteWrapperQuery): RegistrarMatch | null {
-    const site = this.objectSiteOf(query);
-    const bound = site === null ? undefined : this.filesByPath.get(site.file);
-    if (site === null || bound === undefined) {
+  /**
+   * The key of the router the route table says a route is declared on,
+   * when one of the pattern's forms registers a wrapper on what built it
+   * for its own routes: `APIRouter()`, and not the app's `FastAPI()`.
+   */
+  private ownRouterOf(query: RouteWrapperQuery): string | null {
+    const { router } = query.classification;
+    const call = router === null ? null : this.callAt(router);
+    if (call === null || router === null) {
       return null;
     }
-    // The registrar is read out of the syntax where the object was built.
-    if (this.options.facts !== undefined) {
-      noteKeyRead(this.options.facts, site.file);
+    const facts = this.options.facts;
+    if (facts !== undefined) {
+      noteKeyRead(facts, call.file?.() ?? router);
     }
-    for (const form of query.pattern.wrappers ?? []) {
-      const match = registrarOf(
-        site.name,
-        site.scope,
-        bound,
-        this.options.facts,
-        { pack: query.pack, pattern: query.pattern, form },
+    const asked = this.routersAsked.get(query.pattern) ?? new Map();
+    this.routersAsked.set(query.pattern, asked);
+    const owned =
+      asked.get(router) ??
+      (query.pattern.wrappers ?? []).some(
+        (form) => registrarOf(call, form.registrars)?.covers === "ownRoutes",
       );
-      if (match !== null && match.registrar.covers === "ownRoutes") {
-        return match;
-      }
-    }
-    return null;
+    asked.set(router, owned);
+    return owned ? router : null;
+  }
+
+  /** The call at a key, as the module ops read it. */
+  private callAt(key: string): CallOps | null {
+    const facts = this.options.facts;
+    return facts === undefined ? null : factCallOps(key, factSourceOf(facts));
   }
 
   /** Records the app a pack's routes run under, for the keywords written on its construction. */
@@ -606,14 +611,12 @@ export class PythonWrapperIndex {
     const hops =
       own === null
         ? []
-        : (this.options.routes?.mountsAbove(query.pattern, own.key) ?? []);
-    const parents = hops.flatMap((hop) => {
+        : (this.options.routes?.mountsAbove(query.pattern, own) ?? []);
+    const nodeAt = (key: string | null): PyNode[] => {
       const node =
-        hop.parentKey === null
-          ? null
-          : nodeOfResolutionKey(hop.parentKey, this.options.facts);
+        key === null ? null : nodeOfResolutionKey(key, this.options.facts);
       return node === null ? [] : [node];
-    });
+    };
     const files = [
       ...(this.appCalls.get(query.pack.name) ?? []).map((one) => one.file),
       ...hops.map((hop) => hop.file),
@@ -626,56 +629,9 @@ export class PythonWrapperIndex {
     return [
       ...(this.appCalls.get(query.pack.name) ?? []).map((one) => one.call),
       ...hops.map((hop) => hop.call),
-      ...parents,
-      ...(own === null ? [] : [own.call]),
+      ...hops.flatMap((hop) => nodeAt(hop.parentKey)),
+      ...nodeAt(own),
     ];
-  }
-
-  /**
-   * Where the decorator's object was built: the route's own file, the file
-   * a project wrapper function is written in, or the file an imported
-   * router comes from. The name is the one that file binds it under.
-   */
-  private objectSiteOf(
-    query: RouteWrapperQuery,
-  ): { file: string; scope: Scope; name: string } | null {
-    const name = query.classification.objectName;
-    if (name === null) {
-      return null;
-    }
-    const wrapperModule = query.classification.objectModule;
-    if (wrapperModule !== undefined) {
-      const file = this.fileOfModule(wrapperModule);
-      return file === null
-        ? null
-        : { file, scope: wrapperModule.moduleScope, name };
-    }
-    const binding = resolveName(query.module.moduleScope, name);
-    if (binding?.kind !== "importFrom") {
-      return { file: query.file, scope: query.module.moduleScope, name };
-    }
-    const target = boundModuleAt(
-      query.file,
-      { module: binding.module, relativeLevel: binding.relativeLevel },
-      this.filesByPath,
-      { roots: this.options.roots },
-    );
-    return target === null
-      ? null
-      : {
-          file: target.file,
-          scope: target.module.moduleScope,
-          name: binding.importedName,
-        };
-  }
-
-  private fileOfModule(module: ModuleBinding): string | null {
-    for (const file of this.filesByPath.values()) {
-      if (file.module === module) {
-        return file.file;
-      }
-    }
-    return null;
   }
 
   unitsIn(file: string): RawCodeStructure[] {
@@ -751,313 +707,277 @@ function runOrder(form: PyWrapperForm): number {
   return form.type === "decoratedWrapper" ? 0 : 1;
 }
 
-interface RegistrarMatch {
-  registrar: PyWrapperRegistrar;
-  /** The value key of the construction call. A router's registrations are stored under it. */
-  key: string;
-  call: PyNode;
-}
-
 /**
- * The registrar a name was built by, when one of the form's registrars
- * matches: `app` built by `FastAPI(...)`. A registrar's constructor may
- * come from a module the pattern does not otherwise read.
+ * The first of the registrars whose construction the call is,
+ * `FastAPI(...)` for the app's, or null for a call none of them makes.
  */
 function registrarOf(
-  name: string,
-  scope: Scope,
-  where: BoundPythonFile,
-  facts: Database | undefined,
-  declared: FormOf,
-): RegistrarMatch | null {
-  const modules = [
-    ...declared.pattern.importModule,
-    ...declared.form.registrars.flatMap(
-      (registrar) => registrar.importModule ?? [],
-    ),
-  ];
-  // The keyword list a dependency form reads is written on the call
-  // itself, so a construction in another file gives nothing to read.
-  const construction = constructionOf(name, scope, where, facts);
-  const call = construction === null ? null : construction.call;
-  if (construction === null || call === null) {
-    return null;
-  }
-
-  const constructorName = constructorCalled(call, where.module, modules);
-  const registrar = declared.form.registrars.find(
-    (candidate) => candidate.constructorName === constructorName,
-  );
-  return registrar === undefined
-    ? null
-    : { registrar, key: construction.key, call };
+  call: CallOps,
+  registrars: readonly PyWrapperRegistrar[],
+): PyWrapperRegistrar | null {
+  return registrars.find((registrar) => call.isFrom(registrar.made)) ?? null;
 }
 
-/**
- * The call a name was built by, asked of the resolution rules: an
- * assignment in this file, a name imported from the file that assigned
- * it, or a project factory's call followed into what it returns. The
- * call is null when it is written in another file.
- */
-function constructionOf(
-  name: string,
-  scope: Scope,
-  where: BoundPythonFile,
-  facts: Database | undefined,
-): { key: string; call: PyNode | null } | null {
-  const binding = resolveName(scope, name);
-  if (facts === undefined || binding === null) {
-    return null;
-  }
-  // A parameter, or a name bound some other way, cannot be keyed
-  // correctly here, so it is left alone rather than asked about under
-  // the wrong key.
-  if (binding.kind !== "assignment" && binding.kind !== "importFrom") {
-    return null;
-  }
+type Coverage =
+  | { kind: "everyRoute"; pack: string }
+  | { kind: "ownRoutes"; key: string };
 
-  // A function's own names are keyed under it, so an app built inside a
-  // factory has to be asked about there rather than at module level.
-  const nameKey = nameKeyIn(
-    where.file,
-    scope.kind === "function" ? scope.node : enclosingFunction(scope.node),
-    name,
-  );
-  const key = writtenValueOf(facts, nameKey);
-  return key === null
-    ? null
-    : { key, call: nodeAt(where.file, where.root, key) };
+function coverageOf(
+  registrar: PyWrapperRegistrar,
+  construction: CallOps,
+  pack: PythonPack,
+): Coverage {
+  return registrar.covers === "everyRoute"
+    ? { kind: "everyRoute", pack: pack.name }
+    : { kind: "ownRoutes", key: construction.site?.() ?? "" };
 }
 
-/**
- * The constructor a call says it is calling, when it comes out of one of
- * the modules, as its module exports it, whether the file imports the
- * name or the module: `APIRouter(...)` and `fastapi.APIRouter(...)` are
- * the same. Null for anything else, including a same-named constructor
- * somebody else exports.
- */
-function constructorCalled(
-  call: PyNode,
-  module: ModuleBinding,
-  importModule: readonly string[],
-): string | null {
-  const callee = field(call, "function");
-  const origin = callee === null ? null : originOf(callee, module);
-  if (origin === null || !importModule.includes(origin.module)) {
-    return null;
-  }
-  return origin.name;
+/** One file, its module ops, and one form to read its registrations through. */
+interface Registering {
+  file: BoundPythonFile;
+  module: ModuleOps;
+  declared: FormOf;
+  index: PythonWrapperIndex;
 }
 
 /** Every registration one file writes, through every form the pack declares. */
-function registerFrom(
-  file: BoundPythonFile,
-  declared: FormOf,
-  index: PythonWrapperIndex,
-): void {
+function registerFrom(registering: Registering): void {
   const table: Record<PyWrapperForm["type"], () => void> = {
-    dependency: () =>
-      registerConstructorDependencies(
-        file,
-        declared,
-        declared.form as PyDependencyForm,
-        index,
-      ),
-    decoratedWrapper: () =>
-      registerDecorated(
-        file,
-        declared,
-        declared.form as PyDecoratedWrapperForm,
-        index,
-      ),
+    dependency: () => registerConstructorDependencies(registering),
+    decoratedWrapper: () => registerDecorated(registering),
   };
-  table[declared.form.type]();
+  table[registering.declared.form.type]();
 }
 
 /**
  * `app = FastAPI(dependencies=[Depends(f)])` and `router =
- * APIRouter(dependencies=[Depends(f)])`, at a module's top level, which
- * is where the router index reads a construction too.
+ * APIRouter(dependencies=[Depends(f)])`, for each name the module binds
+ * at its top level to a registrar's construction.
  */
-function registerConstructorDependencies(
-  file: BoundPythonFile,
-  declared: FormOf,
-  form: PyDependencyForm,
-  index: PythonWrapperIndex,
-): void {
-  const scope = file.module.moduleScope;
-  for (const stmt of children(file.root)) {
-    const assignment =
-      stmt?.type === "expression_statement"
-        ? children(stmt).find((child) => child?.type === "assignment")
-        : undefined;
-    const left =
-      assignment === undefined || assignment === null
+function registerConstructorDependencies({
+  file,
+  module,
+  declared,
+  index,
+}: Registering): void {
+  const form = declared.form as PyDependencyForm;
+  if (!mentionsARegistrar(module, form.registrars)) {
+    return;
+  }
+  for (const { value } of module.exports()) {
+    const call = value.asCall?.() ?? null;
+    const registrar = call === null ? null : registrarOf(call, form.registrars);
+    const node =
+      call === null || registrar === null
         ? null
-        : field(assignment, "left");
-    if (left?.type !== "identifier") {
+        : nodeOfResolutionKey(call.site?.() ?? "", index.options.facts);
+    if (call === null || registrar === null || node === null) {
       continue;
     }
-    const match = registrarOf(
-      left.text,
-      scope,
-      file,
-      index.options.facts,
-      declared,
-    );
-    if (match === null) {
-      continue;
+    if (registrar.covers === "everyRoute") {
+      index.recordApp(declared.pack.name, node, file.file);
     }
-    if (match.registrar.covers === "everyRoute") {
-      index.recordApp(declared.pack.name, match.call, file.file);
-    }
-    const { keywordArgs } = readCallArguments(field(match.call, "arguments"));
-    const listed = keywordArgs[form.keyword];
-    if (listed === undefined) {
-      continue;
-    }
-    for (const name of dependencyNamesIn(listed.node, form)) {
+    for (const name of dependenciesListed(call, form)) {
       const target = index.functionCalled(file.file, name);
       if (target !== null) {
-        index.register(coverageOf(match, declared.pack), target, declared);
+        index.register(
+          coverageOf(registrar, call, declared.pack),
+          target,
+          declared,
+        );
       }
     }
   }
 }
 
-function coverageOf(
-  match: RegistrarMatch,
-  pack: PythonPack,
-): { kind: "everyRoute"; pack: string } | { kind: "ownRoutes"; key: string } {
-  return match.registrar.covers === "everyRoute"
-    ? { kind: "everyRoute", pack: pack.name }
-    : { kind: "ownRoutes", key: match.key };
+/** Whether the file's text writes the name of one of the registrars' constructors. */
+function mentionsARegistrar(
+  module: ModuleOps,
+  registrars: readonly PyWrapperRegistrar[],
+): boolean {
+  return registrars.some((registrar) =>
+    (registrar.made.named ?? []).some((name) => module.mentions(name)),
+  );
 }
 
-/** `@app.middleware("http")` and the like, on a function written anywhere in the file. */
-function registerDecorated(
+/**
+ * `@app.middleware("http")` and the like, on a function written anywhere
+ * in the file, as the `decorated` member finds it. A registration is read
+ * on a name the file binds to a registrar's construction it writes
+ * itself, so an app imported from another file, or handed to a function
+ * as a parameter, registers nothing here.
+ */
+function registerDecorated({
+  file,
+  module,
+  declared,
+  index,
+}: Registering): void {
+  const form = declared.form as PyDecoratedWrapperForm;
+  for (const unit of discoverDeclared(decoratedMatchOf(form), "", module)) {
+    const by = unit.decoratedBy;
+    const node = unit.func as PyNode;
+    if (
+      by === undefined ||
+      node.type !== "function_definition" ||
+      !builtIn(by.receiver, by.on, file)
+    ) {
+      continue;
+    }
+    const registrar = registrarOf(by.on, form.registrars);
+    if (registrar === null) {
+      continue;
+    }
+    index.register(
+      coverageOf(registrar, by.on, declared.pack),
+      { file, node, name: unit.name, exportPath: [unit.name] },
+      declared,
+    );
+  }
+}
+
+/** The `decorated` member that finds the form's decorator on any of its registrars. */
+function decoratedMatchOf(form: PyDecoratedWrapperForm): DecoratedMatch {
+  return {
+    type: "decorated",
+    on: anyOf(...form.registrars.map((registrar) => registrar.made)),
+    named: { [form.attribute]: { kind: "middleware" } },
+  };
+}
+
+/** Whether the receiver is a name, and the construction it comes to is written in the file. */
+function builtIn(
+  receiver: ValueOps,
+  construction: CallOps,
   file: BoundPythonFile,
-  declared: FormOf,
-  form: PyDecoratedWrapperForm,
-  index: PythonWrapperIndex,
-): void {
-  walkDescendants<PyNode, Scope>(file.root, file.module.moduleScope, children, {
-    at: (node, scope) => {
-      if (node.type !== "decorated_definition") {
-        return;
-      }
-      const { definition, decorators } = stripDecorators(node);
-      if (definition.type !== "function_definition") {
-        return;
-      }
-      for (const decorator of decorators) {
-        const receiver = decoratorReceiver(decorator);
-        if (
-          receiver === null ||
-          receiver.attributeName !== form.attribute ||
-          receiver.object.type !== "identifier"
-        ) {
-          continue;
-        }
-        const match = registrarOf(
-          receiver.object.text,
-          scope,
-          file,
-          index.options.facts,
-          declared,
-        );
-        const name = field(definition, "name")?.text;
-        if (match === null || name === undefined) {
-          continue;
-        }
-        index.register(
-          coverageOf(match, declared.pack),
-          { file, node: definition, name, exportPath: [name] },
-          declared,
-        );
-      }
-    },
-    into: (node, scope) => file.module.scopeFor.get(node.id) ?? scope,
+): boolean {
+  return receiver.form?.() === "name" && construction.file?.() === file.file;
+}
+
+/**
+ * The functions a list under the form's keyword hands over, `[Depends(a),
+ * Security(b)]`, or the one call written there on its own, each read
+ * through the pack's callbacks chain.
+ */
+function dependenciesListed(
+  call: CallOps | null,
+  form: PyDependencyForm,
+): string[] {
+  const listed = call?.keywordAt?.(form.keyword) ?? null;
+  if (listed === null) {
+    return [];
+  }
+  const alone = listed.asCall?.() ?? null;
+  const items = alone === null ? listed.items() : [listed];
+  return items.flatMap((item) => {
+    const handing = item.asCall?.() ?? null;
+    const name = handing === null ? null : functionHandedOver(handing, form);
+    return name === null ? [] : [name];
   });
 }
 
-/** The function names inside `[Depends(a), Security(b)]`, or inside one such call on its own. */
-function dependencyNamesIn(node: PyNode, form: PyDependencyForm): string[] {
-  const calls = node.type === "list" ? children(node) : [node];
-  const names: string[] = [];
-  for (const call of calls) {
-    const name = call === null ? null : dependencyNameOf(call, form);
-    if (name !== null) {
-      names.push(name);
-    }
-  }
-  return names;
+/** The name of the function a call hands over, `f` in `Depends(f)`, when the chain takes the call and it hands over a name. */
+function functionHandedOver(
+  call: CallOps,
+  form: PyDependencyForm,
+): string | null {
+  const handed = callbackHandedOver(form.handedTo, call);
+  return handed?.form?.() === "name" ? (handed.source?.() ?? null) : null;
 }
 
-/** `f` in `Depends(f)`, when the call is to one of the form's callees and the argument is a bare name. */
-function dependencyNameOf(node: PyNode, form: PyDependencyForm): string | null {
-  if (node.type !== "call") {
-    return null;
-  }
-  const callee = field(node, "function");
-  const calleeName =
-    callee?.type === "identifier"
-      ? callee.text
-      : callee?.type === "attribute"
-        ? (field(callee, "attribute")?.text ?? null)
-        : null;
-  if (calleeName === null || !form.callees.includes(calleeName)) {
-    return null;
-  }
-  const first = field(node, "arguments")?.namedChild(0);
-  return first?.type === "identifier" ? first.text : null;
-}
-
-/** `dependencies=[Depends(f)]` on the route decorator. */
-function decoratorDependencies(
-  classification: RouteDecorator,
+/**
+ * `user: User = Depends(f)` and `user: Annotated[User, Depends(f)]`, in
+ * parameter order. A parameter's default and annotation state no call
+ * facts, so each is read as written, through the chain's methods table.
+ */
+function parameterDependencies(
+  definitionNode: PyNode,
   form: PyDependencyForm,
 ): string[] {
-  const listed = classification.keywordArgs[form.keyword];
-  return listed === undefined ? [] : dependencyNamesIn(listed.node, form);
+  const handedIn = (node: PyNode): string | null => writtenHandOver(node, form);
+  return parameterDefaults(definitionNode).flatMap(({ value, annotation }) => {
+    const found =
+      value === null ? firstWithin(annotation, handedIn) : handedIn(value);
+    return found === null ? [] : [found];
+  });
+}
+
+/**
+ * The name a call written in a parameter's default or annotation hands
+ * over, `f` in `Depends(f)`, read as the source writes it: a callee whose
+ * last name the chain's methods table lists, and a name at the position
+ * that method takes its callback.
+ */
+function writtenHandOver(node: PyNode, form: PyDependencyForm): string | null {
+  const callee = node.type === "call" ? field(node, "function") : null;
+  const name =
+    callee?.type === "attribute" ? field(callee, "attribute") : callee;
+  const at =
+    name === null ? undefined : positionsHandedOver(form).get(name.text);
+  const positional = children(field(node, "arguments")).filter(
+    (argument) => argument.type !== "keyword_argument",
+  );
+  const handed = at === undefined ? undefined : positional[at];
+  return handed?.type === "identifier" ? handed.text : null;
+}
+
+const positionsByForm = new WeakMap<PyDependencyForm, Map<string, number>>();
+
+/** Where each method of the form's chain takes its callback by position, read once per form. */
+function positionsHandedOver(form: PyDependencyForm): Map<string, number> {
+  const known = positionsByForm.get(form);
+  if (known !== undefined) {
+    return known;
+  }
+  const positions = new Map<string, number>();
+  positionsByForm.set(form, positions);
+  for (const link of form.handedTo.links) {
+    if (link.asks !== "methods") {
+      continue;
+    }
+    for (const [method, meaning] of Object.entries(link.table)) {
+      const [first] = [meaning.callback].flat();
+      if (first !== undefined && "at" in first) {
+        positions.set(method, first.at);
+      }
+    }
+  }
+  return positions;
+}
+
+/** Each parameter's default, and its annotation when it has no default. */
+function parameterDefaults(
+  definitionNode: PyNode,
+): { value: PyNode | null; annotation: PyNode | null }[] {
+  return children(field(definitionNode, "parameters")).map((parameter) => ({
+    value: field(parameter, "value"),
+    annotation: field(parameter, "type"),
+  }));
 }
 
 /** How far into an annotation the search for an injector call goes. `Annotated[T, Depends(f)]` needs three, and the rest is headroom. */
 const MAX_ANNOTATION_DEPTH = 6;
 
-/** `user: User = Depends(f)` and `user: Annotated[User, Depends(f)]`, in parameter order. */
-function parameterDependencies(
-  definitionNode: PyNode,
-  form: PyDependencyForm,
-): string[] {
-  const names: string[] = [];
-  const findIn = (node: PyNode | null, depth: number): string | null => {
-    if (node === null || depth > MAX_ANNOTATION_DEPTH) {
-      return null;
-    }
-    const direct = dependencyNameOf(node, form);
-    if (direct !== null) {
-      return direct;
-    }
-    for (const child of children(node)) {
-      const found = findIn(child, depth + 1);
-      if (found !== null) {
-        return found;
-      }
-    }
+/** The first node at or inside `node`, in source order, that `found` gives something for. */
+function firstWithin<T>(
+  node: PyNode | null,
+  found: (node: PyNode) => T | null,
+  depth = 0,
+): T | null {
+  if (node === null || depth > MAX_ANNOTATION_DEPTH) {
     return null;
-  };
-  for (const param of children(field(definitionNode, "parameters"))) {
-    const inDefault = field(param, "value");
-    const found =
-      inDefault === null
-        ? findIn(field(param, "type"), 0)
-        : dependencyNameOf(inDefault, form);
-    if (found !== null) {
-      names.push(found);
+  }
+  const here = found(node);
+  if (here !== null) {
+    return here;
+  }
+  for (const child of children(node)) {
+    const inside = firstWithin(child, found, depth + 1);
+    if (inside !== null) {
+      return inside;
     }
   }
-  return names;
+  return null;
 }
 
 /**

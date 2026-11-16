@@ -1,12 +1,20 @@
 /**
  * The route discovery the FastAPI pack supplies, for a test that reads a
  * project with `@app.get` and `@app.post` routes on an app and its
- * routers. The adapter cannot depend on the pack, so the table is
- * written out again here.
+ * routers, and the wrappers it reads around them. The adapter cannot
+ * depend on the pack, so both are written out again here.
  */
 
+import { callbacks, constructedFrom, imported } from "@suss/recognize";
+
 import type { RouteTableDeclaration, ServesRole } from "@suss/extractor";
-import type { DeclaredRoutes, PythonPack, RouterUnreadWords } from "../pack.js";
+import type { CallbackMethod } from "@suss/recognize";
+import type {
+  DeclaredRoutes,
+  PythonPack,
+  PyWrapperForm,
+  RouterUnreadWords,
+} from "../pack.js";
 
 const SERVES = (method: string): ServesRole => ({
   role: "serves",
@@ -76,6 +84,46 @@ export function fastapiTestRoutes(
     table: fastapiTestTable(verbs, modules),
     unread: FASTAPI_TEST_UNREAD,
   };
+}
+
+const HANDED_FIRST: CallbackMethod = {
+  callback: { written: "callback", at: 0 },
+};
+
+/** What FastAPI runs around a route, as the pack declares it. */
+export function fastapiTestWrappers(
+  modules: readonly string[] = ["fastapi"],
+): PyWrapperForm[] {
+  const app = constructedFrom({ from: modules, named: ["FastAPI"] });
+  const router = constructedFrom({ from: modules, named: ["APIRouter"] });
+  return [
+    {
+      type: "dependency",
+      handedTo: callbacks({
+        client: imported({
+          from: modules,
+          named: ["*", "Depends", "Security"],
+        }),
+      }).methods({ Depends: HANDED_FIRST, Security: HANDED_FIRST }).declared,
+      keyword: "dependencies",
+      registrars: [
+        { made: app, covers: "everyRoute" },
+        { made: router, covers: "ownRoutes" },
+      ],
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "middleware",
+      registrars: [{ made: app, covers: "everyRoute" }],
+      continuationParam: 1,
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "exception_handler",
+      registrars: [{ made: app, covers: "everyRoute" }],
+      throwParam: 1,
+    },
+  ];
 }
 
 export function fastapiTestPack(): PythonPack {

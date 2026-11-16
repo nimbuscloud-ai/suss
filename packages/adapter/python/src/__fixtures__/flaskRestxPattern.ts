@@ -1,14 +1,17 @@
 /**
  * The route discovery the flask-restx pack supplies, for a test that reads
- * a project with resources decorated on a namespace or an API. The
- * adapter cannot depend on the pack, so the table is written out again
- * here.
+ * a project with resources decorated on a namespace or an API, and the
+ * wrappers it reads around them. The adapter cannot depend on the pack,
+ * so both are written out again here.
  */
+
+import { constructedFrom } from "@suss/recognize";
 
 import type { RouteTableDeclaration } from "@suss/extractor";
 import type {
   DeclaredRoutes,
   DecoratedClassRoute,
+  PyWrapperForm,
   RouterUnreadWords,
 } from "../pack.js";
 
@@ -110,6 +113,37 @@ export function flaskRestxTestRoutes(
     table: flaskRestxTestTable(modules, verbs),
     unread: FLASK_RESTX_TEST_UNREAD,
   };
+}
+
+/** What Flask and flask-restx run around a resource, as the pack declares it. */
+export function flaskRestxTestWrappers(
+  modules: readonly string[] = ["flask_restx"],
+): PyWrapperForm[] {
+  const app = constructedFrom({ from: ["flask"], named: ["Flask"] });
+  return [
+    {
+      type: "decoratedWrapper",
+      attribute: "before_request",
+      registrars: [{ made: app, covers: "everyRoute" }],
+      returnedValueResponds: true,
+    },
+    {
+      type: "decoratedWrapper",
+      attribute: "errorhandler",
+      registrars: [
+        { made: app, covers: "everyRoute" },
+        {
+          made: constructedFrom({ from: modules, named: ["Api"] }),
+          covers: "everyRoute",
+        },
+        {
+          made: constructedFrom({ from: modules, named: ["Namespace"] }),
+          covers: "ownRoutes",
+        },
+      ],
+      throwParam: 0,
+    },
+  ];
 }
 
 /** A resource pattern over these modules and methods, with Flask's path syntax and nothing else. */

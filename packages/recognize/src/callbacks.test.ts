@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { callbacks } from "./callbacks.js";
-import { compile } from "./compile.js";
+import { callbackHandedOver, compile } from "./compile.js";
 import { constructedFrom, global, modulesOf } from "./ops.js";
 import { pack, subUnitsOf } from "./pack.js";
 
@@ -517,5 +517,36 @@ describe("a chain that only claims callbacks", () => {
         calls: () => [callOps({ callee: "watch", args: [INLINE] })],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("the callback one call hands over, for a reader that found the call", () => {
+  const DEPENDS = callbacks({ client: constructedFrom("@acme/jobs") }).methods({
+    depends: { callback: { written: "callback", at: 0 } },
+  }).declared;
+  const NAME: Written = { form: "name", source: "current_user" };
+
+  it("gives the name a call the chain takes hands over", () => {
+    const handed = callbackHandedOver(
+      DEPENDS,
+      callOps({ callee: "depends", args: [NAME] }),
+    );
+    expect(handed?.source?.()).toBe("current_user");
+  });
+
+  it("gives nothing for a call off another library, a method it does not list, or a chain with no methods", () => {
+    const other = callOps({
+      callee: "depends",
+      from: ["@acme/other"],
+      args: [NAME],
+    });
+    expect(callbackHandedOver(DEPENDS, other)).toBeNull();
+    expect(
+      callbackHandedOver(DEPENDS, callOps({ callee: "later", args: [NAME] })),
+    ).toBeNull();
+    const bare = callbacks({ client: constructedFrom("@acme/jobs") }).declared;
+    expect(
+      callbackHandedOver(bare, callOps({ callee: "depends", args: [NAME] })),
+    ).toBeNull();
   });
 });
