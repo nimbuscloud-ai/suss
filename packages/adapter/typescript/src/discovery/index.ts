@@ -13,7 +13,6 @@ import { discoverDecoratedRoutes } from "./decoratedRoute.js";
 import { discoverFileConventions } from "./fileConvention.js";
 import { discoverGraphqlHookCalls } from "./graphqlHookCall.js";
 import { discoverGraphqlImperativeCalls } from "./graphqlImperativeCall.js";
-import { discoverJsxElementRoutes } from "./jsxElementRoute.js";
 import { discoverNamedExports } from "./namedExport.js";
 import {
   discoverModuleSurface,
@@ -176,14 +175,6 @@ function runPattern(
       resolution,
       pattern.binding,
       mountPrefixes,
-    );
-  }
-  if (pattern.match.type === "jsxElementRoute") {
-    return discoverJsxElementRoutes(
-      sourceFile,
-      pattern.match,
-      pattern.kind,
-      resolution,
     );
   }
   if (pattern.match.type === "fileConvention") {

@@ -13,6 +13,8 @@
  * code it matches.
  */
 
+import { jsxElementRouteTable } from "./jsxElementRouteTable.js";
+
 import type {
   BehavioralSummary,
   CodeUnitKind,
@@ -403,8 +405,8 @@ export type DiscoveryMatch =
        * them. It reads the tree form, where a child path joins its parent's
        * and an index route takes its parent's path, and the object form,
        * where a factory call takes an array of route objects with the same
-       * property names. The pack supplies every name, and the adapter only
-       * walks JSX and arrays.
+       * property names. The pack supplies every name, and every adapter
+       * reads the match as the route table those names describe.
        *
        * Each route with a readable path becomes one unit whose target is the
        * component its element attribute references, when that reference is
@@ -686,7 +688,8 @@ const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
 /**
  * The match, when every adapter reads it through the module ops, or
  * null. A `namedExport` with only `names` stays with the TypeScript
- * adapter's own handler.
+ * adapter's own handler, and a `jsxElementRoute` is read as the route
+ * table it describes.
  */
 export function declaredMatchOf(
   match: DiscoveryMatch,
@@ -699,6 +702,9 @@ export function declaredMatchOf(
       match.bodyEndsIn !== undefined ||
       match.members !== undefined;
     return declared ? match : null;
+  }
+  if (match.type === "jsxElementRoute") {
+    return jsxElementRouteTable(match);
   }
   return DECLARED_TYPES.has(match.type)
     ? (match as DeclaredDiscoveryMatch)

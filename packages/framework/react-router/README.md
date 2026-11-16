@@ -15,10 +15,17 @@ Framework pack for [React Router](https://reactrouter.com/). It reads the routes
 A `<Route path="/users/:id" element={<UserDetail />} />` becomes a summary for
 `UserDetail` bound to `GET /users/:id`, so it pairs with any caller of that URL.
 A nested route adds its path to its parent's, and an index route serves the
-parent's own path, the same way React Router puts them together. The object form
+parent's own path, the same way React Router puts them together. A nested path
+that starts with `/` is the whole path, as React Router requires. The object form
 (`createBrowserRouter([{ path, element }])`) works the same way, including when
 the array is bound to a name above the call. `createRoutesFromElements` is read
 through to the elements themselves.
+
+The pack declares all of this as a route table, `REACT_ROUTER_ROUTES`: one
+`Route` role read from an element's attributes or an object's keys, with
+`@suss/recognize` composing the paths. A route nested inside a fragment, a
+condition or another element is still nested under the nearest `<Route>`
+around it.
 
 When the pack cannot read something, it records that instead of guessing. A
 path built at runtime, a spread of routes that another module declares, and a
@@ -33,7 +40,7 @@ The pack does not give a `loader` or an `action` a route based on its file name.
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.
+The pack depends only on `@suss/extractor`, for the `PatternPack` type, the route table's types and the sentences an unread route is reported with. It has no analysis logic of its own.
 
 ## Coverage
 

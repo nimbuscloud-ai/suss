@@ -1,7 +1,20 @@
 import { z } from "zod";
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import { JSX_ROUTE_UNREAD } from "@suss/extractor";
+
+import type {
+  DiscoveryPattern,
+  PatternPack,
+  RouteTableDeclaration,
+  ServesRole,
+} from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
 
 /**
  * The response helpers moved between packages as Remix became React
@@ -54,27 +67,53 @@ const HTTP_ERRORS_CODES: Record<string, number> = {
 const ROUTER_MODULES = ["react-router", "react-router-dom"];
 
 /**
+ * `<Route path element>` and `{ path, element, children }` are one route,
+ * as `createRoutesFromElements` makes the one from the other. A
+ * navigation is a GET, so the route pairs with a client's GET to the same
+ * path.
+ */
+const ROUTE: ServesRole = {
+  role: "serves",
+  methods: ["GET"],
+  path: [{ key: "path" }],
+  index: { key: "index" },
+  handler: { value: [{ key: "element" }] },
+  children: [{ in: "elements" }, { in: "list", pick: { key: "children" } }],
+};
+
+/**
  * Routes the app declares in its own code, as nested `Route` elements or
  * as the same keys in objects passed to `createBrowserRouter`. The README
  * describes how nested and index routes build their paths.
- *
- * A navigation is a GET, so the route pairs with a client's GET to the
- * same path.
  */
-const JSX_ROUTES: Extract<
-  DiscoveryPattern["match"],
-  { type: "jsxElementRoute" }
-> = {
-  type: "jsxElementRoute",
-  importModule: ROUTER_MODULES,
-  routeElement: "Route",
-  pathAttribute: "path",
-  elementAttribute: "element",
-  indexAttribute: "index",
-  childrenAttribute: "children",
-  routeObjectFactories: ["createBrowserRouter"],
-  elementsFactories: ["createRoutesFromElements"],
-  method: "GET",
+export const REACT_ROUTER_ROUTES: RouteTableDeclaration = {
+  roots: {
+    kinds: { createBrowserRouter: 0 },
+    children: { in: "list", pick: { at: 0 } },
+    in: "file",
+    elements: true,
+  },
+  roles: { Route: ROUTE },
+  objects: "Route",
+  from: ROUTER_MODULES,
+  absolutePaths: "standAlone",
+  elementLists: ["createRoutesFromElements"],
+  loops: [],
+};
+
+/**
+ * Each route is a unit on the component its element renders. Every name
+ * the table matches comes from the router, so it needs the router import.
+ */
+const ROUTES: DiscoveryPattern = {
+  kind: "component",
+  match: {
+    type: "routeTable",
+    table: REACT_ROUTER_ROUTES,
+    through: "element",
+    unread: JSX_ROUTE_UNREAD,
+  },
+  requiresImport: ROUTER_MODULES,
 };
 
 /**
@@ -102,6 +141,7 @@ export function reactRouterFramework(
 ): PatternPack {
   return {
     name: "react-router",
+    version: VERSION,
     protocol: "http",
     languages: ["typescript", "javascript"],
 
@@ -125,14 +165,7 @@ export function reactRouterFramework(
         match: { type: "namedExport", names: ["default"] },
         requiresImport: [],
       },
-      {
-        // Most React Router apps declare their routes in JSX. Every name
-        // this pattern matches comes from the router, so it needs the
-        // router import.
-        kind: "component",
-        match: JSX_ROUTES,
-        requiresImport: ROUTER_MODULES,
-      },
+      ROUTES,
     ],
 
     terminals: [
