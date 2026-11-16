@@ -1189,7 +1189,8 @@ function emitBodyCallPositions(
   if (body === null) {
     return;
   }
-  callStatementsOf(body).forEach(({ call, nested }, position) => {
+  const runsAsMethod = (name: RbNode) => isBareCall(name, emitter.enclosing);
+  callStatementsOf(body, runsAsMethod).forEach(({ call, nested }, position) => {
     const callKey = nodeId(emitter.filePath, call);
     add(emitter, "bodyCallAt", ownerKey, String(position), callKey);
     if (nested) {
@@ -2247,7 +2248,8 @@ function emitMethodFacts(emitter: Emitter, method: RbNode): string {
     }
   }
   bodyFacts.flushInto(emitter.db);
-  emitBodyCallPositions(emitter, funcKey, body);
+  // The method's own scope, so a local or a parameter read as a statement is no call.
+  emitBodyCallPositions(inside, funcKey, body);
   const implicit = implicitReturn(body);
   if (implicit !== null) {
     add(inside, "returnsValue", funcKey, valueKey(inside, implicit));

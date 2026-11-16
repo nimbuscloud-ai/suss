@@ -329,8 +329,11 @@ bodyCallAt(f, k, r)         the call r is written as the k-th statement
                             nested function or block. f is a function, a
                             class, a Ruby block, or a file under its
                             path. A TypeScript class's statements are
-                            those of its static blocks. makesCall has no
-                            order, and reaches
+                            those of its static blocks. A bare name Ruby
+                            runs as a method, such as skip with no
+                            arguments, is a statement call here, and a
+                            local read as a statement is not. makesCall
+                            has no order, and reaches
                             into nested blocks and into arguments. The
                             ops in @suss/recognize/ops read it, and so
                             does classBodyCall

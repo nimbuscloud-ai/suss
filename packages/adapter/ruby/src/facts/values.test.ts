@@ -2084,6 +2084,44 @@ describe("the calls a body writes as statements, and the pairs a call passes", (
     ]);
   });
 
+  it("places a bare name Ruby runs as a method, and not a parameter, a local or a block variable read as a statement", async () => {
+    const source = [
+      "class Report",
+      "  private",
+      "  def run(items)",
+      "    result = []",
+      "    skip",
+      "    pending if slow?",
+      "    items",
+      "    items.each do |item|",
+      "      item",
+      "      notify",
+      "    end",
+      "    result",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const method = source.slice(
+      source.indexOf("def run"),
+      source.lastIndexOf("  end") + "  end".length,
+    );
+    const block = "do |item|\n      item\n      notify\n    end";
+    expect(placed(db, source)).toEqual({
+      [keyOf(source, source.trimEnd())]: ["private"],
+      [keyOf(source, method)]: ["skip", "pending", "items.each"],
+      [keyOf(source, block)]: ["notify"],
+    });
+    expect(
+      rows(db, "nestedBodyCall").map(([call = ""]) => textAt(source, call)),
+    ).toEqual(["pending"]);
+    const called = new Set(rows(db, "call").map(([call]) => call));
+    for (const bare of ["skip", "pending", "notify", "private"]) {
+      expect(called).toContain(keyOf(source, bare));
+    }
+  });
+
   it("states a pair whose key is a string, a constant or a local, and keeps a string key as a keyword too", async () => {
     const source =
       'get "status" => "health#show", :constraints => {}\n' +
