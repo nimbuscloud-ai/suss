@@ -14,7 +14,7 @@ import type {
   ArgumentPick,
   CallStep,
   Chain,
-  ClassPick,
+  ClassContainer,
   ContainerMember,
   DeclaredSlots,
   Link,
@@ -71,7 +71,7 @@ type ContainerSays =
   | ArgumentPick
   | readonly ArgumentPick[]
   | MemberContainer
-  | ClassPick
+  | ClassContainer
   | LinkFunction<[readonly string[], CallOps], string | null>;
 
 /** Which calls in hand a chain about another call reads. */
@@ -214,7 +214,12 @@ function containerLink(
     };
   }
   if ("class" in says) {
-    return { asks: "container", class: says.class, notFrom: says.notFrom };
+    return {
+      asks: "container",
+      class: says.class,
+      notFrom: says.notFrom,
+      ...(says.named === undefined ? {} : { named: says.named }),
+    };
   }
   if (!("at" in says) && !("from" in says)) {
     return memberContainerLink(says);

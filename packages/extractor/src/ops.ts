@@ -494,6 +494,12 @@ export interface ValueOps {
    */
   className?(notFrom: readonly string[]): string | null;
   /**
+   * The string the class `className` reads assigns to `attribute` in its
+   * own body: `recipes` for `__tablename__ = "recipes"`. Null when the
+   * class assigns no string there.
+   */
+  classAttribute?(attribute: string, notFrom: readonly string[]): string | null;
+  /**
    * The path among the runtime object's that this value is: the one it
    * is spelled as, or the object's first path when the rules followed
    * the object into the value, as they do into a parameter that defaults
@@ -572,6 +578,8 @@ export interface ClassValueOps {
   writesBase(): boolean;
   /** The methods the class writes itself, instance ones or the class's own, in source order. */
   members(kind: "instance" | "singleton"): readonly ModuleMember[];
+  /** The string the class body assigns to the name, shared or the class's own, or null. */
+  attribute?(name: string): string | null;
   /**
    * The name the class is declared under, with every namespace around it
    * in Ruby, as `Billing::Engine`. Null when the facts state none.
@@ -1330,6 +1338,11 @@ export interface FactSource {
    * class the facts settle the value to.
    */
   classNameOf?(key: string, notFrom: readonly string[]): string | null;
+  /**
+   * The key of the class `classNameOf` reads for the value at the key,
+   * or null. Unset takes the class the facts settle the value to.
+   */
+  classKeyOf?(key: string, notFrom: readonly string[]): string | null;
   /**
    * The calls the class at the key makes in its body, in source order:
    * what the rules' `classBodyCall` gives. Unset reads the body's own

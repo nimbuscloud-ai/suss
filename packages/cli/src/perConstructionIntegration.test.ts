@@ -68,21 +68,21 @@ function tablesReachedFrom(route: string): string[] {
 
 describe("a shared repository method, read per construction", () => {
   it("reaches the table of a repository the route makes itself", () => {
-    expect(tablesReachedFrom("GET /tools/{key}")).toEqual(["postgresql:Tool"]);
+    expect(tablesReachedFrom("GET /tools/{key}")).toEqual(["postgresql:tools"]);
   });
 
   it("follows a call on the method's own receiver to the same repository", () => {
-    expect(tablesReachedFrom("GET /tools-first")).toEqual(["postgresql:Tool"]);
+    expect(tablesReachedFrom("GET /tools-first")).toEqual(["postgresql:tools"]);
   });
 
   it("reaches the table a factory property's repository gives", () => {
     expect(tablesReachedFrom("GET /factory-tools/{key}")).toEqual([
-      "postgresql:Tool",
+      "postgresql:tools",
     ]);
   });
 
   it("reaches the model a subclass passes to its base constructor", () => {
-    expect(tablesReachedFrom("GET /tags/{key}")).toEqual(["postgresql:Tag"]);
+    expect(tablesReachedFrom("GET /tags/{key}")).toEqual(["postgresql:tags"]);
   });
 
   it("names no table for a repository each caller passes in", () => {
@@ -95,13 +95,13 @@ describe("a shared repository method, read per construction", () => {
   });
 
   it("lists the shared method once for a table, with the constructions that pass it", () => {
-    expect(itemsFor("what reads postgresql:Tag")).toEqual([
+    expect(itemsFor("what reads postgresql:tags")).toEqual([
       expect.objectContaining({
         unit: "app/repos.py::Repository.get_one",
         constructions: ["app/repos.py:35:16"],
       }),
     ]);
-    expect(itemsFor("what reads postgresql:Tool")).toEqual([
+    expect(itemsFor("what reads postgresql:tools")).toEqual([
       expect.objectContaining({
         unit: "app/repos.py::Repository.get_one",
         constructions: [
@@ -129,7 +129,7 @@ describe("a shared repository method, read per construction", () => {
 
   it("lists the routes that reach a table, and not the methods on the way", () => {
     const boundaries = itemsFor<{ boundary?: string }>(
-      "what reaches postgresql:Tool",
+      "what reaches postgresql:tools",
     )
       .map((item) => item.boundary)
       .sort();
@@ -150,7 +150,7 @@ describe("a shared repository method, read per construction", () => {
           effect.type === "invocation" && effect.summary === undefined,
       ).length;
     const { answer } = answerQuestion({
-      question: "what reaches postgresql:Tool",
+      question: "what reaches postgresql:tools",
       dir: summaries,
       json: true,
       output: path.join(out, "answer.json"),

@@ -83,6 +83,21 @@ export function pythonFactSource(db: Database): PythonFactSource {
   // A name has no node, so its value is what it was written as.
   const valueNode = (key: string): PyNode | null =>
     nodeAt(key) ?? nodeAt(writtenValueOf(db, key));
+  const classNameOf = (key: string, notFrom: readonly string[]) => {
+    // A name is keyed by its scope, so it is read off a mention of it.
+    const node = nodeAt(key) ?? mentionOf(db, key);
+    if (node === null) {
+      // A module's own name is keyed by the file. No function declares
+      // it, so only its spelling can say it is a class.
+      const name = nameIn(key);
+      return isClassName(name) ? name : null;
+    }
+    return modelNamed(node, node, {
+      facts: db,
+      filePath: fileOfKey(key),
+      libraries: new Set(notFrom.map(topPackage)),
+    });
+  };
 
   return {
     db,
@@ -164,20 +179,22 @@ export function pythonFactSource(db: Database): PythonFactSource {
       const node = valueNode(key);
       return node === null ? null : literalParts(evaluatedValue(node, db));
     },
-    classNameOf: (key, notFrom) => {
-      // A name is keyed by its scope, so it is read off a mention of it.
-      const node = nodeAt(key) ?? mentionOf(db, key);
-      if (node === null) {
-        // A module's own name is keyed by the file. No function declares
-        // it, so only its spelling can say it is a class.
-        const name = nameIn(key);
-        return isClassName(name) ? name : null;
+    classNameOf,
+    classKeyOf: (key, notFrom) => {
+      const name = classNameOf(key, notFrom);
+      if (name === null) {
+        return null;
       }
-      return modelNamed(node, node, {
-        facts: db,
-        filePath: fileOfKey(key),
-        libraries: new Set(notFrom.map(topPackage)),
-      });
+      // The class the name reaches where the file binds it.
+      const named = `${fileWriting(key)}#${name}`;
+      resolveCalls(db, [named]);
+      const classes = new Set(
+        answersFor(db, "wantedComesTo", named).filter(
+          (answer) => nodeAt(answer)?.type === "class_definition",
+        ),
+      );
+      const [only] = classes;
+      return classes.size === 1 && only !== undefined ? only : null;
     },
     comesTo: (key) => {
       resolveCalls(db, [key]);
@@ -554,4 +571,16 @@ function literalParts(value: Value): string[] | null {
 /** The name at the end of a name key, `config#table` to `table`. */
 function nameIn(key: string): string {
   return key.slice(key.lastIndexOf("#") + 1);
+}
+
+/**
+ * The file a key is written in, whatever its form: a node's
+ * `file:start-end`, a module name's `file#name`, or a local name's
+ * `file:start-end#name`.
+ */
+function fileWriting(key: string): string {
+  const scope = key.includes("#") ? key.slice(0, key.lastIndexOf("#")) : key;
+  return /:\d+-\d+$/.test(scope)
+    ? scope.slice(0, scope.lastIndexOf(":"))
+    : scope;
 }

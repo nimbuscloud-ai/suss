@@ -21,6 +21,8 @@ import type { ClassBodyDeclaration, PackWords } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
   CallStep,
+  ClassContainer,
+  ClassNaming,
   ClassPick,
   ConditionsPick,
   Match,
@@ -261,11 +263,22 @@ const COMBINED_BY = ["and_", "or_", "not_"];
 
 const CHAIN_START: CallStep = { to: "chainStart" };
 
+/** A mapped class is stored in the table its `__tablename__` says, and otherwise the chain names it by the class. */
+const TABLE_NAMING: readonly ClassNaming[] = [
+  { attribute: "__tablename__" },
+  "className",
+];
+
 /** What a chain reads, the class it works on and the names it states for each kind of access. */
 interface ChainReading {
   readonly model: ClassPick;
   readonly reads: StorageMethod;
   readonly writes: StorageMethod;
+}
+
+/** The container a chain stores to: the class the model pick finds, by its table. */
+function tableOf(model: ClassPick): ClassContainer {
+  return { ...model, named: TABLE_NAMING };
 }
 
 /**
@@ -359,7 +372,7 @@ export function queryCalls(
   )
     .methods(Object.fromEntries(types.writes.map((name) => [name, writes])))
     .otherwise(reads)
-    .container(model)
+    .container(tableOf(model))
     .example("db.query(User).filter(User.id == 1).first()");
   if (recordsNothing.length === 0) {
     return [accesses];
@@ -412,7 +425,7 @@ export function statementCalls(
       { select: reads, insert: writes, update: writes, delete: writes },
       { of: [CHAIN_START] },
     )
-    .container(model)
+    .container(tableOf(model))
     .example("select(User.id).where(User.id == 1)");
 }
 

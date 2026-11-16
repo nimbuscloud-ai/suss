@@ -342,7 +342,7 @@ const JOURNAL_CALLS = storageCalls(
       equality: ["=="],
     },
   })
-  .container(ENTRY)
+  .container({ ...ENTRY, named: [{ attribute: "table" }, "className"] })
   .example("journal.rows(Entry, Entry.id).where(Entry.id == 1).take()");
 
 // A statement built with a function the journal exports, read at its
@@ -431,6 +431,7 @@ const TYPESCRIPT = `
   export class Entry {
     static id = 0;
     static n = 0;
+    static table = "entries";
   }
 
   const cache = new Cache();
@@ -536,6 +537,7 @@ from journal import Journal, drop, pick
 class Entry:
     id = 0
     n = 0
+    table = "entries"
 
 
 cache = Cache()
@@ -1144,19 +1146,23 @@ describe("a pack that reads the columns off every argument from a position", () 
 });
 
 describe("a pack that reads a chain from the first call on its client", () => {
-  it("reads the class that call is passed, and nothing of a chain that starts with a method the start leaves out, in TypeScript, Python and Ruby", async () => {
+  it("names the class that call is passed by the string its body assigns to `table`, and reads nothing of a chain that starts with a method the start leaves out, in TypeScript and Python", async () => {
     const fromTypeScript = typescriptEffects("audit").map(placeless);
 
     expect(fromTypeScript.map(addressOf)).toEqual([
-      ["take", "default", "Entry"],
-      ["add", "default", "Entry"],
+      ["take", "default", "entries"],
+      ["add", "default", "entries"],
     ]);
     expect((await pythonEffects("audit")).map(addressOf)).toEqual(
       fromTypeScript.map(addressOf),
     );
-    expect((await rubyEffects("audit")).map(addressOf)).toEqual(
-      fromTypeScript.map(addressOf),
-    );
+  });
+
+  it("names the class by its own name in Ruby, whose facts state no string a class body assigns", async () => {
+    expect((await rubyEffects("audit")).map(addressOf)).toEqual([
+      ["take", "default", "Entry"],
+      ["add", "default", "Entry"],
+    ]);
   });
 
   it("reads the columns the first call states and the keywords of a first call to `rows` as fields, and the columns compared after it, in Python and Ruby, which writes `Entry.id` as a call", async () => {

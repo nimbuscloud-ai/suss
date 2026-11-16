@@ -523,6 +523,60 @@ describe("a session typed the way a project writes it", () => {
   });
 });
 
+describe("the table a model declares", () => {
+  const TABLES = [
+    "from app.base import Base",
+    "",
+    "class Orders(Base):",
+    '    __tablename__ = "orders"',
+    "",
+    "class Notes(Base):",
+    "    pass",
+  ];
+
+  it("names the container by the model's __tablename__, and by the class when it writes none", async () => {
+    write("app/models.py", TABLES);
+    write("app/base.py", BASE);
+    write("app/__init__.py", [
+      "from sqlalchemy import select",
+      "from sqlalchemy.orm import Session",
+      "from app.models import Notes, Orders",
+      "",
+      "def handler(db: Session, order: Orders):",
+      "    db.query(Orders).filter(Orders.id == 1).first()",
+      "    select(Orders.id, Orders.total)",
+      "    db.add(order)",
+      "    db.query(Notes).all()",
+    ]);
+    const { summaries } = await extractPythonProject({
+      files: [...findPythonFiles(tmpDir)],
+      packs: [sqlalchemyFramework({ storageSystem: "postgresql" })],
+      roots: [tmpDir],
+      modules: [{ name: "app", root: path.join(tmpDir, "app") }],
+      workspaceRoot: tmpDir,
+      cacheDir: null,
+    });
+    const containers = summaries
+      .filter((summary) => summary.identity.name.endsWith("handler"))
+      .flatMap((summary) => summary.transitions)
+      .flatMap((transition) => transition.effects)
+      .flatMap((effect) =>
+        effect.type === "interaction" &&
+        effect.interaction.class === "storage-access" &&
+        effect.binding?.semantics.name === "storage"
+          ? [[effect.interaction.operation, effect.binding.semantics.container]]
+          : [],
+      );
+
+    expect(containers).toEqual([
+      ["first", "orders"],
+      ["select", "orders"],
+      ["add", "orders"],
+      ["all", "Notes"],
+    ]);
+  });
+});
+
 describe("the model a chain is charged to", () => {
   // A summary keeps one of two accesses that differ only in where they
   // are, so the second and third `db.add` to `Orders` do not show.
