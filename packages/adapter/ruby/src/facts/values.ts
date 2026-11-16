@@ -1599,17 +1599,28 @@ function emitParameterDefault(emitter: Emitter, param: RbNode): void {
 /** Ruby's append, `apps << app`, which Array, Set and IO all define. */
 const APPEND = "<<";
 
+/**
+ * Ruby runs `out << line` as the method `<<` on `out`, so it is stated as
+ * that call too. No body lists it, so only a reader asking at it sees it.
+ */
 function emitAppend(emitter: Emitter, binary: RbNode): void {
   const left = field(binary, "left");
   const right = field(binary, "right");
-  if (left !== null && right !== null) {
-    add(
-      emitter,
-      "holdsUnderKey",
-      valueKey(emitter, left, binary),
-      valueKey(emitter, right, binary),
-    );
+  const operator = field(binary, "operator");
+  if (left === null || right === null) {
+    return;
   }
+  const leftKey = valueKey(emitter, left, binary);
+  const rightKey = valueKey(emitter, right, binary);
+  add(emitter, "holdsUnderKey", leftKey, rightKey);
+  if (operator === null) {
+    return;
+  }
+  const callKey = nodeId(emitter.filePath, binary);
+  const calleeKey = nodeId(emitter.filePath, operator);
+  addCall(emitter, callKey, calleeKey);
+  add(emitter, "readsProperty", calleeKey, leftKey, APPEND);
+  add(emitter, "callArg", callKey, "0", rightKey);
 }
 
 /** `price > 100` inside Sequel's `where { }`, which reads it as a condition on the column. */

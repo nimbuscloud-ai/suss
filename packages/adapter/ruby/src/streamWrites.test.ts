@@ -236,6 +236,42 @@ describe("what a Ruby body prints", () => {
     ]);
   });
 
+  it("reads an append to a stream as a write to it, through a helper's parameter too", async () => {
+    const source = [
+      "module Out",
+      "  def self.say(out, line)",
+      "    out << line",
+      "  end",
+      "",
+      "  def self.run(items)",
+      '    $stdout << "a"',
+      '    STDERR << "b"',
+      '    ::STDOUT << "c"',
+      '    say($stderr, "d")',
+      "    items << 1",
+      "    1 << 3",
+      "  end",
+      "end",
+    ].join("\n");
+    expect(summarized(await writesIn(source, "run"))).toEqual([
+      { target: "stdout", callee: "$stdout.<<", serialized: "text" },
+      { target: "stderr", callee: "STDERR.<<", serialized: "text" },
+      { target: "stdout", callee: "::STDOUT.<<", serialized: "text" },
+    ]);
+    expect(summarized(await writesIn(source, "say"))).toEqual([
+      { target: "stderr", callee: "out.<<", serialized: "text" },
+    ]);
+  });
+
+  it("reads only the first append of a chain as a write, since the rules do not take << to return its receiver", async () => {
+    const [write, ...more] = await writesIn('$stdout << "a" << "b"');
+    expect(more).toEqual([]);
+    expect(write).toMatchObject({
+      callee: "$stdout.<<",
+      interaction: { payload: { type: "literal", value: "a" } },
+    });
+  });
+
   it("leaves a method call on anything else, and a nested method, alone", async () => {
     const effects = await writesIn(
       [

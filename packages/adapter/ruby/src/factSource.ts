@@ -289,13 +289,25 @@ function formOf(node: RbNode | null): ValueForm {
 
 /** A method's name with the receiver it is sent to, `cache.get`, which is how Ruby writes a callee. */
 function calleeText(node: RbNode): string {
-  const call = node.parent;
-  if (call?.type !== "call" || call.childForFieldName("method") !== node) {
-    return node.text;
-  }
-  const receiver = call.childForFieldName("receiver");
+  const parent = node.parent;
+  const receiver =
+    parent === null ? null : (SENT_TO[parent.type]?.(parent, node) ?? null);
   return receiver === null ? node.text : `${receiver.text}.${node.text}`;
 }
+
+/** What a method's name is sent to, by the node it is the name of: `cache` in `cache.get`, `out` in `out << line`. */
+const SENT_TO: Partial<
+  Record<string, (parent: RbNode, method: RbNode) => RbNode | null>
+> = {
+  call: (call, method) =>
+    call.childForFieldName("method") === method
+      ? call.childForFieldName("receiver")
+      : null,
+  binary: (binary, operator) =>
+    binary.childForFieldName("operator") === operator
+      ? binary.childForFieldName("left")
+      : null,
+};
 
 /** The class `Klass.new` makes, by its own name: `Connection` for `PG::Connection.new`. */
 function constructedClass(method: RbNode | null): string | null {
