@@ -13,6 +13,8 @@ This package builds suss `BehavioralSummary[]` from an AWS [CloudFormation](http
 
 Both paths always run, so a mixed template, with inline OpenAPI for some routes and CFN-native resources for others, shows every route.
 
+A SAM function's `Api` or `HttpApi` event adds a route to the API that its `RestApiId` or `ApiId` refers to. An event that states no id goes on the API that SAM creates for it, `ServerlessRestApi` or `ServerlessHttpApi`, as SAM itself does. When the id does not refer to an API in the template, the route goes under the made-up id `RestApi` or `HttpApi`, the same place a Method or Route with an unresolved id goes.
+
 The reader understands CloudFormation's YAML shorthand for intrinsics (`!Ref`, `!GetAtt`), and tolerates `!Sub`, `!Join`, `!If` and the rest by passing them through, so hand-written templates parse correctly.
 
 When the reader loads a template from a file, it also loads the templates that template embeds. A resource of type `AWS::CloudFormation::Stack` (or SAM's `AWS::Serverless::Application`) points at another template, and AWS deploys its resources alongside the parent's, so the reader summarises them alongside the parent's too. It walks each document separately, because a logical id, a `Globals` section and a relative path only mean something inside the document that contains them.
