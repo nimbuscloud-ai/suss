@@ -302,8 +302,8 @@ const BUILDER_PICKS = storageCalls({
   .example("builder.pick(t, t.id, t.name)");
 
 // A journal's chains, read from the first call on the journal: the class
-// it is passed, the columns and keywords it states as fields, and the
-// columns the calls after it compare. `close` reads nothing.
+// it is passed, its columns and a `rows` call's keywords as fields, and
+// the columns the calls after it compare. `close` reads nothing.
 const JOURNAL = typed({ from: ["journal", "Journal"], named: ["Journal"] });
 const START: CallStep = { to: "chainStart" };
 const ENTRY: ClassPick = {
@@ -312,7 +312,7 @@ const ENTRY: ClassPick = {
 };
 const ENTRY_FIELDS: NamePick[] = [
   { columns: { of: [START], from: 1 }, ofClass: ENTRY },
-  { keywordsOf: { of: [START] } },
+  { keywordsOf: { of: [{ to: "chainStart", method: "rows" }] } },
 ];
 
 const JOURNAL_CALLS = storageCalls(
@@ -600,7 +600,7 @@ def choose():
 
 def audit(journal: Journal, id):
     journal.rows(Entry, Entry.id, kind="x").where(Entry.id == id, Entry.n > 2).take()
-    journal.add(Entry)
+    journal.add(Entry, kind="y")
     journal.close()
 `;
 
@@ -693,7 +693,7 @@ module Store
   def self.audit(id)
     journal = open_journal
     journal.rows(Entry, Entry.id, kind: "x").where(Entry.id == id, Entry.n > 2).take
-    journal.add(Entry)
+    journal.add(Entry, kind: "y")
     journal.close
   end
 end
@@ -1130,7 +1130,7 @@ describe("a pack that reads a chain from the first call on its client", () => {
     );
   });
 
-  it("reads the columns and keywords the first call states as fields, and the columns compared after it, in Python and Ruby, which writes `Entry.id` as a call", async () => {
+  it("reads the columns the first call states and the keywords of a first call to `rows` as fields, and the columns compared after it, in Python and Ruby, which writes `Entry.id` as a call", async () => {
     const fromPython = (await pythonEffects("audit")).map(placeless);
 
     expect(fromPython.map(columnsOf)).toEqual([

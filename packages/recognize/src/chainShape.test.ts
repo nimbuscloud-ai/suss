@@ -518,6 +518,33 @@ describe("a chain read from the first call on its session", () => {
     expect(accesses(read.effects)).toEqual([["first", "read", [], ["id"]]]);
     expect(containers(read.effects)).toEqual(["Orders"]);
   });
+
+  it("reaches the chain's first call only when it makes a method the step lists", () => {
+    const valuesFirst = storageCalls(
+      { system: "vault", client: SESSION, clientAt: FIRST },
+      { outermost: true },
+    ).otherwise({
+      kind: "read",
+      fields: {
+        keywordsOf: { of: [{ to: "chainStart", method: ["values"] }] },
+      },
+    });
+    const supplies = chainOf(
+      { method: "values", onSession: true, keywords: { name: "n" } },
+      { method: "all" },
+    );
+    const picks = chainOf(
+      { method: "query", onSession: true, keywords: { user: "U" } },
+      { method: "all" },
+    );
+
+    expect(accesses(run([valuesFirst], lastOf(supplies)).effects)).toEqual([
+      ["all", "read", ["name"], []],
+    ]);
+    expect(accesses(run([valuesFirst], lastOf(picks)).effects)).toEqual([
+      ["all", "read", [], []],
+    ]);
+  });
 });
 
 describe("a step that reaches the calls of several methods", () => {

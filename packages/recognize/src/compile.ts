@@ -713,7 +713,9 @@ function chainStartOn(ops: CallOps, origin: ReceiverOrigin): CallOps | null {
 /** The chain start of the call, as a step reaches it. */
 function chainStartsOf(ops: CallOps, step: ToChainStart): CallOps[] {
   const start = chainStartOf(ops);
-  return passedOver(start, step.except) ? [] : [start];
+  return methodWanted(start, step.method) && !passedOver(start, step.except)
+    ? [start]
+    : [];
 }
 
 /** Whether the call makes the step's method, or one of its methods, when the step says. */

@@ -187,6 +187,51 @@ describe("the chains on a session and a query", () => {
     ]);
   });
 
+  const ORDER_SERVICE = [
+    "from sqlalchemy.orm import Query, Session",
+    "from app.models import Order",
+    "",
+    "def get_all(*, db_session: Session, scope: str = None) -> Query:",
+    "    return db_session.query(Order)",
+  ];
+
+  it("takes none of the keywords of a project function that returns a query as columns, and records no read when nothing names the table", async () => {
+    write("app/models.py", MODELS);
+    write("app/orders/__init__.py", []);
+    write("app/orders/service.py", ORDER_SERVICE);
+    write("app/__init__.py", [
+      "from sqlalchemy.orm import Query, Session",
+      "from app.models import Order",
+      "from app.orders.service import get_all",
+      "",
+      "def get_local(*, db_session: Session, scope: str = None) -> Query:",
+      "    return db_session.query(Order)",
+      "",
+      "def list_orders(db):",
+      '    get_all(db_session=db, scope="all").all()',
+      '    get_local(db_session=db, scope="all").all()',
+      '    return get_all(db_session=db, scope="all").select_from(Order).all()',
+    ]);
+
+    expect(await accessesIn("list_orders")).toEqual([
+      ["read", "all", [], [], "Order"],
+    ]);
+  });
+
+  it("records no read for a query a function read off an imported module returns, when nothing names the table", async () => {
+    write("app/models.py", MODELS);
+    write("app/orders/__init__.py", []);
+    write("app/orders/service.py", ORDER_SERVICE);
+    write("app/__init__.py", [
+      "from app.orders import service as order_service",
+      "",
+      "def list_orders(db):",
+      '    return order_service.get_all(db_session=db, scope="all").all()',
+    ]);
+
+    expect(await accessesIn("list_orders")).toEqual([]);
+  });
+
   it("reads a query a project method returns when it ends with a method a session records nothing for", async () => {
     write("app/models.py", MODELS);
     write("app/__init__.py", [
@@ -259,18 +304,34 @@ describe("the chains on a session and a query", () => {
     ]);
   });
 
-  it("reads the keywords of a statement's first call and of its values call as fields, and picks rows by the calls between", async () => {
+  it("reads the keywords of a statement's values calls as fields, its first call's first, and picks rows by the other calls after it", async () => {
+    write("app/models.py", MODELS);
+    write("app/__init__.py", [
+      "from sqlalchemy import Update",
+      "from app.models import Order",
+      "",
+      "def close(stmt: Update, order_id):",
+      "    stmt.values(state='closed').select_from(Order).values(note='x').filter_by(id=order_id)",
+    ]);
+
+    expect(await accessesIn("close")).toEqual([
+      ["read", "filter_by", ["state", "note"], ["id"], "Order"],
+    ]);
+  });
+
+  it("takes none of a statement's first call's keywords as columns when it supplies no values, and records no read when nothing names the table", async () => {
     write("app/models.py", MODELS);
     write("app/__init__.py", [
       "from sqlalchemy import Update",
       "from app.models import Order",
       "",
       "def close(stmt: Update, tenant, order_id):",
-      "    stmt.filter_by(tenant=tenant).filter_by(id=order_id).values(state='closed')",
+      "    stmt.filter_by(tenant=tenant).filter_by(id=order_id).all()",
+      "    stmt.filter_by(tenant=tenant).select_from(Order).filter_by(id=order_id).all()",
     ]);
 
     expect(await accessesIn("close")).toEqual([
-      ["read", "values", ["tenant", "state"], ["id"], null],
+      ["read", "all", [], ["id"], "Order"],
     ]);
   });
 });
