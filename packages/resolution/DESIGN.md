@@ -1307,6 +1307,16 @@ function are expected, because a wrapper that combines two library
 decorators applies both, so a caller checks whether the one it cares
 about is among them.
 
+Following those calls is what makes asking where a name came from
+expensive. `callsInto` walks every call the function makes, then every
+call those functions make, and a question's walk is cleared once it is
+answered, so the next question walks it again. `wantedOrigin` derives
+it for the TypeScript store, which reads which library a project's own
+decorator calls into. A reader that wants only where the name came from
+and what it comes to asks `wantedNameOrigin`, which gives the same
+`wantedComesFrom` and `wantedComesTo` answers and leaves `callsInto` out.
+The Python adapter's `originsOf` asks it.
+
 Two relations are for the rules' own use, and callers do not read them:
 
 ```
