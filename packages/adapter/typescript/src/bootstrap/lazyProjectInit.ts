@@ -335,7 +335,7 @@ export function importedFilePathsOf(
  * file resolves its imports cold, and most of that is re-reading the
  * same package.json files up the directory tree.
  */
-function resolutionCacheFor(
+export function resolutionCacheFor(
   project: Project,
   options: ts.CompilerOptions,
 ): ts.ModuleResolutionCache {
