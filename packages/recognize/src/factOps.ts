@@ -29,6 +29,7 @@ import { factReadOps, handedInAs } from "./factReadOps.js";
 import type { Effect, TypeShape } from "@suss/behavioral-ir";
 import type {
   ArgumentRead,
+  AsCallFollowing,
   ByOrigin,
   CallOps,
   CallScope,
@@ -70,6 +71,7 @@ import type {
   Typed,
   UnsettledName,
   UrlTarget,
+  ValueAt,
   ValueEntry,
   ValueForm,
   ValueOps,
@@ -139,6 +141,12 @@ export function factElementOps(key: string, source: FactSource): ElementOps {
  */
 export function valueKeyOf(value: ValueOps): string | null {
   return keysOfValues.get(value) ?? null;
+}
+
+/** The key a value these ops handed out was read at, and the argument it was read off, or null for a value they didn't hand out. */
+function valueAtOf(value: ValueOps): ValueAt | null {
+  const key = keysOfValues.get(value);
+  return key === undefined ? null : { key, at: argumentsRead.get(value) };
 }
 
 /** One column a hook stated a value for, and the key the value was read at. */
@@ -1032,6 +1040,23 @@ class FactValue implements ValueOps {
     return this.facts.urlOf?.(this.key, site, argumentsRead.get(this)) ?? null;
   }
 
+  host(port: ValueOps | null, site?: string): string | undefined {
+    const portAt = port === null ? null : valueAtOf(port);
+    return port !== null && portAt === null
+      ? undefined
+      : this.facts.hostOf?.(
+          { key: this.key, at: argumentsRead.get(this) },
+          portAt,
+          site,
+        );
+  }
+
+  isString(site?: string): boolean {
+    return (
+      this.facts.isStringOf?.(this.key, site, argumentsRead.get(this)) ?? false
+    );
+  }
+
   /**
    * With nothing bound, the adapter's own evaluator reads the value where
    * it has one, so a template with a hole nothing settles is no word.
@@ -1319,12 +1344,17 @@ class FactValue implements ValueOps {
   }
 
   /** Followed, the value is read the way `receiver()` reads a receiver, so the two give one site for one construction. */
-  asCall(how?: { readonly follow: "namesAndFields" }): CallOps | null {
+  asCall(how?: AsCallFollowing): CallOps | null {
     const key =
       how === undefined
         ? this.key
         : madeThroughProjectCall(
-            settled(this.key, this.facts, how.follow),
+            settled(
+              this.key,
+              this.facts,
+              how.follow,
+              "site" in how ? how.site : undefined,
+            ),
             this.facts,
           );
     return factCallOps(key, this.facts);
@@ -2544,20 +2574,35 @@ function objectAt(
 /**
  * A value, or what the source wrote it as when it is a name. A receiver
  * kept on a field is followed too, since a client kept on `this.orders`
- * is the call the field was written as.
+ * is the call the field was written as. `writtenAs` follows any value,
+ * so a call goes to what the adapter's rules say it was written as, as
+ * the construction at `site` made the instance when one is given.
  */
 function settled(
   key: string,
   source: FactSource,
-  following: "names" | "namesAndFields",
+  following: "names" | "namesAndFields" | "writtenAs",
+  site?: string,
 ): string {
-  const field = memberRead(key, source) !== null;
   const followed =
-    isName(key, source) || (following === "namesAndFields" && field);
+    following === "writtenAs" ||
+    isName(key, source) ||
+    (following === "namesAndFields" && memberRead(key, source) !== null);
   if (!followed) {
     return key;
   }
-  return source.writtenAs(key) ?? key;
+  return writtenUnderSite(key, source, site) ?? key;
+}
+
+/** What the key was written as, under the construction at `site` when the adapter can read one. */
+function writtenUnderSite(
+  key: string,
+  source: FactSource,
+  site: string | undefined,
+): string | null {
+  return site === undefined || source.writtenUnder === undefined
+    ? source.writtenAs(key)
+    : source.writtenUnder(key, site);
 }
 
 /** What a call into one of the project's own functions returns. Anything else comes back as it is. */

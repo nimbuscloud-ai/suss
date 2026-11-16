@@ -24,6 +24,7 @@ import type {
   OneArgument,
   RequestMethod,
   SentAsNamed,
+  UrlArgument,
 } from "./chain.js";
 import type { ReceiverOrigin } from "./ops.js";
 
@@ -42,8 +43,12 @@ export interface HttpRequests {
   methods(table: Readonly<Record<string, RequestMethod>>): HttpRequests;
   /** What a call of the client itself sends, as `fetch(url)` or `api(config)` after `api = axios.create()`. */
   calls(meaning: RequestMethod): HttpRequests;
-  /** Where the client's construction states a base URL, and how the library puts a call's path under it. */
-  baseUrl(pick: OneArgument & { readonly joins: BaseJoin }): HttpRequests;
+  /**
+   * Where the client's construction states a base URL, and how the
+   * library puts a call's path under it. `reads: "host"` says the
+   * argument is a host with the port at `port`, and no path.
+   */
+  baseUrl(pick: BaseUrlPick): HttpRequests;
   /** What a caller can read off the response, and what the client does with a refusal or a redirect. */
   response(response: ClientResponse): HttpRequests;
   /** A line of code this matches, which the pack's tests run. */
@@ -52,13 +57,20 @@ export interface HttpRequests {
   readonly declared: Chain<MethodMeaning>;
 }
 
+/** Where a construction states a base URL, as `HttpRequests.baseUrl` takes it. */
+export type BaseUrlPick = OneArgument & {
+  readonly joins: BaseJoin;
+  readonly reads?: "host";
+  readonly port?: OneArgument;
+};
+
 /**
  * A methods table entry for each verb, each sending its method and
  * taking the URL where `url` says: `{ get: "GET", post: "POST" }`.
  */
 export function verbs(
   table: Readonly<Record<string, string>>,
-  url: OneArgument,
+  url: UrlArgument,
 ): Record<string, SentAsNamed> {
   return Object.fromEntries(
     Object.entries(table).map(([name, sends]) => [name, { sends, url }]),
@@ -84,7 +96,14 @@ function chainFrom(declared: Chain<MethodMeaning>): HttpRequests {
     declared,
     methods: (table) => adding({ asks: "methods", table, ignoringCase: false }),
     calls: (meaning) => adding({ asks: "calls", meaning }),
-    baseUrl: ({ joins, ...at }) => adding({ asks: "baseUrl", at, joins }),
+    baseUrl: ({ joins, reads, port, ...at }) =>
+      adding({
+        asks: "baseUrl",
+        at,
+        joins,
+        ...(reads === undefined ? {} : { reads }),
+        ...(port === undefined ? {} : { port }),
+      }),
     response: (response) =>
       chainFrom({
         ...declared,

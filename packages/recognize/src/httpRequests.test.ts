@@ -5,7 +5,12 @@ import { httpRequests, verbs } from "./httpRequests.js";
 import { anyOf, constructedFrom, imported, modulesOf } from "./ops.js";
 import { declarationsIn, pack, requestRecognizersOf } from "./pack.js";
 
-import type { RequestClaim, Splats, UrlTarget } from "@suss/extractor";
+import type {
+  AsCallFollowing,
+  RequestClaim,
+  Splats,
+  UrlTarget,
+} from "@suss/extractor";
 import type { HttpRequests } from "./httpRequests.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
@@ -15,9 +20,27 @@ interface Stated {
   readonly bySite?: Readonly<Record<string, UrlTarget>>;
   readonly evaluated?: string | number | boolean;
   readonly properties?: Readonly<Record<string, Stated>>;
+  /** Whether it comes to a string, everywhere or per construction site. */
+  readonly string?: boolean | Readonly<Record<string, boolean>>;
+  /** What it reads as as a host, with a port's value after a colon. */
+  readonly host?: string;
+  /** The call it was made by, everywhere or under one construction. */
+  readonly madeBy?: CallOps;
+  readonly madeBySite?: Readonly<Record<string, CallOps>>;
 }
 
 function valueOps(stated: Stated): ValueOps {
+  const made =
+    stated.madeBy === undefined && stated.madeBySite === undefined
+      ? {}
+      : {
+          asCall: (how?: AsCallFollowing) =>
+            (how !== undefined && "site" in how && how.site !== undefined
+              ? stated.madeBySite?.[how.site]
+              : undefined) ??
+            stated.madeBy ??
+            null,
+        };
   return {
     url: (site?: string) =>
       (site === undefined ? undefined : stated.bySite?.[site]) ??
@@ -28,6 +51,15 @@ function valueOps(stated: Stated): ValueOps {
       const inside = stated.properties?.[name];
       return inside === undefined ? null : valueOps(inside);
     },
+    isString: (site?: string) =>
+      typeof stated.string === "object"
+        ? site !== undefined && stated.string[site] === true
+        : stated.string === true,
+    host: (port: ValueOps | null) =>
+      stated.host === undefined || port === null
+        ? stated.host
+        : `${stated.host}:${String(port.evaluated?.())}`,
+    ...made,
   } as unknown as ValueOps;
 }
 
@@ -45,6 +77,8 @@ interface Call {
   readonly settled?: boolean;
   readonly sites?: readonly string[];
   readonly receiver?: CallOps;
+  /** The receiver as the source writes it. */
+  readonly receiverValue?: Stated;
   readonly built?: Readonly<Record<number, CallOps>>;
   readonly writtenAs?: CallOps;
   readonly splats?: Splats;
@@ -82,6 +116,8 @@ function callOps(call: Call, asked: string[] = []): CallOps {
     },
     constructionSites: () => call.sites ?? [],
     receiver: () => call.receiver ?? null,
+    receiverValue: () =>
+      call.receiverValue === undefined ? null : valueOps(call.receiverValue),
     argument: (index: number) => call.built?.[index] ?? null,
     callee: () => call.writtenAs ?? null,
     splats: () => call.splats ?? { positionalFrom: null, keywords: false },
@@ -472,6 +508,47 @@ describe("a request object", () => {
     ).toEqual([{ method: "POST", path: "/orders", host: undefined }]);
   });
 
+  it("reads the construction the value the call passes was made by", () => {
+    expect(
+      claimsOf(OBJECTS, {
+        method: "request",
+        from: ["httplib"],
+        args: [
+          {
+            madeBy: callOps({
+              method: "new",
+              callee: "Http::Get.new",
+              args: [at("/orders")],
+            }),
+          },
+        ],
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+  });
+
+  it("reads the request object each construction of the class was handed", () => {
+    const made = (callee: string, path: string) =>
+      callOps({ method: "new", callee, args: [at(path)] });
+    expect(
+      claimsOf(OBJECTS, {
+        method: "request",
+        from: ["httplib"],
+        sites: ["users", "orders"],
+        args: [
+          {
+            madeBySite: {
+              users: made("Http::Get.new", "/users"),
+              orders: made("Http::Post.new", "/orders"),
+            },
+          },
+        ],
+      }),
+    ).toEqual([
+      { method: "GET", path: "/users", host: undefined },
+      { method: "POST", path: "/orders", host: undefined },
+    ]);
+  });
+
   it("is not read off a call other than a construction", () => {
     expect(
       claimsOf(OBJECTS, {
@@ -564,5 +641,106 @@ describe("a base URL the client was built with", () => {
         receiver: built({ path: "{base}/v1", host: undefined }),
       }),
     ).toEqual([{ method: "GET", path: "{base}/orders", host: undefined }]);
+  });
+
+  it("reads the base off the construction the receiver was made by", () => {
+    const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
+      .methods(verbs({ get: "GET" }, { at: 0 }))
+      .baseUrl({ at: 0, joins: "resolved" });
+    expect(
+      claimsOf(chain, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("orders")],
+        receiver: callOps({ method: "conn" }),
+        receiverValue: {
+          madeBy: built({ path: "/v2", host: "api.example.com" }),
+        },
+      }),
+    ).toEqual([{ method: "GET", path: "/v2/orders", host: "api.example.com" }]);
+  });
+});
+
+describe("a host passed apart from the path", () => {
+  const HOST_FIRST = {
+    at: 0,
+    hostFirst: { host: { at: 0 }, path: { at: 1 }, port: { at: 2 } },
+  };
+  const MODULE = httpRequests({ client: imported({ from: ["httplib"] }) })
+    .methods(verbs({ get: "GET" }, HOST_FIRST))
+    .baseUrl({ at: 0, reads: "host", port: { at: 1 }, joins: "resolved" });
+
+  it("reads the host, the path and the port when the path argument is a string", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          { ...at("api.example.com"), host: "api.example.com" },
+          { ...at("/orders"), string: true },
+          { evaluated: 8080 },
+        ],
+      }),
+    ).toEqual([
+      { method: "GET", path: "/orders", host: "api.example.com:8080" },
+    ]);
+  });
+
+  it("reads the first argument as the URL when the second is not a string", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("/orders", "api.example.com"), { string: false }],
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: "api.example.com" }]);
+  });
+
+  it("decides the form under each construction", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        sites: ["a", "b"],
+        args: [
+          {
+            ...at("{base}"),
+            host: "keys.example.com",
+            bySite: { b: { path: "/b", host: "other.example.com" } },
+          },
+          { ...at("/a"), string: { a: true } },
+        ],
+      }),
+    ).toEqual([
+      { method: "GET", path: "/a", host: "keys.example.com" },
+      { method: "GET", path: "/b", host: "other.example.com" },
+    ]);
+  });
+
+  it("sends a call on a client built on a host to that host, with its own path", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("orders")],
+        receiver: callOps({
+          method: "new",
+          args: [{ host: "api.example.com" }, { evaluated: 8443 }],
+        }),
+      }),
+    ).toEqual([
+      { method: "GET", path: "/orders", host: "api.example.com:8443" },
+    ]);
+  });
+
+  it("takes no base from a construction that states no host", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("/orders")],
+        receiver: callOps({ method: "new", args: [{}] }),
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
   });
 });
