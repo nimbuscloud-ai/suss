@@ -97,7 +97,7 @@ export {
 } from "./helperHandOff.js";
 export {
   type LibraryEnvVars,
-  libraryEnvReadMarker,
+  libraryEnvReadMarkers,
 } from "./libraryEnvReads.js";
 export { stampModuleImports } from "./moduleImports.js";
 export { type ModuleInitOptions, moduleInitStructure } from "./moduleInit.js";

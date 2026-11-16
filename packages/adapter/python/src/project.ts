@@ -37,6 +37,7 @@ import {
   extractionCacheDirFor,
   extractionConfigStamp,
   KeptParses,
+  libraryEnvReadMarkers,
   moduleInitStructure,
   noopTimer,
   ownersWhereWritten,
@@ -78,7 +79,6 @@ import { emitValueFacts, nodeId } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { importedDefinitionLookup } from "./importedDefinitions.js";
 import { bindJobQueues, jobConsumerUnits } from "./jobQueues.js";
-import { libraryEnvReadMarkers } from "./libraryEnvReads.js";
 import { moduleExportUnits, settlePythonModules } from "./moduleSurface.js";
 import { parsePython } from "./parser.js";
 import { moduleLoadInvocationEffects } from "./paths/effects.js";
@@ -1039,7 +1039,13 @@ async function runPython(
       summaries.push(summary);
     }
   }
-  summaries.push(...libraryEnvReadMarkers(bound, options.packs));
+  summaries.push(
+    ...libraryEnvReadMarkers(
+      options.packs,
+      (prefix) =>
+        bound.find((file) => importsModule(file, prefix))?.displayPath,
+    ),
+  );
 
   // An under-question given up on its budget depends on how much the run
   // asked before it, which a replay changes, so such a run starts over.
@@ -1151,6 +1157,20 @@ async function runPython(
   options.onTiming?.(timer.report());
 
   return { summaries: composed, facts: db };
+}
+
+/** Whether the file imports, at module level, a module that starts with the prefix. */
+function importsModule(file: BoundPythonFile, prefix: string): boolean {
+  for (const binding of file.module.moduleScope.bindings.values()) {
+    if (
+      (binding.kind === "import" || binding.kind === "importFrom") &&
+      binding.relativeLevel === 0 &&
+      binding.module.startsWith(prefix)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A registration as a cache entry writes it, or null when the run's packs cannot place it. */
