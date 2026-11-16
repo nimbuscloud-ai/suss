@@ -417,12 +417,12 @@ describe("the database work a Python body does", () => {
     expect(effects).toEqual([]);
   });
 
-  it("takes a column named by a keyword when a query is built that way", async () => {
+  it("takes no column from a keyword a statement function is given", async () => {
     const effects = await effectsFor(
       [
         "from sqlalchemy import select",
         "",
-        "found = select(whole=User.email).all()",
+        "found = select(User.id, whole=User.email).all()",
         "",
       ].join("\n"),
     );
@@ -431,7 +431,49 @@ describe("the database work a Python body does", () => {
         effects[0].interaction.class === "storage-access"
         ? effects[0].interaction.fields
         : null,
-    ).toEqual(["whole"]);
+    ).toEqual(["id"]);
+  });
+
+  it("takes no column from a keyword a project method that returns a query is given", async () => {
+    const base = BASE.replace(
+      "def query(cls)",
+      "def query(cls, *, scope=None)",
+    );
+    const effects = await effectsFor(
+      'found = Orders.query(scope="all").first()\n',
+      base,
+    );
+
+    expect(effects.map(accessOf)).toMatchObject([
+      { operation: "first", fields: [] },
+    ]);
+  });
+
+  it("records no read when nothing names a table for it, and keeps a write that has none", async () => {
+    const { db, definitions, files, handlerPath, scanned } =
+      await handlerProject(
+        [
+          "from sqlalchemy import select, update",
+          "",
+          "def handler(table):",
+          "    select(func.count()).all()",
+          "    update(table).values(name=1)",
+          "",
+        ].join("\n"),
+        BASE,
+        "handler",
+      );
+    bindEvaluator(db, { files, definitions });
+    const found = bodyStorage(scanned, {
+      facts: db,
+      factsPath: handlerPath,
+      patterns: SQLALCHEMY,
+      couldMatch: new Set(),
+    });
+
+    expect(found.effects.map(({ effect }) => accessOf(effect))).toMatchObject([
+      { kind: "write", operation: "update", fields: ["name"] },
+    ]);
   });
 
   it("says no columns for a query given a bare name", async () => {

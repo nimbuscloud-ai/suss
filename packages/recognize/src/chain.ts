@@ -109,6 +109,8 @@ export type CallStep =
  */
 export interface ToChainStart {
   readonly to: "chainStart";
+  /** The method the chain start has to make, or one of them, else the step reaches nothing. */
+  readonly method?: string | readonly string[];
   /** Methods that, made by the chain start, leave the step without a call. */
   readonly except?: readonly string[];
 }

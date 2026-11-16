@@ -752,6 +752,7 @@ A pack chooses that call with `about`, and a pick chooses its call with
 | `{ to: "receiver", every: true }` | every call up the receivers, in the order the walk meets them; with `method` or `origin`, every one of those it accepts. `method` can list several methods |
 | `{ to: "receiver", every: true, inPlace: true, until: session }` | every call up the receivers the source writes in place, stopping before the chain's first call on the session: the calls after `db.query(User)` in `db.query(User).filter(c).first()` |
 | `{ to: "chainStart", except: ["execute"] }` | the first call of the chain the source writes in place, `db.query(User)` above, or the call itself when its receiver is no call written in place; nothing when that call makes one of the methods `except` lists |
+| `{ to: "chainStart", method: ["values"] }` | the same call, only when it makes one of the methods listed |
 | `{ to: "chained", fromItself: true, every: true }` | the call itself and every call out along what it returns |
 | `{ to: "chained", every: true, except: ["values"] }` | every call out along what the call returns, passing over the calls to `values` |
 | `{ to: "passedTo", at: 0 }` | the call this call's result is passed to in place as its first argument, `session.execute(text(sql), params)` from `text(sql)`; with `method`, only a call to that method |
