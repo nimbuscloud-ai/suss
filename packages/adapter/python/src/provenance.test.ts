@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { sqlTextTestPack } from "./__fixtures__/sqlTextPack.js";
+import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject } from "./project.js";
 
 import type {
@@ -33,15 +34,14 @@ const fastapiLike: PythonPack = {
       ],
     },
   ],
-  storage: [
+  invocationRecognizers: storageChains([
     {
       module: "sqlalchemy.orm",
-      queryTypes: ["Query", "Session"],
+      types: ["Query", "Session"],
       writes: ["update", "delete", "add", "commit"],
       recordsNothing: ["execute", "close"],
-      storageSystem: "postgresql",
     },
-  ],
+  ]),
 };
 
 const flaskLike: PythonPack = {

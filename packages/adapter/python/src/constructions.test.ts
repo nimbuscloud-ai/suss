@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { fastapiTestPack } from "./__fixtures__/fastapiPattern.js";
 import { sessionQueryTestPack } from "./__fixtures__/sessionQueryPack.js";
+import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
@@ -28,15 +29,14 @@ const sqlalchemyLike: PythonPack = {
   name: "sqlalchemy",
   protocol: "http",
   discovery: [],
-  storage: [
+  invocationRecognizers: storageChains([
     {
       module: "sqlalchemy",
-      queryTypes: ["Select"],
+      types: ["Select"],
+      functions: ["select"],
       writes: ["update", "delete"],
-      queryFunctions: ["select"],
-      storageSystem: "postgresql",
     },
-  ],
+  ]),
 };
 
 async function extract(root: string): Promise<BehavioralSummary[]> {

@@ -904,6 +904,29 @@ compound keys of that model from the schema of the project the call's
 `file()` belongs to. A container the selector decides is not known yet
 when the rules run, and a rule gets null for it.
 
+## A statement a function the file imports builds
+
+SQLAlchemy builds a statement with a function, `select(User)`, and
+the calls after it pick rows:
+
+```ts
+const STATEMENT = imported({ from: ["sqlalchemy"], named: ["select", "update"] });
+storageCalls({ system, client: STATEMENT, clientAt: [{ to: "chainStart" }] }, { outermost: true })
+  .methods({ select: READ, update: WRITE }, { of: [{ to: "chainStart" }] })
+  .container(MODEL);
+```
+
+`select(User)` is made on nothing, so the start counts a call the steps
+reach when it is a call of the client itself, the way a bare call in
+hand is read. The statement is what its function says, so `of` looks
+the method up on the chain's first call, and that call's method is the
+operation: `update(User).where(c).values(name=x)` is an update read at
+`.values`. The picks still run from the call in hand. `about` would
+move them to the first call too, and a walk out from there meets the
+calls in source order, where a session chain reads them from the last
+call back. A statement written alone, `stmt = select(User)`, is its own
+first and last call.
+
 A call that reads or writes through the model's relations states each
 access in its options. `relations` points a rule at them, and each
 access it gives back becomes one more effect after the container's own,

@@ -25,6 +25,7 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
+import { storageChains } from "./__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { CacheDiagnostic } from "@suss/extractor";
@@ -411,15 +412,14 @@ describe("extractPythonProject's on-disk cache", () => {
           annotatedClassIsRequestBody: true,
         } as PythonPack["discovery"][number],
       ],
-      storage: [
+      invocationRecognizers: storageChains([
         {
           module: "sqlalchemy",
-          queryTypes: ["Select"],
+          types: ["Select"],
+          functions: ["select"],
           writes: ["update", "delete"],
-          queryFunctions: ["select"],
-          storageSystem: "postgresql",
         },
-      ],
+      ]),
     };
 
     const CONFIG = "import os\n\n\ndef env(key):\n    return os.environ[key]\n";

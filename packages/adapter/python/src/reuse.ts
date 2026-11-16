@@ -167,7 +167,6 @@ export class WalkReplay {
   }
 }
 
-const COULD_MATCH = "couldMatch ";
 const ROUTER = "router ";
 const ROUTER_BUILT = "routerBuilt ";
 const MODULE_NAMED = "moduleNamed ";
@@ -247,22 +246,6 @@ export class PackPositions {
   }
 }
 
-/** A name set whose lookups are noted, for the storage recognizer's method names. */
-export class WatchedNames extends Set<string> {
-  constructor(
-    names: Iterable<string>,
-    private readonly db: Database,
-  ) {
-    super(names);
-  }
-
-  override has(name: string): boolean {
-    const found = super.has(name);
-    noteLookup(this.db, `${COULD_MATCH}${name}`, String(found));
-    return found;
-  }
-}
-
 /** A router index whose lookups are noted, keyed by where the pattern and module are. */
 export function watchRouterIndex(
   index: RouterIndex,
@@ -306,7 +289,6 @@ export function watchRouterIndex(
 /** Each noted lookup made again over this run's indexes, which must be the ones nothing watches. */
 export function lookAgainIn(args: {
   db: Database;
-  couldMatch: ReadonlySet<string>;
   routerIndex: RouterIndex;
   wrapperIndex: PythonWrapperIndex;
   positions: PackPositions;
@@ -330,9 +312,6 @@ export function lookAgainIn(args: {
       : JSON.stringify(ask(pattern, module, parts));
   };
   return (id) => {
-    if (id.startsWith(COULD_MATCH)) {
-      return String(args.couldMatch.has(id.slice(COULD_MATCH.length)));
-    }
     if (id.startsWith(ROUTER_BUILT)) {
       return router(
         id.slice(ROUTER_BUILT.length),

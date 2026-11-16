@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
+import { storageChains } from "../__fixtures__/storageChains.js";
 import { extractPythonProject, findPythonFiles } from "../project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -23,15 +24,14 @@ const fastapiLike: PythonPack = {
       defaultStatusCode: 200,
     },
   ],
-  storage: [
+  invocationRecognizers: storageChains([
     {
       module: "sqlalchemy",
-      queryTypes: ["Select"],
+      types: ["Select"],
+      functions: ["select"],
       writes: ["update", "delete"],
-      queryFunctions: ["select"],
-      storageSystem: "postgresql",
     },
-  ],
+  ]),
 };
 
 const APP_HEADER = ["from fastapi import FastAPI", "", "app = FastAPI()", ""];
@@ -1142,15 +1142,14 @@ const sqlmodelLike: PythonPack = {
   name: "sqlmodel",
   protocol: "http",
   discovery: fastapiLike.discovery,
-  storage: [
+  invocationRecognizers: storageChains([
     {
       module: "sqlmodel",
-      queryTypes: ["Session"],
+      types: ["Session"],
       writes: ["add", "commit"],
       recordsNothing: ["exec"],
-      storageSystem: "postgresql",
     },
-  ],
+  ]),
   models: [
     {
       baseNames: ["SQLModel", "declarative_base"],
