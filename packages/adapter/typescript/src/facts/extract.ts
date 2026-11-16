@@ -40,6 +40,7 @@ import {
   type WrittenEntry,
 } from "@suss/resolution";
 
+import { resolutionCacheFor } from "../bootstrap/lazyProjectInit.js";
 import {
   declarationCarryingTheBody,
   FUNCTION_ROOT_KINDS,
@@ -219,11 +220,13 @@ function compilerResolvedPathOf(
   specifier: string,
 ): string | null {
   const project = declaration.getProject();
+  const options = project.getCompilerOptions();
   const result = ts.resolveModuleName(
     specifier,
     declaration.getSourceFile().getFilePath(),
-    project.getCompilerOptions(),
+    options,
     project.getModuleResolutionHost(),
+    resolutionCacheFor(project, options),
   );
   return result.resolvedModule?.resolvedFileName ?? null;
 }
