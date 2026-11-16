@@ -499,6 +499,13 @@ export interface ValueOps {
    * assigns to `router`, the way `CallOps.receiver` reads a receiver.
    */
   asCall?(how?: { readonly follow: "namesAndFields" }): CallOps | null;
+  /**
+   * Each call a name or a field may have been written as, when it is
+   * written as more than one, such as a name assigned twice, where
+   * `asCall` with `follow` gives none. Empty where the adapter does not
+   * say.
+   */
+  asCalls?(): readonly CallOps[];
   /** Whether the source writes the language's literal for no value here: `None`, `nil`, `null` or `undefined`. */
   nothing?(): boolean;
   /**

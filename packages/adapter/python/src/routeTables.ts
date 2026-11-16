@@ -302,6 +302,14 @@ const REASONS: Readonly<
   prefixReplaced: chainOnly,
   cycle: chainOnly,
   pathUnread: chainOnly,
+  rootPrefixUnread: chainOnly,
+  carrierSeveral: chainOnly,
+  carrierUnfollowed: chainOnly,
+  carrierShared: chainOnly,
+  carrierPrefixUnread: chainOnly,
+  carrierRepathed: chainOnly,
+  carrierNested: chainOnly,
+  carrierRegisteredTwice: chainOnly,
 };
 
 /** A reason the words say only as a chain of routers: a cycle, and those FastAPI's table never gives. */

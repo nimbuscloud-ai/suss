@@ -2763,6 +2763,24 @@ describe("what a route table asks of the facts", () => {
     ).toEqual([]);
   });
 
+  it("lists each call a name written twice is written as, and none for a name that comes to one", () => {
+    const twice = source({
+      writtenAs: () => null,
+      writtenAsEach: (key) => (key === "client" ? ["new", "put"] : []),
+    });
+    const shared = factValueOps("client", twice);
+    expect(shared.asCall?.({ follow: "namesAndFields" })).toBeNull();
+    expect(shared.asCalls?.().map((call) => call.site?.())).toEqual([
+      "new",
+      "put",
+    ]);
+    expect(
+      factValueOps("client", source({ writtenAsEach: () => ["new", "put"] }))
+        .asCalls?.()
+        .map((call) => call.site?.()),
+    ).toEqual([]);
+  });
+
   it("gives each value in the collection a call returns, and nothing where the adapter settles none", () => {
     const returning = source({
       returnedItemsOf: (call) => (call === "send" ? ["a", "b"] : null),

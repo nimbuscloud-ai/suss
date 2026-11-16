@@ -41,7 +41,12 @@ export {
   subUnitsOf,
 } from "./pack.js";
 export { renderedProps } from "./renderedProps.js";
-export { composeAppRoutes, composeRoutes, rowRoutes } from "./routeTable.js";
+export {
+  composeAppRoutes,
+  composeRoutes,
+  joinedTablePath,
+  rowRoutes,
+} from "./routeTable.js";
 export { runtimeReads } from "./runtimeReads.js";
 export { schemaReads } from "./schemaReads.js";
 export { slotsDeclared } from "./slots.js";
@@ -250,6 +255,7 @@ export type { Match, PackSpec } from "./pack.js";
 export type { ClaimSpec, RenderedProps } from "./renderedProps.js";
 export type {
   BaseRole,
+  CarrierRule,
   ChildrenIn,
   DefaultsRole,
   EntryPick,
