@@ -551,7 +551,9 @@ The adapter does not read a name the helper builds instead of using whole, such 
 
 These are Ruby's own `Kernel` methods and its standard library, so the adapter reads them the way it reads `ENV`, with no pack.
 
-`puts`, `print` and `warn` with no receiver, and a write to `$stdout`, `STDOUT`, `$stderr` or `STDERR`, become a `stream-write` interaction on an `io` binding, the effect the Node pack records for `console.log`. `JSON.generate(report)` and `report.to_json` record the report's shape with `serialized: json`.
+`puts`, `print` and `warn` with no receiver, and a write to `$stdout`, `STDOUT`, `$stderr` or `STDERR`, become a `stream-write` interaction on an `io` binding, the effect the Node pack records for `console.log`. `JSON.generate(report)` and `report.to_json` record the report's shape with `serialized: json`, and so does a string that puts only whitespace around one of them.
+
+The spellings are two stream-write chains declared with `@suss/recognize`, in `stdlib/streams.ts`, which the same dispatch as the environment chain hands every call in a body. A stream is read the way the facts spell it, so `::STDOUT` writes too, and a stream kept in a local or passed to a helper's parameter writes to that stream wherever the helper writes to it. A call with no receiver is Kernel's only when it runs no method the project wrote: in a class that defines its own `warn`, `warn "x"` calls that method and writes nothing. A write in a method's own parameter default stays on the method, unlike a read of the environment there, which the call that leaves the argument out reports.
 
 `exit`, `exit!` and `abort` end the process. A reached method has one transition, because nothing tells its paths apart. One that ends the process has its paths read one at a time instead, so each exit is an `exit` transition with the conditions that lead to it. `exit` with no code exits 0, `exit false` and a bare `exit!` exit 1, and `abort` exits 1 after its message, which is recorded as a write to stderr. `exit(main(ARGV))` makes `main`'s return the exit code, through the same `wantedExitSink` question the other adapters ask.
 
