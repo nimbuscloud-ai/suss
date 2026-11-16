@@ -344,7 +344,6 @@ describe("the unit a callback written in place becomes", () => {
 
   it("claims nothing from a context that lists no calls", () => {
     expect(subUnits?.(parent, {})).toEqual([]);
-    expect(subUnits?.(parent, null)).toEqual([]);
   });
 
   it("is left off a pack whose chains say nothing about it", () => {

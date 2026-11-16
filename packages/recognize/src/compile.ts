@@ -1108,11 +1108,10 @@ function callClaimsOf(
         ])
       : null;
   const hook: SubUnitsHook = (parent, ctx) => {
-    const carrier = ctx as SubUnitOpsCarrier | null;
-    if (words !== null && !writesAny(carrier, parent, words)) {
+    if (words !== null && !writesAny(ctx, parent, words)) {
       return [];
     }
-    const calls = carrier?.calls?.(parent) ?? [];
+    const calls = ctx.calls?.(parent) ?? [];
     const counts = new Map<string, number>();
     const countsInParent = new Map<UnitWhenInPlaceLink, number>();
     const claims: DiscoveredSubUnit[] = [];
@@ -1164,11 +1163,11 @@ export interface CompileOptions {
 
 /** Whether the parent's file writes one of the words, or the adapter cannot say. */
 function writesAny(
-  carrier: SubUnitOpsCarrier | null,
+  carrier: SubUnitOpsCarrier,
   parent: DiscoveredSubUnitParent,
   words: readonly string[],
 ): boolean {
-  const mentions = carrier?.mentions;
+  const mentions = carrier.mentions;
   return mentions === undefined || words.some((word) => mentions(parent, word));
 }
 
@@ -1210,14 +1209,13 @@ function elementClaimsOf(chain: Chain<MethodMeaning>): SubUnitsHook | null {
     named: linkIn(chain, "unitWhenNamedInParent"),
   };
   return (parent, ctx) => {
-    const carrier = ctx as SubUnitOpsCarrier | null;
     const found: AttributeClaim[] = [];
-    for (const element of carrier?.elements?.(parent) ?? []) {
+    for (const element of ctx.elements?.(parent) ?? []) {
       for (const { name, value } of element.attributes()) {
         const claim = matching.test(name)
           ? ATTRIBUTE_CLAIM[formOf(value)]?.(value, links, {
               parent,
-              carrier,
+              carrier: ctx,
             })
           : null;
         if (claim !== null && claim !== undefined) {
@@ -1261,7 +1259,7 @@ const ATTRIBUTE_CLAIM: Partial<
       links: AttributeClaimLinks,
       reading: {
         parent: DiscoveredSubUnitParent;
-        carrier: SubUnitOpsCarrier | null;
+        carrier: SubUnitOpsCarrier;
       },
     ) => Omit<AttributeClaim, "naming"> | null
   >
@@ -1275,7 +1273,7 @@ const ATTRIBUTE_CLAIM: Partial<
   name: (value, links, { parent, carrier }) => {
     const fn = value.function?.() ?? null;
     const func = (fn as Partial<AstCapableValueOps> | null)?.ast?.() ?? null;
-    const written = fn !== null && carrier?.writes?.(parent, fn) === true;
+    const written = fn !== null && carrier.writes?.(parent, fn) === true;
     return links.named === null || func === null || !written
       ? null
       : { func, link: links.named };

@@ -61,7 +61,6 @@ describe("reactFramework: pack shape", () => {
         }),
       ),
     ]);
-    expect(pack.discoverUnits).toBeUndefined();
   });
 
   it("declares a jsxReturn terminal for render outputs", () => {

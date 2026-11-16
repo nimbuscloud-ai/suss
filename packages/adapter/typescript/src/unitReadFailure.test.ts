@@ -44,27 +44,23 @@ const UNREADABLE_MAPPING = {
   params: null,
 } as unknown as InputMappingPattern;
 
-/** Finds `broken` and `fine`, and hands `broken` the mapping above. */
-const PACK_WITH_ONE_BAD_UNIT: PatternPack = {
-  ...PACK,
-  name: "one-bad-unit",
-  discovery: [],
-  discoverUnits: (sourceFile, ctx) => {
-    const exported = (
-      ctx as {
-        exportedFunctions: (
-          file: unknown,
-        ) => Array<{ name: string; func: unknown }>;
-      }
-    ).exportedFunctions(sourceFile);
-    return exported.map((fn) => ({
-      func: fn.func,
-      kind: "handler",
-      name: fn.name,
-      ...(fn.name === "broken" ? { inputMapping: UNREADABLE_MAPPING } : {}),
-    }));
+/** Finds `broken` and reads it with the mapping above, then `fine` with the usual one. */
+const PACKS_WITH_ONE_BAD_UNIT: PatternPack[] = [
+  {
+    ...PACK,
+    name: "one-bad-unit",
+    discovery: [
+      { kind: "handler", match: { type: "namedExport", names: ["broken"] } },
+    ],
+    inputMapping: UNREADABLE_MAPPING,
   },
-};
+  {
+    ...PACK,
+    discovery: [
+      { kind: "handler", match: { type: "namedExport", names: ["fine"] } },
+    ],
+  },
+];
 
 /** A pattern whose export names are a number, gated to files that import one package. */
 const PACK_WITH_BAD_PATTERN: PatternPack = {
@@ -131,7 +127,7 @@ describe("a unit whose body throws while it is read", () => {
   it("still comes out, with a gap that gives the error", async () => {
     const { summaries } = await extract(
       projectWith({ "src/units.ts": TWO_UNITS }),
-      [PACK_WITH_ONE_BAD_UNIT],
+      PACKS_WITH_ONE_BAD_UNIT,
     );
 
     const broken = summaries.find((s) => s.identity.name === "broken");
@@ -145,7 +141,7 @@ describe("a unit whose body throws while it is read", () => {
   it("leaves the other units in the run alone", async () => {
     const { summaries, printed } = await extract(
       projectWith({ "src/units.ts": TWO_UNITS }),
-      [PACK_WITH_ONE_BAD_UNIT],
+      PACKS_WITH_ONE_BAD_UNIT,
     );
 
     const fine = summaries.find((s) => s.identity.name === "fine");

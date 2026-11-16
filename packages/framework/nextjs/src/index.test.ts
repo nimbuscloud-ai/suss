@@ -52,7 +52,6 @@ describe("nextjsFramework: pack shape", () => {
       "fileConvention",
       "marked",
     ]);
-    expect(pack.discoverUnits).toBeUndefined();
     expect(
       pack.declarations?.declarations.map((declared) => declared.name),
     ).toEqual(["marked"]);

@@ -56,7 +56,6 @@ function summarized(effects: readonly Effect[]): string[] {
 describe("cloudflareWorkersFramework", () => {
   it("declares the env chain, the three store chains and the two trigger patterns", () => {
     const pack = cloudflareWorkersFramework();
-    expect(pack.discoverUnits).toBeUndefined();
     expect(
       pack.declarations?.declarations.map((declared) => declared.name),
     ).toEqual([

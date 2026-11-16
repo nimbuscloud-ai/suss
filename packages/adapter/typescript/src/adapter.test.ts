@@ -19,11 +19,15 @@ import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type {
+  AstCapableValueOps,
+  DiscoveredSubUnitParent,
+  PatternPack,
+  SubUnitOpsCarrier,
+} from "@suss/extractor";
 import type { CallOps } from "@suss/recognize";
 import type { FunctionRoot } from "./conditions.js";
 import type { DiscoveredUnit } from "./discovery/index.js";
-import type { TsSubUnitContext } from "./subUnitContext.js";
 
 function restMethodOf(
   target:
@@ -6874,6 +6878,19 @@ const expressResPack: PatternPack = {
   },
 };
 
+/** The functions written in place as the first argument of each `defer` call the parent runs, read off the context's call ops. */
+function deferredIn(
+  parent: DiscoveredSubUnitParent,
+  ctx: SubUnitOpsCarrier,
+): unknown[] {
+  return (ctx.calls?.(parent) ?? []).flatMap((call) => {
+    const value = call.calleeText() === "defer" ? call.valueAt(0) : null;
+    return value?.form?.() === "function"
+      ? [(value as AstCapableValueOps).ast()]
+      : [];
+  });
+}
+
 describe("walker descent", () => {
   it("(a) finds a handler's terminal produced inside a Promise executor", () => {
     const project = createTestProject();
@@ -6980,27 +6997,12 @@ describe("walker descent", () => {
     const deferPack: PatternPack = {
       ...expressResPack,
       name: "defer-pack",
-      subUnits: (parent, ctx) => {
-        const c = ctx as {
-          findCallExpressionsByName: (
-            f: unknown,
-            name: string,
-          ) => Array<unknown>;
-          getCallArgumentFunction: (call: unknown, position: number) => unknown;
-        };
-        const out: Array<{ func: unknown; kind: string; name: string }> = [];
-        for (const call of c.findCallExpressionsByName(parent.func, "defer")) {
-          const fn = c.getCallArgumentFunction(call, 0);
-          if (fn !== null) {
-            out.push({
-              func: fn,
-              kind: "handler",
-              name: `${parent.name}.defer`,
-            });
-          }
-        }
-        return out as never;
-      },
+      subUnits: (parent, ctx) =>
+        deferredIn(parent, ctx).map((func) => ({
+          func,
+          kind: "handler",
+          name: `${parent.name}.defer`,
+        })),
     };
 
     const project = createTestProject();
@@ -7040,24 +7042,12 @@ describe("walker descent", () => {
   const nestedDeferPack: PatternPack = {
     ...expressResPack,
     name: "nested-defer-pack",
-    subUnits: (parent, ctx) => {
-      const c = ctx as TsSubUnitContext;
-      const parentFunc = parent.func as FunctionRoot;
-      return c
-        .findCallExpressionsByName(parentFunc, "defer")
-        .flatMap((call, index) => {
-          const fn = c.getCallArgumentFunction(call, 0);
-          return fn === null
-            ? []
-            : [
-                {
-                  func: fn,
-                  kind: "handler" as const,
-                  name: `${parent.name}.defer#${index}`,
-                },
-              ];
-        });
-    },
+    subUnits: (parent, ctx) =>
+      deferredIn(parent, ctx).map((func, index) => ({
+        func,
+        kind: "handler",
+        name: `${parent.name}.defer#${index}`,
+      })),
   };
 
   it("notes a call it could not follow only on the sub-unit that makes it", async () => {
@@ -7180,105 +7170,6 @@ describe("a route handler written inside an exported function", () => {
       );
     expect(noted(mount)).not.toContain("audit");
     expect(noted(handler)).toContain("audit");
-  });
-});
-
-describe("discoverUnits callback with routeInfo + metadata", () => {
-  const manifestPack: PatternPack = {
-    name: "manifest-lambda",
-    protocol: "http",
-    languages: ["typescript", "javascript"],
-    discovery: [],
-    terminals: [
-      {
-        kind: "response",
-        match: { type: "returnShape", requiredProperties: ["statusCode"] },
-        extraction: {
-          statusCode: { from: "property", name: "statusCode" },
-          body: { from: "property", name: "body", unwrapJsonStringify: true },
-        },
-      },
-    ],
-    inputMapping: {
-      type: "positionalParams",
-      params: [{ position: 0, role: "event" }],
-    },
-    discoverUnits: (sf, ctx) => {
-      const c = ctx as {
-        exportedFunctions: (
-          s: unknown,
-        ) => Array<{ name: string; func: unknown }>;
-      };
-      const handler = c.exportedFunctions(sf).find((f) => f.name === "handler");
-      if (handler === undefined) {
-        return [];
-      }
-      const base = {
-        func: handler.func,
-        kind: "handler",
-        name: "Fn.handler",
-        metadata: { manifest: { fn: "Fn" } },
-      };
-      return [
-        { ...base, routeInfo: { method: "GET", path: "/things/{id}" } },
-        { ...base, routeInfo: { method: "DELETE", path: "/things/{id}" } },
-      ];
-    },
-  };
-
-  async function run(): Promise<BehavioralSummary[]> {
-    const project = createTestProject();
-    project.createSourceFile(
-      "handler.ts",
-      `
-      export const handler = async (event: any) => {
-        if (!event.id) {
-          return { statusCode: 400, body: JSON.stringify({ error: "no id" }) };
-        }
-        return { statusCode: 200, body: JSON.stringify({ id: event.id }) };
-      };
-    `,
-    );
-    const adapter = createTypeScriptAdapter({
-      project,
-      frameworks: [manifestPack],
-    });
-    return await adapter.extractAll();
-  }
-
-  it("emits one REST-bound summary per routeInfo on a shared function", async () => {
-    const summaries = await run();
-    const get = summaries.find(
-      (s) => restMethodOf(s) === "GET" && restPathOf(s) === "/things/{id}",
-    );
-    const del = summaries.find(
-      (s) => restMethodOf(s) === "DELETE" && restPathOf(s) === "/things/{id}",
-    );
-    expect(get).toBeDefined();
-    expect(del).toBeDefined();
-    expect(summaries).toHaveLength(2);
-  });
-
-  it("merges the callback's unit metadata onto the summary", async () => {
-    const summaries = await run();
-    const get = summaries.find((s) => restMethodOf(s) === "GET");
-    expect(get?.metadata?.manifest).toEqual({ fn: "Fn" });
-  });
-
-  it("unwraps JSON.stringify bodies through the callback-discovered unit", async () => {
-    const summaries = await run();
-    const get = summaries.find((s) => restMethodOf(s) === "GET");
-    const ok = get?.transitions.find(
-      (t) =>
-        t.output.type === "response" &&
-        t.output.statusCode?.type === "literal" &&
-        t.output.statusCode.value === 200,
-    );
-    expect(ok?.output.type).toBe("response");
-    if (ok?.output.type === "response") {
-      expect(JSON.stringify(ok.output.body)).toContain("id");
-      expect(JSON.stringify(ok.output.body)).not.toContain("JSON.stringify");
-    }
   });
 });
 

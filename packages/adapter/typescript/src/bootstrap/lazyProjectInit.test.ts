@@ -71,17 +71,14 @@ const ungatedPack: PatternPack = {
   inputMapping: { type: "positionalParams", params: [] },
 };
 
-// A callback-driven pack: no data-driven discovery patterns, a
-// pack-level import gate, and a `discoverUnits` callback. This is the
-// shape `@suss/framework-aws-lambda` uses (routing lives in the SAM
-// template, not in code), and the shape the bootstrap has to gate on
-// the pack-level `requiresImport` rather than on per-pattern gates.
+// No discovery patterns, so the bootstrap can only gate this pack on its
+// pack-level `requiresImport`.
 const callbackPack: PatternPack = {
   name: "test-callback",
   protocol: "http",
   languages: ["typescript"],
   discovery: [],
-  discoverUnits: () => [],
+  invocationRecognizers: [() => null],
   requiresImport: ["@callback/lib"],
   terminals: [],
   inputMapping: { type: "positionalParams", params: [] },
@@ -92,7 +89,7 @@ const recognizerOnlyPack: PatternPack = {
   protocol: "http",
   languages: ["typescript"],
   discovery: [],
-  discoverUnits: () => [],
+  invocationRecognizers: [() => null],
   terminals: [],
   inputMapping: { type: "positionalParams", params: [] },
 };
@@ -291,7 +288,7 @@ describe("createLazyProject", () => {
     expect(result.candidatePaths).toHaveLength(2);
   });
 
-  it("gates a discoverUnits-only pack on its pack-level requiresImport", async () => {
+  it("gates a recognizer-only pack on its pack-level requiresImport", async () => {
     const { tsconfigPath } = await makeTempProject({
       "handler.ts": `import type { H } from "@callback/lib"; export const handler: H = () => 1;`,
       "unrelated.ts": "export const x = 1;",
@@ -302,7 +299,7 @@ describe("createLazyProject", () => {
     ]);
   });
 
-  it("loads every file for a discoverUnits-only pack with no pack-level gate", async () => {
+  it("loads every file for a recognizer-only pack with no pack-level gate", async () => {
     const { tsconfigPath } = await makeTempProject({
       "a.ts": "export const a = 1;",
       "b.ts": "export const b = 2;",
