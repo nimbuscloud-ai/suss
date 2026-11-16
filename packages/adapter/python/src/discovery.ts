@@ -65,14 +65,13 @@ import {
 } from "./paths/raisedResponses.js";
 import { returnedBodyShape } from "./paths/returnedShape.js";
 import { askFileSources, slotProvenance } from "./provenance.js";
-import { stdlibReads } from "./stdlib/dispatch.js";
+import { stdlibEffects } from "./stdlib/dispatch.js";
 import {
   bodyStorage,
   declaredCallIds,
   type StorageLookup,
   storageCallIds,
 } from "./storage.js";
-import { streamWriteEffects } from "./streamWrites.js";
 import {
   askWrittenValues,
   evaluatedValue,
@@ -1467,7 +1466,6 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
   const effects = calls.map((call) => call.effect);
   const extra = recognizedBodyEffects(
     definitionNode,
-    module,
     storageLookup,
     options.facts,
   );
@@ -1675,7 +1673,6 @@ export interface BodyEffects {
 /** What a body does besides calling: config it reads, database work, SQL it writes itself, jobs it enqueues. */
 export function recognizedBodyEffects(
   definitionNode: PyNode,
-  module: ModuleBinding,
   storageLookup: StorageLookup | undefined,
   facts: Database | undefined,
 ): BodyEffects {
@@ -1683,7 +1680,7 @@ export function recognizedBodyEffects(
     storageLookup === undefined
       ? { effects: [], slots: [] }
       : bodyStorage(definitionNode, storageLookup);
-  const found = besidesCallsWith(definitionNode, module, storage, facts);
+  const found = besidesCallsWith(definitionNode, storage, facts);
   const siteOf = effectSitesIn(
     field(definitionNode, "body"),
     found.map((one) => one.at),
@@ -1707,7 +1704,6 @@ export function recognizedBodyEffects(
  */
 export function effectsBesidesCalls(
   definitionNode: PyNode,
-  module: ModuleBinding,
   storageLookup: StorageLookup | undefined,
   facts: Database | undefined,
 ): EffectAt[] {
@@ -1715,19 +1711,22 @@ export function effectsBesidesCalls(
     storageLookup === undefined
       ? { effects: [] }
       : bodyStorage(definitionNode, storageLookup);
-  return besidesCallsWith(definitionNode, module, storage, facts);
+  return besidesCallsWith(definitionNode, storage, facts);
 }
 
 function besidesCallsWith(
   definitionNode: PyNode,
-  module: ModuleBinding,
   storage: { effects: readonly EffectAt[] },
   facts: Database | undefined,
 ): EffectAt[] {
+  const stdlib =
+    facts === undefined
+      ? { reads: [], writes: [] }
+      : stdlibEffects(definitionNode, facts);
   return [
-    ...(facts === undefined ? [] : stdlibReads(definitionNode, facts)),
+    ...stdlib.reads,
     ...storage.effects,
-    ...streamWriteEffects(definitionNode, module),
+    ...stdlib.writes,
     ...enqueueEffects(definitionNode, facts),
   ];
 }

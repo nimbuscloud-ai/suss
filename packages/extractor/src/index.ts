@@ -62,7 +62,11 @@ import type { FailureDelivery, RedirectDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
-export { callSiteKey, numberRepeatedCallSites } from "./callSiteGroup.js";
+export {
+  callSiteKey,
+  locatedBeforeGroupId,
+  numberRepeatedCallSites,
+} from "./callSiteGroup.js";
 export { claimBinding } from "./claimBinding.js";
 export { composeWrappers } from "./composeWrappers.js";
 export {

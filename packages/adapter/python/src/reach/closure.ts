@@ -1094,7 +1094,6 @@ export function libraryUnit(
   const body = field(node, "body");
   const extra = recognizedBodyEffects(
     node,
-    file.module,
     options.storageFor(file),
     options.facts,
   );

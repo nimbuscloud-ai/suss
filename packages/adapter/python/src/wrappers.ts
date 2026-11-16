@@ -1085,7 +1085,6 @@ function unitAround(
   const effects = invocationSites(node, options.facts);
   const extra = recognizedBodyEffects(
     node,
-    file.module,
     options.storageFor(file),
     options.facts,
   );
