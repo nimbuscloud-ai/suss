@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { flaskRestxTestPattern } from "./__fixtures__/flaskRestxPattern.js";
 import { extractPythonProject, findPythonFiles } from "./index.js";
 
 import type { PythonPack } from "./pack.js";
@@ -15,35 +16,7 @@ import type { PythonPack } from "./pack.js";
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
   protocol: "http",
-  discovery: [
-    {
-      type: "decoratedClassRoute",
-      importModule: ["flask_restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET", post: "POST" },
-      pathParamSyntax: "flaskConverters",
-      routerComposition: {
-        routerConstructorName: "Namespace",
-        includeMethodName: "add_namespace",
-        prefixKeyword: "path",
-        mountPrefixEffect: "replaces",
-        constructorPrefixRequired: true,
-        constructorPrefixTrailingSlash: "trimmed",
-        noValuePrefix: "unstated",
-        mountObjectPrefix: {
-          prefixKeyword: "prefix",
-          carrier: {
-            importModule: ["flask"],
-            constructorName: "Blueprint",
-            argumentIndex: 0,
-            prefixKeyword: "url_prefix",
-            handoffMethodName: "init_app",
-            registerMethodName: "register_blueprint",
-          },
-        },
-      },
-    },
-  ],
+  discovery: [flaskRestxTestPattern()],
 };
 
 /** A project on disk, since a loop over a call is settled across files. */
@@ -171,7 +144,7 @@ describe("a loop over a call that registers routers", () => {
     ).toEqual([]);
   });
 
-  it("says which entry stopped the list, and what it resolved to", async () => {
+  it("points at the loop whose list it cannot mount", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-"));
     const files: Record<string, string> = {
       "endpoint/__init__.py": "",
@@ -212,8 +185,8 @@ describe("a loop over a call that registers routers", () => {
     const gap = (summaries[0]?.gaps ?? [])
       .map((entry) => entry.description)
       .join(" ");
-    expect(gap).toContain("1 of 2 entries matched a router");
-    expect(gap).toContain("something_else");
-    expect(gap).toContain("declined rather than most of it mounted");
+    expect(gap).toMatch(
+      /is not mounted by name in the files read, and a loop at \S*app\.py:9 mounts routers read out of a call this reading does not follow/,
+    );
   });
 });

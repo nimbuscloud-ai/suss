@@ -11,6 +11,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import {
   extractPythonProject,
   findPythonFiles,
@@ -28,8 +29,7 @@ const packs: PythonPack[] = [
       {
         type: "decoratedClassRoute",
         importModule: ["myapp.wrappers.restx"],
-        decoratorName: "route",
-        verbMethodNames: { get: "GET", post: "POST" },
+        routes: flaskRestxTestRoutes(["myapp.wrappers.restx"]),
       },
     ],
     projectModules: ["myapp.wrappers.restx"],

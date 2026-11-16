@@ -41,6 +41,7 @@ import { originOf } from "./values/origin.js";
 import type { DispatchTable, Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { EffectArg, RawCodeStructure } from "@suss/extractor";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { DecoratorClassification } from "./decorators.js";
 import type { CallArgument } from "./facts/values.js";
 import type {
@@ -53,7 +54,6 @@ import type {
 import type { PyNode } from "./parser.js";
 import type { EffectAt } from "./paths/effects.js";
 import type { ReachOptions } from "./reach/closure.js";
-import type { BoundPythonFile } from "./routers.js";
 import type { BuiltValue } from "./values/evaluator.js";
 
 /** One pack's job library, with the pack's name for the bindings it makes. */

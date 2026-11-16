@@ -34,11 +34,11 @@ import { originOf } from "./values/origin.js";
 import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { RawCodeStructure } from "@suss/extractor";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyTestCases, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
 import type { ImpliedCall, ReachOptions } from "./reach/closure.js";
 import type { ReachedFunction } from "./reach/resolveCallee.js";
-import type { BoundPythonFile } from "./routers.js";
 
 export interface TestIndexContext {
   readonly filesByPath: ReadonlyMap<string, BoundPythonFile>;

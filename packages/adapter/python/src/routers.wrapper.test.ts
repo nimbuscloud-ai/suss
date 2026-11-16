@@ -14,6 +14,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { flaskRestxTestPattern } from "./__fixtures__/flaskRestxPattern.js";
 import { extractPythonProject, findPythonFiles } from "./index.js";
 
 import type { PythonPack } from "./pack.js";
@@ -21,35 +22,7 @@ import type { PythonPack } from "./pack.js";
 const flaskRestxLike: PythonPack = {
   name: "flask-restx",
   protocol: "http",
-  discovery: [
-    {
-      type: "decoratedClassRoute",
-      importModule: ["flask_restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET", post: "POST" },
-      pathParamSyntax: "flaskConverters",
-      routerComposition: {
-        routerConstructorName: "Namespace",
-        includeMethodName: "add_namespace",
-        prefixKeyword: "path",
-        mountPrefixEffect: "replaces",
-        constructorPrefixRequired: true,
-        constructorPrefixTrailingSlash: "trimmed",
-        noValuePrefix: "unstated",
-        mountObjectPrefix: {
-          prefixKeyword: "prefix",
-          carrier: {
-            importModule: ["flask"],
-            constructorName: "Blueprint",
-            argumentIndex: 0,
-            prefixKeyword: "url_prefix",
-            handoffMethodName: "init_app",
-            registerMethodName: "register_blueprint",
-          },
-        },
-      },
-    },
-  ],
+  discovery: [flaskRestxTestPattern()],
 };
 
 const WRAPPERS = [

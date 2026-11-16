@@ -6,49 +6,27 @@ import { describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
-import { flaskRestxFramework } from "./index.js";
+import {
+  flaskRestxFramework,
+  flaskRestxRoutes,
+  ROUTER_UNREAD,
+} from "./index.js";
 
 describe("flaskRestxFramework", () => {
   it("accepts flask_restx's own module by default", () => {
     const pack = flaskRestxFramework();
     expect(pack.name).toBe("flask-restx");
+    expect(pack.version).toBe("1");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
         type: "decoratedClassRoute",
         importModule: ["flask_restx"],
-        decoratorName: "route",
-        verbMethodNames: {
-          get: "GET",
-          post: "POST",
-          put: "PUT",
-          delete: "DELETE",
-          patch: "PATCH",
-          head: "HEAD",
-          options: "OPTIONS",
+        routes: {
+          table: flaskRestxRoutes(["flask_restx"]),
+          unread: ROUTER_UNREAD,
         },
         pathParamSyntax: "flaskConverters",
-        pathRepeatedSlashes: "merged",
-        routerComposition: {
-          routerConstructorName: "Namespace",
-          includeMethodName: "add_namespace",
-          prefixKeyword: "path",
-          mountPrefixEffect: "replaces",
-          constructorPrefixRequired: true,
-          constructorPrefixTrailingSlash: "trimmed",
-          noValuePrefix: "unstated",
-          mountObjectPrefix: {
-            prefixKeyword: "prefix",
-            carrier: {
-              importModule: ["flask"],
-              constructorName: "Blueprint",
-              argumentIndex: 0,
-              prefixKeyword: "url_prefix",
-              handoffMethodName: "init_app",
-              registerMethodName: "register_blueprint",
-            },
-          },
-        },
         defaultStatusCode: 200,
         statusFromReturnedTuple: true,
         responseStatusCalls: [
@@ -97,6 +75,17 @@ describe("flaskRestxFramework", () => {
     expect(
       pattern?.type === "decoratedClassRoute" && pattern.importModule,
     ).toEqual(["flask_restx", "myapp.wrappers.restx"]);
+    expect(pattern?.routes.table.from).toEqual([
+      "flask_restx",
+      "myapp.wrappers.restx",
+    ]);
+  });
+
+  it("serves a resource method under its name upper-cased, for every method a resource can write", () => {
+    const route = flaskRestxRoutes(["flask_restx"]).roles.route;
+    expect(route?.role === "serves" && route.methods).toEqual({
+      members: ["get", "post", "put", "delete", "patch", "head", "options"],
+    });
   });
 
   it("is the module's default export too", async () => {

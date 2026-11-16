@@ -1,7 +1,7 @@
 {
   "name": "@suss/recognize",
   "exports": 111,
-  "internal": 512,
+  "internal": 513,
   "consumers": 81,
   "unfollowedCalls": 17
 }

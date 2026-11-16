@@ -1,10 +1,11 @@
 /**
  * The routes a pack declares as a route table, composed once over every
  * file of the run. FastAPI writes a route as a decorator called on an
- * app or a router, and mounts a router with a call that can be in any
- * file, so no file's routes can be read from that file alone. Discovery
- * asks for the routes each decorator declares, and the wrapper index asks
- * for the mounts above a router.
+ * app or a router, and flask-restx as a decorator on a class, called on
+ * an API or a namespace. Either library mounts a router with a call that
+ * can be in any file, so no file's routes can be read from that file
+ * alone. Discovery asks for the routes each decorator declares, and the
+ * wrapper index asks for the mounts above a router.
  *
  * The table gives one outcome for each way a walk from the app reaches a
  * decorator. They fold into one answer per method: the distinct prefixes
@@ -24,14 +25,14 @@ import type {
   RouteOutcome,
   MountHop as TableHop,
 } from "@suss/extractor";
+import type { BoundPythonFile } from "./boundFiles.js";
 import type {
-  DecoratedFunctionRoute,
   PythonDiscoveryPattern,
   PythonPack,
+  RootUnreadWords,
   RouterUnreadWords,
 } from "./pack.js";
 import type { PyNode } from "./parser.js";
-import type { BoundPythonFile } from "./routers.js";
 
 /** One mount above a router: the call that mounts it, and the router it mounts it on, null for the app. */
 export interface MountHop {
@@ -40,10 +41,16 @@ export interface MountHop {
   parentKey: string | null;
 }
 
-/** What one decorator declares for one method: the prefixes its route is served under, or why it has no path. */
-export type DeclaredRoute =
+/**
+ * What one decorator declares for one method: the prefixes its route is
+ * served under, or why it has no path. `through` is the key of the
+ * library call a project wrapper the decorator calls returns, which the
+ * route's wrappers are read off.
+ */
+export type DeclaredRoute = (
   | { kind: "served"; method: string; prefixes: readonly string[] }
-  | { kind: "unread"; method: string; reason: string };
+  | { kind: "unread"; method: string; reason: string }
+) & { through?: string };
 
 export interface DeclaredRouteIndex {
   /** By the key of the decorator's call, what it declares for each method it serves, in the order the table gives them. */
@@ -73,20 +80,12 @@ interface PatternRoutes {
   readonly folded: Map<string, DeclaredRoute[]>;
 }
 
-export function isTablePattern(
-  pattern: PythonDiscoveryPattern,
-): pattern is DecoratedFunctionRoute {
-  return pattern.type === "decoratedFunctionRoute";
-}
-
 export function buildRouteTables(
   files: readonly BoundPythonFile[],
   packs: readonly PythonPack[],
   facts: Database,
 ): DeclaredRouteIndex {
-  const patterns = packs.flatMap((pack) =>
-    pack.discovery.filter(isTablePattern),
-  );
+  const patterns = packs.flatMap((pack) => pack.discovery);
   const sources =
     patterns.length === 0
       ? []
@@ -102,7 +101,7 @@ export function buildRouteTables(
     const set = composeAppRoutes(pattern.routes.table, sources);
     byPattern.set(pattern, indexOutcomes(set.outcomes));
   }
-  const sentencesOf = (pattern: DecoratedFunctionRoute): Sentences => ({
+  const sentencesOf = (pattern: PythonDiscoveryPattern): Sentences => ({
     words: pattern.routes.unread,
     displayPathOf: (file) => displayPaths.get(file) ?? file,
     facts,
@@ -111,7 +110,7 @@ export function buildRouteTables(
   return {
     routesAt(pattern, decorator) {
       const routes = byPattern.get(pattern);
-      if (routes === undefined || !isTablePattern(pattern)) {
+      if (routes === undefined) {
         return [];
       }
       const known = routes.folded.get(decorator);
@@ -231,6 +230,8 @@ function foldedRoute(
   outcomes: readonly Walked[],
   sentences: Sentences,
 ): DeclaredRoute {
+  const made = outcomes[0]?.made?.site?.();
+  const through = made === undefined ? {} : { through: made };
   const said = outcomes.flatMap((outcome) =>
     outcome.kind === "unread" && outcome.reason !== "pathUnread"
       ? [reasonOf(outcome, sentences)]
@@ -238,12 +239,12 @@ function foldedRoute(
   );
   const first = said.find((one) => !one.chain) ?? said[0];
   if (first !== undefined) {
-    return { kind: "unread", method, reason: first.text };
+    return { kind: "unread", method, reason: first.text, ...through };
   }
   const prefixes = [
     ...new Set(outcomes.map((outcome) => outcome.prefix ?? "")),
   ];
-  return { kind: "served", method, prefixes };
+  return { kind: "served", method, prefixes, ...through };
 }
 
 /** Where along the mounts to a route the router an outcome's reason is about is. */
@@ -298,27 +299,59 @@ const REASONS: Readonly<
   mountUnread: (_outcome, place, { words }) =>
     place === "own" ? own(words.mountUnread) : chain(words),
   prefixUnread: (_outcome, place, { words }) => PREFIX_UNREAD[place](words),
-  prefixUnstated: chainOnly,
-  prefixReplaced: chainOnly,
+  prefixUnstated: (_outcome, place, { words }) =>
+    ownWhenSaid(place, words.prefixUnstated, words),
+  prefixReplaced: (_outcome, place, { words }) =>
+    ownWhenSaid(place, words.prefixReplaced, words),
   cycle: chainOnly,
   pathUnread: chainOnly,
-  rootPrefixUnread: chainOnly,
-  carrierSeveral: chainOnly,
-  carrierUnfollowed: chainOnly,
-  carrierShared: chainOnly,
-  carrierPrefixUnread: chainOnly,
-  carrierRepathed: chainOnly,
-  carrierNested: chainOnly,
-  carrierRegisteredTwice: chainOnly,
+  rootPrefixUnread: rootReason("rootPrefixUnread"),
+  carrierSeveral: rootReason("carrierSeveral"),
+  carrierUnfollowed: rootReason("carrierUnfollowed"),
+  carrierShared: rootReason("carrierShared"),
+  carrierPrefixUnread: rootReason("carrierPrefixUnread"),
+  carrierRepathed: rootReason("carrierRepathed"),
+  carrierNested: rootReason("carrierNested"),
+  carrierRegisteredTwice: rootReason("carrierRegisteredTwice"),
 };
 
-/** A reason the words say only as a chain of routers: a cycle, and those FastAPI's table never gives. */
+/** A reason the words say only as a chain of routers: a cycle, and a path of the route's own, which the adapter reads. */
 function chainOnly(
   _outcome: Unread,
   _place: Place,
   sentences: Sentences,
 ): Said {
   return chain(sentences.words);
+}
+
+/** A reason about the route's own router, in the words for it when the library has any. */
+function ownWhenSaid(
+  place: Place,
+  text: string | undefined,
+  words: RouterUnreadWords,
+): Said {
+  return place === "own" && text !== undefined ? own(text) : chain(words);
+}
+
+/**
+ * A reason about the root a route is served from, said of the root for
+ * a route declared on it, and of the object a router is mounted on for
+ * a route declared on that router.
+ */
+function rootReason(
+  reason: Exclude<keyof RootUnreadWords, "mountedOn">,
+): (outcome: Unread, place: Place, sentences: Sentences) => Said {
+  return (outcome, _place, { words }) => {
+    const root = words.root;
+    if (root === undefined) {
+      return chain(words);
+    }
+    return own(
+      (outcome.mounts ?? []).length > 0
+        ? root.mountedOn.replace("{reason}", root[reason])
+        : root[reason],
+    );
+  };
 }
 
 const PREFIX_UNREAD: Readonly<

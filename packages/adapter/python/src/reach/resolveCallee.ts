@@ -39,8 +39,8 @@ import { resolveName } from "../scope.js";
 import type { UnfollowedReason } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { CalleeOutcome, SubclassPlace } from "@suss/resolution";
+import type { BoundPythonFile } from "../boundFiles.js";
 import type { PyNode } from "../parser.js";
-import type { BoundPythonFile } from "../routers.js";
 import type { Scope } from "../scope.js";
 
 /** A function in this run, and the export path its summary gets. */

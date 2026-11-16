@@ -124,7 +124,7 @@ class OrderDetail:
     def get(self, order_id): ...
 ```
 
-With `api.add_namespace(ns)` somewhere in the files the run reads, that comes out as `GET /orders/{order_id}`. For the composition to happen, the namespace has to be constructed with a literal `path` and mounted once, through a variable, by an `add_namespace` that gives no path of its own. Written any other way, the route is still discovered under its name, with no path and a recorded reason. The README of `@suss/adapter-python` has a table of what every spelling means at each site.
+With `api.add_namespace(ns)` somewhere in the files the run reads, that comes out as `GET /orders/{order_id}`, under the `Api`'s `prefix` and the `url_prefix` of the blueprint it is built from when those are written. For the composition to happen, the namespace has to state a `path` suss can read, and the `add_namespace` call has to give no path of its own. Written any other way, the route is still discovered under its name, with no path and a recorded reason. The DESIGN.md of `@suss/adapter-python` has a table of what every spelling means at each site.
 
 ### FastAPI
 

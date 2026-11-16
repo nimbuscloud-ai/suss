@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -75,19 +76,11 @@ const flaskRestxLike: PythonPack = {
     {
       type: "decoratedClassRoute",
       importModule: ["flask_restx"],
-      decoratorName: "route",
-      verbMethodNames: { get: "GET", post: "POST" },
+      routes: flaskRestxTestRoutes(),
       pathParamSyntax: "flaskConverters",
       defaultStatusCode: 200,
       statusFromReturnedTuple: true,
       responseStatusCalls: [{ callee: "flask.abort", statusArgument: 0 }],
-      routerComposition: {
-        routerConstructorName: "Namespace",
-        includeMethodName: "add_namespace",
-        prefixKeyword: "path",
-        mountPrefixEffect: "replaces",
-        constructorPrefixRequired: true,
-      },
       wrappers: [
         {
           type: "decoratedWrapper",

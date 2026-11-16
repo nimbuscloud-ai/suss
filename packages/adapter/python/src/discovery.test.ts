@@ -4,17 +4,18 @@ import { Database } from "@suss/datalog";
 import { assembleSummary } from "@suss/extractor";
 
 import { fastapiTestRoutes } from "./__fixtures__/fastapiPattern.js";
+import { flaskRestxTestRoutes } from "./__fixtures__/flaskRestxPattern.js";
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
 import { emitModuleImportFacts } from "./facts.js";
 import { parsePython } from "./parser.js";
-import { buildRouterIndex } from "./routers.js";
 import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
 import type { Predicate } from "@suss/behavioral-ir";
 import type { RawCodeStructure } from "@suss/extractor";
+import type { DiscoveryOptions } from "./discovery.js";
 import type { PythonPack } from "./pack.js";
 
 /** Every gap description on a unit's summary, joined into one string to match against. */
@@ -53,13 +54,10 @@ const flaskRestxLike: PythonPack = {
     {
       type: "decoratedClassRoute",
       importModule: ["myapp.wrappers.restx"],
-      decoratorName: "route",
-      verbMethodNames: {
-        get: "GET",
-        post: "POST",
-        put: "PUT",
-        delete: "DELETE",
-      },
+      routes: flaskRestxTestRoutes(
+        ["myapp.wrappers.restx"],
+        ["get", "post", "put", "delete"],
+      ),
       pathParamSyntax: "flaskConverters",
       defaultStatusCode: 200,
     },
@@ -92,14 +90,10 @@ const flaskRestxWithNamespaces: PythonPack = {
     {
       ...flaskRestxLike.discovery[0],
       importModule: ["flask_restx", "myapp.wrappers.restx"],
-      routerComposition: {
-        routerConstructorName: "Namespace",
-        includeMethodName: "add_namespace",
-        prefixKeyword: "path",
-        mountPrefixEffect: "replaces",
-        constructorPrefixRequired: true,
-        mountObjectPrefix: { prefixKeyword: "prefix" },
-      },
+      routes: flaskRestxTestRoutes(
+        ["flask_restx", "myapp.wrappers.restx"],
+        ["get", "post", "put", "delete"],
+      ),
     } as PythonPack["discovery"][number],
   ],
 };
@@ -277,15 +271,15 @@ async function unitsOf(source: string, packs: PythonPack[]) {
 }
 
 /**
- * The facts the rules read and, when a test asks for it, the router index
- * a project run builds: together what the project extractor hands
- * discovery. The file is named once and used as both paths, since a run
- * only shortens the display path when a workspace root was given.
+ * The facts the rules read and the route tables a project run builds:
+ * together what the project extractor hands discovery. The file is named
+ * once and used as both paths, since a run only shortens the display path
+ * when a workspace root was given.
  */
 async function unitsWithRulesOf(
   source: string,
   packs: PythonPack[],
-  options: { routers?: boolean } = {},
+  options: Pick<DiscoveryOptions, "gapHandling"> = {},
 ) {
   const tree = await parsePython(source);
   const binding = bindModule(tree.rootNode);
@@ -302,11 +296,7 @@ async function unitsWithRulesOf(
     filePath: file,
     facts: db,
     routes: buildRouteTables(bound, packs, db),
-    ...(options.routers === true
-      ? {
-          routerIndex: buildRouterIndex(bound, packs, { roots: [], facts: db }),
-        }
-      : {}),
+    ...options,
   });
 }
 
@@ -345,6 +335,31 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
       recognition: "flask-restx",
     });
   });
+
+  it.each([
+    ["imported whole", "import myapp.wrappers.restx as api", "api"],
+    ["imported from its package", "from myapp.wrappers import restx", "restx"],
+  ])(
+    "reads the decorator off the wrapper module %s as the library's own",
+    async (_how, imports, alias) => {
+      const units = await unitsOf(
+        [
+          imports,
+          "",
+          "",
+          `@${alias}.route("/todos")`,
+          "class TodoList:",
+          "    def get(self):",
+          "        return []",
+          "",
+        ].join("\n"),
+        [flaskRestxLike],
+      );
+      expect(units.map((u) => u.boundaryBinding?.semantics)).toEqual([
+        { name: "rest", method: "GET", path: "/todos" },
+      ]);
+    },
+  );
 
   it("takes the pack's declared default for a method whose return annotation states a shape", async () => {
     const annotated = [
@@ -532,8 +547,7 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
         {
           type: "decoratedClassRoute",
           importModule: ["myapp.wrappers.restx"],
-          decoratorName: "route",
-          verbMethodNames: { get: "GET" },
+          routes: flaskRestxTestRoutes(["myapp.wrappers.restx"], ["get"]),
           pathParamSyntax: "notASyntaxThisAdapterReads",
         },
       ],
@@ -557,8 +571,7 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
         {
           type: "decoratedClassRoute",
           importModule: ["myapp.wrappers.restx"],
-          decoratorName: "route",
-          verbMethodNames: { get: "GET" },
+          routes: flaskRestxTestRoutes(["myapp.wrappers.restx"], ["get"]),
         },
       ],
     };
@@ -1763,7 +1776,6 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
         "",
       ].join("\n"),
       [fastapiWithRouters],
-      { routers: true },
     );
     expect(units.map((u) => u.identity.name)).toEqual(["read"]);
     expect(units[0]?.boundaryBinding).toEqual({
@@ -1790,7 +1802,6 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
         "",
       ].join("\n"),
       [fastapiWithRouters],
-      { routers: true },
     );
     expect(units.map((u) => u.identity.name)).toEqual(["health"]);
     expect(units[0]?.boundaryBinding?.semantics).toEqual({
@@ -1817,7 +1828,6 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
         "",
       ].join("\n"),
       [fastapiWithRouters],
-      { routers: true },
     );
     expect(units.map((u) => u.identity.name)).toEqual(["inside"]);
     expect(units[0]?.boundaryBinding?.semantics).toEqual({
@@ -1843,7 +1853,6 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
         "",
       ].join("\n"),
       [flaskRestxWithNamespaces],
-      { routers: true },
     );
     expect(units.map((u) => u.identity.name)).toEqual(["Todos.get"]);
     expect(units[0]?.boundaryBinding?.semantics).toEqual({
@@ -1853,7 +1862,7 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
     });
   });
 
-  it("gives no path to a route on a mount object built where its prefix is not read", async () => {
+  it("serves a route on an API a field holds under the API's own prefix", async () => {
     const units = await unitsWithRulesOf(
       [
         "from flask_restx import Api",
@@ -1871,12 +1880,13 @@ describe("discoverUnits: a router the decorator reaches through an attribute", (
         "",
       ].join("\n"),
       [flaskRestxWithNamespaces],
-      { routers: true },
     );
     expect(units.map((u) => u.identity.name)).toEqual(["Todos.get"]);
-    expect(unreadTextOf(units[0])).toContain(
-      "is built where this reading does not read a mount object's prefix",
-    );
+    expect(units[0]?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/v1/todos",
+    });
   });
 });
 
@@ -2129,14 +2139,8 @@ describe("a route the readers cannot turn into a unit (an empty path, which the 
   });
 
   it("lets the error stand when the caller asked for strict gap handling", async () => {
-    const tree = await parsePython(source);
-    const binding = bindModule(tree.rootNode);
-    expect(() =>
-      discoverUnits(tree.rootNode, binding, {
-        packs: [flaskRestxLike],
-        filePath: "myapp/routes/todos.py",
-        gapHandling: "strict",
-      }),
-    ).toThrow("empty string");
+    await expect(
+      unitsWithRulesOf(source, [flaskRestxLike], { gapHandling: "strict" }),
+    ).rejects.toThrow("empty string");
   });
 });
