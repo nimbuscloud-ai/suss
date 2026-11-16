@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 import { global } from "@suss/recognize";
-import { factValueOps } from "@suss/recognize/ops";
+import { factCallOps, factValueOps } from "@suss/recognize/ops";
 
 import { bindEnvFacts, envFactsIn } from "./envReads.js";
 import { pythonFactSource } from "./factSource.js";
@@ -572,5 +572,68 @@ describe("the environment a value is", () => {
         name: "env",
       }),
     ).toBeUndefined();
+  });
+});
+
+const REQUESTS = `
+import httpclient
+
+class Resource:
+    def __init__(self, base):
+        self.base = base
+
+    def list(self):
+        return httpclient.get(self.base + "/items")
+
+users = Resource("https://api.example.com/users")
+
+def sync():
+    url = "/users"
+    httpclient.get(url)
+    url = "/teams"
+    httpclient.get(url=url)
+`;
+
+describe("a URL the fact source reads", () => {
+  async function requestCalls() {
+    const tree = await parsePython(REQUESTS);
+    const root = tree.rootNode;
+    const db = factsForFile({
+      file: FILE,
+      root,
+      module: bindModule(root),
+      packs: [],
+    });
+    const source = pythonFactSource(db);
+    const calls = db
+      .facts("call")
+      .map((row) => String(row[0]))
+      .filter((key) => source.textOf(key).startsWith("httpclient.get"))
+      .map((key) => factCallOps(key, source));
+    return { source, calls };
+  }
+
+  it("reads a name at the assignment that reaches each call", async () => {
+    const { calls } = await requestCalls();
+    const [, first, second] = calls;
+    expect(first?.valueAt(0)?.url?.()).toEqual({
+      path: "/users",
+      host: undefined,
+    });
+    expect(second?.keywordAt?.("url")?.url?.()).toEqual({
+      path: "/teams",
+      host: undefined,
+    });
+  });
+
+  it("reads a URL under each construction of the class the call is in", async () => {
+    const { calls } = await requestCalls();
+    const [list] = calls;
+    const sites = list?.constructionSites?.() ?? [];
+    expect(sites).toHaveLength(1);
+    expect(list?.valueAt(0)?.url?.(sites[0])).toEqual({
+      path: "/users/items",
+      host: "api.example.com",
+    });
   });
 });

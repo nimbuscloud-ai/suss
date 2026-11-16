@@ -16,6 +16,7 @@ import {
   compileSubUnits,
   modulesOfChain,
 } from "./compile.js";
+import { compileRequests } from "./compileRequests.js";
 
 import type {
   ClassBodyDeclaration,
@@ -28,6 +29,7 @@ import type {
   ParameterSupplier,
   PatternPack,
   ProjectHelpers,
+  RequestRecognizer,
 } from "@suss/extractor";
 import type {
   ArgumentPick,
@@ -144,6 +146,7 @@ const DISPATCHED_ON: ByEnding<Walk | "none"> = {
   claims: () => "none",
   streamWrite: () => "invocation",
   runtimeRead: () => "access",
+  httpRequest: () => "none",
 };
 
 /**
@@ -174,6 +177,7 @@ export function pack(
   const chains = matches.map((match) => match.declared);
   const access = walkedBy(chains, "access", spec.recognizedAs);
   const subUnits = compileSubUnits(chains);
+  const requests = requestRecognizersOf(matches);
 
   return {
     name,
@@ -191,6 +195,7 @@ export function pack(
       ...(spec.recognizers ?? []),
     ],
     ...(access.length === 0 ? {} : { accessRecognizers: access }),
+    ...(requests.length === 0 ? {} : { requestRecognizers: requests }),
     ...(subUnits === null ? {} : { subUnits }),
     declarations: {
       declarations: [
@@ -242,6 +247,20 @@ export function subUnitsOf(
 }
 
 const NO_CLAIMS: NonNullable<PatternPack["subUnits"]> = () => [];
+
+/**
+ * The request hooks for a set of chains, for a pack that builds its own
+ * pack object by hand, as a Python client pack does. It is the
+ * `requestRecognizers` field `pack()` gives a pack of request chains.
+ */
+export function requestRecognizersOf(
+  matches: readonly Match[],
+): RequestRecognizer[] {
+  return matches
+    .map((match) => match.declared)
+    .filter((chain) => chain.ending.yields === "httpRequest")
+    .map(compileRequests);
+}
 
 /**
  * Describes a set of chains for the pack health report, for a pack that
@@ -304,6 +323,7 @@ const WIRE: ByEnding<string> = {
   claims: () => "in-process",
   streamWrite: () => "in-process",
   runtimeRead: () => "in-process",
+  httpRequest: () => "http",
 };
 
 /**
@@ -333,6 +353,7 @@ const DECLARED_NAME: ByEnding<string> = {
   claims: (ending) => ending.yields,
   streamWrite: (ending) => ending.yields,
   runtimeRead: (ending) => ending.yields,
+  httpRequest: (ending) => ending.yields,
 };
 
 /** The wire every chain in a pack reaches over. */
@@ -410,6 +431,7 @@ const SYSTEMS_ASKED: ByEnding<readonly (readonly [string, StorageSystem])[]> = {
   claims: () => [],
   streamWrite: () => [],
   runtimeRead: () => [],
+  httpRequest: () => [],
 };
 
 /** The questions an ending settles with a rule over the call's file rather than as data. */

@@ -994,7 +994,7 @@ export function startsHere(
 
 /**
  * One ending per thing a call chain can produce. A chain that only
- * claims callbacks produces nothing, and no walk dispatches on it.
+ * claims callbacks or reads requests produces nothing here.
  */
 const YIELD: Record<
   Exclude<Ending["yields"], "runtimeRead" | "messageReceive">,
@@ -1007,6 +1007,7 @@ const YIELD: Record<
   schedule: schedule,
   claims: () => null,
   streamWrite: streamWrite,
+  httpRequest: () => null,
 };
 
 /** The `to` of a method that writes to the stream it is called on. */
