@@ -43,7 +43,7 @@ Keep a pull request to a single intent. If you find yourself writing "and also" 
 
 ## Proving a change writes the same summaries
 
-A change that should not alter what suss reports, such as a refactor or a pack moving onto `@suss/recognize`, has to write the same summaries as main, byte for byte. `npm run byte-check` checks that. It builds origin/main in a worktree of its own under the temp directory, or reuses the one it built last time. Then it extracts every input with that build and with this checkout's, both with `--no-cache`, and compares the two outputs. Each input gets a line with its summary count, each build's time and peak memory, and whether the outputs match. The run exits non-zero when any input differs or fails, and the summaries stay on disk for a diff.
+A change that should not alter what suss reports, such as a refactor or a pack moving onto `@suss/recognize`, has to write the same summaries as main, byte for byte. `npm run byte-check` checks that. It builds origin/main in a worktree of its own under the temp directory, or reuses the one it built last time. Then it extracts every input with that build and with this checkout's, both with `--no-cache`, and compares the two outputs. Each input gets a line with its summary count, each build's time and peak memory, and whether the outputs match. Under an input whose outputs differ, the script runs `suss inspect --diff` from the build under test on the two summaries and prints which units changed and how, cut at 4,000 characters. `--diff <chars>` sets that length, and `--diff off` leaves the report out. The run exits non-zero when any input differs or fails, and the summaries stay on disk for a closer look.
 
 The inputs are listed in `scripts/byteCheckInputs.mjs`:
 
