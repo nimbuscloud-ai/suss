@@ -18,6 +18,7 @@ import type {
   DeployableUnit,
   MessageBusSemantics,
 } from "@suss/behavioral-ir";
+import type { ClientResponse, RedirectDelivery } from "@suss/extractor";
 import type {
   CallOps,
   CallsAndOptions,
@@ -610,7 +611,8 @@ export type Link<TMeaning> =
   | FunctionsLink
   | WritesLink
   | ThroughHelpersLink
-  | DefaultedWhenLink;
+  | DefaultedWhenLink
+  | BaseUrlLink;
 
 /**
  * Where a read chain starts: the object its reads are off. A call chain
@@ -1202,7 +1204,8 @@ export type MethodMeaning =
   | EntryMeaning
   | GetterMeaning
   | WriteMeaning
-  | SchemaParse;
+  | SchemaParse
+  | RequestMethod;
 
 /** What a chain produces when every link matches. */
 export type Ending =
@@ -1214,7 +1217,80 @@ export type Ending =
   | ScheduleEnding
   | ClaimsEnding
   | StreamWriteEnding
-  | RuntimeReadEnding;
+  | RuntimeReadEnding
+  | HttpRequestEnding;
+
+/**
+ * An HTTP request a call sends, which pairs with the route it reaches.
+ * The adapter makes the function the call is written in a client of the
+ * request, so the ending doesn't record an effect on the call.
+ */
+export interface HttpRequestEnding {
+  readonly yields: "httpRequest";
+  /** What a caller can read off the response, and what the client does with a refusal or a redirect. */
+  readonly response: ClientResponse;
+}
+
+/**
+ * What one method that sends a request takes: the method it sends,
+ * written in the table or read off the call, and where the call states
+ * the URL.
+ */
+export type RequestMethod = SentAsNamed | SentFromArgument | SentAsObject;
+
+/** `requests.get(url)` sends GET whatever the call passes. */
+export interface SentAsNamed {
+  readonly sends: string;
+  readonly url: OneArgument;
+  /** What this method does with a redirect, when it differs from the client's. */
+  readonly redirects?: RedirectDelivery;
+}
+
+/**
+ * `requests.request("GET", url)` and `fetch(url, { method: "POST" })`:
+ * an argument states the method, read the way a value is evaluated and
+ * upper-cased, and `default` is what a call that states none sends.
+ */
+export interface SentFromArgument {
+  readonly sends: { readonly from: OneArgument; readonly default?: string };
+  readonly url: OneArgument;
+  readonly redirects?: RedirectDelivery;
+}
+
+/**
+ * `http.request(Net::HTTP::Get.new(path))`: the argument at `object` is
+ * a construction of one of the request classes, which states the method
+ * by its class and the URL as its own argument. `classes` lists each
+ * class by the name the source writes it with.
+ */
+export interface SentAsObject {
+  readonly sends: {
+    readonly object: number;
+    readonly classes: Readonly<Record<string, string>>;
+    readonly url: OneArgument;
+  };
+  readonly redirects?: RedirectDelivery;
+}
+
+/**
+ * How a library puts a call's path under the base URL its client was
+ * built with. `appended` writes the path after the base with one slash
+ * between, as axios and httpx do. `resolved` resolves the path against
+ * the base the way RFC 3986 resolves a reference, as Faraday, Net::HTTP
+ * and aiohttp do: a path that starts with `/` replaces the base's path.
+ */
+export type BaseJoin = "appended" | "resolved";
+
+/**
+ * Where the construction a call's receiver was made by states a base
+ * URL: `Faraday.new(url: "https://api.example.com/v1")`. A call whose
+ * own URL is absolute goes there and not under the base.
+ */
+export interface BaseUrlLink {
+  readonly asks: "baseUrl";
+  readonly at: OneArgument;
+  readonly joins: BaseJoin;
+}
 
 /**
  * A chain that records nothing on the call's unit and only claims the

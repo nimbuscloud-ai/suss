@@ -15,7 +15,7 @@ import {
   spanOfKey,
   staysInItsFunction,
 } from "@suss/resolution";
-import { scalarOf } from "@suss/values";
+import { hostOf, pathOf, scalarOf } from "@suss/values";
 
 import {
   field,
@@ -52,6 +52,7 @@ import { receiverTypeOrigins } from "./receiverTypes.js";
 import { scopeAt } from "./scope.js";
 import { isBuiltin } from "./stdlibNames.js";
 import {
+  constructionSitesOf,
   evaluatedValue,
   moduleOf,
   nodeOfResolutionKey,
@@ -59,9 +60,16 @@ import {
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, FactSource, Typed, ValueForm } from "@suss/extractor";
+import type {
+  ArgumentRead,
+  EffectArg,
+  FactSource,
+  Typed,
+  ValueForm,
+} from "@suss/extractor";
 import type { Value } from "@suss/values";
 import type { SubjectOrigin } from "./facts/resolve.js";
+import type { CallArgument } from "./facts/values.js";
 import type { PyNode } from "./parser.js";
 
 /** A fact source with the run's whole database, which the rules this adapter asks read. */
@@ -86,6 +94,15 @@ export function pythonFactSource(db: Database): PythonFactSource {
   // A name has no node, so its value is what it was written as.
   const valueNode = (key: string): PyNode | null =>
     nodeAt(key) ?? nodeAt(writtenValueOf(db, key));
+  // The argument as the call writes it, so a name is read at the
+  // assignment that reaches the call.
+  const argumentNode = (at: ArgumentRead | undefined): PyNode | null => {
+    const call = at === undefined ? null : nodeAt(at.call);
+    return call === null || at === undefined
+      ? null
+      : (callArguments(call).find((argument) => writtenAt(argument, at))
+          ?.node ?? null);
+  };
   const classNameOf = (key: string, notFrom: readonly string[]) => {
     // A name is keyed by its scope, so it is read off a mention of it.
     const node = nodeAt(key) ?? mentionOf(db, key);
@@ -183,6 +200,18 @@ export function pythonFactSource(db: Database): PythonFactSource {
     evaluatedOf: (key) => {
       const node = valueNode(key);
       return node === null ? null : scalarOf(evaluatedValue(node, db));
+    },
+    urlOf: (key, site, at) => {
+      const node = argumentNode(at) ?? valueNode(key);
+      if (node === null) {
+        return null;
+      }
+      const value = evaluatedValue(node, db, site);
+      return { path: pathOf(value), host: hostOf(value) };
+    },
+    constructionSitesOf: (call) => {
+      const node = nodeAt(call);
+      return node === null ? [] : constructionSitesOf(node, db);
     },
     partsOf: (key) => {
       const node = valueNode(key);
@@ -320,6 +349,13 @@ function receiverNamed(call: PyNode | null): PyNode | null {
   const receiver =
     callee?.type === "attribute" ? field(callee, "object") : null;
   return receiver?.type === "identifier" ? receiver : null;
+}
+
+/** Whether the call writes this argument where the read says. */
+function writtenAt(argument: CallArgument, at: ArgumentRead): boolean {
+  return typeof at.at === "number"
+    ? argument.kind === "positional" && argument.position === at.at
+    : argument.kind === "keyword" && argument.name === at.at.keyword;
 }
 
 /**

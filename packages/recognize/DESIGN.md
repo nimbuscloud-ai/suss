@@ -327,6 +327,10 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
 | `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module. It is asked only when `imports` is stated for the callee or for what it `binds` to, so a parameter is never followed through its callers |
 | `calleeImport` | the `imports` rows of the callee, or of what it `binds` to, under one of the modules, kept when they give one export other than the whole module. TypeScript reads the import statement itself through `importedUnder`, which states nothing |
+| `receiverSettledFrom` with `imported` | the `imports` rows of the receiver, or of what it `binds` to, read the way `calleeImport` reads them, with `*` for a whole module. A member read off a name an import binds is the member of that module. A name no import binds is from no import, unless `writtenAs` settles it to a name one does, and a parameter is never followed through its callers, the way `calleeImportedAs` never follows one. An import of a file in the run, which `importsFile` states, leaves the answer open, since the rules follow a project module's own names |
+| `receiverSettledFrom` with `constructed` | the construction the receiver was written as, as `constructed` reads it, with the `imports` rows of the name the construction's callee starts from in place of `importedFrom`. A callee written with a name the origin does not ask for is from no construction, and a name no import binds leaves the answer open |
+| `url(site)` | the adapter's `urlOf`, handed the call and argument the value was read off by `valueAt` or `keywordAt`, since a name in Python or Ruby has a key and no node, and two assignments to one name share it |
+| `constructionSites()` | the adapter's `constructionSitesOf` on the call |
 | `callsInCallee` | `makesCall` closed over `containsFn` from the function `functionBehind` settles the callee to, in source order, the way `callInBody` reads a body. TypeScript keeps the checker's callee, `helperCalleeOf`, and the calls under it, and hands each one out as ops that read `method()` and `calleeText()` off the node and state the call only when a chain asks it something more |
 | `runtimePath(object)` | the adapter's `runtimePathOf`. TypeScript asks `isEnvironmentValue` and then `environmentReadOff`. Python and Ruby take the path the value is spelled as, and otherwise ask `wantedEnvironmentValue` whether an environment spelled as one of the paths reaches it. So the object has to be one of the run's environments. An adapter without it reads `spellsGlobal`, `globalsReaching` and the `handedIn` rows the way a read site's object is read |
 | `mentions(words)` | a closure from the value's own key over `call` to the callee and `readsProperty` to its object, `callArg`, `holdsProperty` and `callKeywordArg` to a value, and `fallbackBranch` and `conditionalBranch`. A method's name is the `readsProperty` name, a bare callee's is the export its `imports` row gives, and an option is a `holdsProperty` or `callKeywordArg` name. A key stated as `func` is not entered |
@@ -1775,6 +1779,61 @@ keyed by position. Only the values passed by position count: Python's
 fact source counts them through `positionalCount`, since its
 `argumentCount` counts a keyword such as `sep=` too. The effect's
 `groupId` is `callSiteKey` of the effect.
+
+## A request a library sends
+
+`httpRequests` says which calls of a client library send an HTTP
+request. The chain doesn't record an effect. `pack()` compiles it to a
+`requestRecognizers` hook, and the adapter's client walk calls that
+hook at every call in a function body, then makes the function a
+client of each request the hook returns. The unit, and what the caller
+does with the response, stay the adapter's.
+
+```ts
+httpRequests({
+  client: anyOf(
+    imported({ from: ["requests"], named: ["*", "get", "request"] }),
+    constructedFrom({ from: ["requests"], named: ["Session"] }),
+  ),
+})
+  .methods({
+    ...verbs({ get: "GET", post: "POST" }, { at: 0, keyword: "url" }),
+    head: { sends: "HEAD", url: { at: 0 }, redirects: "response" },
+    request: { sends: { from: { at: 0, keyword: "method" } }, url: { at: 1 } },
+  })
+  .response({ statusCode: ["status_code"], redirectDelivery: "followed" });
+```
+
+A method sends the verb the table writes, the method an argument
+states (evaluated and upper-cased, with `default` for a call that
+states none), or the method of a request object built from one of the
+classes it lists. `.calls(meaning)` says what a call of the client
+itself sends, as `fetch(url)` or `api(config)` after `api =
+axios.create()`. `.baseUrl(pick)` reads the base URL off the call's
+receiver, which is the construction, and `joins` says how the library
+puts a path under it: `appended` writes it after the base with one
+slash, and `resolved` resolves it the way RFC 3986 does, so a path
+that starts with `/` replaces the base's path. An absolute URL on the
+call goes where it says.
+
+The hook asks its questions in order of cost. A method call is looked
+up in the table first, and a bare call by the name it is written with
+or the export its own import statement binds (`calleeImport`). Only a
+listed call asks where its receiver or callee came from. A receiver's
+`imported` and `constructed` origins are asked of `receiverSettledFrom`
+first, for every origin of an `anyOf`, and of the rules only for the
+ones it leaves open. Most receivers of a `get` are a dictionary or a
+project object, which their own statements settle.
+
+A URL is read through `ValueOps.url`. When the call's own reading
+leaves a hole, each construction of the enclosing class gives a request
+of its own, read under that construction's site, and two constructions
+with the same method, host and path give one. A URL that reads as no
+path, or as only holes and slashes under a host suss did not read,
+gives a request with no path (`statedRequestPath`). The adapter keeps
+it as a client unit, which pairs with nothing. The call's redirect
+option is read with `keywordAt` and `evaluated()`, and a method's own
+`redirects` applies when the call passes none.
 
 ## A read of a runtime object
 
