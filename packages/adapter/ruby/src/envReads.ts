@@ -42,7 +42,7 @@ import {
 import { calleeKeyOf, invokedKeyOf, nodeId, readKey } from "./facts/values.js";
 import { ENVIRONMENT } from "./stdlib/environment.js";
 import { environmentReadAt } from "./stdlib/environmentRead.js";
-import { streamSpelledBy } from "./streamWrites.js";
+import { STREAM_PATHS } from "./stdlib/streams.js";
 import {
   boundFileOf,
   nodeOfResolutionKey,
@@ -281,7 +281,7 @@ export function emitEnvFacts(
           readKey(file, node, enclosingDefinition(node)),
         ]);
       }
-      if (streamSpelledBy(node) !== null && !writtenThrough(node)) {
+      if (spellsStream(node) && !writtenThrough(node)) {
         db.add("streamObject", [
           readKey(file, node, enclosingDefinition(node)),
         ]);
@@ -305,6 +305,28 @@ function spellsObject(node: RbNode): boolean {
     node.type === "scope_resolution" &&
     field(node, "scope") === null &&
     SPELLINGS.paths.includes(field(node, "name")?.text ?? "")
+  );
+}
+
+/**
+ * Whether the node is spelled as one of the stream chains' paths: a
+ * global such as `$stdout`, or a constant at the top level, `STDOUT` or
+ * `::STDOUT`. A constant inside another, `Logger::STDOUT`, is not one.
+ */
+function spellsStream(node: RbNode): boolean {
+  if (node.type === "global_variable") {
+    return STREAM_PATHS.includes(node.text);
+  }
+  if (node.type === "constant") {
+    return (
+      node.parent?.type !== "scope_resolution" &&
+      STREAM_PATHS.includes(node.text)
+    );
+  }
+  return (
+    node.type === "scope_resolution" &&
+    field(node, "scope") === null &&
+    STREAM_PATHS.includes(field(node, "name")?.text ?? "")
   );
 }
 

@@ -101,9 +101,8 @@ import {
   graphqlTypeNameFromQualified,
   walkDefinitions,
 } from "./scope.js";
-import { stdlibReads } from "./stdlib/dispatch.js";
+import { stdlibEffects } from "./stdlib/dispatch.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
-import { streamWriteEffects } from "./streamWrites.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
 import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
@@ -1298,13 +1297,15 @@ export function effectsBesidesCalls(
 ): EffectAt[] {
   const { root, method, file, claimed } = body;
   const environment = environmentFactsOf(bodyRead);
+  const stdlib =
+    environment === undefined
+      ? { reads: [], writes: [] }
+      : stdlibEffects(root, environment, claimed);
   return [
-    ...(environment === undefined
-      ? []
-      : stdlibReads(root, environment, claimed)),
+    ...stdlib.reads,
     ...database,
     ...jobEnqueueEffects(root, file, bodyRead.jobs, claimed, method),
-    ...streamWriteEffects(root, claimed),
+    ...stdlib.writes,
   ];
 }
 

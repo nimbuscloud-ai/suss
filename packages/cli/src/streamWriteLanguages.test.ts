@@ -2,9 +2,7 @@
  * The stream-write ending on the same three writes in TypeScript, Python
  * and Ruby: a direct write, a write of a JSON encoding, and a write
  * through a parameter a caller passed a stream to. TypeScript runs the
- * Node pack's own declarations, and Python its adapter's own. Ruby gets
- * a declaration here, since its adapter still records stream writes
- * itself, and the summaries keep that effect beside the declared one.
+ * Node pack's own declarations, and Python and Ruby their adapters' own.
  *
  * A test chain over a function the source calls as a global covers a
  * method that writes only when the call passes an argument, in every
@@ -57,14 +55,7 @@ function declaredPack(
 
 const PYTHON_PACK = declaredPack("python-reports", [REPORT]);
 
-const RUBY_PACK = declaredPack("ruby-streams", [
-  streamWrites({
-    streams: { $stdout: "stdout", $stderr: "stderr" },
-    client: global("$stdout", "$stderr"),
-  }).methods({ write: { to: "receiver" } }),
-  streamWrites({ streams: {}, client: global("puts") }).methods({
-    puts: { to: "stdout" },
-  }),
+const RUBY_PACK = declaredPack("ruby-logs", [
   streamWrites({
     streams: { $stdout: "stdout", $stderr: "stderr" },
     client: global("log"),
@@ -136,6 +127,14 @@ module Out
   def self.reports
     report()
     report("h")
+  end
+
+  def self.quits
+    abort()
+  end
+
+  def self.gives_up
+    abort("i")
   end
 end
 `;
@@ -293,15 +292,13 @@ describe("the stream-write ending, in every language", () => {
     ]);
   });
 
-  it("reads the same three in Ruby, beside the adapter's own two", async () => {
+  it("reads the same three in Ruby through the adapter's own chains", async () => {
     const summaries = await rubySummaries();
-    const effects = [
-      ...effectsOf(summaries, "say"),
-      ...effectsOf(summaries, "run"),
-    ];
     const integer = { type: "integer" };
-    expect(streamWritesIn(effects, RECOGNITION)).toEqual([
+    expect(streamWritesIn(effectsOf(summaries, "say"), "ruby-stdlib")).toEqual([
       STDERR_TEXT,
+    ]);
+    expect(streamWritesIn(effectsOf(summaries, "run"), "ruby-stdlib")).toEqual([
       {
         target: "stdout",
         serialized: "text",
@@ -313,7 +310,6 @@ describe("the stream-write ending, in every language", () => {
         payload: { type: "record", properties: { b: integer } },
       },
     ]);
-    expect(streamWritesIn(effects, "ruby-stdlib")).toHaveLength(2);
   });
 
   it("writes only when the call passes an argument, when the method says so", async () => {
@@ -330,9 +326,14 @@ describe("the stream-write ending, in every language", () => {
         RECOGNITION,
       ),
     ).toEqual(said);
-    expect(
-      streamWritesIn(effectsOf(await rubySummaries(), "reports"), RECOGNITION),
-    ).toEqual(said);
+    const ruby = await rubySummaries();
+    expect(streamWritesIn(effectsOf(ruby, "reports"), RECOGNITION)).toEqual(
+      said,
+    );
+    expect(streamWritesIn(effectsOf(ruby, "quits"), "ruby-stdlib")).toEqual([]);
+    expect(streamWritesIn(effectsOf(ruby, "gives_up"), "ruby-stdlib")).toEqual([
+      { target: "stderr", serialized: "text", payload: literal("i") },
+    ]);
   });
 
   it("writes to the stream a keyword spells, to none for a file, and only what is passed by position", async () => {
