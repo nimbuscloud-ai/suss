@@ -6,24 +6,53 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { axiosPack } from "./index.js";
+import { AXIOS, axiosPack } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 describe("axiosPack — pack shape", () => {
-  it("exposes a discovery pattern per HTTP verb", async () => {
+  it("declares its requests as one request chain, and one more per configured factory", async () => {
     const pack = axiosPack();
     expect(pack.name).toBe("axios");
     expect(pack.languages).toEqual(["typescript", "javascript"]);
-    // One discovery pattern per HTTP verb: get, post, put, delete, patch,
-    // head, options, plus one for a request written as a config object
-    expect(pack.discovery).toHaveLength(8);
-    for (const d of pack.discovery) {
-      expect(d.kind).toBe("client");
-      expect(d.match.type).toBe("clientCall");
-    }
+    expect(pack.discovery).toHaveLength(0);
+    expect(pack.requestRecognizers).toHaveLength(1);
+    expect(pack.requestRecognizers?.[0]?.entries).toEqual([
+      "get",
+      "post",
+      "put",
+      "delete",
+      "patch",
+      "head",
+      "options",
+      "request",
+    ]);
+    expect(
+      axiosPack({ factories: [{ module: "./api", export: "makeApi" }] })
+        .requestRecognizers,
+    ).toHaveLength(2);
     expect(pack.terminals).toHaveLength(2);
     expect(pack.inputMapping.type).toBe("positionalParams");
+  });
+
+  it("reads the call its declaration's example writes", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `import axios from "axios";
+      export async function load() { return ${AXIOS.declared.example}; }`,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const [summary] = await adapter.extractAll();
+    expect(summary?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders",
+      host: "api.example.com",
+    });
   });
 
   it("declares response semantics for axios's AxiosResponse shape", async () => {

@@ -6,19 +6,37 @@ import { createTypeScriptAdapter } from "@suss/adapter-typescript";
 import { readHttpMetadata } from "@suss/behavioral-ir";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { webFetchPack } from "./index.js";
+import { FETCH, webFetchPack } from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
 describe("webFetchPack — pack shape", () => {
-  it("exposes a consumer discovery pattern for global fetch", async () => {
+  it("declares its requests as one request chain", async () => {
     const pack = webFetchPack();
     expect(pack.name).toBe("fetch");
-    expect(pack.discovery).toHaveLength(1);
-    expect(pack.discovery[0].kind).toBe("client");
-    expect(pack.discovery[0].match.type).toBe("clientCall");
+    expect(pack.discovery).toHaveLength(0);
+    expect(pack.requestRecognizers).toHaveLength(1);
     expect(pack.terminals).toHaveLength(2);
     expect(pack.inputMapping.type).toBe("positionalParams");
+  });
+
+  it("reads the call its declaration's example writes", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `export async function load() { return ${FETCH.declared.example}; }`,
+    );
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const [summary] = await adapter.extractAll();
+    expect(summary?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/orders",
+      host: "api.example.com",
+    });
   });
 });
 

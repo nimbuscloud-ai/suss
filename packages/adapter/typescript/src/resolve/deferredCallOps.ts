@@ -24,10 +24,15 @@ import type { CallExpression } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 import type { CallReading } from "./callOps.js";
 
-/** The ops for one call, its facts stated on the first question that needs them. */
+/**
+ * The ops for one call, its facts stated on the first question that
+ * needs them. `overFacts` builds the ops over the facts, by default with
+ * a fact source of their own.
+ */
 export function deferredCallOps(
   call: CallExpression,
   reading: CallReading,
+  overFacts: () => CallOps = () => opsOverFacts(call, reading),
 ): CallOps {
   const callee = peelValue(call.getExpression());
   const method = Node.isPropertyAccessExpression(callee)
@@ -36,7 +41,7 @@ export function deferredCallOps(
   let text: string | null = null;
   let facts: CallOps | null = null;
   const stated = (): CallOps => {
-    facts ??= opsOverFacts(call, reading);
+    facts ??= overFacts();
     return facts;
   };
   let inCallee: readonly CallOps[] | null = null;
@@ -56,9 +61,11 @@ export function deferredCallOps(
     file: () => call.getSourceFile().getFilePath(),
     mentions: (word) => call.getSourceFile().getFullText().includes(word),
     receiverIsFrom: (origin) => stated().receiverIsFrom(origin),
+    receiverSettledFrom: (origin) => stated().receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => stated().receiverGlobal?.(paths),
     isFrom: (origin) => stated().isFrom(origin),
     calleeSettledFrom: (origin) => stated().calleeSettledFrom?.(origin),
+    constructionSites: () => stated().constructionSites?.() ?? [],
     argumentCount: () => stated().argumentCount(),
     nameAt: (index, unsettled) => stated().nameAt(index, unsettled),
     receiver: () => stated().receiver(),
