@@ -296,8 +296,8 @@ describe("the class ops a class body is read through", () => {
       otherDeclarationsOf: (key) => (key === "Reopened" ? ["Patched"] : []),
       comesTo: (key) => (key === "Base#ref" ? ["ProjectModel"] : []),
     });
-    const add = (relation: string, ...row: string[]) =>
-      facts.db.add(relation, row);
+    const db = facts.db as Database;
+    const add = (relation: string, ...row: string[]) => db.add(relation, row);
     add("objectValue", "Reopened");
     add("objectValue", "Short");
     add("extends", "Short", "Base#ref");
