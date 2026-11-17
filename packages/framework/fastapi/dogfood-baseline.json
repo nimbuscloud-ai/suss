@@ -2,6 +2,6 @@
   "name": "@suss/framework-fastapi",
   "exports": 4,
   "internal": 1,
-  "consumers": 8,
+  "consumers": 10,
   "unfollowedCalls": 0
 }

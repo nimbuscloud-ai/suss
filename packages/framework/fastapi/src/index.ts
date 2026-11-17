@@ -30,7 +30,7 @@ import type { CallbackMethod } from "@suss/recognize";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "2";
+const VERSION = "3";
 
 /**
  * The CLI checks a `-f fastapi=config.json` file against this schema. A
@@ -96,6 +96,11 @@ export function fastapiRoutes(
           SERVES(method),
         ]),
       ),
+      // FastAPI serves GET when `methods` is not passed.
+      api_route: {
+        ...SERVES("GET"),
+        methods: { pick: { keyword: "methods" }, unstated: ["GET"] },
+      },
       include_router: {
         role: "mount",
         table: [{ at: 0 }, { keyword: "router" }],
@@ -295,7 +300,7 @@ export const declares: PackDeclaration = {
   kind: "framework",
   package: "@suss/framework-fastapi",
   dependencies: [{ ecosystem: "pypi", name: "fastapi" }],
-  reads: `FastAPI routes (Python). The verb comes from the decorator's attribute name, \`APIRouter\` prefixes are composed through every \`include_router\` mount on the way from the app, and \`response_model\` and \`status_code\` are taken as the declared contract.`,
+  reads: `FastAPI routes (Python). The verb comes from the decorator's attribute name, or from the \`methods\` an \`api_route\` decorator lists. \`APIRouter\` prefixes are composed through every \`include_router\` mount on the way from the app, and \`response_model\` and \`status_code\` are taken as the declared contract.`,
 };
 
 export default fastapiFramework;

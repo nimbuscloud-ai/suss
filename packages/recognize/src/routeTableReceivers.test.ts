@@ -536,6 +536,54 @@ describe("a route table whose entries are made on a value", () => {
       ),
     ).toEqual(["GET /x f"]);
   });
+
+  it("serves the methods a decorator lists under a keyword, upper-cased, the unstated ones when it lists none, and none it cannot read", () => {
+    const root = app();
+    const routed = (at: string, methods: ValueOps | undefined): CallOps =>
+      call({
+        name: "api_route",
+        on: root,
+        args: [path(at)],
+        ...(methods === undefined ? {} : { keywords: { methods } }),
+      });
+    const listed = value({
+      source: '["GET", "post"]',
+      list: [path("GET"), path("post")],
+    });
+    const table: RouteTableDeclaration = {
+      ...TABLE,
+      roles: {
+        api_route: {
+          role: "serves",
+          methods: { pick: { keyword: "methods" }, unstated: ["GET"] },
+          path: [{ at: 0 }],
+          handler: { decorated: true },
+        },
+      },
+    };
+    expect(
+      said(
+        compose(
+          [
+            {
+              path: MAIN,
+              calls: [root],
+              decorated: [
+                under(fn("orders"), routed("/orders", listed)),
+                under(fn("health"), routed("/health", undefined)),
+                under(fn("unread"), routed("/unread", opaque("VERBS"))),
+              ],
+            },
+          ],
+          table,
+        ),
+      ),
+    ).toEqual([
+      "GET /orders orders",
+      "POST /orders orders",
+      "GET /health health",
+    ]);
+  });
 });
 
 describe("a route a table whose entries are made on a value claims no path for", () => {

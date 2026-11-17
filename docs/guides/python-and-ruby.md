@@ -128,7 +128,7 @@ With `api.add_namespace(ns)` somewhere in the files the run reads, that comes ou
 
 ### FastAPI
 
-- The verb comes from the decorator's own attribute name, so `@app.post("/orders")` is a POST. The app or router is recognized by construction, `app = FastAPI()` or `router = APIRouter()`, one assignment back from an import of `fastapi`.
+- The verb comes from the decorator's own attribute name, so `@app.post("/orders")` is a POST. `@app.api_route("/orders", methods=["GET", "POST"])` serves each method it lists, and GET when it lists none. The app or router is recognized by construction, `app = FastAPI()` or `router = APIRouter()`, one assignment back from an import of `fastapi`.
 - `response_model=` and `status_code=` are taken as what the route declares. With neither written, the return annotation supplies the body. With a body read and no status written, the status is 200.
 - A route on a router composes its path from the `prefix` at each `include_router(...)` call on the way from the app and each router's own `prefix`, when every one of them settles on a string.
 - A dependency, `Depends(f)` in a `dependencies=[...]` list or a parameter default, a middleware and an exception handler each get a summary of their own, and every route they run around lists them. The Python adapter's DESIGN.md says which registrations are read.

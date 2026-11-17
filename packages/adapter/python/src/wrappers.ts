@@ -14,7 +14,12 @@
  */
 
 import { absentReading } from "@suss/extractor";
-import { anyOf, callbackHandedOver, discoverDeclared } from "@suss/recognize";
+import {
+  anyOf,
+  callbackHandedOver,
+  callbackPositions,
+  discoverDeclared,
+} from "@suss/recognize";
 import { factCallOps } from "@suss/recognize/ops";
 import { noteKeyRead, noteLookup } from "@suss/resolution";
 
@@ -921,27 +926,21 @@ function writtenHandOver(node: PyNode, form: PyDependencyForm): string | null {
   return handed?.type === "identifier" ? handed.text : null;
 }
 
-const positionsByForm = new WeakMap<PyDependencyForm, Map<string, number>>();
+const positionsByForm = new WeakMap<
+  PyDependencyForm,
+  ReadonlyMap<string, number>
+>();
 
 /** Where each method of the form's chain takes its callback by position, read once per form. */
-function positionsHandedOver(form: PyDependencyForm): Map<string, number> {
+function positionsHandedOver(
+  form: PyDependencyForm,
+): ReadonlyMap<string, number> {
   const known = positionsByForm.get(form);
   if (known !== undefined) {
     return known;
   }
-  const positions = new Map<string, number>();
+  const positions = callbackPositions(form.handedTo);
   positionsByForm.set(form, positions);
-  for (const link of form.handedTo.links) {
-    if (link.asks !== "methods") {
-      continue;
-    }
-    for (const [method, meaning] of Object.entries(link.table)) {
-      const [first] = [meaning.callback].flat();
-      if (first !== undefined && "at" in first) {
-        positions.set(method, first.at);
-      }
-    }
-  }
   return positions;
 }
 

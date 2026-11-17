@@ -1,6 +1,6 @@
 // @suss/recognize: write a pack as data, and let any adapter run it.
 
-export { callbacks } from "./callbacks.js";
+export { callbackPositions, callbacks } from "./callbacks.js";
 export {
   association,
   callback,

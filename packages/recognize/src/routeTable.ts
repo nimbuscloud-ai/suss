@@ -2028,12 +2028,19 @@ function methodsOf(
     return role.methods.flatMap((method) => aliased(walk.table, method));
   }
   const methods = role.methods as
-    | { readonly pick: EntryPick; readonly all?: string }
+    | {
+        readonly pick: EntryPick;
+        readonly all?: string;
+        readonly unstated?: readonly string[];
+      }
     | { readonly members: readonly string[] };
   if ("members" in methods) {
     return [];
   }
-  const { pick, all } = methods;
+  const { pick, all, unstated } = methods;
+  if (unstated !== undefined && picked(args, pick) === undefined) {
+    return unstated;
+  }
   const names = namesOf(args, pick, scope) ?? [];
   if (all !== undefined && names.includes(all)) {
     return ["*"];

@@ -69,6 +69,29 @@ export function callbacks(spec: CallbacksSpec): Callbacks {
   });
 }
 
+/**
+ * The argument position each method of a callbacks chain takes its
+ * callback at, from the first place the method lists. A method that takes
+ * a block is left out, since a block has no position.
+ */
+export function callbackPositions(
+  chain: Chain<CallbackMethod>,
+): ReadonlyMap<string, number> {
+  const positions = new Map<string, number>();
+  for (const link of chain.links) {
+    if (link.asks !== "methods") {
+      continue;
+    }
+    for (const [method, meaning] of Object.entries(link.table)) {
+      const [first] = [meaning.callback].flat();
+      if (first !== undefined && "at" in first) {
+        positions.set(method, first.at);
+      }
+    }
+  }
+  return positions;
+}
+
 /** The same chain with one more link, or with its ending or example set. */
 function chainFrom(declared: Chain<CallbackMethod>): Callbacks {
   const adding = (link: Link<CallbackMethod>): Callbacks =>
