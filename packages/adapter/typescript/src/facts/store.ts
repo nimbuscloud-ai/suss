@@ -1966,7 +1966,9 @@ export class ResolutionStore {
    */
   importedUnder(value: Node, modules: readonly string[]): string[] {
     const name = factKeyOf(value);
-    if (!Node.isIdentifier(name)) {
+    // A request hook asks every bare call, and with no module to match
+    // the checker need not look the name up.
+    if (modules.length === 0 || !Node.isIdentifier(name)) {
       return [];
     }
     return (name.getSymbol()?.getDeclarations() ?? []).flatMap((declaration) =>
@@ -1998,7 +2000,7 @@ export class ResolutionStore {
         const imported = importedNameOf(declaration);
         return statement !== undefined &&
           imported !== null &&
-          modules.includes(statement.getModuleSpecifierValue())
+          importsOneOf(statement, modules)
           ? [imported]
           : [];
       },
@@ -2771,6 +2773,22 @@ function exportNamesOf(
     }
   }
   return [...names].sort();
+}
+
+/**
+ * Whether the import statement imports one of the modules, as written or
+ * as the project file it resolves to, which is how a module given by its
+ * path from the project root is asked.
+ */
+function importsOneOf(statement: Node, modules: readonly string[]): boolean {
+  if (!Node.isImportDeclaration(statement)) {
+    return false;
+  }
+  const resolved = statement.getModuleSpecifierSourceFile()?.getFilePath();
+  return (
+    modules.includes(statement.getModuleSpecifierValue()) ||
+    (resolved !== undefined && modules.includes(resolved))
+  );
 }
 
 /** The export an import declaration binds, `default` for a default import and `*` for a namespace, or null for no import. */

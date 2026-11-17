@@ -66,6 +66,7 @@ import type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Spelled,
   Splats,
   StatedSlot,
   Typed,
@@ -500,6 +501,14 @@ class FactCall implements CallOps {
       : globalAt(this.calleeRead.object, paths, this.source);
   }
 
+  /** Whether the receiver is written with one of the origin's names, as the source writes it. */
+  receiverSpelled(origin: Spelled): boolean {
+    return (
+      this.calleeRead !== null &&
+      origin.names.includes(this.source.textOf(this.calleeRead.object))
+    );
+  }
+
   /** Whether the call goes to one of the paths with no receiver, `print(x)`. */
   callsGlobal(origin: Global): boolean {
     return origin.paths.some(
@@ -629,6 +638,11 @@ class FactCall implements CallOps {
   /** Whether the callee is a value the file imported as the origin says. */
   calleeImported(origin: Imported): boolean {
     return importedAsAsked(origin, this.calleeKey, this.source);
+  }
+
+  /** The callee's import rows and the name it was written as, read as `importSettled` reads them. */
+  calleeSettledFrom(origin: Imported): boolean | undefined {
+    return importSettled(origin, this.calleeKey, this.source);
   }
 
   /** Whether the call goes to a name rather than to an expression written in place. */
@@ -912,6 +926,7 @@ function receiverOrigin(call: FactCall): ByOrigin<boolean> {
     handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.receiverImported(origin),
     global: (origin) => call.receiverGlobal(origin.paths) !== undefined,
+    spelled: (origin) => call.receiverSpelled(origin),
     allOf: (origin) => origin.of.every((one) => call.receiverIsFrom(one)),
     readOff: (origin) => call.receiverReadOff(origin),
   };
@@ -929,6 +944,7 @@ function callOrigin(call: FactCall): ByOrigin<boolean> {
     handedBy: (origin) => call.receiverHanded(origin),
     imported: (origin) => call.calleeImported(origin),
     global: (origin) => call.callsGlobal(origin),
+    spelled: (origin) => origin.names.includes(call.calleeText()),
     allOf: (origin) => origin.of.every((one) => call.isFrom(one)),
     readOff: (origin) => call.receiverReadOff(origin),
   };
@@ -3002,7 +3018,10 @@ function importsSettle(
 
 /** Whether a file in the run is the module an import row names. */
 function importsProjectFile(module: string, source: FactSource): boolean {
-  return source.db.lookup("importsFile", 1, module).length > 0;
+  return (
+    source.importsProjectFile?.(module) ??
+    source.db.lookup("importsFile", 1, module).length > 0
+  );
 }
 
 /** The exports of the modules the file's own import statements bind the name at `key` to, `*` for a whole module. */

@@ -27,8 +27,10 @@ import {
 import { modulesOf, opsIn } from "./ops.js";
 
 import type {
+  ArgumentPlace,
   ClientResponse,
   RequestClaim,
+  RequestRead,
   RequestRecognizer,
   UrlTarget,
 } from "@suss/extractor";
@@ -54,8 +56,16 @@ interface Requesting {
   readonly modules: readonly string[];
   readonly table: Readonly<Record<string, RequestMethod>>;
   readonly calls: RequestMethod | null;
+  /** The table entry a call of the client itself reads as, when one has the same meaning. */
+  readonly callsEntry: string | null;
   readonly base: BaseUrlLink | null;
   readonly response: ClientResponse;
+}
+
+/** What the table says one call sends, and the entry that says it. */
+interface Matched {
+  readonly meaning: RequestMethod;
+  readonly entry: string | null;
 }
 
 /** A request chain, as the hook an adapter's client walk dispatches to. */
@@ -65,12 +75,15 @@ export function compileRequests(
   const requesting = requestingOf(chain);
   const hook = (_call: unknown, ctx: unknown): RequestClaim[] | null => {
     const ops = opsIn(ctx);
-    const meaning = ops === null ? null : meaningAt(requesting, ops);
-    return ops === null || meaning === null
+    const matched = ops === null ? null : meaningAt(requesting, ops);
+    return ops === null || matched === null
       ? null
-      : claimsAt(requesting, meaning, ops);
+      : claimsAt(requesting, matched, ops);
   };
-  return Object.assign(hook, { response: requesting.response });
+  return Object.assign(hook, {
+    response: requesting.response,
+    entries: Object.keys(requesting.table),
+  });
 }
 
 function requestingOf(chain: Chain<MethodMeaning>): Requesting {
@@ -80,25 +93,29 @@ function requestingOf(chain: Chain<MethodMeaning>): Requesting {
   }
   const methods = linkIn<MethodsLink<RequestMethod>>(chain.links, "methods");
   const calls = linkIn<CallsLink<RequestMethod>>(chain.links, "calls");
+  const table = methods?.table ?? {};
+  const meaning = calls?.meaning ?? null;
   return {
     client: start.at.origin,
     modules: modulesOf(start.at.origin),
-    table: methods?.table ?? {},
-    calls: calls?.meaning ?? null,
+    table,
+    calls: meaning,
+    callsEntry:
+      Object.keys(table).find((entry) => table[entry] === meaning) ?? null,
     base: linkIn<BaseUrlLink>(chain.links, "baseUrl"),
     response: (chain.ending as HttpRequestEnding).response,
   };
 }
 
 /** What the table says the call sends, once the client is known to have made it, or null. */
-function meaningAt(requesting: Requesting, ops: CallOps): RequestMethod | null {
+function meaningAt(requesting: Requesting, ops: CallOps): Matched | null {
   const method = ops.method();
   if (method === null) {
     return bareMeaning(requesting, ops);
   }
   const meaning = listedIn(requesting.table, method);
   return meaning !== null && receiverFrom(requesting.client, ops)
-    ? meaning
+    ? { meaning, entry: method }
     : null;
 }
 
@@ -108,52 +125,94 @@ function meaningAt(requesting: Requesting, ops: CallOps): RequestMethod | null {
  * list as written or as imported is asked about only when the chain says
  * what a call of the client itself sends.
  */
-function bareMeaning(
-  requesting: Requesting,
-  ops: CallOps,
-): RequestMethod | null {
+function bareMeaning(requesting: Requesting, ops: CallOps): Matched | null {
   const written = ops.calleeImport?.(requesting.modules) ?? ops.calleeText();
   if (
     listedIn(requesting.table, written) !== null &&
-    ops.isFrom(requesting.client)
+    calleeFrom(requesting.client, ops)
   ) {
     const exported =
       ops.calleeImportedAs?.(requesting.modules) ?? ops.calleeText();
-    return listedIn(requesting.table, exported) ?? requesting.calls;
+    const listed = listedIn(requesting.table, exported);
+    return listed === null
+      ? callsMatched(requesting)
+      : { meaning: listed, entry: exported };
   }
   return requesting.calls !== null && callsClient(requesting.client, ops)
-    ? requesting.calls
+    ? callsMatched(requesting)
     : null;
+}
+
+/** What a call of the client itself sends, or null for a chain that says nothing about one. */
+function callsMatched(requesting: Requesting): Matched | null {
+  return requesting.calls === null
+    ? null
+    : { meaning: requesting.calls, entry: requesting.callsEntry };
 }
 
 /** Whether the callee came from the client, or was written as a call that did, as `api` after `api = axios.create()`. */
 function callsClient(client: ReceiverOrigin, ops: CallOps): boolean {
-  return ops.isFrom(client) || ops.callee()?.isFrom(client) === true;
+  return calleeFrom(client, ops) || ops.callee()?.isFrom(client) === true;
 }
 
 /**
  * Whether the receiver came from the client. Each origin is asked what
  * the receiver's import statement and written value say before any is
  * asked of the rules, since those settle most receivers, and the first
- * one that says yes stops the rest.
+ * one that says yes stops the rest. An adapter that finds client calls
+ * of its own asks this too, so both find the same receivers.
  */
-function receiverFrom(client: ReceiverOrigin, ops: CallOps): boolean {
-  const origins = client.origin === "anyOf" ? client.of : [client];
+export function receiverFrom(client: ReceiverOrigin, ops: CallOps): boolean {
+  return settledFirst(
+    client,
+    (origin) => receiverSettled(origin, ops),
+    (origin) => ops.receiverIsFrom(origin),
+  );
+}
+
+/**
+ * Whether a call with no receiver goes to the client, asked of the
+ * callee the way `receiverFrom` asks of a receiver. A request walk asks
+ * this of every such call in a file, and nearly every callee is settled
+ * by its own import statement.
+ */
+function calleeFrom(client: ReceiverOrigin, ops: CallOps): boolean {
+  return settledFirst(
+    client,
+    (origin) =>
+      origin.origin === "imported"
+        ? ops.calleeSettledFrom?.(origin)
+        : undefined,
+    (origin) => ops.isFrom(origin),
+  );
+}
+
+/** Whether one of the client's origins says yes, the open ones asked of the rules only after every origin's statements are read. */
+function settledFirst(
+  client: ReceiverOrigin,
+  settled: (origin: ReceiverOrigin) => boolean | undefined,
+  asked: (origin: ReceiverOrigin) => boolean,
+): boolean {
   const open: ReceiverOrigin[] = [];
-  for (const origin of origins) {
-    const settled = settledFrom(origin, ops);
-    if (settled === true) {
+  for (const origin of originsOf(client)) {
+    const said = settled(origin);
+    if (said === true) {
       return true;
     }
-    if (settled === undefined) {
+    if (said === undefined) {
       open.push(origin);
     }
   }
-  return open.some((origin) => ops.receiverIsFrom(origin));
+  return open.some(asked);
+}
+
+/** The origins a client lists, with an `anyOf` inside another read as its own origins. */
+function originsOf(client: ReceiverOrigin): readonly ReceiverOrigin[] {
+  return client.origin === "anyOf" ? client.of.flatMap(originsOf) : [client];
 }
 
 /** What the receiver's own import statement and written value say about the origin, or undefined when they leave it open. */
-function settledFrom(
+function receiverSettled(
   origin: ReceiverOrigin,
   ops: CallOps,
 ): boolean | undefined {
@@ -177,10 +236,10 @@ function listedIn(
  */
 function claimsAt(
   requesting: Requesting,
-  meaning: RequestMethod,
+  matched: Matched,
   ops: CallOps,
 ): RequestClaim[] {
-  const plain = claimOf(requesting, meaning, ops, undefined);
+  const plain = claimOf(requesting, matched, ops, undefined);
   if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
     return [plain];
   }
@@ -189,13 +248,13 @@ function claimsAt(
   // the one left when no construction says where it goes.
   const byBoundary = new Map<string, RequestClaim>();
   for (const site of ops.constructionSites?.() ?? []) {
-    const stated = claimOf(requesting, meaning, ops, site);
+    const stated = claimOf(requesting, matched, ops, site);
     if (stated === null || stated.path === null) {
       continue;
     }
     const key = `${stated.method} ${stated.host ?? ""} ${stated.path}`;
     if (!byBoundary.has(key)) {
-      byBoundary.set(key, stated);
+      byBoundary.set(key, { ...stated, site });
     }
   }
   if (byBoundary.size > 0) {
@@ -204,27 +263,60 @@ function claimsAt(
   return plain === null ? [] : [plain];
 }
 
-/** The one request the call makes under the construction at `site`, or null when the method or the URL argument is missing. */
+/**
+ * The one request the call makes under the construction at `site`, or
+ * null when the method or the URL argument is missing, or when the URL
+ * is one the client reads without a request.
+ */
 function claimOf(
   requesting: Requesting,
-  meaning: RequestMethod,
+  { meaning, entry }: Matched,
   ops: CallOps,
   site: string | undefined,
 ): RequestClaim | null {
   const sent = sentBy(meaning, ops, site);
   const own = sent === null ? null : sent.url(site);
-  if (sent === null || own === null) {
+  if (sent === null || own === null || own.local === true) {
     return null;
   }
-  const placed = underBase(baseOf(requesting.base, ops, site), own);
+  // The construction is looked for only when the chain reads a base off
+  // it, or when the call leaves the redirect option to it.
+  let built: CallOps | null | undefined;
+  const construction = (): CallOps | null => {
+    built ??= constructionOf(ops);
+    return built;
+  };
+  const base =
+    requesting.base === null
+      ? null
+      : baseOf(requesting.base, construction(), site);
+  const placed = underBase(base, own);
   const redirectDelivery =
-    redirectAt(requesting.response, ops) ?? meaning.redirects;
+    redirectAt(requesting.response, meaning, ops, {
+      built: construction,
+      link: requesting.base,
+    }) ?? meaning.redirects;
   return {
     method: sent.method,
     path: placed.path,
     host: placed.host,
     ...(redirectDelivery === undefined ? {} : { redirectDelivery }),
+    read: {
+      entry,
+      ...sent.read,
+      ...("options" in meaning && meaning.options !== undefined
+        ? { options: placeOf(meaning.options) }
+        : {}),
+      ...(base === null ? {} : { base: { ...base.url, joins: base.joins } }),
+    },
   };
+}
+
+/** What a call states its method and URL as, and where. */
+interface Sent {
+  readonly method: string;
+  readonly url: UrlReading;
+  readonly read: Pick<RequestRead, "url" | "method">;
 }
 
 /**
@@ -236,7 +328,7 @@ function sentBy(
   meaning: RequestMethod,
   ops: CallOps,
   site: string | undefined,
-): { method: string; url: UrlReading } | null {
+): Sent | null {
   if ("url" in meaning) {
     const url = urlOrHostFirst(
       ops,
@@ -244,12 +336,22 @@ function sentBy(
       meaning.url.hostFirst,
     );
     const { sends } = meaning;
+    const urlPlace = placeOf(meaning.url);
     if (typeof sends === "string") {
-      return withUrl(sends, url);
+      return withUrl(sends, url, { url: urlPlace, method: sends });
     }
+    // A method the call states and suss cannot settle sends the default
+    // too, so the request is kept with the method the library sends most.
     const stated = statedValue(ops, sends.from);
-    const method = stated === null ? (sends.default ?? null) : stringOf(stated);
-    return withUrl(method?.toUpperCase() ?? null, url);
+    const method =
+      (stated === null ? null : stringOf(stated)) ?? sends.default ?? null;
+    return withUrl(method?.toUpperCase() ?? null, url, {
+      url: urlPlace,
+      method: {
+        at: placeOf(sends.from),
+        ...(sends.default === undefined ? {} : { default: sends.default }),
+      },
+    });
   }
   const { sends } = meaning;
   const built = madeBy(ops.valueAt(sends.object), site, () =>
@@ -260,37 +362,52 @@ function sentBy(
   }
   const written = built.calleeText();
   const requestClass = written.slice(0, written.length - ".new".length);
-  return withUrl(
-    sends.classes[requestClass] ?? null,
-    urlReadingOf(urlArgument(built, sends.url)),
-  );
+  const method = sends.classes[requestClass] ?? null;
+  return withUrl(method, urlReadingOf(urlArgument(built, sends.url)), {
+    url: { at: sends.object },
+    method: method ?? "",
+  });
+}
+
+/** Where a pick reads an argument, as a claim says it. */
+function placeOf(pick: OneArgument): ArgumentPlace {
+  return {
+    at: pick.at,
+    ...(pick.keyword === undefined ? {} : { keyword: pick.keyword }),
+    ...(pick.property === undefined ? {} : { property: pick.property }),
+  };
 }
 
 /**
  * The value the call states the URL as. A URL a `*args` fills, or one a
  * `**kwargs` could pass under its keyword, is a URL suss cannot read, so
- * the call still makes a request, with no path.
+ * the call still makes a request, with no path. So is the URL property
+ * of an options object suss cannot read, as `api({ ...config })`.
  */
 function urlArgument(ops: CallOps, pick: OneArgument): ValueOps | null {
   const stated = statedValue(ops, pick);
   if (stated !== null || pick.of !== undefined) {
     return stated;
   }
+  if (pick.property !== undefined && ops.valueAt(pick.at) !== null) {
+    return UNREAD;
+  }
   const splats = ops.splats?.();
   const from = splats?.positionalFrom ?? null;
   const positional = from !== null && from <= pick.at;
   const keyword = splats?.keywords === true && pick.keyword !== undefined;
-  return positional || keyword ? SPLATTED : null;
+  return positional || keyword ? UNREAD : null;
 }
 
-/** A URL argument a splat fills, which reads as no URL at all. */
-const SPLATTED: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
+/** A URL argument suss cannot read, which reads as no URL at all. */
+const UNREAD: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
 
 function withUrl(
   method: string | null,
   url: UrlReading | null,
-): { method: string; url: UrlReading } | null {
-  return method === null || url === null ? null : { method, url };
+  read: Sent["read"],
+): Sent | null {
+  return method === null || url === null ? null : { method, url, read };
 }
 
 /**
@@ -320,21 +437,45 @@ function stringOf(value: ValueOps): string | null {
   return typeof evaluated === "string" ? evaluated : null;
 }
 
-/** The base URL the receiver's construction states, or null when the chain doesn't read one or the receiver is not a construction. */
+/**
+ * The construction the client the call is made on was made by, or null
+ * when it is not one: the receiver's, or for the client called as a
+ * function, the callee's, as `api(config)` after `api = axios.create()`.
+ */
+function constructionOf(ops: CallOps): CallOps | null {
+  if (ops.method() === null) {
+    return ops.callee();
+  }
+  return madeBy(ops.receiverValue?.() ?? null, undefined, () => ops.receiver());
+}
+
+/**
+ * The base URL the receiver's construction states, or null when the
+ * chain doesn't read one or the receiver is not a construction. A base
+ * appended to has a hole only when the program works it out at runtime,
+ * and a guess in front of every path would move each to a route nobody
+ * serves, so its path is left out and its host kept.
+ */
 function baseOf(
   link: BaseUrlLink | null,
-  ops: CallOps,
+  built: CallOps | null,
   site: string | undefined,
 ): { url: UrlTarget; joins: BaseJoin } | null {
-  const built =
-    link === null
-      ? null
-      : madeBy(ops.receiverValue?.() ?? null, undefined, () => ops.receiver());
   if (link === null || built === null) {
     return null;
   }
   const url = BASE_READ[link.reads ?? "url"](built, link, site);
-  return url === null ? null : { url, joins: link.joins };
+  if (url === null) {
+    return null;
+  }
+  const guessed =
+    link.joins === "appended" &&
+    url.path !== undefined &&
+    hasNameHole(url.path);
+  return {
+    url: guessed ? { path: undefined, host: url.host } : url,
+    joins: link.joins,
+  };
 }
 
 /** How a construction states its base: a URL, or a host with its port. */
@@ -380,6 +521,18 @@ const JOINED: Record<BaseJoin, (base: string, path: string) => string> = {
   appended: appendedPath,
   resolved: resolvedPath,
 };
+
+/**
+ * `path` under `base` the way the library joins them, for an adapter
+ * that puts a request it read again under the base a claim reports.
+ */
+export function joinedPath(
+  joins: BaseJoin,
+  base: string,
+  path: string,
+): string {
+  return JOINED[joins](base, path);
+}
 
 /** `path` after `base` with one slash between. A base of `/` says nothing about where the request goes. */
 function appendedPath(base: string, path: string): string {
@@ -429,17 +582,75 @@ function withoutDotSegments(path: string): string {
   return `/${kept.join("/")}`;
 }
 
-/** What the call does with a redirect when it passes the client's redirect option with a value that settles. */
+/** The construction the client was made by, looked for when asked, and where the chain reads its base off it. */
+interface Construction {
+  readonly built: () => CallOps | null;
+  readonly link: BaseUrlLink | null;
+}
+
+/**
+ * What the call does with a redirect when it, or else the construction
+ * its client was made by, sets the client's redirect option to a value
+ * that settles: `fetch(url, { redirect: "manual" })`, or
+ * `axios.create({ maxRedirects: 0 })` for every call on the instance.
+ */
 function redirectAt(
   response: ClientResponse,
+  meaning: RequestMethod,
   ops: CallOps,
+  construction: Construction,
 ): RequestClaim["redirectDelivery"] {
   const option = response.redirectOption;
-  const value =
-    option === undefined
-      ? null
-      : (ops.keywordAt?.(option.name)?.evaluated?.() ?? null);
-  return option === undefined || value === null
+  if (option === undefined) {
+    return undefined;
+  }
+  const value = optionSet(option.name, meaning, ops, construction);
+  return value === undefined || value === null
     ? undefined
     : redirectDeliveryWhenSet(option, value);
+}
+
+type Setting = string | number | boolean | null | undefined;
+
+/**
+ * The value the call sets an option to: as a keyword, or as a property
+ * of the options object the method takes. Undefined when the call leaves
+ * the option out, and null when it passes something suss cannot read.
+ * For a method that takes an options object, an option the call leaves
+ * out is read off the client's construction, in the object it is built
+ * with: the one it states its base in, or else its first argument.
+ */
+function optionSet(
+  name: string,
+  meaning: RequestMethod,
+  ops: CallOps,
+  { built, link }: Construction,
+): Setting {
+  const keyword = ops.keywordAt?.(name) ?? null;
+  if (keyword !== null) {
+    return keyword.evaluated?.() ?? null;
+  }
+  const pick = "options" in meaning ? meaning.options : undefined;
+  if (pick === undefined) {
+    return undefined;
+  }
+  const atCall = settingIn(statedValue(ops, pick), name);
+  const made = atCall === undefined ? built() : null;
+  return made === null
+    ? atCall
+    : settingIn(statedValue(made, { at: link?.at.at ?? 0 }), name);
+}
+
+/** What an options object sets the option to, as `optionSet` reads it. */
+function settingIn(options: ValueOps | null, name: string): Setting {
+  if (options === null) {
+    return undefined;
+  }
+  const held = options.property(name);
+  if (held !== null) {
+    return held.evaluated?.() ?? null;
+  }
+  // An object suss reads in full leaves the option out. Anything else,
+  // a parameter or a call suss cannot follow, could set it.
+  return options.object?.() === null ? null : undefined;
 }

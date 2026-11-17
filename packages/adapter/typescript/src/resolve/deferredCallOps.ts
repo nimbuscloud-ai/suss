@@ -58,6 +58,7 @@ export function deferredCallOps(
     receiverIsFrom: (origin) => stated().receiverIsFrom(origin),
     receiverGlobal: (paths) => stated().receiverGlobal?.(paths),
     isFrom: (origin) => stated().isFrom(origin),
+    calleeSettledFrom: (origin) => stated().calleeSettledFrom?.(origin),
     argumentCount: () => stated().argumentCount(),
     nameAt: (index, unsettled) => stated().nameAt(index, unsettled),
     receiver: () => stated().receiver(),

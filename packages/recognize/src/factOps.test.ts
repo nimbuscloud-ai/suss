@@ -25,6 +25,7 @@ import {
   inherits,
   readOff,
   returnedBy,
+  spelled,
   typed,
 } from "./ops.js";
 
@@ -458,6 +459,20 @@ describe("factCallOps, at the runtime's own globals", () => {
     expect(print.isFrom(global("puts"))).toBe(false);
     expect(print.receiverGlobal?.(["print"])).toBeUndefined();
     expect(opsAt("set").valueAt(0)?.shape?.()).toBeNull();
+  });
+
+  it("takes a call or a receiver written with one of the names, whatever the program binds it to", () => {
+    // The program binds both names itself, so neither is the runtime's.
+    const bound: FactSource = {
+      ...globals([]),
+      callsGlobal: () => false,
+      spellsGlobal: () => false,
+    };
+
+    expect(opsAt("print", bound).isFrom(global("print"))).toBe(false);
+    expect(opsAt("print", bound).isFrom(spelled("print"))).toBe(true);
+    expect(opsAt("log", bound).receiverIsFrom(spelled("console"))).toBe(true);
+    expect(opsAt("log", bound).receiverIsFrom(spelled("print"))).toBe(false);
   });
 
   it("reads the path a value is spelled as, or the one the rules followed into it", () => {
@@ -2919,12 +2934,15 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
    *   requests.adapters.get("/x")
    *   get("/x")
    */
-  function requesting(): {
+  function requesting(extra: readonly (readonly string[])[] = []): {
     facts: FactSource;
     urls: { key: string; site?: string; at?: unknown }[];
   } {
     const db = new Database();
     const add = (relation: string, ...row: string[]) => db.add(relation, row);
+    for (const [relation = "", ...row] of extra) {
+      add(relation, ...row);
+    }
     add("imports", "requests", "requests", "*");
     add("imports", "util", "/proj/util.py", "util");
     add("imports", "util", "proj", "util");
@@ -3144,5 +3162,19 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     expect(
       factCallOps("viaSession", projectMethod)?.receiverSettledFrom?.(SESSION),
     ).toBe(false);
+  });
+
+  it("settles the callee of a call with no receiver by its own import statement, without asking the rules", () => {
+    const { facts } = requesting([
+      ["imports", "fetchIt", "requests", "get"],
+      ["call", "importedBare", "fetchIt"],
+      ["call", "projectBare", "util"],
+    ]);
+    const calleeSettled = (call: string) =>
+      factCallOps(call, facts)?.calleeSettledFrom?.(REQUESTS);
+
+    expect(calleeSettled("importedBare")).toBe(true);
+    expect(calleeSettled("bare")).toBe(false);
+    expect(calleeSettled("projectBare")).toBeUndefined();
   });
 });

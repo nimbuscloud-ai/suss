@@ -70,6 +70,7 @@ export {
   numberRepeatedCallSites,
 } from "./callSiteGroup.js";
 export { claimBinding } from "./claimBinding.js";
+export { clientResponseOf } from "./clientResponse.js";
 export { composeWrappers } from "./composeWrappers.js";
 export {
   type DeclaredModule,
@@ -162,6 +163,7 @@ export {
 export type {
   AccessRecognizer,
   ArgumentParser,
+  ArgumentPlace,
   AssociationMeaning,
   BeforeCase,
   BindingExtraction,
@@ -215,6 +217,7 @@ export type {
   RedirectOption,
   RegisteredFunctionMatch,
   RequestClaim,
+  RequestRead,
   RequestRecognizer,
   ResponsePropertyMapping,
   ResponsePropertyMeaning,
@@ -1486,6 +1489,7 @@ export type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Spelled,
   Splats,
   StatedSlot,
   SubUnitOpsCarrier,
