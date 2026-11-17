@@ -317,6 +317,7 @@ export type {
   CaseRun,
   CaseTitle,
   FoundCase,
+  FoundMock,
   MockRead,
 } from "./testCases.js";
 export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";

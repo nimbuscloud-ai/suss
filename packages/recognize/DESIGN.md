@@ -561,6 +561,35 @@ object is. The adapter lists the calls, since which functions a case
 runs through is its own, and turns a dotted path into a file with its
 module resolution.
 
+A case written as a call is read off `calls` by `callCases`, as the
+vitest pack declares it. Each call in `module.calls("file")` is read
+for the name its callee starts from and the members written after it:
+a callee written as a name is its own root, a method comes after what
+its receiver gives, the receiver's `source()` when its `form()` is a
+name or else the chain of its `member()`, and a call made on a call,
+`it.each(rows)("t", fn)`, reads its `callee()` when that chain ends in
+one of `modifiers.takingArguments` or `modifiers.perRow`. The root is
+the runner's when `importedNames(from.importedFrom)` maps it to one of
+the group or case names, or, in a file `globalsIn` matches, when it is
+one of them and `bindsAtTopLevel` says the file does not bind it. A
+call that is none of the runner's is read against `mocks` with
+`mockRead`.
+
+The groups around a case are the runner calls a walk up from its call
+passes: from a call or a function to the call `passedTo()` gives, or
+else to its `enclosingBody()`, until the top of the file. The walk
+stops at the first runner call and takes that call's own groups, kept
+by its site, so each case walks only as far as its group. A case's
+titles are its groups' first arguments, then its own, each read by
+`evaluated()` and kept as its `source()` and unresolved when that is no
+string; a per-row case's own title is unresolved too. It runs the first
+argument after the title whose `function()` settles, and is recorded at
+its call's site. It is skipped when it or a group around it is written
+with a `modifiers.skip` member or under a `skipped` name. A mock
+applies to it when every runner call around the mock is the case or
+one of its groups. `caseRuns` leaves these cases out, since they are
+keyed by their call.
+
 Neither reader keeps anything. The reach walk asks about every test
 function until the run ends, so the adapter reads each file once and
 keeps nodes, as the Python adapter's test index does. Keeping the ops

@@ -200,7 +200,9 @@ function spellsEvery(text: string, words: readonly string[]): boolean {
  */
 export function collectPackNameGates(pack: PatternPack): string[] {
   return pack.discovery.flatMap((pattern) =>
-    pattern.match.type === "testCase" ? (pattern.match.globalsIn ?? []) : [],
+    pattern.match.type === "testCases"
+      ? [...(pattern.match.calls?.globalsIn?.matching ?? [])]
+      : [],
   );
 }
 

@@ -430,26 +430,26 @@ It resolves the `types`, `default` and `import` conditions on `exports`, and fal
 
 Pass exact module specifiers, sub-path included. Several call sites inside one function to the same binding collapse to one unit, and call sites to different bindings produce one unit each. Named and default imports with bare-identifier calls are covered. Namespace imports (`import * as X`) and member-call chains (`X.method()`) are not done yet. The package-exports pack uses it.
 
-### `testCase`
+### `testCases`
 
 ```typescript
 {
-  type: "testCase";
-  style: "block";
-  importModule: string;        // "vitest"
-  suiteNames: string[];        // ["describe", "suite"]
-  caseNames: string[];         // ["it", "test"]
-  skipModifiers: string[];     // ["skip", "todo"]
-  argumentModifiers: string[]; // ["skipIf", "runIf"]
-  rowModifiers: string[];      // ["each", "for"]
-  mocks?: { object: string; moduleMethods: string[]; memberMethods: string[] };
-  files?: string[];
+  type: "testCases";
+  files: { matching: ["*"], listed?: string[] };
+  calls: {
+    from: { origin: "imported", importedFrom: ["vitest"] };
+    globalsIn?: { matching: ["*.test.*", "*.spec.*"] };
+    groups: { names: ["describe", "suite"] };
+    cases: { names: ["it", "test"] };
+    modifiers: { skip: ["skip", "todo"], takingArguments: ["skipIf", "runIf"], perRow: ["each", "for"] };
+  };
+  mocks?: MockRule[];
 }
 ```
 
-`testCase` finds test cases written as nested calls, the style vitest, jest and mocha share. Each call to a case name imported from `importModule` becomes one unit named by the enclosing suite titles and its own, joined with ` > `, and its body is the callback. A case written with a skip modifier, or inside a suite written with one, is recorded as skipped. A modifier that takes arguments, as in `it.skipIf(condition)("title", fn)`, is followed to the case it returns; a row modifier such as `each` declares the case once under the title as written, which is recorded as unresolved.
+`testCases` finds test cases as a runner collects them, and `@suss/recognize` reads it through the module ops. Its `calls` form finds cases written as calls, the style vitest, jest and mocha share. Each call to a case function imported from `from` becomes one unit named by the titles of the group calls it is written inside and its own, joined with ` > `, and its body is the first function passed after the title. A case written in a callback or a loop inside a group is in that group. A case written with a skip modifier, or inside a group written with one, is recorded as skipped. A modifier that takes arguments, as in `it.skipIf(condition)("title", fn)`, is followed to the case it returns; a per-row modifier such as `each` declares the case once under the title as written, which is recorded as unresolved. In a file `globalsIn` matches, a runner function the file does not import or declare at its top level counts too.
 
-`mocks` says how the runner replaces something: the helper object imported from `importModule`, the methods that replace a module given its specifier, and the methods that replace one member given the object and the member's name. A mock applies to the cases in its scope: every case for one at module scope, and the cases inside the suite or case it is written in otherwise. `files` limits the walk to files matching one of the entries on whole path segments from the end. The vitest pack uses it.
+`mocks` says how the runner replaces something. A `replacesModule` rule reads the specifier a call passes, and a `replacesMember` rule reads the object and the member's name, each from the calls its patchers' origins accept, such as `vi.mock` on the `vi` vitest exports. A mock applies to every case in the group or case it is written in, and to every case in the file when it is written outside them. `files.listed` limits the read to files matching one of the entries on whole path segments from the end. The vitest pack uses it, and the pytest pack lists the same member for Python.
 
 ### `callbackArgument`
 

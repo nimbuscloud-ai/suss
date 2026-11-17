@@ -1,0 +1,33 @@
+kind: prd
+title: Cancel an order
+purpose: A customer cancels an order they no longer want.
+audience: customers
+scenarios:
+  - title: cancelled
+    when: a customer cancels an order
+    expect: the order is cancelled
+    coveredBy: src/orders.test.ts > cancel > marks the order cancelled
+    about: cancelOrder
+  - title: renamed test
+    when: a customer cancels an order again
+    expect: nothing changes
+    coveredBy: src/orders.test.ts > cancel > cancels an order twice
+    about: cancelOrder
+  - title: wrong subject
+    when: a refund follows a cancel
+    expect: the payment goes back
+    coveredBy: src/orders.test.ts > cancel > refunds the payment
+    about: cancelOrder
+  - title: skipped
+    when: an order is cancelled twice
+    expect: the second cancel does nothing
+    coveredBy: src/orders.test.ts > cancel > cancels twice without harm
+    about: cancelOrder
+  - title: mocked
+    when: a checkout fails
+    expect: the order is cancelled
+    coveredBy: src/checkout.test.ts > cancels on a failed checkout
+    about: cancelOrder
+  - title: nothing yet
+    when: an order that shipped is cancelled
+    expect: the customer is told it is too late

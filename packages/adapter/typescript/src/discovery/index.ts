@@ -28,7 +28,7 @@ import { discoverRegistrationLoops } from "./registrationLoop.js";
 import { discoverRegistrationTemplates } from "./registrationTemplate.js";
 import { requestUnitsIn } from "./requestCalls.js";
 import { discoverResolverMaps } from "./resolverMap.js";
-import { discoverTestCases } from "./testCase.js";
+import { discoverTestCasesIn } from "./testCases.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
@@ -191,13 +191,15 @@ function runPattern(
       resolution,
     );
   }
-  if (pattern.match.type === "testCase") {
-    return discoverTestCases(
-      sourceFile,
-      pattern.match,
-      pattern.kind,
-      resolution,
-    );
+  if (pattern.match.type === "testCases") {
+    return resolution === undefined
+      ? []
+      : discoverTestCasesIn(
+          sourceFile,
+          pattern.match,
+          pattern.kind,
+          resolution,
+        );
   }
   if (pattern.match.type === "callbackArgument") {
     return discoverCallbackArguments(
