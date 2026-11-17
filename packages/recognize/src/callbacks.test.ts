@@ -306,6 +306,30 @@ describe("a chain over calls that take a callback", () => {
     expect(plain(null, { ops: aliased(false) })).toHaveLength(1);
   });
 
+  it("asks where a bare call starts only for a callee imported as a name the table lists", () => {
+    const asked: string[] = [];
+    const bare = (importedAs: string | null): CallOps => {
+      const ops = callOps({ callee: "runLater", args: [KEY, INLINE] });
+      return {
+        ...ops,
+        calleeImportedAs: () => importedAs,
+        receiverIsFrom: (origin) => {
+          asked.push("receiver");
+          return ops.receiverIsFrom(origin);
+        },
+        callee: () => {
+          asked.push("callee");
+          return null;
+        },
+      };
+    };
+
+    expect(scheduled(bare(null))).toBeNull();
+    expect(asked).toEqual([]);
+    expect(scheduled(bare("later"))).toHaveLength(1);
+    expect(asked).toEqual(["receiver"]);
+  });
+
   it("matches nothing off another library", () => {
     expect(
       scheduled(

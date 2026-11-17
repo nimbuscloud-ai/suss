@@ -246,9 +246,7 @@ function hasCallChainedOn(ops: CallOps): boolean {
  * takes the table's `otherwise`, when it has one. A call with no receiver
  * that the table does not list as written is read as the export its
  * callee was imported as, so `new Get(...)` after `import { GetCommand
- * as Get }` is `GetCommand`. That question asks the store, so it comes
- * last, and with `onlyWhereWritten` only where the file mentions one of
- * the modules.
+ * as Get }` is `GetCommand`.
  */
 function methodMatched(
   chain: Chain<MethodMeaning>,
@@ -270,14 +268,7 @@ function methodMatched(
       ? { method: operationOf(named), meaning: methods.otherwise }
       : null;
   }
-  if (
-    named.method() !== null ||
-    (onlyWhereWritten && !mentionsAny(subject, modules)) ||
-    !startsHere(chain, subject)
-  ) {
-    return null;
-  }
-  return matchedByExport(methods, named, modules);
+  return bareMatched(chain, methods, subject, named, modules, onlyWhereWritten);
 }
 
 /**
@@ -294,12 +285,7 @@ function methodCallOf(
   return walk([subject], methods.of)[0] ?? null;
 }
 
-/**
- * The same match, for the sub-unit hook, asking what a bare call's
- * callee was imported as before whether the call starts at the chain's
- * origin. A component calls its own setters far more often than a hook,
- * and a callee no import binds is turned down without asking the store.
- */
+/** The same match, for the sub-unit hook, which looks the table up on the subject itself. */
 function claimMatched(
   chain: Chain<MethodMeaning>,
   methods: MethodsLink<MethodMeaning>,
@@ -311,13 +297,39 @@ function claimMatched(
   if (asWritten !== undefined) {
     return asWritten;
   }
+  return bareMatched(
+    chain,
+    methods,
+    subject,
+    subject,
+    modules,
+    onlyWhereWritten,
+  );
+}
+
+/**
+ * The match for a call with no receiver that the table does not list as
+ * written, by the export its callee was imported as. The export is asked
+ * before the start: a callee no import binds is turned down without
+ * asking the store, and the start check can build the callee's value.
+ * With `onlyWhereWritten`, a file that mentions none of the modules is
+ * asked neither.
+ */
+function bareMatched(
+  chain: Chain<MethodMeaning>,
+  methods: MethodsLink<MethodMeaning>,
+  subject: CallOps,
+  named: CallOps,
+  modules: readonly string[],
+  onlyWhereWritten: boolean,
+): MethodMatch | null {
   if (
-    subject.method() !== null ||
+    named.method() !== null ||
     (onlyWhereWritten && !mentionsAny(subject, modules))
   ) {
     return null;
   }
-  const byExport = matchedByExport(methods, subject, modules);
+  const byExport = matchedByExport(methods, named, modules);
   return byExport !== null && startsHere(chain, subject) ? byExport : null;
 }
 
