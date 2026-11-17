@@ -21,7 +21,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { OneArgument, RequestMethod } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "1";
+const PACK_VERSION = "2";
 
 const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
 
@@ -53,6 +53,14 @@ export const AIOHTTP = httpRequests({
   ),
 })
   .methods(METHODS)
+  // A session joins a relative URL to `base_url` with `URL.join`, and
+  // since 3.10 refuses a base whose path does not end with `/`.
+  .baseUrl({
+    at: 0,
+    keyword: "base_url",
+    joins: "resolved",
+    trailingSlash: "required",
+  })
   .response({
     redirectDelivery: "followed",
     redirectOption: { name: "allow_redirects", handsBack: [false] },

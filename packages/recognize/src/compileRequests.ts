@@ -465,7 +465,7 @@ function baseOf(
     return null;
   }
   const url = BASE_READ[link.reads ?? "url"](built, link, site);
-  if (url === null) {
+  if (url === null || refusedBase(link, url)) {
     return null;
   }
   const guessed =
@@ -476,6 +476,18 @@ function baseOf(
     url: guessed ? { path: undefined, host: url.host } : url,
     joins: link.joins,
   };
+}
+
+/**
+ * Whether the library refuses the base, so the client is never built. A
+ * path that ends in a hole may or may not end with `/` when it runs, and
+ * it is refused too, since reading it either way would guess.
+ */
+function refusedBase(link: BaseUrlLink, url: UrlTarget): boolean {
+  const path = url.path ?? "";
+  return (
+    link.trailingSlash === "required" && path !== "" && !path.endsWith("/")
+  );
 }
 
 /** How a construction states its base: a URL, or a host with its port. */

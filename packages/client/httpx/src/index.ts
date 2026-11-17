@@ -22,7 +22,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { OneArgument, RequestMethod } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "1";
+const PACK_VERSION = "2";
 
 const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
 
@@ -52,6 +52,9 @@ export const HTTPX = httpRequests({
   ),
 })
   .methods(METHODS)
+  // httpx takes `base_url` only by keyword, and puts a relative path
+  // after the base's path whether or not the path starts with `/`.
+  .baseUrl({ at: 0, keyword: "base_url", joins: "appended" })
   // httpx copies the requests response API, with `is_success` in place
   // of `ok`, and hands a 3xx back unless the call passes
   // `follow_redirects=True`.

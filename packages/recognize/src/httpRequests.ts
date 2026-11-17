@@ -62,6 +62,7 @@ export type BaseUrlPick = OneArgument & {
   readonly joins: BaseJoin;
   readonly reads?: "host";
   readonly port?: OneArgument;
+  readonly trailingSlash?: "required";
 };
 
 /**
@@ -96,13 +97,14 @@ function chainFrom(declared: Chain<MethodMeaning>): HttpRequests {
     declared,
     methods: (table) => adding({ asks: "methods", table, ignoringCase: false }),
     calls: (meaning) => adding({ asks: "calls", meaning }),
-    baseUrl: ({ joins, reads, port, ...at }) =>
+    baseUrl: ({ joins, reads, port, trailingSlash, ...at }) =>
       adding({
         asks: "baseUrl",
         at,
         joins,
         ...(reads === undefined ? {} : { reads }),
         ...(port === undefined ? {} : { port }),
+        ...(trailingSlash === undefined ? {} : { trailingSlash }),
       }),
     response: (response) =>
       chainFrom({

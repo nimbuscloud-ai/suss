@@ -116,6 +116,52 @@ describe("what a session call does with a redirect", () => {
   });
 });
 
+describe("a session built with a base URL", () => {
+  async function pathUnder(base: string, path: string): Promise<unknown> {
+    const units = await unitsIn(
+      [
+        "import aiohttp",
+        "",
+        "async def fetch_orders():",
+        `    async with aiohttp.ClientSession(base_url="${base}") as session:`,
+        `        return await session.get("${path}")`,
+      ].join("\n"),
+    );
+    return boundary(units).path;
+  }
+
+  it("resolves a relative path against the base, as URL.join does", async () => {
+    expect(await pathUnder("https://api.example.com/v1/", "orders")).toBe(
+      "/v1/orders",
+    );
+    expect(await pathUnder("https://api.example.com/v1/", "/orders")).toBe(
+      "/orders",
+    );
+    expect(await pathUnder("https://api.example.com", "/orders")).toBe(
+      "/orders",
+    );
+  });
+
+  it("reads the base passed first, without its keyword", async () => {
+    const units = await unitsIn(
+      [
+        "import aiohttp",
+        "",
+        "async def fetch_orders():",
+        '    session = aiohttp.ClientSession("https://api.example.com/v1/")',
+        '    return await session.get("orders")',
+      ].join("\n"),
+    );
+    expect(boundary(units).path).toBe("/v1/orders");
+  });
+
+  it("keeps the call's own path under a base aiohttp refuses for its missing trailing slash", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "orders")).toBe(
+      "orders",
+    );
+  });
+});
+
 describe("the declaration's example", () => {
   it("makes the function it is written in a client", async () => {
     const units = await unitsIn(
