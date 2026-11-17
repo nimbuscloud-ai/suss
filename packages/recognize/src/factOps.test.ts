@@ -1664,6 +1664,41 @@ function nesting(): FactSource {
   };
 }
 
+/** Two classes that extend each other, the second writing `setUp` and a class method `build`. */
+function cyclic(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("objectValue", "a.py:0-100");
+  add("extends", "a.py:0-100", "a.py:10-14");
+  add("objectValue", "a.py:200-300");
+  add("extends", "a.py:200-300", "a.py:210-214");
+  add("func", "a.py:220-240");
+  add("holdsProperty", "a.py:200-300", "setUp", "a.py:220-240");
+  add("func", "a.py:250-270");
+  add(
+    "holdsProperty",
+    "a.py:200-300",
+    classMemberName("build"),
+    "a.py:250-270",
+  );
+  const bases: Record<string, readonly string[]> = {
+    "a.py:10-14": ["a.py:200-300"],
+    "a.py:210-214": ["a.py:0-100"],
+  };
+  return { ...nesting(), db, comesTo: (key) => bases[key] ?? [] };
+}
+
+describe("the method a class runs, over the facts", () => {
+  it("finds a method on a project base, of the kind asked for, and stops at a class it has already looked in", () => {
+    const cls = factValueOps("a.py:0-100", cyclic()).asClass?.();
+
+    expect(cls?.method("setUp", "instance")?.source?.()).toBe("a.py:220-240");
+    expect(cls?.method("build", "singleton")?.source?.()).toBe("a.py:250-270");
+    expect(cls?.method("build", "instance")).toBeNull();
+    expect(cls?.method("tearDown", "instance")).toBeNull();
+  });
+});
+
 describe("the classes a class body writes, over the facts", () => {
   it("gives each class held under a name in source order, leaving out a method, an object written out and a name for a class", () => {
     const outer = factValueOps("t.py:0-200", nesting()).asClass?.();

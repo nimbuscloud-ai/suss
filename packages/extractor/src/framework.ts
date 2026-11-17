@@ -822,6 +822,63 @@ export interface TestCaseMatch {
   globalsIn?: string[];
 }
 
+/** The files a runner collects. */
+export interface FileSelection {
+  /** Globs the file's name has to match, `*` being any run of characters: `test_*.py`. */
+  readonly matching: readonly string[];
+  /** The files `suss extract --intent` hands the pack from the PRDs, matched on whole path segments from the end. */
+  readonly listed?: readonly string[];
+}
+
+/**
+ * Test cases as a runner collects them, which `@suss/recognize` reads
+ * through the module ops. Each case becomes a `test` unit named by its
+ * titles: the classes around it, outermost first, then its own name.
+ */
+export interface TestCasesMatch {
+  type: "testCases";
+  files: FileSelection;
+  /** Cases written as functions of the module: pytest's `def test_x`. */
+  functions?: { readonly pattern: string };
+  /** Cases written as methods of a class: pytest's `Test` classes and unittest's. */
+  classes?: ClassCases;
+  /** What the runner calls before a case. Their calls count as the case's own. */
+  before?: BeforeCase;
+}
+
+export interface ClassCases {
+  /** A class collected by its ancestry, when it reaches any one of these. */
+  readonly inherits?: readonly Inherits[];
+  /** A class collected by its name, whatever it extends: `^Test`. */
+  readonly named?: string;
+  /**
+   * Whether a class written inside a collected class is read too, its
+   * name another title. The module's own classes are then the ones it
+   * declares at its top level.
+   */
+  readonly nested?: boolean;
+  readonly methods: { readonly pattern: string };
+}
+
+/** What a runner calls before each case, in the order it calls them. */
+export interface BeforeCase {
+  /**
+   * Methods of each class around the case, from the outermost in. A class
+   * collected by its ancestry runs the `byAncestry` ones, and any other
+   * the `byName` ones. A method the class does not write is looked for
+   * on the project classes it extends.
+   */
+  readonly methods?: {
+    readonly byName: readonly string[];
+    readonly byAncestry: readonly string[];
+  };
+  /** Functions of the case's module: before every case, and before a case written as a function. */
+  readonly module?: {
+    readonly always: readonly string[];
+    readonly forFunctions: readonly string[];
+  };
+}
+
 export type BindingExtraction = {
   method:
     | {

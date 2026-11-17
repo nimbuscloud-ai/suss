@@ -354,6 +354,8 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `writesBase()` | an `extendsNamed(c, n)` row, which an adapter states for a base the declaration writes and never for a mixin |
 | `classes()` | the classes and modules the adapter lists for the file through `ModuleWritten.classes`, each as a class |
 | `classes()` on a class | the `holdsProperty(c, n, v)` rows whose `v` is itself a class as `asClass()` reads one, without following `comesTo`, in source order, each under `n`. Python and Ruby state one for each class or module written as a statement of the body, so a name the body sets to another class is not one. A nested Python class has no `exportsAs` row, so `n` is the only name the facts give it |
+| `method(name, kind)` | the first function among the class's `holdsProperty` rows of that kind under the name, else the same on each class an `extends(c, b)` row's `b` `comesTo`, in the order of the rows and through each base's own bases before the next, each class once |
+| `site()` on a value | the value's own key, the one its facts are stated under |
 | `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed. With `{ follow: "namesAndFields" }`, the value is read the way `receiver()` reads a receiver, so `include_router(users.router)` and `@router.get` on the same router give one call |
 | `nothing()` | the adapter's `writesNothing` on the value's own key: `None`, `nil`, or `null` and `undefined` |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
@@ -491,6 +493,46 @@ Each reader ends at `function()` and hands the adapter back its own
 node. The TypeScript adapter runs a pattern like any other in its
 discovery dispatch, and Python and Ruby run the patterns a pack lists
 in `declaredDiscovery` beside their own route patterns.
+
+### A test case a runner collects
+
+`discoverTestCases` reads a `testCases` match: the test cases a runner
+collects in one module, each with its titles, the function it runs and
+that function's `site()`, which the adapter records the unit at. The
+pytest pack declares one, and the Python adapter builds a `test` unit
+on each case and walks it the way it walks a reached function. A file
+is read when its name matches one of `files.matching` and, when
+`files.listed` is set, it is one of the listed files.
+
+A case written as a function is an export whose name matches
+`functions.pattern` and whose `function()` is the export's own value,
+with the same `site()`. A `def` is one, and a name for a function or a
+call that returns one is not, so a test one module imports from another
+is not a case of the importing module. A case written as a method is
+one of `members("instance")` on a class the runner collects, whose name
+matches `classes.methods.pattern`. A class is collected when its
+`name()` matches `classes.named` or it `inherits` one of
+`classes.inherits`. With `classes.nested`, each class the collected
+class's body writes, through `classes()` on the class, is collected the
+same way under its own name as another title. Python declares a nested
+class under no `name()` of its own, so the module's classes are then
+the ones it declares at its top level. The cases come out in
+`bySourceOrder` of their sites, so a class's methods and the classes
+nested in it keep the order they are written in.
+
+`caseRuns` gives every case in the module by its function's site, the
+listed files or not, each with `before`: the functions the runner calls
+before the case, in the order it calls them. They are the module's
+`before.module.always` functions, then its `forFunctions` ones for a
+case with no class around it, then each class's methods from the
+outermost class in, looked up with `method(name)` so a method on a
+project base class counts. A class the runner collects by its ancestry
+runs `before.methods.byAncestry`, and any other class `byName`.
+
+Neither reader keeps anything. The reach walk asks about every test
+function until the run ends, so the adapter reads each file once and
+keeps nodes, as the Python adapter's test index does. Keeping the ops
+would keep every value they read alive through the whole walk.
 
 ### The value policy
 
