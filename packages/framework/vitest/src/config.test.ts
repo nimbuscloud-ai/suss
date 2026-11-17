@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { configInputs, configSetsGlobals } from "./config.js";
 import { vitestFramework } from "./index.js";
 
+import type { PatternPack } from "@suss/extractor";
+
 let dir: string;
 
 beforeEach(() => {
@@ -19,6 +21,14 @@ afterEach(() => {
 
 function write(name: string, text: string): void {
   fs.writeFileSync(path.join(dir, name), text);
+}
+
+/** The file names the pack reads the runner's globals in, or undefined when globals are off. */
+function globalsIn(pack: PatternPack): readonly string[] | undefined {
+  const match = pack.discovery[0]?.match;
+  return match?.type === "testCases"
+    ? match.calls?.globalsIn?.matching
+    : undefined;
 }
 
 describe("configSetsGlobals", () => {
@@ -113,12 +123,8 @@ describe("the pack's globals", () => {
     write("vitest.config.ts", "export default { test: { globals: true } };");
 
     const pack = vitestFramework({ configDirectory: dir });
-    const match = pack.discovery[0]?.match;
 
-    expect(match?.type === "testCase" && match.globalsIn).toEqual([
-      "*.test.*",
-      "*.spec.*",
-    ]);
+    expect(globalsIn(pack)).toEqual(["*.test.*", "*.spec.*"]);
     expect(pack.discoveryInputs?.([])).toEqual(
       configInputs({ directory: dir }),
     );
@@ -133,12 +139,8 @@ describe("the pack's globals", () => {
       configDirectory: dir,
       config: "tools/unit.mjs",
     });
-    const match = pack.discovery[0]?.match;
 
-    expect(match?.type === "testCase" && match.globalsIn).toEqual([
-      "*.test.*",
-      "*.spec.*",
-    ]);
+    expect(globalsIn(pack)).toEqual(["*.test.*", "*.spec.*"]);
     expect(pack.discoveryInputs?.([])).toEqual([
       path.join(dir, "tools/unit.mjs"),
     ]);
@@ -147,9 +149,8 @@ describe("the pack's globals", () => {
   it("follows the option over the config", () => {
     write("vitest.config.ts", "export default { test: { globals: true } };");
 
-    const match = vitestFramework({ configDirectory: dir, globals: false })
-      .discovery[0]?.match;
+    const pack = vitestFramework({ configDirectory: dir, globals: false });
 
-    expect(match?.type === "testCase" && match.globalsIn).toBe(undefined);
+    expect(globalsIn(pack)).toBe(undefined);
   });
 });

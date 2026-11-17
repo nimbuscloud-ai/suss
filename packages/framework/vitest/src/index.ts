@@ -12,7 +12,7 @@ import { z } from "zod";
 
 import { configInputs, configSetsGlobals } from "./config.js";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, ReceiverOrigin } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export const optionsSchema = z
@@ -46,6 +46,31 @@ export type VitestPackOptions = z.infer<typeof optionsSchema>;
 /** The files vitest runs by default, where its globals are in scope. */
 const TEST_FILE_NAMES = ["*.test.*", "*.spec.*"];
 
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "2";
+
+/**
+ * A method called on vitest's `vi`: the one imported from vitest, and
+ * with globals on, the global the file writes without an import.
+ */
+function viMethod(method: string, globals: boolean): ReceiverOrigin {
+  const imported: ReceiverOrigin = {
+    origin: "imported",
+    importedFrom: ["vitest"],
+    named: ["vi"],
+  };
+  return {
+    origin: "returnedBy",
+    method,
+    on: globals
+      ? { origin: "anyOf", of: [imported, { origin: "global", paths: ["vi"] }] }
+      : imported,
+  };
+}
+
 export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
   const { configDirectory } = options;
   const where =
@@ -56,6 +81,7 @@ export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
     options.globals ?? (where !== null && configSetsGlobals(where));
   return {
     name: "vitest",
+    version: VERSION,
     protocol: "in-process",
     languages: ["typescript", "javascript"],
     ...(where === null ? {} : { discoveryInputs: () => configInputs(where) }),
@@ -64,21 +90,43 @@ export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
       {
         kind: "test",
         match: {
-          type: "testCase",
-          style: "block",
-          importModule: "vitest",
-          suiteNames: ["describe", "suite"],
-          caseNames: ["it", "test"],
-          skipModifiers: ["skip", "todo"],
-          argumentModifiers: ["skipIf", "runIf"],
-          rowModifiers: ["each", "for"],
-          mocks: {
-            object: "vi",
-            moduleMethods: ["mock", "doMock"],
-            memberMethods: ["spyOn"],
+          type: "testCases",
+          // Every file that imports vitest is read, whatever its name.
+          files: {
+            matching: ["*"],
+            ...(options.files !== undefined ? { listed: options.files } : {}),
           },
-          ...(options.files !== undefined ? { files: options.files } : {}),
-          ...(globals ? { globalsIn: TEST_FILE_NAMES } : {}),
+          calls: {
+            from: { origin: "imported", importedFrom: ["vitest"] },
+            ...(globals ? { globalsIn: { matching: TEST_FILE_NAMES } } : {}),
+            groups: { names: ["describe", "suite"] },
+            cases: { names: ["it", "test"] },
+            modifiers: {
+              skip: ["skip", "todo"],
+              takingArguments: ["skipIf", "runIf"],
+              perRow: ["each", "for"],
+            },
+          },
+          mocks: [
+            {
+              replacesModule: {
+                by: {
+                  from: [
+                    viMethod("mock", globals),
+                    viMethod("doMock", globals),
+                  ],
+                },
+                path: { at: 0 },
+              },
+            },
+            {
+              replacesMember: {
+                by: { from: [viMethod("spyOn", globals)] },
+                member: { at: 1 },
+                of: { at: 0 },
+              },
+            },
+          ],
         },
         requiresImport: ["vitest"],
       },

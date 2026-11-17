@@ -243,6 +243,19 @@ export const FIXTURE_INPUTS = [
     "--intent",
     "fixtures/covered-by-pytest/intent",
   ]),
+  fixture("covered-by-vitest", [
+    ...project("fixtures/covered-by-vitest/tsconfig.json"),
+    ...packs("vitest"),
+    "--intent",
+    "fixtures/covered-by-vitest/intent",
+  ]),
+  // The same project with every test file read, the ones the PRD does not
+  // list among them: cases in a loop, a callback and a helper, per row,
+  // under a skipped group, with globals, and a file's own `test`.
+  fixture("covered-by-vitest/every-test", [
+    ...project("fixtures/covered-by-vitest/tsconfig.json"),
+    ...packs("vitest"),
+  ]),
   fixture("covered-by-rspec", [
     ...lang("ruby"),
     ...dir("fixtures/covered-by-rspec"),
@@ -741,21 +754,26 @@ export const FIXTURE_INPUTS = [
   ]),
 ];
 
-/** Five of suss's own packages, read from the main build's checkout. */
+/**
+ * Five of suss's own packages, read from the main build's checkout, and
+ * the checker's vitest tests, which no other input reads outside the
+ * fixtures.
+ */
 export const SELF_INPUTS = [
-  "cli",
-  "mcp",
-  "checker",
-  "datalog",
-  "behavioral-ir",
-].map((pkg) => ({
-  name: `@suss/${pkg}`,
-  group: "self",
-  args: [
-    ...project(`packages/${pkg}/tsconfig.json`),
-    ...packs("package-exports", "node"),
-  ],
-}));
+  ...["cli", "mcp", "checker", "datalog", "behavioral-ir"].map((pkg) => ({
+    name: `@suss/${pkg}`,
+    group: "self",
+    args: [
+      ...project(`packages/${pkg}/tsconfig.json`),
+      ...packs("package-exports", "node"),
+    ],
+  })),
+  {
+    name: "@suss/checker -f vitest",
+    group: "self",
+    args: [...project("packages/checker/tsconfig.json"), ...packs("vitest")],
+  },
+];
 
 /**
  * The field apps every run reads, unless --quick. Each is read at its
@@ -967,6 +985,15 @@ export const EXTRA_INPUTS = [
         "pytest",
       ),
     ],
+  },
+  // A TypeScript package's vitest tests, about half of them written with
+  // vitest's globals. No other input runs the vitest pack outside the
+  // fixtures and suss's own checker.
+  {
+    name: "vitest",
+    group: "extra",
+    repo: "twenty",
+    args: [...dir("packages/twenty-sdk"), ...packs("vitest")],
   },
   {
     name: "sqlmodel",

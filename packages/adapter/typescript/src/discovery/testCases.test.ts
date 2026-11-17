@@ -2,39 +2,66 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
-import { discoverTestCases } from "./testCase.js";
+import { ResolutionStore } from "../facts/store.js";
+import { discoverTestCasesIn } from "./testCases.js";
 
-import type { TestCaseMatch } from "@suss/extractor";
+import type { ReceiverOrigin, TestCasesMatch } from "@suss/extractor";
 import type { DiscoveredUnit } from "./shared.js";
 
+const STUB = {
+  origin: "imported",
+  importedFrom: ["check-runner"],
+  named: ["stub"],
+} as const;
+
+const stubs = (method: string): ReceiverOrigin => ({
+  origin: "returnedBy",
+  method,
+  on: STUB,
+});
+
 // An invented runner, so the handler is read against the match alone.
-const RUNNER: TestCaseMatch = {
-  type: "testCase",
-  style: "block",
-  importModule: "check-runner",
-  suiteNames: ["group"],
-  caseNames: ["check", "verify"],
-  skipModifiers: ["skip", "todo"],
-  argumentModifiers: ["when"],
-  rowModifiers: ["table"],
-  mocks: {
-    object: "stub",
-    moduleMethods: ["module"],
-    memberMethods: ["member"],
+const RUNNER: TestCasesMatch = {
+  type: "testCases",
+  files: { matching: ["*"] },
+  calls: {
+    from: { origin: "imported", importedFrom: ["check-runner"] },
+    groups: { names: ["group"] },
+    cases: { names: ["check", "verify"] },
+    modifiers: {
+      skip: ["skip", "todo"],
+      takingArguments: ["when"],
+      perRow: ["table"],
+    },
   },
+  mocks: [
+    { replacesModule: { by: { from: [stubs("module")] }, path: { at: 0 } } },
+    {
+      replacesMember: {
+        by: { from: [stubs("member")] },
+        member: { at: 1 },
+        of: { at: 0 },
+      },
+    },
+  ],
 };
 
 function discover(
   files: Record<string, string>,
   file: string,
-  match: TestCaseMatch = RUNNER,
+  match: TestCasesMatch = RUNNER,
 ): DiscoveredUnit[] {
   const project = createTestProject();
   for (const [name, source] of Object.entries(files)) {
     project.createSourceFile(name, source);
   }
   const sourceFile = project.getSourceFileOrThrow(file);
-  return discoverTestCases(sourceFile, match, "test");
+  return discoverTestCasesIn(
+    sourceFile,
+    match,
+    "test",
+    ResolutionStore.forPacks([]),
+  );
 }
 
 function test(units: readonly DiscoveredUnit[], name: string) {
@@ -47,7 +74,7 @@ function test(units: readonly DiscoveredUnit[], name: string) {
   return found.metadata?.test as Record<string, unknown>;
 }
 
-describe("discoverTestCases", () => {
+describe("discoverTestCasesIn", () => {
   it("names each case by its group titles and its own, as a label", () => {
     const units = discover(
       {
@@ -68,6 +95,55 @@ describe("discoverTestCases", () => {
       ["orders > cancel > marks it cancelled", "label", "test"],
     ]);
     expect(units[0].func).not.toBeNull();
+  });
+
+  it("puts a case written in a callback, a loop or a helper inside a group in that group", () => {
+    const units = discover(
+      {
+        "/repo/orders.check.ts": `
+          import { group, check } from "check-runner";
+          const IDS = ["a", "b"];
+          group("orders", () => {
+            IDS.forEach((id) => check(id, () => {}));
+            for (const id of IDS) {
+              check(\`loops \${id}\`, () => {});
+            }
+            function cancels(name: string) {
+              check(name, () => {});
+            }
+            cancels("c");
+          });
+        `,
+      },
+      "/repo/orders.check.ts",
+    );
+
+    expect(units.map((one) => one.name)).toEqual([
+      "orders > id",
+      "orders > `loops ${id}`",
+      "orders > c",
+    ]);
+  });
+
+  it("reads the runner's functions as globals in a file the globals cover, unless the file binds the name", () => {
+    const globals: TestCasesMatch = {
+      ...RUNNER,
+      calls: { ...RUNNER.calls!, globalsIn: { matching: ["*.check.ts"] } },
+    };
+    const files = {
+      "/repo/a.check.ts": `group("orders", () => { check("runs", () => {}); });`,
+      "/repo/b.check.ts": `
+        function check(title: string, fn: () => void) {}
+        group("orders", () => { check("is the file's own", () => {}); });
+      `,
+      "/repo/c.ts": `group("orders", () => { check("is no test file", () => {}); });`,
+    };
+
+    expect(
+      discover(files, "/repo/a.check.ts", globals).map((one) => one.name),
+    ).toEqual(["orders > runs"]);
+    expect(discover(files, "/repo/b.check.ts", globals)).toEqual([]);
+    expect(discover(files, "/repo/c.ts", globals)).toEqual([]);
   });
 
   it("finds nothing in a file that does not import the runner", () => {
@@ -92,7 +168,10 @@ describe("discoverTestCases", () => {
       "/repo/src/a.check.ts": source,
       "/repo/src/ba.check.ts": source,
     };
-    const listed = { ...RUNNER, files: ["./src/a.check.ts"] };
+    const listed = {
+      ...RUNNER,
+      files: { matching: ["*"], listed: ["./src/a.check.ts"] },
+    };
 
     expect(discover(files, "/repo/src/a.check.ts", listed)).toHaveLength(1);
     expect(discover(files, "/repo/src/ba.check.ts", listed)).toEqual([]);

@@ -3,18 +3,20 @@
  * adapter hands out. pytest writes a case as a function of the module, or
  * as a method of a class it collects by its name or by its ancestry, and
  * it collects a class written inside a collected class the same way,
- * under a title of its own.
+ * under a title of its own. vitest writes its cases as calls.
  *
  * The reader says what each case is: its titles, the function it runs
  * and where that function is written. The adapter builds the unit.
  * `caseRuns` gives the reach walk each case with the functions the runner
- * calls before it. A module's own cases are the
- * functions and classes it declares at its top level, the last of two
- * with one name winning as it does in pytest. One it imports is not one.
+ * calls before it. A module's own cases are the functions and classes it
+ * declares at its top level, the last of two with one name winning as in
+ * pytest. One it imports is not one.
  */
 
 import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
 import { bySourceOrder } from "@suss/resolution";
+
+import { callCases } from "./caseCalls.js";
 
 import type {
   BeforeCase,
@@ -40,11 +42,11 @@ export interface CaseTitle {
 
 /** One case a runner collects. */
 export interface FoundCase {
-  /** The classes around the case, outermost first, then its own name. */
+  /** The classes or groups around the case, outermost first, then its own title. */
   readonly titles: readonly CaseTitle[];
-  /** The function the case runs. */
-  readonly runs: ValueOps;
-  /** The function's key, which the unit is recorded at. */
+  /** The function the case runs, or null for a case written as a call that passes none, such as `it.todo("later")`. */
+  readonly runs: ValueOps | null;
+  /** The key the unit is recorded at: the function's, or for a case written as a call, the call's. */
   readonly at: string;
   /**
    * What is written on the case: the function's decorators, then for
@@ -53,6 +55,14 @@ export interface FoundCase {
    */
   readonly markers: readonly Decorator[];
   readonly skipped: boolean;
+  /** The mock calls the reader finds in force for the case. Only the calls form reads them here. */
+  readonly mocks: readonly FoundMock[];
+}
+
+/** A call that replaces something before a case runs, and what it replaces. */
+export interface FoundMock {
+  readonly call: CallOps;
+  readonly read: MockRead;
 }
 
 /** Whether the decorator, or what a marker variable lists, comes from one of the origins: a call by its callee. */
@@ -177,14 +187,18 @@ export function discoverTestCases(
   ) {
     return [];
   }
-  return collectedIn(match, module).map((one) => one.found);
+  return [
+    ...collectedIn(match, module).map((one) => one.found),
+    ...callCases(match, module),
+  ].sort((a, b) => bySourceOrder(a.at, b.at));
 }
 
 /**
  * Every case the runner collects in the module, whatever the PRDs list,
  * by its function's key, each with what runs before it. The reach walk
  * asks about each test function it reaches, so the adapter reads a file
- * once and keeps what it needs, rather than the ops.
+ * once and keeps what it needs, rather than the ops. A case written as a
+ * call is left out, since its key is the call's.
  */
 export function caseRuns(
   match: TestCasesMatch,
@@ -381,6 +395,7 @@ function caseRunning(
             at,
             markers: [],
             skipped: false,
+            mocks: [],
           },
           classes,
         },
