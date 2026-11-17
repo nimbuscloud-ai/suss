@@ -417,7 +417,7 @@ const ENTRYPOINTS: DeclaredDiscoveryPattern[] = [
     kind: "handler",
     match: {
       type: "subclassOf",
-      inherits: { from: ["workers", "Workers"], named: ["WorkerEntrypoint"] },
+      inherits: [{ from: ["workers", "Workers"], named: ["WorkerEntrypoint"] }],
       members: { kind: "instance", names: ["fetch"] },
     },
   },

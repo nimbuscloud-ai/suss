@@ -357,7 +357,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `declaration()` | the adapter's `declarationOf` where it has one. TypeScript reads the declaration a name `binds` to, and for an import binding follows `imports(d, m, n)` to what the store's export table gives for `m` under `n`, with each module stated only as far as its export statements; a variable, function or class gives its name, a name leads on to what it binds to, and anything else gives its file and no name. Without `declarationOf`, `imports(x, m, n)` on the value leads to the `exportsAs(m, n, v)` row, following `v` on when it is imported in turn, and otherwise the `exportsAs` row of the value or of what it `binds` to gives the file and the name, which is how Python states a module-level def and Ruby a top-level class or constant. When neither gives an answer and the value is a member read, `readsProperty(x, o, n)`, it is declared where `property(n)` of `o`'s `object()` is, so `Card.Root` with `Card = { Root: CardRoot }` is declared where `CardRoot` is. TypeScript asks this of the expression inside `Slider.Root<number>`. Null when nothing is behind it |
 | `parameterAt(fn)` | the position `k` of a `paramOf(f, k, p)` row on the function `fn` settles to, where `p` is the value itself (how Python and Ruby key a name for a parameter), what it `binds` to (how TypeScript does), or the parameter whose destructure has that declaration as its rest, `restOf(d, p)`. Null for none, or for two positions |
 | `writtenItems()` | the adapter's `writtenItemsOf` on the value as written: an array literal's elements in TypeScript, a list's, tuple's or set's children in Python, and an array's children in Ruby |
-| `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(spec)` walks `extends` through `comesTo`, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of the spec's modules under one of its names, or an `extendsNamed` base the adapter's `spellsBase` says the spec spells, which is how Ruby matches `ActiveRecord::Base` in a project that reopens `class Base` inside `module ActiveRecord`; its `members(kind)` are the functions among its `holdsProperty` rows |
+| `asClass()` | the value, or what it `comesTo`, stated as `objectValue` and neither written out as an object nor a function. Its `inherits(bases)` walks `extends` through `comesTo` once, the way `libraryBase` does, until a base the adapter's `importedAs` says came from one of a spec's modules under one of its names, or an `extendsNamed` base the adapter's `spellsBase` says one of the specs spells, which is how Ruby matches `ActiveRecord::Base` in a project that reopens `class Base` inside `module ActiveRecord`; its `members(kind)` are the functions among its `holdsProperty` rows |
 | `name()` on a class | `rbConstantName(c, q)` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere |
 | `bodyCalls()` on a value or a module | `bodyCallAt(f, k, r)` on the value's own key or the file's path, in the order of `k`: the calls written as statements of the body, through the branches of a conditional |
 | `bodyCalls()` on a class | `classBodyCall(c, r)`, which the adapter asks the rules for: the class body's statements and, in Ruby, those of each block written there, in source order |
@@ -2281,9 +2281,11 @@ call writes none, and only the adapter knows how its language keys a
 class.
 
 `in` limits the reading to the library's own classes, as
-`classBody({ in: inherits({ from: ["ActiveRecord"], named: ["Base"] }) })`
+`classBody({ in: [{ from: ["ActiveRecord"], named: ["Base"] }] })`
 does for ActiveRecord's models, so a serializer's `has_many` says
-nothing. A body whose declaration writes no base class is read anyway.
+nothing. It lists bases the way every declaration that says what a
+class extends does, and a class that reaches any one of them is read.
+A body whose declaration writes no base class is read anyway.
 A Ruby module has none, and its declarations reach a model through the
 `include` that mixes it in. A class reopened without its base has none
 either, and its body is the same model's.

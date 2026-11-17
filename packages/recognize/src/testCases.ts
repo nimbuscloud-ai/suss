@@ -375,7 +375,7 @@ function collectsClass(
 }
 
 function reachesCaseBase(classes: ClassCases, cls: ClassValueOps): boolean {
-  return (classes.inherits ?? []).some((spec) => cls.inherits(spec));
+  return cls.inherits(classes.inherits ?? []);
 }
 
 /** A case is recorded at its function's key, so a function the adapter cannot key is no case. */

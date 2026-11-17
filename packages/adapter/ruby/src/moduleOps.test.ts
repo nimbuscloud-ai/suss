@@ -55,7 +55,7 @@ describe("one Ruby file read on its own as module ops", () => {
         "end\n" +
         "class Other < Rails::Engine\nend\n",
     );
-    const engine = { from: ["Rails"], named: ["Engine"] };
+    const engine = [{ from: ["Rails"], named: ["Engine"] }];
     expect(
       module.classes().map((cls) => [cls.name(), cls.inherits(engine)]),
     ).toEqual([

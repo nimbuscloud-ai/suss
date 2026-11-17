@@ -12,7 +12,6 @@ import {
   callback,
   classBody,
   definesMethod,
-  inherits,
 } from "@suss/recognize";
 
 import { storageSystemFromDatabaseYml } from "./databaseYml.js";
@@ -232,7 +231,7 @@ export function activeRecordClassBodies(): ClassBodyDeclaration[] {
   );
   return [
     classBody({
-      in: inherits({ from: ["ActiveRecord"], named: ["Base"] }),
+      in: [{ from: ["ActiveRecord"], named: ["Base"] }],
       calls: {
         has_one: association({ name: { at: 0 }, target: CLASS_NAME }),
         belongs_to: association({ name: { at: 0 }, target: CLASS_NAME }),
