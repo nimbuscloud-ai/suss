@@ -92,12 +92,6 @@ export interface RubyPack {
   discovery: RubyDiscoveryPattern[];
   /** Patterns every adapter reads the same way, through the module ops over this adapter's facts. */
   declaredDiscovery?: DeclaredDiscoveryPattern[];
-  /**
-   * The calls the library offers a project for making a request, as a
-   * pack wrote them before `requestRecognizers`. Each pattern is read as
-   * the request chains that say the same thing.
-   */
-  clients?: RbClientCall[];
   /** The requests the library sends, as a pack declared with `@suss/recognize` compiles them. */
   requestRecognizers?: readonly RequestRecognizer[];
   /** The library's model calls that read or write the database. */
@@ -374,70 +368,6 @@ export interface RbBodyBlock {
    * only to modules, such as `included do`, then counts inside it.
    */
   moduleBody?: boolean;
-}
-
-/**
- * The calls a library offers a project for making a request. A method
- * that makes one becomes a client unit, bound to the request method and
- * path of the call. The adapter reads a pattern as the request chains
- * that say the same thing, which a pack can declare with
- * `@suss/recognize` instead.
- */
-export interface RbClientCall {
-  /** The constant the calls are made on, as a project writes it: `Faraday`, `Net::HTTP`. */
-  constantName: string;
-  /** Method names that state the request method themselves: `get` means GET. */
-  verbMethodNames: Record<string, string>;
-  /** Where a call states the URL. */
-  url: { position: number; keyword?: string };
-  /**
-   * Methods on the constant that take a host, a path and a port in place
-   * of a URL when the argument at `path` reads as a string, as
-   * `Net::HTTP.get(host, path, port)` does. Ruby makes the same choice:
-   * a hash there is the headers of a call that takes a URL first.
-   */
-  hostThenPath?: RbHostArguments & { methods: string[]; path: number };
-  /** Methods on the constant that build a value taking the same calls, `new` for a Faraday connection. */
-  receiverBuilders?: string[];
-  /** The keyword a builder takes its base URL under. The base URL goes in front of the path of each call on the built value. */
-  builderUrlKeyword?: string;
-  /** Where a builder takes a host and a port in place of a base URL, as `Net::HTTP.new(host, port)` does. */
-  builderHost?: RbHostArguments;
-  /** The members of the response object, so a test on one of them counts as a test on the status. */
-  response?: RbClientResponse;
-  /** A call that sends a request object built separately. Net::HTTP sends any request with a body this way. */
-  requestObject?: {
-    /** The method that takes the request object, `request`. */
-    attribute: string;
-    /** Each request class, as a project writes it, and the method it sends: `Net::HTTP::Get` sends GET. */
-    constructors: Record<string, string>;
-    /** Where the request class takes the URL. */
-    urlPosition: number;
-  };
-}
-
-/** The positions a call takes a host and its port at, when it takes them as two arguments. */
-export interface RbHostArguments {
-  host: number;
-  port: number;
-}
-
-/**
- * The members of a library's response object. A test on one of them shows
- * which statuses the caller handles, and the checker compares that with
- * what the provider sends.
- */
-export interface RbClientResponse {
-  /** Members whose value is the status: `status` for Faraday, `code` for Net::HTTP. */
-  statusCode?: string[];
-  /** Members that say the request succeeded, meaning a status in 200 to 299: `success?`. */
-  success?: string[];
-  /** Members that give the body: `body`. */
-  body?: string[];
-  /** Whether a refused request comes back as a response or raises where it was made. */
-  failureDelivery?: "response" | "exception";
-  /** Whether the client follows a redirect itself or hands the 3xx back. */
-  redirectDelivery?: "followed" | "response";
 }
 
 /**
