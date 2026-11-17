@@ -19,6 +19,7 @@ import type {
   BehavioralSummary,
   Effect,
   Transition,
+  TypeShape,
   ValueRef,
   WrapperMetadata,
 } from "@suss/behavioral-ir";
@@ -1202,6 +1203,146 @@ describe("inspect --diff, human output", () => {
       const { output } = captureStdout(() => inspectDiff(paths));
       expect(output).toContain(
         "{ id, name, total, state, ..., +currency: string, -email }",
+      );
+    });
+  });
+
+  /** A route whose 200 responds with this body. */
+  const respondsWithBody = (
+    properties: Record<string, TypeShape>,
+  ): BehavioralSummary =>
+    respondsWith("summary", "/reports/:id/summary", {
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: 200 },
+        body: { type: "record", properties },
+        headers: {},
+      },
+    });
+
+  const record = (properties: Record<string, TypeShape>): TypeShape => ({
+    type: "record",
+    properties,
+  });
+
+  /** The paging fields a list response has beside the one that changes. */
+  const paging: Record<string, TypeShape> = {
+    page: { type: "integer" },
+    size: { type: "integer" },
+    total: { type: "integer" },
+    pages: { type: "integer" },
+  };
+
+  it("says which nested field changed type, and from what to what", () => {
+    const before = [
+      respondsWithBody({
+        meta: record({ metric: { type: "unknown" }, ...paging }),
+        payload: { type: "unknown" },
+      }),
+    ];
+    const after = [
+      respondsWithBody({
+        meta: record({ metric: { type: "text" }, ...paging }),
+        payload: { type: "unknown" },
+      }),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "~ responds 200 { ~meta.metric: any -> string, payload }",
+      );
+      expect(output).not.toContain("~meta:");
+    });
+  });
+
+  it("prints the whole path of a field added deep in a shape", () => {
+    const page = (fields: Record<string, TypeShape>) =>
+      respondsWithBody({
+        meta: record({ page: record(fields) }),
+        data: { type: "unknown" },
+      });
+    const before = [page({ number: { type: "integer" } })];
+    const after = [
+      page({ number: { type: "integer" }, size: { type: "integer" } }),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("{ +meta.page.size: int, data }");
+    });
+  });
+
+  it("prints the whole path of a nested field that went away", () => {
+    const before = [respondsWithBody({ meta: record({ ...paging }) })];
+    const { total: _gone, ...kept } = paging;
+    const after = [respondsWithBody({ meta: record(kept) })];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("~ responds 200 { -meta.total }");
+    });
+  });
+
+  it("follows a changed field into the records of a list", () => {
+    const rows = (metric: TypeShape) =>
+      respondsWithBody({
+        data: {
+          type: "array",
+          items: record({ id: { type: "text" }, metric }),
+        },
+      });
+
+    withFiles(
+      [rows({ type: "unknown" })],
+      [rows({ type: "number" })],
+      (paths) => {
+        const { output } = captureStdout(() => inspectDiff(paths));
+        expect(output).toContain("{ ~data[].metric: any -> number }");
+      },
+    );
+  });
+
+  it("prints a nested field whole when it stopped being a record", () => {
+    const before = [respondsWithBody({ meta: record({ ...paging }) })];
+    const after = [respondsWithBody({ meta: { type: "null" } })];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "{ ~meta: { page, size, total, pages } -> null }",
+      );
+    });
+  });
+
+  it("prints a nested record whole when only the order of its fields moved", () => {
+    const a: TypeShape = { type: "text" };
+    const b: TypeShape = { type: "integer" };
+    const before = [respondsWithBody({ meta: record({ a, b }) })];
+    const after = [
+      respondsWithBody({ meta: record({ b, a }), id: { type: "text" } }),
+    ];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain("{ ~meta: { a, b } -> { b, a }, +id: string }");
+    });
+  });
+
+  it("counts the changed fields past the first few inside one field", () => {
+    const allOf = (shape: TypeShape) =>
+      Object.fromEntries(
+        ["a", "b", "c", "d", "e"].map((name) => [name, shape]),
+      );
+    const before = [
+      respondsWithBody({ meta: record(allOf({ type: "unknown" })) }),
+    ];
+    const after = [respondsWithBody({ meta: record(allOf({ type: "text" })) })];
+
+    withFiles(before, after, (paths) => {
+      const { output } = captureStdout(() => inspectDiff(paths));
+      expect(output).toContain(
+        "{ ~meta.a: any -> string, ~meta.b: any -> string, ~meta.c: any -> string, and 2 more in meta }",
       );
     });
   });
