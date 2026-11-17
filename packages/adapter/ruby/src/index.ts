@@ -130,7 +130,6 @@ export type {
   RbRawSqlPattern,
   RbResolverHooks,
   RbRowCall,
-  RbSharedInclude,
   RbStatusCall,
   RbStoragePattern,
   RbTestCases,

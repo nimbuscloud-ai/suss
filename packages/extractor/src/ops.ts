@@ -379,8 +379,22 @@ export interface ValueOps {
    * other value.
    */
   bodyCalls?(): readonly CallOps[];
+  /**
+   * Every call written in the function or block this value is, however
+   * deep, through the blocks written inside it and not into a function
+   * defined inside it, in source order. Empty for any other value, and
+   * unset in an adapter that cannot say.
+   */
+  calls?(): readonly CallOps[];
   /** The call this block is written with, `test "x"` for its `do ... end`, or null for any other value. */
   blockCall?(): CallOps | null;
+  /**
+   * The text of a constant or a constant path the source writes at this
+   * spot, as `Order` and `Billing::Order` are written in Ruby, or null
+   * for anything else. A name for one is not read. Unset in a language
+   * that writes no constants.
+   */
+  constantPath?(): string | null;
   /**
    * The object this value comes to, through names and through a call
    * that returns its argument, or null for anything else. A call into a
@@ -1431,6 +1445,12 @@ export interface FactSource {
   writtenItemsOf?(key: string): readonly string[] | null;
   /** How the source wrote the value at the key, as `ValueOps.form` says. Unset reads every value as other. */
   formOf?(key: string): ValueForm;
+  /**
+   * The text of the constant or constant path written at the key, or at
+   * the argument `at` says the value was read off, as
+   * `ValueOps.constantPath` says. Unset reads none.
+   */
+  constantPathOf?(key: string, at?: ArgumentRead): string | null;
   /** The string, number or boolean written at the key, or null when it is not one. */
   literalOf(key: string): string | number | boolean | null;
   /** Whether the language's literal for no value is written at the key. Unset reads none. */

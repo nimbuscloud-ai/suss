@@ -8,21 +8,36 @@ import type { RbTestCases, RubyPack } from "../pack.js";
 
 export function rspecPattern(files?: string[]): RbTestCases {
   return {
-    filePatterns: ["*_spec.rb"],
-    receiver: "RSpec",
-    groupNames: ["describe", "context"],
-    skippedGroupNames: ["xdescribe", "xcontext"],
-    sharedGroupNames: ["shared_examples", "shared_context"],
-    sharedIncludes: [
-      { method: "it_behaves_like", nestedTitle: "behaves like" },
-      { method: "include_examples" },
-      { method: "include_context" },
-    ],
-    exampleNames: ["it", "specify"],
-    skippedExampleNames: ["xit", "skip", "pending"],
-    skipStatements: ["skip", "pending"],
-    skipMetadata: ["skip"],
-    beforeHooks: ["before"],
+    cases: {
+      type: "testCases",
+      files: {
+        matching: ["*_spec.rb"],
+        ...(files === undefined ? {} : { listed: files }),
+      },
+      calls: {
+        from: { origin: "global", paths: ["RSpec"] },
+        body: "block",
+        groups: {
+          names: ["describe", "context"],
+          skipped: ["xdescribe", "xcontext"],
+        },
+        cases: {
+          names: ["it", "specify"],
+          skipped: ["xit", "skip", "pending"],
+        },
+        topLevelCases: false,
+        shared: {
+          names: ["shared_examples", "shared_context"],
+          includes: [
+            { method: "it_behaves_like", nestedTitle: "behaves like" },
+            { method: "include_examples" },
+            { method: "include_context" },
+          ],
+        },
+      },
+      before: { calls: ["before", "let!", "subject!"] },
+      skips: { statements: ["skip", "pending"], metadata: ["skip"] },
+    },
     lazyValues: ["let"],
     eagerValues: ["let!"],
     subjectNames: { lazy: ["subject"], eager: ["subject!"] },
@@ -56,7 +71,6 @@ export function rspecPattern(files?: string[]): RbTestCases {
       doubles: ["instance_double", "class_double"],
       constantDoubleMethod: "as_stubbed_const",
     },
-    ...(files === undefined ? {} : { files }),
   };
 }
 

@@ -1124,10 +1124,26 @@ class FactValue implements ValueOps {
     return bodyCallsOf(this.key, this.facts);
   }
 
+  /** `makesCall` read by its first column, which Ruby states for every block around a call. */
+  calls(): readonly CallOps[] {
+    return inSourceOrder(
+      this.facts.db
+        .lookup("makesCall", 0, this.key)
+        .map((row) => String(row[1])),
+    ).flatMap((key) => factCallOps(key, this.facts) ?? []);
+  }
+
   /** `callBlock(r, b)` read by its second column. */
   blockCall(): CallOps | null {
     const call = only(this.facts.db.lookup("callBlock", 1, this.key), 0);
     return call === null ? null : factCallOps(call, this.facts);
+  }
+
+  /** Read where the call writes the argument, when the value was read off one, since a constant is keyed by its name. */
+  constantPath(): string | null {
+    return (
+      this.facts.constantPathOf?.(this.key, argumentsRead.get(this)) ?? null
+    );
   }
 
   object(): ValueOps | null {

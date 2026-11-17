@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 3814,
-      "covered": 3809,
+      "total": 4436,
+      "covered": 4431,
       "skipped": 0,
-      "pct": 99.86
+      "pct": 99.88
     },
     "statements": {
-      "total": 3919,
-      "covered": 3914,
+      "total": 4564,
+      "covered": 4559,
       "skipped": 0,
-      "pct": 99.87
+      "pct": 99.89
     },
     "functions": {
-      "total": 1361,
-      "covered": 1358,
+      "total": 1573,
+      "covered": 1570,
       "skipped": 0,
-      "pct": 99.77
+      "pct": 99.8
     },
     "branches": {
-      "total": 3584,
-      "covered": 3355,
+      "total": 4314,
+      "covered": 4030,
       "skipped": 0,
-      "pct": 93.61
+      "pct": 93.41
     },
     "branchesTrue": {
       "total": 0,
@@ -59,28 +59,54 @@
   },
   "src/callbacks.ts": {
     "lines": {
-      "total": 8,
-      "covered": 8,
+      "total": 17,
+      "covered": 17,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 7,
-      "covered": 7,
-      "skipped": 0,
-      "pct": 100
-    },
-    "statements": {
       "total": 8,
       "covered": 8,
       "skipped": 0,
       "pct": 100
     },
-    "branches": {
-      "total": 8,
-      "covered": 7,
+    "statements": {
+      "total": 17,
+      "covered": 17,
       "skipped": 0,
-      "pct": 87.5
+      "pct": 100
+    },
+    "branches": {
+      "total": 14,
+      "covered": 13,
+      "skipped": 0,
+      "pct": 92.85
+    }
+  },
+  "src/caseCalls.ts": {
+    "lines": {
+      "total": 300,
+      "covered": 300,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 87,
+      "covered": 87,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 316,
+      "covered": 316,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 329,
+      "covered": 298,
+      "skipped": 0,
+      "pct": 90.57
     }
   },
   "src/chain.ts": {
@@ -111,54 +137,54 @@
   },
   "src/classBody.ts": {
     "lines": {
-      "total": 56,
-      "covered": 56,
+      "total": 63,
+      "covered": 63,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 23,
-      "covered": 23,
+      "total": 25,
+      "covered": 25,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 60,
-      "covered": 60,
+      "total": 67,
+      "covered": 67,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 68,
-      "covered": 59,
+      "total": 80,
+      "covered": 70,
       "skipped": 0,
-      "pct": 86.76
+      "pct": 87.5
     }
   },
   "src/compile.ts": {
     "lines": {
-      "total": 1003,
-      "covered": 999,
+      "total": 1008,
+      "covered": 1004,
       "skipped": 0,
       "pct": 99.6
     },
     "functions": {
-      "total": 309,
-      "covered": 307,
+      "total": 312,
+      "covered": 310,
       "skipped": 0,
       "pct": 99.35
     },
     "statements": {
-      "total": 1028,
-      "covered": 1024,
+      "total": 1033,
+      "covered": 1029,
       "skipped": 0,
       "pct": 99.61
     },
     "branches": {
-      "total": 981,
-      "covered": 913,
+      "total": 985,
+      "covered": 917,
       "skipped": 0,
-      "pct": 93.06
+      "pct": 93.09
     }
   },
   "src/compileReads.ts": {
@@ -215,28 +241,28 @@
   },
   "src/compileRequests.ts": {
     "lines": {
-      "total": 119,
-      "covered": 119,
+      "total": 170,
+      "covered": 170,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 23,
-      "covered": 23,
+      "total": 42,
+      "covered": 42,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 121,
-      "covered": 121,
+      "total": 172,
+      "covered": 172,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 163,
-      "covered": 149,
+      "total": 233,
+      "covered": 217,
       "skipped": 0,
-      "pct": 91.41
+      "pct": 93.13
     }
   },
   "src/compileSchemaReads.ts": {
@@ -293,28 +319,28 @@
   },
   "src/discovery.ts": {
     "lines": {
-      "total": 137,
-      "covered": 137,
+      "total": 158,
+      "covered": 158,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 40,
-      "covered": 40,
+      "total": 45,
+      "covered": 45,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 144,
-      "covered": 144,
+      "total": 166,
+      "covered": 166,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 138,
-      "covered": 129,
+      "total": 176,
+      "covered": 167,
       "skipped": 0,
-      "pct": 93.47
+      "pct": 94.88
     }
   },
   "src/example.ts": {
@@ -345,28 +371,28 @@
   },
   "src/factOps.ts": {
     "lines": {
-      "total": 956,
-      "covered": 956,
+      "total": 1016,
+      "covered": 1016,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 414,
-      "covered": 414,
+      "total": 447,
+      "covered": 447,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 986,
-      "covered": 986,
+      "total": 1048,
+      "covered": 1048,
       "skipped": 0,
       "pct": 100
     },
     "branches": {
-      "total": 727,
-      "covered": 697,
+      "total": 787,
+      "covered": 752,
       "skipped": 0,
-      "pct": 95.87
+      "pct": 95.55
     }
   },
   "src/factReadOps.ts": {
@@ -415,10 +441,36 @@
       "pct": 100
     },
     "branches": {
-      "total": 0,
-      "covered": 0,
+      "total": 6,
+      "covered": 6,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/httpRequestsHost.ts": {
+    "lines": {
+      "total": 16,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 5,
+      "covered": 5,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 17,
+      "covered": 17,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 20,
+      "covered": 16,
+      "skipped": 0,
+      "pct": 80
     }
   },
   "src/index.ts": {
@@ -501,20 +553,20 @@
   },
   "src/ops.ts": {
     "lines": {
+      "total": 37,
+      "covered": 37,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
       "total": 32,
       "covered": 32,
       "skipped": 0,
       "pct": 100
     },
-    "functions": {
-      "total": 28,
-      "covered": 28,
-      "skipped": 0,
-      "pct": 100
-    },
     "statements": {
-      "total": 34,
-      "covered": 34,
+      "total": 39,
+      "covered": 39,
       "skipped": 0,
       "pct": 100
     },
@@ -579,8 +631,8 @@
   },
   "src/routeTable.ts": {
     "lines": {
-      "total": 855,
-      "covered": 854,
+      "total": 857,
+      "covered": 856,
       "skipped": 0,
       "pct": 99.88
     },
@@ -591,16 +643,16 @@
       "pct": 99.52
     },
     "statements": {
-      "total": 870,
-      "covered": 869,
+      "total": 872,
+      "covered": 871,
       "skipped": 0,
       "pct": 99.88
     },
     "branches": {
-      "total": 887,
-      "covered": 812,
+      "total": 891,
+      "covered": 818,
       "skipped": 0,
-      "pct": 91.54
+      "pct": 91.8
     }
   },
   "src/routeTableDiscovery.ts": {
@@ -783,6 +835,32 @@
       "covered": 0,
       "skipped": 0,
       "pct": 100
+    }
+  },
+  "src/testCases.ts": {
+    "lines": {
+      "total": 146,
+      "covered": 146,
+      "skipped": 0,
+      "pct": 100
+    },
+    "functions": {
+      "total": 53,
+      "covered": 53,
+      "skipped": 0,
+      "pct": 100
+    },
+    "statements": {
+      "total": 149,
+      "covered": 149,
+      "skipped": 0,
+      "pct": 100
+    },
+    "branches": {
+      "total": 181,
+      "covered": 167,
+      "skipped": 0,
+      "pct": 92.26
     }
   },
   "src/unitInvokes.ts": {

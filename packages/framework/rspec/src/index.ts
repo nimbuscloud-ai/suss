@@ -4,14 +4,16 @@
  * and `suss check --intent` can check the test still exists, still runs,
  * and still reaches what the scenario is about.
  *
- * Every call listed here is one RSpec defines. The Ruby adapter reads
- * the nesting, the blocks an example runs through, and the mocks. The
- * README says what the pack reads and what it leaves out.
+ * Every call listed here is one RSpec defines. `@suss/recognize` reads
+ * the groups, examples and shared groups, and the Ruby adapter reads
+ * what a `let` gives, the blocks an example runs through, and the
+ * mocks. The README says what the pack reads and what it leaves out.
  */
 
 import { z } from "zod";
 
 import type { RubyPack } from "@suss/adapter-ruby";
+import type { TestCasesMatch } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export const optionsSchema = z
@@ -71,23 +73,49 @@ const RUNNER_METHODS = [
   "all",
 ];
 
-export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
+
+const EAGER_VALUES = ["let!"];
+const EAGER_SUBJECTS = ["subject!"];
+
+/**
+ * A group is opened on self or on `RSpec`, and an example is declared in
+ * a group with a block. A hook, a `let!` and a `subject!` run before
+ * every example in the group they are written in.
+ */
+function examples(files: readonly string[] | undefined): TestCasesMatch {
   return {
-    name: "rspec",
-    protocol: "in-process",
-    discovery: [],
-    tests: [
-      {
-        filePatterns: ["*_spec.rb"],
-        receiver: "RSpec",
-        groupNames: ["describe", "context", "feature", "example_group"],
-        skippedGroupNames: ["xdescribe", "xcontext", "xfeature"],
-        sharedGroupNames: [
-          "shared_examples",
-          "shared_examples_for",
-          "shared_context",
+    type: "testCases",
+    files: {
+      matching: ["*_spec.rb"],
+      ...(files === undefined ? {} : { listed: files }),
+    },
+    calls: {
+      from: { origin: "global", paths: ["RSpec"] },
+      body: "block",
+      groups: {
+        names: ["describe", "context", "feature", "example_group"],
+        skipped: ["xdescribe", "xcontext", "xfeature"],
+      },
+      cases: {
+        names: ["it", "specify", "example", "scenario", "its"],
+        skipped: [
+          "xit",
+          "xspecify",
+          "xexample",
+          "xscenario",
+          "skip",
+          "pending",
         ],
-        sharedIncludes: [
+      },
+      topLevelCases: false,
+      shared: {
+        names: ["shared_examples", "shared_examples_for", "shared_context"],
+        includes: [
           { method: "it_behaves_like", nestedTitle: "behaves like" },
           {
             method: "it_should_behave_like",
@@ -96,21 +124,33 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
           { method: "include_examples" },
           { method: "include_context" },
         ],
-        exampleNames: ["it", "specify", "example", "scenario", "its"],
-        skippedExampleNames: [
-          "xit",
-          "xspecify",
-          "xexample",
-          "xscenario",
-          "skip",
-          "pending",
-        ],
-        skipStatements: ["skip", "pending"],
-        skipMetadata: ["skip"],
-        beforeHooks: ["before", "prepend_before", "append_before"],
+      },
+    },
+    before: {
+      calls: [
+        "before",
+        "prepend_before",
+        "append_before",
+        ...EAGER_VALUES,
+        ...EAGER_SUBJECTS,
+      ],
+    },
+    skips: { statements: ["skip", "pending"], metadata: ["skip"] },
+  };
+}
+
+export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
+  return {
+    name: "rspec",
+    version: VERSION,
+    protocol: "in-process",
+    discovery: [],
+    tests: [
+      {
+        cases: examples(options.files),
         lazyValues: ["let"],
-        eagerValues: ["let!"],
-        subjectNames: { lazy: ["subject"], eager: ["subject!"] },
+        eagerValues: EAGER_VALUES,
+        subjectNames: { lazy: ["subject"], eager: EAGER_SUBJECTS },
         subjectReads: ["subject", "is_expected"],
         subjectValue: "subject",
         describedClass: "described_class",
@@ -137,7 +177,6 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
           doubles: ["instance_double", "class_double"],
           constantDoubleMethod: "as_stubbed_const",
         },
-        ...(options.files !== undefined ? { files: options.files } : {}),
       },
     ],
   };

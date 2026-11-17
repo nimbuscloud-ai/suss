@@ -81,4 +81,28 @@ describe("one Ruby file read on its own as module ops", () => {
     const shapes = [0, 1, 2, 3].map((at) => call?.valueAt(at)?.shape?.()?.type);
     expect(shapes).toEqual(["array", "array", "array", "unknown"]);
   });
+
+  it("gives an argument written as a constant its path as written, and a name none", () => {
+    const [first, second, third] = opsOf(
+      "describe Billing::Order do\nend\ndescribe GREETING do\nend\n" +
+        "[1].each do |order|\n  describe order do\n  end\nend\n",
+    )
+      .calls("file")
+      .filter((call) => call.calleeText() === "describe");
+    expect(first?.valueAt(0)?.constantPath?.()).toBe("Billing::Order");
+    expect(second?.valueAt(0)?.constantPath?.()).toBe("GREETING");
+    expect(third?.valueAt(0)?.constantPath?.()).toBeNull();
+  });
+
+  it("lists every call a block writes, those in blocks inside it too, in source order", () => {
+    const [group] = opsOf(
+      "describe 'orders' do\n  it 'cancels' do\n    [1].each { |x| cancel(x) }\n  end\nend\n",
+    ).bodyCalls();
+    expect(
+      group
+        ?.block?.()
+        ?.calls?.()
+        .map((call) => call.calleeText()),
+    ).toEqual(["it", "[1].each", "cancel"]);
+  });
 });

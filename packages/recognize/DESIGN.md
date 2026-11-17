@@ -587,34 +587,76 @@ adapter lists the calls, since which functions a case runs through is
 its own, and turns a dotted path or a receiver into a file with its
 module resolution.
 
-A case written as a call is read off `calls` by `callCases`, as the
-vitest pack declares it. Each call in `module.calls("file")` is read
-for the name its callee starts from and the members written after it:
-a callee written as a name is its own root, a method comes after what
-its receiver gives, the receiver's `source()` when its `form()` is a
-name or else the chain of its `member()`, and a call made on a call,
-`it.each(rows)("t", fn)`, reads its `callee()` when that chain ends in
-one of `modifiers.takingArguments` or `modifiers.perRow`. The root is
-the runner's when `importedNames(from.importedFrom)` maps it to one of
-the group or case names, or, in a file `globalsIn` matches, when it is
-one of them and `bindsAtTopLevel` says the file does not bind it. A
-call that is none of the runner's is read against `mocks` with
-`mockRead`.
+A case written as a call is read off `calls` by `callCaseRuns`, as the
+vitest and rspec packs declare it. Each call in `module.calls("file")`
+is asked whether it is one of the runner's. With `from` an import, the
+call is read for the name its callee starts from and the members
+written after it: a callee written as a name is its own root, a method
+comes after what its receiver gives, the receiver's `source()` when its
+`form()` is a name or else the chain of its `member()`, and a call made
+on a call, `it.each(rows)("t", fn)`, reads its `callee()` when that
+chain ends in one of `modifiers.takingArguments` or `modifiers.perRow`.
+The root is the runner's when `importedNames(from.importedFrom)` maps
+it to one of the runner's names, or, in a file `globalsIn` matches,
+when it is one of them and `bindsAtTopLevel` says the file does not
+bind it. With `from` a global, a call written on self is the runner's
+by its callee, and a method by its name when its `receiverValue()` is
+spelled as one of the global's paths, as `RSpec.describe` is. The
+names are the groups, the cases, and the shared groups and the calls
+that include one. With `body: "block"`, a group, a case or a shared
+group is written with a block, and a call with none is not the
+runner's. A call that is none of the runner's is read against `mocks`
+with `mockRead`.
 
-The groups around a case are the runner calls a walk up from its call
-passes: from a call or a function to the call `passedTo()` gives, or
-else to its `enclosingBody()`, until the top of the file. The walk
-stops at the first runner call and takes that call's own groups, kept
-by its site, so each case walks only as far as its group. A case's
-titles are its groups' first arguments, then its own, each read by
-`evaluated()` and kept as its `source()` and unresolved when that is no
-string; a per-row case's own title is unresolved too. It runs the first
-argument after the title whose `function()` settles, and is recorded at
-its call's site. It is skipped when it or a group around it is written
-with a `modifiers.skip` member or under a `skipped` name. A mock
-applies to it when every runner call around the mock is the case or
-one of its groups. `caseRuns` leaves these cases out, since they are
-keyed by their call.
+Each runner call is placed under the nearest runner call a walk up
+from it meets: from a call or a function to the call `passedTo()`
+gives, from a block to its `blockCall()`, or else to its
+`enclosingBody()`, until the top of the file. The walk keeps what it
+found at each step it passed, so a later walk stops there. The cases
+are then read off that tree from the top. A group is walked into, a
+shared group is not, and nothing written inside a case is read. A case
+with no group around it is one unless `topLevelCases` is false. An
+include with a group around it asks `shared.includedAt(site)`, the
+table of the run's shared groups the adapter hands in, and reads that
+shared group's cases in its place: from this file's tree when the file
+writes the group, or from a tree over the group's block's `calls()`.
+An include the table has no shared group for is read through, and one
+that includes a shared group the walk is already in reads nothing.
+
+A case's titles are those of the runner calls around it, then its own.
+A group adds its first argument; a shared group adds none, and an
+include adds its first argument after its `nestedTitle` when it has
+one, `behaves like x`. A title is the argument's `constantPath()` when
+the source writes a constant there, else what `evaluated()` gives when
+that is a string, and else its `source()`, unresolved. A call that
+passes no title, as `it { is_expected.to be_valid }` does, is titled by
+its block's source on one line, unresolved. A per-row case's own title
+is unresolved too. A case runs its block, or with `body: "function"`
+the first argument after the title whose `function()` settles. It is
+recorded at its call's site when the module writes the call, and a case
+read from a shared group in another file at the innermost runner call
+around it that the module writes, the include or the group around it.
+It is skipped when it or a runner call around it is written with a
+`modifiers.skip` member, under a `skipped` name, or with
+`skips.metadata`: a name that `evaluated()` gives as one of the keys,
+or a keyword whose value is not the literal false or nothing. A
+`skips.statements` call among its block's own statements, or among
+those of the block of a `before.calls` call a runner call around it
+writes, skips it too. A mock applies to it when the nearest runner call
+around the mock is the case or one around it.
+
+`CaseRun.groups` lists the runner calls a case runs through, each
+followed by the shared groups it includes in place: those an include
+with no `nestedTitle` among its own statements reads. `before` is the
+blocks of the `before.calls` calls each of them writes on self as its
+own statements, in order. `caseAt` gives the same for one block, read
+from the block up as the cache needs it: the groups the walk passes,
+and at the first shared group, the groups around its one include, or
+none when it has another number of includes. `sharedGroupsWritten`
+gives the adapter what one file writes for its table: each shared
+group that is a statement of the file or of a group, by its title, and
+each include with a group or shared group around it, with those
+around it. Its walk takes cases as nothing and stops at each include.
 
 Neither reader keeps anything. The reach walk asks about every test
 function until the run ends, so the adapter reads each file once and

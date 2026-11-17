@@ -336,8 +336,8 @@ describe("packs for the other two languages", () => {
       listed,
     );
 
-    expect(handed.tests?.[0]?.files).toEqual(listed);
-    expect(kept.tests?.[0]?.files).toEqual(["spec/own_spec.rb"]);
+    expect(handed.tests?.[0]?.cases.files.listed).toEqual(listed);
+    expect(kept.tests?.[0]?.cases.files.listed).toEqual(["spec/own_spec.rb"]);
   });
 
   it("reads a bare pack's default paths against the directory the run reads", async () => {
