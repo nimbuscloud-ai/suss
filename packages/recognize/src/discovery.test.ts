@@ -340,6 +340,123 @@ describe("subclassOf", () => {
     ]);
   });
 
+  it("declares a unit for each call the match lists in the class body, under the class's name and the call's argument", () => {
+    const source = moduleFacts([
+      ["exportsAs", FILE, "Types::TalkType", "talk"],
+      ["objectValue", "talk"],
+      ["extends", "talk", "baseName"],
+      ["holdsProperty", "talk", "user_name", "userNameFn"],
+      ["holdsProperty", "talk", "custom_title", "customFn"],
+      ["func", "userNameFn"],
+      ["func", "customFn"],
+      ["objectValue", "approveCls"],
+      ["holdsProperty", "approveCls", "resolve", "resolveFn"],
+      ["func", "resolveFn"],
+      ["call", "n1", "graphql_name"],
+      ["callArg", "n1", "0", "session"],
+      ["call", "f1", "field"],
+      ["callArg", "f1", "0", "userName"],
+      ["call", "f2", "field"],
+      ["callArg", "f2", "0", "rawName"],
+      ["callKeywordArg", "f2", "camelize", "no"],
+      ["call", "f3", "field"],
+      ["callArg", "f3", "0", "title"],
+      ["callKeywordArg", "f3", "resolver_method", "custom"],
+      ["call", "f4", "field"],
+      ["callArg", "f4", "0", "approve"],
+      ["callKeywordArg", "f4", "mutation", "approveRef"],
+      ["call", "f5", "field"],
+      ["callArg", "f5", "0", "loopName"],
+      ["call", "f6", "field"],
+      ["callArg", "f6", "0", "userName"],
+      ["callArg", "f6", "1", "integer"],
+      ["call", "f7", "field"],
+    ]);
+    const names: Record<string, string> = {
+      userName: "user_name",
+      rawName: "raw_name",
+      title: "title",
+      custom: "custom_title",
+      approve: "approve",
+    };
+    const literals: Record<string, string | boolean> = {
+      session: "Session",
+      no: false,
+    };
+    const facts: FactSource = {
+      ...source,
+      nameOf: (key) => names[key] ?? null,
+      literalOf: (key) => literals[key] ?? null,
+      comesTo: (key) =>
+        key === "approveRef" ? ["approveCls"] : (source.comesTo?.(key) ?? []),
+      classBodyCalls: (key) =>
+        key === "talk" ? ["n1", "f1", "f2", "f3", "f4", "f5", "f6", "f7"] : [],
+    };
+    const module = factModuleOps(FILE, facts, { calls: () => [] });
+    const fields = {
+      field: {
+        name: { at: 0 },
+        naming: { camel: { keyword: "camelize", default: true } },
+        runs: [
+          { classAt: { keyword: "mutation" }, method: "resolve" },
+          { method: { keyword: "resolver_method" } },
+          { method: "named" as const },
+        ],
+      },
+    };
+    const inherits = [{ from: ["lib"], named: ["Base"] }];
+    expect(
+      found(
+        {
+          type: "subclassOf",
+          inherits,
+          members: { kind: "instance", names: [] },
+          calls: fields,
+          className: { call: "graphql_name", suffixRemoved: "Type" },
+          skipClasses: ["Jobs::Weekly"],
+        },
+        module,
+      ),
+    ).toEqual([
+      "handler Session.userName userNameFn Session/userName",
+      "handler Session.raw_name null Session/raw_name",
+      "handler Session.title customFn Session/title",
+      "handler Session.approve resolveFn Session/approve",
+      "handler Session.loopName null Session/loopName",
+    ]);
+    expect(
+      found(
+        {
+          type: "subclassOf",
+          inherits,
+          members: { kind: "singleton" },
+          calls: { field: { name: { at: 0 }, runs: [] } },
+          skipClasses: ["Jobs::Weekly"],
+        },
+        module,
+      ),
+    ).toEqual([
+      "handler Types::TalkType.user_name null Types::TalkType/user_name",
+      "handler Types::TalkType.raw_name null Types::TalkType/raw_name",
+      "handler Types::TalkType.title null Types::TalkType/title",
+      "handler Types::TalkType.approve null Types::TalkType/approve",
+      "handler Types::TalkType.loopName null Types::TalkType/loopName",
+    ]);
+    expect(
+      found(
+        {
+          type: "subclassOf",
+          inherits,
+          members: { kind: "singleton" },
+          calls: { field: { name: { at: 0 }, runs: [] } },
+          className: { call: "type_name", suffixRemoved: "Type" },
+          skipClasses: ["Jobs::Weekly"],
+        },
+        module,
+      )[0],
+    ).toBe("handler Talk.user_name null Talk/user_name");
+  });
+
   it("reads the ancestry once per class, so a loop ends", () => {
     const source = moduleFacts([["extends", "loopA", "loopB"]]);
     const looped: FactSource = {

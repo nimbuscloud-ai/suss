@@ -4,10 +4,35 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { discoverDeclared } from "@suss/recognize";
+
 import { preloadRubyGrammar } from "./parser.js";
 import { moduleOpsForFile } from "./project.js";
 
+import type { SubclassOfMatch } from "@suss/extractor";
+
 let dir: string;
+
+/** graphql-ruby's object type fields, as its pack declares them. */
+const FIELDS: SubclassOfMatch = {
+  type: "subclassOf",
+  inherits: [{ from: ["Types"], named: ["BaseObject"] }],
+  skipClasses: ["Types::BaseObject"],
+  members: { kind: "instance", names: [] },
+  className: { call: "graphql_name", suffixRemoved: "Type" },
+  calls: {
+    field: {
+      name: { at: 0 },
+      naming: { camel: { keyword: "camelize", default: true } },
+      runs: [
+        { classAt: { keyword: "mutation" }, method: "resolve" },
+        { classAt: { keyword: "resolver" }, method: "resolve" },
+        { method: { keyword: "resolver_method" } },
+        { method: "named" },
+      ],
+    },
+  },
+};
 
 beforeAll(async () => {
   await preloadRubyGrammar();
@@ -100,6 +125,71 @@ describe("one Ruby file read on its own as module ops", () => {
       "Types::Node true true",
       "Types::BaseObject false true",
     ]);
+  });
+
+  it("declares a unit for each naming call in a class body, named and run the way the match says", () => {
+    const module = opsOf(
+      "class Types::BaseObject < GraphQL::Schema::Object\n" +
+        "  field :base_only, String\n" +
+        "end\n" +
+        "module Mutations\n" +
+        "  class Approve\n" +
+        "    def resolve(id:)\n" +
+        "      id\n" +
+        "    end\n" +
+        "  end\n" +
+        "end\n" +
+        "module Types\n" +
+        "  class TalkType < BaseObject\n" +
+        '    graphql_name "Session"\n' +
+        "    field :user_name, String, null: false\n" +
+        "    field :raw_name, String, camelize: false\n" +
+        "    field :title, String, resolver_method: :custom_title\n" +
+        "    field :approve, mutation: Mutations::Approve\n" +
+        "    field :remote, resolver: Remote::Missing\n" +
+        "    field :user_name, Integer\n" +
+        "    self.field :not_on_self, String\n" +
+        "    %i[value].each do |name|\n" +
+        "      field name, String\n" +
+        "    end\n" +
+        "\n" +
+        "    def user_name\n" +
+        '      "x"\n' +
+        "    end\n" +
+        "\n" +
+        "    def custom_title\n" +
+        '      "t"\n' +
+        "    end\n" +
+        "  end\n" +
+        "end\n" +
+        "class Types::PlainType < Types::BaseObject\n" +
+        "  field :value, String\n" +
+        "end\n",
+    );
+    const units = discoverDeclared(FIELDS, "resolver", module);
+    expect(
+      units.map((unit) => {
+        const runs = unit.namedBy?.runs ?? null;
+        return [
+          unit.name,
+          runs === null ? "-" : (runs.keyword ?? "own"),
+          runs?.methodName ?? "-",
+          unit.func === null ? "absent" : "method",
+        ].join(" ");
+      }),
+    ).toEqual([
+      "Plain.value own value absent",
+      "Session.userName own user_name method",
+      "Session.raw_name own raw_name absent",
+      "Session.title resolver_method custom_title method",
+      "Session.approve mutation resolve method",
+      "Session.remote resolver resolve absent",
+      "Session.name - - absent",
+    ]);
+    const redeclared = units.find((unit) => unit.name === "Session.userName");
+    expect(redeclared?.namedBy?.call.valueAt(1)?.source?.()).toBe("Integer");
+    const computed = units.find((unit) => unit.name === "Session.name");
+    expect(computed?.namedBy?.settled).toBe(false);
   });
 
   it("evaluates a value with a block's variables bound, and a name with nothing written to it as nothing", () => {
