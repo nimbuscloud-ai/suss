@@ -1,25 +1,44 @@
-// @suss/client-axios: PatternPack for the axios HTTP client
+/**
+ * @suss/client-axios: the pack for HTTP requests made with axios.
+ *
+ * A function that calls axios becomes a client of the route in the call.
+ * Each verb method sends its own method, and `request(config)` and a
+ * call of the client itself take the URL, the method and the options in
+ * one object. A call on an instance `axios.create(config)` made goes
+ * under the instance's `baseURL`. The README lists what the pack reads
+ * and where it stops.
+ */
 
 import { z } from "zod";
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
-import type { PackDeclaration } from "@suss/ir-core";
+import { clientResponseOf } from "@suss/extractor";
+import {
+  allOf,
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  returnedBy,
+  spelled,
+} from "@suss/recognize";
 
-const HTTP_METHODS = [
-  "get",
-  "post",
-  "put",
-  "delete",
-  "patch",
-  "head",
-  "options",
-] as const;
+import type { PatternPack } from "@suss/extractor";
+import type { PackDeclaration } from "@suss/ir-core";
+import type {
+  HttpRequests,
+  ReceiverOrigin,
+  RequestMethod,
+} from "@suss/recognize";
+
+/** The build of this pack, which the extraction cache keys on. */
+const PACK_VERSION = "1";
 
 /**
  * A project function that builds an axios instance the way
  * axios.create(...) does, declared in a dependency stub. A project that
  * wraps axios.create in its own helper calls only the helper at its use
- * sites, so the built-in factoryMethods entry would miss those clients.
+ * sites, so the built-in factory method would miss those clients.
  */
 const clientFactory = z
   .object({
@@ -50,140 +69,130 @@ export const optionsSchema = z
 
 export type AxiosPackOptions = z.infer<typeof optionsSchema>;
 
-/** Where each verb method takes its config: after the URL, or after the body. */
-const CONFIG_POSITION: Record<(typeof HTTP_METHODS)[number], number> = {
-  get: 1,
-  delete: 1,
-  head: 1,
-  options: 1,
-  post: 2,
-  put: 2,
-  patch: 2,
+/** What a caller reads off an `AxiosResponse`, and what axios does with a refusal or a redirect. */
+const RESPONSE = {
+  responseSemantics: [
+    // axios puts the parsed response body on `.data`.
+    { name: "data", access: "property", semantics: { type: "body" } },
+    { name: "status", access: "property", semantics: { type: "statusCode" } },
+    { name: "headers", access: "property", semantics: { type: "headers" } },
+  ],
+  // axios rejects on a non-2xx status, so every failure reaches the
+  // caller's catch block instead of coming back as a response.
+  failureDelivery: "exception",
+  // axios follows redirects unless the call or the instance sets
+  // `maxRedirects: 0`.
+  redirectDelivery: "followed",
+  redirectOption: { name: "maxRedirects", handsBack: [0] },
+} satisfies Pick<
+  PatternPack,
+  | "responseSemantics"
+  | "failureDelivery"
+  | "redirectDelivery"
+  | "redirectOption"
+>;
+
+/** A verb that takes its config after the URL, and one that takes it after the body. */
+function verb(sends: string, config: number): RequestMethod {
+  return { sends, url: { at: 0 }, options: { at: config } };
+}
+
+/** A request written as one config object, `axios({ url, method })` or `.request(config)`. The method defaults to GET, as in axios. */
+const CONFIG_CALL: RequestMethod = {
+  sends: { from: { at: 0, property: ["method"] }, default: "GET" },
+  url: { at: 0, property: ["url"] },
+  options: { at: 0 },
 };
 
-function discoveryForVerb(
-  verb: (typeof HTTP_METHODS)[number],
-  factories: AxiosClientFactory[],
-): DiscoveryPattern[] {
-  const bindingExtraction: DiscoveryPattern["bindingExtraction"] = {
-    method: { type: "literal", value: verb.toUpperCase() },
-    path: { type: "fromArgument", position: 0 },
-    options: { position: CONFIG_POSITION[verb] },
-  };
-  const patterns: DiscoveryPattern[] = [
-    {
-      // Matches `axios.<verb>(path)` and `api.<verb>(path)`. factoryMethods
-      // makes a variable set from axios.create(...) a client too, even
-      // when it is created in another file.
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: [verb],
-        factoryMethods: ["create"],
-        basePathOption: "baseURL",
-      },
-      bindingExtraction,
-      requiresImport: ["axios"],
-    },
-  ];
+/**
+ * The methods in the order the pack has always read them, which decides
+ * which request a function that makes several is a client of.
+ */
+const METHODS: Record<string, RequestMethod> = {
+  get: verb("GET", 1),
+  post: verb("POST", 2),
+  put: verb("PUT", 2),
+  delete: verb("DELETE", 1),
+  patch: verb("PATCH", 2),
+  head: verb("HEAD", 1),
+  options: verb("OPTIONS", 1),
+  request: CONFIG_CALL,
+};
 
-  // A configured factory is matched in place of the axios import, because
-  // `const api = createApiClient()` returns a client the same way
-  // axios.create does.
-  for (const factory of factories) {
-    patterns.push({
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: factory.module,
-        importName: factory.export,
-        methodFilter: [verb],
-        basePathOption: "baseURL",
-      },
-      bindingExtraction,
-      // Each importing file spells a relative path differently, so the
-      // import-text prefilter cannot match one and a path-shaped factory
-      // walks every file. The README has the details.
-      requiresImport: isPathShapedSpecifier(factory.module)
-        ? []
-        : [factory.module],
-    });
-  }
+/**
+ * Where a client comes from: the module's export called on directly,
+ * which counts as the default import only under the export's own name,
+ * as `axios.get(url)`, and an instance a call of the export makes, under
+ * any name the file imports it as.
+ */
+function madeFrom(module: string, name: string): ReceiverOrigin {
+  const from = [module];
+  return anyOf(
+    imported({ from, named: [name] }),
+    allOf(spelled(name), imported({ from, named: ["default"] })),
+    constructedFrom({ from, named: [name, "default"] }),
+  );
+}
 
-  return patterns;
+/** axios itself, and the instances `axios.create` makes. */
+export const AXIOS = httpRequests({
+  client: anyOf(
+    madeFrom("axios", "axios"),
+    returnedBy(
+      "create",
+      imported({ from: ["axios"], named: ["axios", "default"] }),
+    ),
+  ),
+})
+  .methods(METHODS)
+  .calls(CONFIG_CALL)
+  .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
+  .response(clientResponseOf(RESPONSE))
+  .example('axios.get("https://api.example.com/orders")');
+
+/**
+ * The instances a configured factory makes, which send the same methods.
+ * Calling a factory builds a client and sends nothing, so a call of its
+ * instance is not a request either.
+ */
+function factoryRequests(factory: AxiosClientFactory): HttpRequests {
+  return httpRequests({ client: madeFrom(factory.module, factory.export) })
+    .methods(METHODS)
+    .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
+    .response(clientResponseOf(RESPONSE));
 }
 
 function isPathShapedSpecifier(specifier: string): boolean {
   return specifier.startsWith(".") || specifier.startsWith("/");
 }
 
-/**
- * A request written as one config object, as in `axios({ url, method })`
- * or `axios.request(config)`. The method defaults to GET, as in axios.
- */
-function configCallDiscovery(
-  factories: AxiosClientFactory[],
-): DiscoveryPattern[] {
-  const bindingExtraction: DiscoveryPattern["bindingExtraction"] = {
-    method: {
-      type: "fromArgumentProperty",
-      position: 0,
-      property: "method",
-      default: "GET",
-    },
-    path: { type: "fromArgumentProperty", position: 0, property: "url" },
-    options: { position: 0 },
-  };
-  const patterns: DiscoveryPattern[] = [
-    {
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: ["request"],
-        factoryMethods: ["create"],
-        callable: true,
-        basePathOption: "baseURL",
-      },
-      bindingExtraction,
-      requiresImport: ["axios"],
-    },
-  ];
-  // Calling a declared factory builds a client and sends nothing, so only
-  // `.request(config)` on its result is matched.
-  for (const factory of factories) {
-    patterns.push({
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: factory.module,
-        importName: factory.export,
-        methodFilter: ["request"],
-        basePathOption: "baseURL",
-      },
-      bindingExtraction,
-      requiresImport: isPathShapedSpecifier(factory.module)
-        ? []
-        : [factory.module],
-    });
-  }
-  return patterns;
-}
-
 export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
   const factories = options.factories ?? [];
+  // Each importing file writes a relative path its own way, so the
+  // import-text gate cannot match one, and a path-shaped factory reads
+  // every file. The README has the details.
+  const gated = !factories.some((factory) =>
+    isPathShapedSpecifier(factory.module),
+  );
   return {
     name: "axios",
+    version: PACK_VERSION,
     protocol: "http",
     languages: ["typescript", "javascript"],
 
-    discovery: [
-      ...HTTP_METHODS.flatMap((verb) => discoveryForVerb(verb, factories)),
-      ...configCallDiscovery(factories),
-    ],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      AXIOS,
+      ...factories.map(factoryRequests),
+    ]),
+    ...(gated
+      ? {
+          requiresImport: [
+            "axios",
+            ...factories.map((factory) => factory.module),
+          ],
+        }
+      : {}),
 
     terminals: [
       {
@@ -203,21 +212,7 @@ export function axiosPack(options: AxiosPackOptions = {}): PatternPack {
       params: [],
     },
 
-    responseSemantics: [
-      // axios puts the parsed response body on `.data`.
-      { name: "data", access: "property", semantics: { type: "body" } },
-      { name: "status", access: "property", semantics: { type: "statusCode" } },
-      { name: "headers", access: "property", semantics: { type: "headers" } },
-    ],
-
-    // axios rejects on a non-2xx status, so every failure reaches the
-    // caller's catch block instead of coming back as a response.
-    failureDelivery: "exception",
-
-    // axios follows redirects unless the call or the instance sets
-    // `maxRedirects: 0`.
-    redirectDelivery: "followed",
-    redirectOption: { name: "maxRedirects", handsBack: [0] },
+    ...RESPONSE,
   };
 }
 

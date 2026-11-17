@@ -4985,6 +4985,111 @@ describe("a client called as a function with one config object", () => {
   });
 });
 
+describe("a clientCall pattern that takes any method on the client", () => {
+  // A request chain lists the methods it reads, so a pattern with no
+  // method filter reads its binding off the call where the adapter does.
+  const anyMethodPack: PatternPack = {
+    name: "sendkit",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "sendkit",
+          importName: "sender",
+        },
+        bindingExtraction: {
+          method: {
+            type: "fromArgumentProperty",
+            position: 1,
+            property: "method",
+            default: "GET",
+          },
+          path: { type: "fromArgument", position: 0 },
+        },
+      },
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "sendkit",
+          importName: "poster",
+        },
+        bindingExtraction: {
+          method: { type: "literal", value: "POST" },
+          path: { type: "fromArgumentProperty", position: 0, property: "url" },
+        },
+      },
+      {
+        kind: "client",
+        match: {
+          type: "clientCall",
+          importModule: "sendkit",
+          importName: "pinger",
+        },
+      },
+    ],
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+  };
+
+  it("reads the method, the path and the host off the call, and gives a pattern that reads nothing no binding", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      import sender, { pinger, poster } from "sendkit";
+
+      export function remove() {
+        return sender.send("https://api.example.com/orders/1", { method: "DELETE" });
+      }
+
+      export function list() {
+        return sender.send("/orders");
+      }
+
+      export function unstated() {
+        return sender.send();
+      }
+
+      export function save() {
+        return poster.go({ url: "/orders" });
+      }
+
+      export function ping() {
+        return pinger.ping();
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [anyMethodPack],
+    });
+    const summaries = await adapter.extractAll();
+    const bindings = summaries
+      .filter((s) => s.kind === "client")
+      .map((s) => {
+        const semantics = s.identity.boundaryBinding?.semantics;
+        return semantics?.name === "rest"
+          ? `${s.identity.name} ${semantics.method} ${semantics.path} ${semantics.host ?? "-"}`
+          : `${s.identity.name} no binding`;
+      })
+      .sort();
+    expect(bindings).toEqual([
+      "list GET /orders -",
+      "ping no binding",
+      "remove DELETE /orders/1 api.example.com",
+      "save POST /orders -",
+      "unstated GET null -",
+    ]);
+  });
+});
+
 describe("client-side contract resolution via fromClientMethod", () => {
   const tsRestClientPack: PatternPack = {
     name: "ts-rest",

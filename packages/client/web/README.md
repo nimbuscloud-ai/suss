@@ -10,15 +10,15 @@ const response = await fetch("/api/orders/42", { method: "DELETE" });
 
 `@suss/client-web` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery**: calls to the global `fetch()`. There is no import to match, since `fetch` is built in. The call can be written bare or through the global object, as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`.
-- **Binding extraction**: the URL path from the first argument (literal strings only), and the HTTP method from `options.method`, which defaults to `GET`.
+- **Requests**: calls to `fetch()`, declared with `@suss/recognize`'s `httpRequests`. There is no import to match, since `fetch` is built in. The call can be written bare or through the global object, as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`. A `fetch` the program binds itself, such as one a caller hands in or one a fetch library exports, is read as `fetch` too, since it is nearly always an implementation of it.
+- **Binding**: the URL from the first argument, evaluated, and the HTTP method from `options.method`, which is `GET` when the call states none or states one suss cannot settle. `options.redirect` says whether the call follows a redirect. A `data:` URL makes no request.
 - **Terminals**: `returnStatement` (any return) and `throwExpression`.
 
 `fetch` is a web API built into the runtime and has no framework behind it, so this is a client pack. It uses the same `PatternPack` interface because the adapter reads both kinds of pack the same way.
 
 ## Where it fits in suss
 
-This package depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.
+The pack declares its calls with `@suss/recognize`'s `httpRequests`, and depends on `@suss/extractor` for the `PatternPack` type. It has no analysis of its own. The adapter's discovery hands each call in a file to the declaration.
 
 ## Coverage
 

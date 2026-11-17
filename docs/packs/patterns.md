@@ -301,7 +301,7 @@ Python decorators go through `decoratedFunctionRoute` and `decoratedClassRoute`,
 }
 ```
 
-`clientCall` finds call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For a global, every bare call to `importName` matches. The enclosing function becomes a `client`-kind unit.
+`clientCall` finds call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For a global, every bare call to `importName` matches. The enclosing function becomes a `client`-kind unit. A new pack declares its requests with `@suss/recognize`'s `httpRequests` instead. The TypeScript adapter still reads a `clientCall` pattern whose method and path come from the call, by turning it into the request chain that says the same thing.
 
 ```ts
 const api = axios.create({ baseURL: "https://shop.example.com/api" });
@@ -310,7 +310,7 @@ await api.get(`/orders/${id}`);
 
 `basePathOption` is the property on the factory call's configuration that sets the base path for every request made through the instance. The adapter reads it from the factory call the receiver resolves to, and puts it in front of the call's own path, so a client with a base pairs with a spec whose `servers[0].url` states the same prefix. An absolute base keeps only its path, a base of `/` adds nothing, and a base the evaluator cannot resolve leaves the path as the call site wrote it.
 
-The fetch pack uses it with `importModule: "global"`, axios with `factoryMethods` and `callable`, ts-rest with `initClient`, and the Python and Ruby client packs (requests, httpx, aiohttp, Faraday, Net::HTTP) through their own adapters.
+ts-rest uses `clientCall` with `initClient`, and reads each call's method and path from its contract. The fetch and axios packs, and the Python and Ruby client packs (requests, httpx, aiohttp, Faraday, Net::HTTP), declare their requests with `httpRequests`.
 
 ### `graphqlHookCall`
 

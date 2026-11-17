@@ -25,6 +25,7 @@ import type {
   DiscoveryPattern,
   HandedInParameter,
   InputMappingPattern,
+  RequestClaim,
   TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -41,6 +42,8 @@ export interface ClientCallSite {
    * states. Absent for a call that says what it reaches on its own.
    */
   under?: string;
+  /** The request a pack's request hook read at the call, which the unit's binding is. */
+  request?: RequestClaim;
 }
 
 export interface DiscoveredUnit {

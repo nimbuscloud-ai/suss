@@ -1,14 +1,6 @@
 {
   "axios": "axios: the default export",
   "create": "axios: factory method building a configured instance",
-  "get": "language: JavaScript spells Map#get the same way. axios: instance method, HTTP GET",
-  "post": "axios: instance method, HTTP POST",
-  "put": "axios: instance method, HTTP PUT",
-  "delete": "axios: instance method, HTTP DELETE",
-  "patch": "axios: instance method, HTTP PATCH",
-  "head": "axios: instance method, HTTP HEAD",
-  "options": "axios: instance method, HTTP OPTIONS",
-  "request": "suss: input role; also axios's instance method sending the request a config object describes",
   "baseURL": "axios: config field every request path is sent under",
   "maxRedirects": "axios: config field capping how many redirects it follows",
   "url": "axios: config field with the request path",
@@ -16,6 +8,7 @@
   "data": "axios: AxiosResponse field holding the body",
   "status": "axios: AxiosResponse field holding the status code",
   "headers": "axios: AxiosResponse field holding the headers",
+  "appended": "suss: the base URL join axios's combineURLs makes, a path after the base with one slash between",
   "body": "suss: response field the binding carries",
   "statusCode": "suss: response field the binding carries"
 }

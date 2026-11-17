@@ -158,9 +158,11 @@ export function packIsUngated(pack: PatternPack): boolean {
     pack.invocationRecognizers.length > 0;
   const hasAccessRecognizers =
     pack.accessRecognizers !== undefined && pack.accessRecognizers.length > 0;
+  const hasRequestRecognizers =
+    pack.requestRecognizers !== undefined && pack.requestRecognizers.length > 0;
   if (
     pack.discovery.length === 0 &&
-    (hasInvocationRecognizers || hasAccessRecognizers)
+    (hasInvocationRecognizers || hasAccessRecognizers || hasRequestRecognizers)
   ) {
     return true;
   }

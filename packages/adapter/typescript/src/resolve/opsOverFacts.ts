@@ -20,6 +20,7 @@ import type {
   NewExpression,
   TaggedTemplateExpression,
 } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 type Called = CallExpression | NewExpression | TaggedTemplateExpression;
 
@@ -44,6 +45,31 @@ export function opsOverFacts(call: Called, reading: CallReading): CallOps {
   return (
     factCallOps(statedFactKey(call, store), source) ?? callOpsFor(call, reading)
   );
+}
+
+/**
+ * The ops for each call one walk visits, over one fact source for all of
+ * them. A walk that asks about every call in a file would otherwise build
+ * a fact source per call. The walk's own reading has no listener and no
+ * argument batch, so every call is read the way `opsOverFacts` reads a
+ * call it steps to.
+ */
+export function opsOverFactsIn(
+  reading: CallReading & { readonly resolution: ResolutionStore },
+): (call: Called) => CallOps {
+  const store = reading.resolution;
+  const resolve = reading.resolve;
+  const nested: CallReading = {
+    ...(resolve === undefined ? {} : { resolve }),
+    resolution: store,
+  };
+  const source = factSourceFor(store, reading.originatesFrom, {
+    ...(resolve === undefined ? {} : { resolve }),
+    extend: (node, ops) => withNodeMembers(ops, node, nested),
+  });
+  return (call) =>
+    factCallOps(statedFactKey(call, store), source) ??
+    callOpsFor(call, reading);
 }
 
 /** The fact ops for a call, with the members only the node can give added from `callOpsFor`. */

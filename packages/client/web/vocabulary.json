@@ -10,6 +10,8 @@
   "text": "WHATWG Fetch: Response method reading the body as text",
   "body": "WHATWG Fetch: Response field holding the body stream",
   "headers": "WHATWG Fetch: Response field holding the headers",
-  "global": "suss: marker for a name that is not imported from a module",
+  "globalThis": "language: the JavaScript global object, which fetch can be read off",
+  "window": "language: the browser's global object, which fetch can be read off",
+  "global": "language: Node's global object, which fetch can be read off",
   "statusCode": "suss: response field the binding carries"
 }

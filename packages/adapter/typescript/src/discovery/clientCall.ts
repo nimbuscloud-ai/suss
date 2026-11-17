@@ -1,390 +1,107 @@
-// clientCall.ts, discovering call sites of a specific imported client
-// (axios, fetch, ts-rest initClient, ...). Each matched call becomes
-// a unit identified by its enclosing function; the consumer summary
-// describes what that function does around the call.
-//
-// The dominant production shape builds one client instance in a
-// shared module (`const api = axios.create({...})`) and calls it
-// from wherever a request is made, often a different file, sometimes
-// a hand-written wrapper method that forwards its own argument
-// straight through. Reading only the file at hand sees `api` as a
-// bare name and stops there. Resolution asks the same question
-// registration discovery asks of a mounted router: what value is
-// this name written as, wherever that turns out to live, and does it
-// look like this pack's own instance-creating call once it lands.
-//
-// Nothing here has to know about wrappers specifically. A wrapper
-// method's own body is another function containing a call on a
-// resolved instance, so it's discovered as a client unit whose path
-// argument is a parameter rather than a literal. Turning that into a
-// summary per caller is expandWrapperCallers's job, unchanged.
+/**
+ * clientCall.ts: the `clientCall` patterns a request chain cannot say,
+ * and the check for which object is a client.
+ *
+ * A pattern whose binding reads the request off the call is read as a
+ * request chain in declaredClients.ts. What is left here is a pattern
+ * whose binding reads a contract, as ts-rest's does, or reads nothing,
+ * or that takes any method on the client: each call it matches is a unit
+ * named after the function it is written in, and the adapter reads the
+ * binding from the pattern. `clientReceiverCheckFor` is the hand check
+ * the GraphQL imperative client still asks.
+ */
 
 import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
-import { hasNameHole } from "@suss/behavioral-ir";
+import { receiverFrom } from "@suss/recognize";
 
-import { requestTargetAt } from "../resolve/clientBasePath.js";
-import {
-  hostFromArgument,
-  pathFromArgument,
-  pathFromProperty,
-  statesLocalUrl,
-} from "../resolve/routePath.js";
-import { memberNameOf } from "../walk/propertyName.js";
 import { forEachDescendantOfKinds, skipsNothing } from "../walk/rawDescent.js";
+import { clientOriginOf } from "./declaredClients.js";
 import { resolvedModuleFile } from "./importScan.js";
+import { clientUnitName, forEachCallIn, methodNameOf } from "./requestCalls.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
-import { stringPropertyOf, writtenNodesOf } from "./resolveValue.js";
-import { type DiscoveredUnit, findEnclosingFunction } from "./shared.js";
+import { writtenNodesOf } from "./resolveValue.js";
+import { findEnclosingFunction } from "./shared.js";
 
-import type { BindingExtraction, DiscoveryPattern } from "@suss/extractor";
+import type {
+  CallOps,
+  DiscoveryPattern,
+  ReceiverOrigin,
+} from "@suss/extractor";
 import type { CallExpression, NewExpression } from "ts-morph";
-import type { FunctionRoot } from "../conditions.js";
 import type { ResolutionStore } from "../facts/store.js";
-import type { RequestTarget } from "../resolve/clientBasePath.js";
-
-const CALL_KIND: ReadonlySet<SyntaxKind> = new Set([SyntaxKind.CallExpression]);
+import type { DiscoveredUnit } from "./shared.js";
 
 const BINDING_KINDS: ReadonlySet<SyntaxKind> = new Set([
   SyntaxKind.VariableDeclaration,
   SyntaxKind.Parameter,
 ]);
 
-/** The objects a global is reachable through, in a browser or in Node. */
-const GLOBAL_OBJECTS = new Set(["globalThis", "window", "self", "global"]);
-
 type ClientCallMatch = Extract<
   DiscoveryPattern["match"],
   { type: "clientCall" }
 >;
 
+/**
+ * The calls on the pattern's client, each a unit of the function it is
+ * written in: a method the pattern lists, or any method when it lists
+ * none, and a call of the client itself when the pattern says it is
+ * callable. A global is called by its own name, or read off the runtime's
+ * global object.
+ */
 export function discoverClientCalls(
   sourceFile: SourceFile,
   match: ClientCallMatch,
   kind: string,
-  resolution?: ResolutionStore,
-  binding?: BindingExtraction,
+  resolution: ResolutionStore,
 ): DiscoveredUnit[] {
-  const results: DiscoveredUnit[] = [];
-  const calls: CallExpression[] = [];
-  forEachDescendantOfKinds(sourceFile, CALL_KIND, (node) => {
-    calls.push(node as CallExpression);
-    return false;
-  });
-
-  const matched =
+  const client = clientOriginOf(match);
+  const listed =
     match.importModule === "global"
-      ? globalCallsAmong(calls, match)
-      : clientCallsAmong(calls, match, sourceFile, resolution);
-  for (const call of calls) {
-    const methodName = matched.get(call);
-    if (methodName === undefined) {
-      continue;
+      ? new Set([match.importName])
+      : match.methodFilter === undefined
+        ? null
+        : new Set(match.methodFilter);
+  const units: DiscoveredUnit[] = [];
+  const admits = (method: string | null): boolean =>
+    method === null || listed === null || listed.has(method);
+  forEachCallIn(sourceFile, resolution, admits, (call, ops) => {
+    const takes =
+      ops.method() === null
+        ? callsTheClient(ops, match, client)
+        : receiverFrom(client, ops);
+    const func = takes ? findEnclosingFunction(call) : null;
+    if (func === null) {
+      return;
     }
-    if (fetchesLocally(call, binding, resolution)) {
-      continue;
-    }
-    const enclosingFunc = findEnclosingFunction(call);
-    if (enclosingFunc === null) {
-      continue;
-    }
-
-    for (const under of sitesToReadUnder(call, match, binding, resolution)) {
-      results.push({
-        func: enclosingFunc,
-        kind,
-        name: clientUnitName(enclosingFunc, methodName),
-        callSite: {
-          callExpression: call,
-          methodName,
-          ...(under === undefined ? {} : { under }),
-        },
-      });
-    }
-  }
-
-  return results;
+    const methodName = methodNameOf(call);
+    units.push({
+      func,
+      kind,
+      name: clientUnitName(func, methodName),
+      callSite: { callExpression: call, methodName },
+    });
+  });
+  return units;
 }
 
 /**
- * Whether the call's URL is one fetch reads without a request, such as
- * a base64 `data:` URI. No provider serves it, so it is no client call.
+ * Whether a call with no receiver goes to the client: a global by its
+ * own name, or the client called as a function when the pattern says it
+ * is callable.
  */
-function fetchesLocally(
-  call: CallExpression,
-  binding: BindingExtraction | undefined,
-  resolution: ResolutionStore | undefined,
-): boolean {
-  const p = binding?.path;
-  if (p?.type !== "fromArgument" && p?.type !== "fromArgumentProperty") {
-    return false;
-  }
-  const arg = call.getArguments()[p.position];
-  if (arg === undefined) {
-    return false;
-  }
-  return statesLocalUrl(
-    arg,
-    p.type === "fromArgumentProperty" ? p.property : undefined,
-    resolution,
-  );
-}
-
-/**
- * The calls of a global client, `fetch(...)` or `globalThis.fetch(...)`,
- * each with no method name. A global has no import or construction for
- * the store to follow, so the callee's spelling decides.
- */
-function globalCallsAmong(
-  calls: readonly CallExpression[],
+function callsTheClient(
+  ops: CallOps,
   match: ClientCallMatch,
-): Map<CallExpression, string | null> {
-  const found = new Map<CallExpression, string | null>();
-  for (const call of calls) {
-    if (isGlobalCall(call.getExpression(), match)) {
-      found.set(call, null);
-    }
-  }
-  return found;
-}
-
-function isGlobalCall(callee: Node, match: ClientCallMatch): boolean {
-  if (Node.isIdentifier(callee)) {
-    return callee.getText() === match.importName;
+  client: ReceiverOrigin,
+): boolean {
+  if (match.importModule === "global") {
+    return ops.calleeText() === match.importName;
   }
   return (
-    Node.isPropertyAccessExpression(callee) &&
-    callee.getName() === match.importName &&
-    GLOBAL_OBJECTS.has(callee.getExpression().getText())
+    match.callable === true &&
+    (ops.isFrom(client) || ops.callee()?.isFrom(client) === true)
   );
-}
-
-/**
- * The calls on an imported client, with the method each one calls, or
- * null for the client called as a function: `axios(config)`. A method
- * call matches four ways: `client.getUser()` on an instance built here,
- * `axios.get()` on the import itself, `api.get()` on an instance the
- * fact layer finds elsewhere, and `client().get()` on what a project
- * function returns.
- *
- * The receivers are asked about together, because a question per call
- * would run the rules several times for every call in the file. The
- * method filter comes first, so only a receiver it keeps is asked about.
- */
-function clientCallsAmong(
-  calls: readonly CallExpression[],
-  match: ClientCallMatch,
-  sourceFile: SourceFile,
-  resolution: ResolutionStore | undefined,
-): Map<CallExpression, string | null> {
-  const builtHere = clientsBuiltAtTopLevel(sourceFile, match, resolution);
-  const found = new Map<CallExpression, string | null>();
-  if (match.callable === true) {
-    const clients = clientSubjectsAmong(
-      calls.map((call) => call.getExpression()),
-      match,
-      builtHere,
-      resolution,
-    );
-    for (const call of calls) {
-      if (clients.has(call.getExpression())) {
-        found.set(call, null);
-      }
-    }
-  }
-
-  const methodFilter =
-    match.methodFilter !== undefined ? new Set(match.methodFilter) : null;
-  const methodCalls = new Map<Node, { call: CallExpression; method: string }>();
-  for (const call of calls) {
-    const callee = call.getExpression();
-    if (
-      !found.has(call) &&
-      Node.isPropertyAccessExpression(callee) &&
-      (methodFilter === null || methodFilter.has(callee.getName()))
-    ) {
-      methodCalls.set(callee.getExpression(), {
-        call,
-        method: callee.getName(),
-      });
-    }
-  }
-  const receivers = clientSubjectsAmong(
-    [...methodCalls.keys()],
-    match,
-    builtHere,
-    resolution,
-  );
-  for (const [receiver, { call, method }] of methodCalls) {
-    if (receivers.has(receiver)) {
-      found.set(call, method);
-    }
-  }
-  return found;
-}
-
-/**
- * Variables set to the result of calling the imported function (`const
- * client = initClient(...)`) or one of its declared factory methods
- * (`const api = axios.create(...)`), built right here in this file. The
- * creation call's callee goes through the fact layer, so an aliased
- * import and one reached through a project barrel build a client the
- * same way a direct import does.
- */
-function clientsBuiltAtTopLevel(
-  sourceFile: SourceFile,
-  match: ClientCallMatch,
-  resolution: ResolutionStore | undefined,
-): Set<string> {
-  const byName = new Map<CallExpression | NewExpression, string>();
-  for (const varDecl of sourceFile.getVariableDeclarations()) {
-    const init = varDecl.getInitializer();
-    if (
-      init !== undefined &&
-      (Node.isCallExpression(init) || Node.isNewExpression(init))
-    ) {
-      byName.set(init, varDecl.getName());
-    }
-  }
-  const creating = creationCallsAmong([...byName.keys()], match, resolution);
-  return new Set(
-    [...byName].filter(([init]) => creating.has(init)).map(([, name]) => name),
-  );
-}
-
-/**
- * Which construction of the surrounding class to read this call under.
- * One entry of `undefined` is the ordinary case: the call says where it
- * goes wherever the instance came from. A class that takes a piece of
- * the URL in its constructor can send the call somewhere different for
- * each construction, so each construction that gives the call a path
- * becomes a call of its own. When none does, the call keeps its own
- * reading, so a path the call states is not lost to constructions that
- * state less.
- */
-function sitesToReadUnder(
-  call: CallExpression,
-  match: ClientCallMatch,
-  binding: BindingExtraction | undefined,
-  resolution: ResolutionStore | undefined,
-): Array<string | undefined> {
-  const cls = call.getFirstAncestorByKind(SyntaxKind.ClassDeclaration);
-  if (binding === undefined || resolution === undefined || cls === undefined) {
-    return [undefined];
-  }
-  const plain = targetUnder(call, match, binding, resolution, undefined);
-  if (plain === null || pathSettled(plain)) {
-    return [undefined];
-  }
-
-  // Two constructions that send the call to the same place are one call,
-  // since nothing about the crossing tells them apart.
-  const byTarget = new Map<string, string>();
-  for (const site of resolution.constructionSitesOf(cls)) {
-    const stated = targetUnder(call, match, binding, resolution, site);
-    if (stated?.path === undefined) {
-      continue;
-    }
-    const method = methodStated(call, binding, resolution, site) ?? "";
-    const key = `${method} ${stated.host ?? ""} ${stated.path}`;
-    if (!byTarget.has(key)) {
-      byTarget.set(key, site);
-    }
-  }
-  return byTarget.size === 0 ? [undefined] : [...byTarget.values()];
-}
-
-/** Whether the reading gives a path with no part the program works out at runtime. */
-function pathSettled(target: RequestTarget): boolean {
-  return target.path !== undefined && !hasNameHole(target.path);
-}
-
-/**
- * Where the call sends its request under the construction at `site`, as
- * the unit's binding reads it, or null when the pattern reads the path
- * off something other than an argument the call passes.
- */
-function targetUnder(
-  call: CallExpression,
-  match: ClientCallMatch,
-  binding: BindingExtraction,
-  resolution: ResolutionStore,
-  site: string | undefined,
-): RequestTarget | null {
-  const p = binding.path;
-  if (p.type !== "fromArgument" && p.type !== "fromArgumentProperty") {
-    return null;
-  }
-  const arg = call.getArguments()[p.position];
-  if (arg === undefined) {
-    return null;
-  }
-  const property = p.type === "fromArgumentProperty" ? p.property : undefined;
-  const own: RequestTarget = {
-    path:
-      property === undefined
-        ? pathFromArgument(arg, resolution, site)
-        : pathFromProperty(arg, property, resolution, site),
-    host: hostFromArgument(arg, property, resolution, site),
-  };
-  return requestTargetAt(call, match, own, resolution, site);
-}
-
-/** The method the call sends under the construction at `site`, when the pattern reads it off the call. */
-function methodStated(
-  call: CallExpression,
-  binding: BindingExtraction,
-  resolution: ResolutionStore,
-  site: string | undefined,
-): string | undefined {
-  const m = binding.method;
-  if (m.type !== "fromArgumentProperty") {
-    return undefined;
-  }
-  const arg = call.getArguments()[m.position];
-  const stated =
-    arg === undefined
-      ? null
-      : stringPropertyOf(arg, m.property, resolution, site);
-  return stated ?? m.default;
-}
-
-/**
- * Which of these subjects are the client: the import under its
- * conventional name, an instance this file built from it, or one the
- * fact layer finds built elsewhere. The subjects are asked about
- * together, so a file's receivers cost a few store questions rather
- * than several each.
- */
-function clientSubjectsAmong(
-  subjects: readonly Node[],
-  match: ClientCallMatch,
-  builtHere: ReadonlySet<string>,
-  resolution: ResolutionStore | undefined,
-): Set<Node> {
-  const imported = clientImportsAmong(
-    subjects.filter((subject) => Node.isIdentifier(subject)),
-    match,
-    resolution,
-    true,
-  );
-  const found = new Set<Node>();
-  const elsewhere: Node[] = [];
-  for (const subject of subjects) {
-    if (
-      imported.has(subject) ||
-      (Node.isIdentifier(subject) && builtHere.has(subject.getText()))
-    ) {
-      found.add(subject);
-      continue;
-    }
-    elsewhere.push(subject);
-  }
-  const builtElsewhere = clientConstructionsOf(elsewhere, match, resolution);
-  for (const subject of builtElsewhere.keys()) {
-    found.add(subject);
-  }
-  return found;
 }
 
 /** How a pack spells its client: the import, and the factories that build one. */
@@ -469,13 +186,8 @@ function typedAsClient(typeNode: Node | undefined, localName: string): boolean {
   return typeNode.getTypeName().getText() === localName;
 }
 
-/**
- * The call that built the client `subject` refers to, wherever it was
- * written, or null when nothing ties the subject to one. A caller that
- * needs the construction itself, to read the config object it was
- * given, asks here rather than following the name again on its own.
- */
-export function clientConstructionCall(
+/** The call that built the client `subject` refers to, wherever it was written, or null when nothing ties the subject to one. */
+function clientConstructionCall(
   subject: Node,
   match: ClientSpelling,
   resolution: ResolutionStore | undefined,
@@ -680,31 +392,4 @@ function importedAsClient(
   return (
     viaDefault && (!strictDefaultName || subject.getText() === match.importName)
   );
-}
-
-/**
- * Pick a stable name for a clientCall-discovered unit by walking the
- * enclosing function's shape. Prefers the function's own identifier,
- * then the variable or property it's bound to, then finally the
- * method name of the call site. "anonymous" is the last-resort
- * label when no other identifier is available.
- */
-function clientUnitName(
-  enclosingFunc: FunctionRoot,
-  methodName: string | null,
-): string {
-  if (Node.isFunctionDeclaration(enclosingFunc)) {
-    return enclosingFunc.getName() ?? methodName ?? "anonymous";
-  }
-  if (Node.isMethodDeclaration(enclosingFunc)) {
-    return memberNameOf(enclosingFunc);
-  }
-  const parent = enclosingFunc.getParent();
-  if (parent !== undefined && Node.isVariableDeclaration(parent)) {
-    return parent.getName();
-  }
-  if (parent !== undefined && Node.isPropertyAssignment(parent)) {
-    return memberNameOf(parent);
-  }
-  return methodName ?? "anonymous";
 }
