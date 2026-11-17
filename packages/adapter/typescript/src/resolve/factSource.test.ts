@@ -1,7 +1,13 @@
 import { Node, SyntaxKind } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
-import { constructedFrom, declaredBy, global, typed } from "@suss/recognize";
+import {
+  constructedFrom,
+  declaredBy,
+  global,
+  imported,
+  typed,
+} from "@suss/recognize";
 import { factCallOps } from "@suss/recognize/ops";
 import { GLOBAL_MODULE } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
@@ -596,6 +602,107 @@ describe("the fact source's value members", () => {
 
     expect(tag?.source?.()).toBe("Tag");
     expect(Node.isIdentifier(tag?.ast() as Node)).toBe(true);
+  });
+});
+
+const REQUESTS = `
+  import api, * as whole from "relay";
+  import { send } from "relay";
+
+  const HOST = "https://api.example.com";
+
+  export class Resource {
+    constructor(private base: string) {}
+
+    list() {
+      return api.get(\`\${HOST}/v1\${this.base}\`);
+    }
+  }
+
+  export const users = new Resource("/users");
+  export const orders = new Resource("/orders");
+
+  export function relative(local: { get(path: string): void }) {
+    whole.get("/whole");
+    local.get("/local");
+    api("/called");
+    send("/sent");
+  }
+`;
+
+/** The ops over the facts for each call in the request fixture, by its source. */
+function requestCalls(): Map<string, CallOps> {
+  const project = createTestProject();
+  project.createSourceFile(
+    "/node_modules/relay/package.json",
+    JSON.stringify({ name: "relay", types: "index.d.ts" }),
+  );
+  project.createSourceFile(
+    "/node_modules/relay/index.d.ts",
+    `declare function api(path: string): void;
+     declare namespace api { function get(path: string): void; }
+     export default api;
+     export declare function get(path: string): void;
+     export declare function send(path: string): void;`,
+  );
+  const file = project.createSourceFile("/requests.ts", REQUESTS);
+  const store = new ResolutionStore();
+  const source = factSourceFor(store);
+  const found = new Map<string, CallOps>();
+  for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const ops = factCallOps(statedFactKey(call, store), source);
+    if (ops !== null) {
+      found.set(call.getExpression().getText(), ops);
+    }
+  }
+  return found;
+}
+
+describe("the fact source's request reads", () => {
+  it("reads a URL's path and host, and the path each construction of the class gives it", () => {
+    const listed = requestCalls().get("api.get");
+    const url = listed?.valueAt(0);
+    const sites = listed?.constructionSites?.() ?? [];
+
+    expect(url?.url?.()).toEqual({
+      path: "/v1{base}",
+      host: "api.example.com",
+    });
+    expect(sites).toHaveLength(2);
+    expect(sites.map((site) => url?.url?.(site)?.path)).toEqual([
+      "/v1/users",
+      "/v1/orders",
+    ]);
+  });
+
+  it("gives no constructions for a call outside a class, and no host for a relative URL", () => {
+    const sent = requestCalls().get("send");
+
+    expect(sent?.constructionSites?.()).toEqual([]);
+    expect(sent?.valueAt(0)?.url?.()).toEqual({
+      path: "/sent",
+      host: undefined,
+    });
+  });
+
+  it("settles a default import and a namespace import by the export each binds", () => {
+    const calls = requestCalls();
+    const settled = (callee: string, named: string) =>
+      calls
+        .get(callee)
+        ?.receiverSettledFrom?.(imported({ from: ["relay"], named: [named] }));
+
+    expect(settled("api.get", "default")).toBe(true);
+    expect(settled("whole.get", "default")).toBe(false);
+    expect(settled("whole.get", "*")).toBe(true);
+    expect(settled("local.get", "default")).toBe(false);
+  });
+
+  it("still reads a callee's export only for a named import", () => {
+    const calls = requestCalls();
+
+    expect(calls.get("send")?.calleeImport?.(["relay"])).toBe("send");
+    expect(calls.get("api")?.calleeImport?.(["relay"])).toBeNull();
   });
 });
 
