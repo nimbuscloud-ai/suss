@@ -483,6 +483,54 @@ object the decorator registers the function on. A file whose text
 writes none of the methods is not read, and the receivers of the
 decorators that call one are asked about at once.
 
+`subclassOf` can also declare a unit for each call in the class body
+that its `calls` lists, the way graphql-ruby's `field :user_name`
+declares the field `userName` on its type:
+
+```ts
+{
+  type: "subclassOf",
+  inherits: rubyConstants("Types::BaseObject"),
+  skipClasses: ["Types::BaseObject"],
+  members: { kind: "instance", names: [] },
+  className: { call: "graphql_name", suffixRemoved: "Type" },
+  calls: {
+    field: {
+      name: { at: 0 },
+      naming: { camel: { keyword: "camelize", default: true } },
+      runs: [
+        { classAt: { keyword: "mutation" }, method: "resolve" },
+        { method: { keyword: "resolver_method" } },
+        { method: "named" },
+      ],
+    },
+  },
+}
+```
+
+The reader takes each call on self in the class's `bodyCalls()` whose
+callee `calls` lists, and skips a class `skipClasses` lists. The unit
+is named `<class>.<name>`. The class's part is the string the first
+`className.call` in the body writes, else the last segment of the
+class's name with `suffixRemoved` taken off, else the whole name when
+the match gives no `className`. The unit's part is what `nameAt` settles
+the argument to, turned to camel case unless the call writes `false`
+under the keyword. An argument that does not settle keeps its source
+text and runs nothing. graphql-ruby stores fields by name, so the last
+call under a name wins, at the place of the first.
+
+`runs` says what the unit runs, and the first pick whose keyword the
+call writes applies. A `classAt` pick takes the method of the class the
+keyword's value `asClass()` comes to, a `method` pick with a keyword
+takes the class's method under the name that keyword's value gives,
+and `method: "named"` takes the class's method under the unit's own
+name before camel casing. Each method is found with `method(name,
+"instance")`, through the class's project ancestry. The unit's `func`
+is that method, or null when there is none, as for a wired class the
+run did not read. Its `namedBy` hands the adapter the call, the class,
+both parts of the name and which pick applied, so the adapter can read
+the rest of what the call declares.
+
 A unit spec's `handedIn` lists the parameters the platform fills when
 it calls the unit, by position and the name a read chain asks for each
 under. When an adapter claims a unit, before it reads the body, it
