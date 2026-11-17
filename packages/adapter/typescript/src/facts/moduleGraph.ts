@@ -73,8 +73,20 @@ export interface FileSetQuery {
 
 /** One question: which of these files reach that one. */
 export interface FileTargetQuery {
-  sourceFiles: ReadonlyArray<SourceFile>;
+  /**
+   * The graph remembers a set it has walked, so a caller asking about
+   * one target after another passes the same set each time. The set may
+   * grow between questions, and must not lose a file.
+   */
+  sourceFiles: ReadonlySet<SourceFile>;
   target: SourceFile;
+}
+
+/** A set of files whose edges the graph has walked, and where each file comes in it. */
+interface WalkedFiles {
+  size: number;
+  files: readonly SourceFile[];
+  positions: ReadonlyMap<string, number>;
 }
 
 export class ModuleGraph {
@@ -83,6 +95,10 @@ export class ModuleGraph {
   private readonly importedFiles = new Map<string, SourceFile[]>();
   private readonly settledFor = new Map<string, Set<string>>();
   private readonly edgesWalked = new Set<string>();
+  private readonly walkedSets = new WeakMap<
+    ReadonlySet<SourceFile>,
+    WalkedFiles
+  >();
   private stale = false;
 
   /**
@@ -155,27 +171,56 @@ export class ModuleGraph {
    */
   filesReachingFile(
     queries: ReadonlyArray<FileTargetQuery>,
-  ): ReadonlyArray<ReadonlySet<SourceFile>> {
-    for (const { sourceFiles, target } of queries) {
+  ): ReadonlyArray<readonly SourceFile[]> {
+    const walked = queries.map(({ sourceFiles, target }) => {
       this.assert("wantedFile", [target.getFilePath()]);
-      for (const sourceFile of sourceFiles) {
-        this.walkEdges(sourceFile);
-      }
-    }
+      return this.walkEdgesOfAll(sourceFiles);
+    });
     this.derive();
 
-    return queries.map(({ sourceFiles, target }) => {
-      const targetPath = target.getFilePath();
-      const reaching = new Set<SourceFile>();
-      for (const sourceFile of sourceFiles) {
-        if (
-          this.db.has("reachesFile", [sourceFile.getFilePath(), targetPath])
-        ) {
-          reaching.add(sourceFile);
-        }
-      }
-      return reaching;
+    return queries.map(({ target }, at) =>
+      this.reachingAmong(walked[at] as WalkedFiles, target),
+    );
+  }
+
+  /**
+   * Walk the edges below every file in the set, once per size of the set.
+   * Checking each file again cost a pass over the set for every target.
+   */
+  private walkEdgesOfAll(sourceFiles: ReadonlySet<SourceFile>): WalkedFiles {
+    const known = this.walkedSets.get(sourceFiles);
+    if (known !== undefined && known.size === sourceFiles.size) {
+      return known;
+    }
+    const files = [...sourceFiles];
+    const positions = new Map<string, number>();
+    files.forEach((sourceFile, at) => {
+      positions.set(sourceFile.getFilePath(), at);
+      this.walkEdges(sourceFile);
     });
+    const walked = { size: files.length, files, positions };
+    this.walkedSets.set(sourceFiles, walked);
+    return walked;
+  }
+
+  /**
+   * The walked files that reach the target, in the order of their set,
+   * read off the target's rows rather than by testing every file.
+   */
+  private reachingAmong(walked: WalkedFiles, target: SourceFile): SourceFile[] {
+    const found: number[] = [];
+    for (const [filePath] of this.db.lookup(
+      "reachesFile",
+      1,
+      target.getFilePath(),
+    )) {
+      const at = walked.positions.get(String(filePath));
+      if (at !== undefined) {
+        found.push(at);
+      }
+    }
+    found.sort((a, b) => a - b);
+    return found.map((at) => walked.files[at] as SourceFile);
   }
 
   /**
