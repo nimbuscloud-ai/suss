@@ -31,6 +31,7 @@ import {
   readStorageContractMetadata,
   readWrapperMetadata,
   relationsOf,
+  truthTestSubject,
 } from "@suss/behavioral-ir";
 import {
   contractDeclaresStatus,
@@ -1744,9 +1745,9 @@ function bindingLabel(s: BehavioralSummary): string | null {
  */
 function fieldsThatMoved(before: Transition, after: Transition): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  // Effects have their own lines in the report, so the raw array would
-  // repeat them.
-  const said = new Set(["id", "location", "effects"]);
+  // Effects, and whether the transition can run, have their own lines in
+  // the report, so the raw fields would repeat them.
+  const said = new Set(["id", "location", "effects", "unreachable"]);
   return [...keys]
     .filter((key) => !said.has(key))
     .filter(
@@ -1869,6 +1870,10 @@ export interface OutcomeLine {
   readonly outcome: string;
   /** How a changed outcome read before, when the report prints both. */
   readonly was?: string;
+  /** Why the outcome can never happen, when its transition can never run. */
+  readonly cannotHappen?: string;
+  /** Set on a changed outcome that could never happen before and now can. */
+  readonly canHappenAgain?: true;
   /**
    * For an outcome whose line reads the same before and after: where the
    * transition differs, each as a path with its old and new values.
@@ -1917,12 +1922,13 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** Whether a transition changed what it returns or what leads to it. */
+/** Whether a transition changed what it returns, what leads to it, or whether it can run at all. */
 function outcomeMoved(before: Transition, after: Transition): boolean {
   return (
     !sameJson(before.output, after.output) ||
     !sameJson(before.conditions, after.conditions) ||
-    before.isDefault !== after.isDefault
+    before.isDefault !== after.isDefault ||
+    !sameJson(before.unreachable, after.unreachable)
   );
 }
 
@@ -2328,6 +2334,75 @@ function wrapperOf(transition: Transition): WrapperReference | undefined {
   return readWrapperMetadata(transition)?.from;
 }
 
+/** A value as the reason an outcome can never happen words it. */
+const VALUE_WORDS: DispatchTable<TypeShape, string> = {
+  record: (shape) =>
+    Object.keys(shape.properties).length === 0 &&
+    (shape.spreads ?? []).length === 0
+      ? "an empty object"
+      : "an object",
+  dictionary: () => "an object",
+  array: () => "a list",
+  literal: (shape) => JSON.stringify(shape.value),
+  text: () => "a string",
+  integer: () => "a number",
+  number: () => "a number",
+  boolean: () => "a boolean",
+  null: () => "null",
+  undefined: () => "undefined",
+  union: (shape) =>
+    [...new Set(shape.variants.map((variant) => valueWords(variant)))].join(
+      " or ",
+    ),
+  ref: (shape) => shape.name,
+  unknown: () => "unknown",
+};
+
+function valueWords(shape: TypeShape): string {
+  return dispatchByType(VALUE_WORDS, shape);
+}
+
+/**
+ * Why a transition can never run, as `loadOrder() is always an object,
+ * which is truthy`, or null when it can run.
+ */
+export function whyUnreachable(transition: Transition): string | null {
+  const unreachable = transition.unreachable;
+  if (unreachable === undefined) {
+    return null;
+  }
+  const condition = transition.conditions[unreachable.condition];
+  const subject = truthTestSubject(condition ?? null);
+  const what = subject === null ? "its condition" : formatRef(subject);
+  return `${what} is always ${valueWords(unreachable.values)}, which is ${unreachable.every}`;
+}
+
+/** What a line says about whether its outcome can happen, when the change decided that. */
+function reachability(
+  transition: Transition,
+  previous: Transition | undefined,
+): Pick<OutcomeLine, "cannotHappen" | "canHappenAgain"> {
+  const why = whyUnreachable(transition);
+  if (why !== null) {
+    return { cannotHappen: why };
+  }
+  return previous?.unreachable === undefined ? {} : { canHappenAgain: true };
+}
+
+/** The lines under an outcome that say whether it can happen. */
+function reachabilityTexts(line: OutcomeLine): string[] {
+  if (line.canHappenAgain === true) {
+    return ["can happen again"];
+  }
+  if (line.cannotHappen === undefined) {
+    return [];
+  }
+  const couldBefore =
+    line.change === "changed" && line.previous?.unreachable === undefined;
+  const lead = couldBefore ? "can no longer happen" : "can never happen";
+  return [`${lead}: ${line.cannotHappen}`];
+}
+
 function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
   const lines: OutcomeLine[] = [];
 
@@ -2336,6 +2411,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
       change: "added",
       transition: t,
       outcome: renderTransitionShort(t, false, alone),
+      ...reachability(t, undefined),
       wrapper: wrapperOf(t),
     });
   }
@@ -2353,6 +2429,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
     const spellDefault = defaultGuardMoved(b, a);
     const beforeLine = renderTransitionShort(b, spellDefault, alone);
     const afterLine = renderTransitionShort(a, spellDefault, alone);
+    const reach = reachability(a, b);
     if (changeNoClientSees(b, a)) {
       lines.push({
         change: "changed",
@@ -2382,6 +2459,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
         transition: a,
         previous: b,
         outcome,
+        ...reach,
         wrapper: undefined,
       });
       continue;
@@ -2393,6 +2471,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
         previous: b,
         outcome: afterLine,
         was: beforeLine,
+        ...reach,
         wrapper: undefined,
       });
       continue;
@@ -2400,7 +2479,7 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
     // A pair with the same line and no other field changed differs only
     // in its effects, and the unit's effect lines already show those.
     const fields = fieldChanges(b, a);
-    if (fields.length === 0) {
+    if (fields.length === 0 && sameJson(b.unreachable, a.unreachable)) {
       continue;
     }
     lines.push({
@@ -2408,7 +2487,8 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
       transition: a,
       previous: b,
       outcome: afterLine,
-      fields,
+      ...(fields.length === 0 ? {} : { fields }),
+      ...reach,
       wrapper: undefined,
     });
   }
@@ -2420,16 +2500,21 @@ function transitionLines(diff: SummaryDiff, alone: boolean): OutcomeLine[] {
  * The printed lines of one outcome. A changed outcome that needs its old
  * line prints both together, since neither makes sense without the other.
  * One whose line reads the same on both sides prints it once, with where
- * it differs underneath.
+ * it differs underneath. Whether it can happen goes under either.
  */
 export function outcomeTexts(line: OutcomeLine): string[] {
+  const reach = reachabilityTexts(line);
   if (line.was === undefined) {
     return [
       `${NAME_MARKERS[line.change]} ${line.outcome}`,
-      ...(line.fields ?? []).map((field) => `  ${field}`),
+      ...[...(line.fields ?? []), ...reach].map((text) => `  ${text}`),
     ];
   }
-  return [`~ was  ${line.was}`, `  now  ${line.outcome}`];
+  return [
+    `~ was  ${line.was}`,
+    `  now  ${line.outcome}`,
+    ...reach.map((text) => `       ${text}`),
+  ];
 }
 
 /**

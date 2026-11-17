@@ -8,12 +8,17 @@
  * request on to the handler.
  */
 
-import { effectsFiringOn, enumerateOrDegrade } from "@suss/extractor";
+import {
+  effectsFiringOn,
+  enumerateOrDegrade,
+  withSettledCondition,
+} from "@suss/extractor";
 
 import { children, NodeSet } from "../ast.js";
 import { guardInputs } from "../provenance.js";
 import { lowerPythonBody } from "./lowering.js";
 import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
+import { settledConditionOf } from "./settledConditions.js";
 
 import type { Database } from "@suss/datalog";
 import type {
@@ -24,6 +29,7 @@ import type {
   RawCondition,
   RawEffect,
   RawTerminal,
+  SettledCondition,
   TerminalPlacement,
 } from "@suss/extractor";
 import type { PyNode } from "../parser.js";
@@ -158,6 +164,24 @@ export function enumerateBodyBranches(
     [...enumerated.byTerminal.values(), enumerated.fallthrough],
     options,
   );
+  const settled = new Map<number, SettledCondition | null>();
+  const conditionOf = (condition: ConditionInfo<PyNode>): RawCondition => {
+    const expression = condition.expression;
+    const raw: RawCondition = {
+      sourceText: condition.sourceText,
+      structured:
+        expression === null
+          ? null
+          : predicateOf(expression, options.facts, inputs),
+      polarity: condition.polarity,
+      source: condition.source,
+    };
+    return withSettledCondition(raw, expression?.id ?? null, settled, () =>
+      expression === null
+        ? null
+        : settledConditionOf(expression, options.facts),
+    );
+  };
   const branches: RawBranch[] = [];
   const push = (
     branch: TerminalBranch,
@@ -166,15 +190,7 @@ export function enumerateBodyBranches(
   ): void => {
     const loopAround = placement?.loopAround;
     for (const path of paths) {
-      const conditions: RawCondition[] = path.map((condition) => ({
-        sourceText: condition.sourceText,
-        structured:
-          condition.expression === null
-            ? null
-            : predicateOf(condition.expression, options.facts, inputs),
-        polarity: condition.polarity,
-        source: condition.source,
-      }));
+      const conditions: RawCondition[] = path.map(conditionOf);
       const ending = {
         ...branch,
         conditions,

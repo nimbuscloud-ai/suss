@@ -29,6 +29,7 @@ import { bindModule } from "../scope.js";
 import { pythonLowering } from "./lowering.js";
 import { originOf } from "./origin.js";
 import { pythonRows } from "./rows.js";
+import { pythonSoundLowering } from "./soundLowering.js";
 
 import type { Database } from "@suss/datalog";
 import type { Origin, Value } from "@suss/values";
@@ -49,8 +50,10 @@ export interface ProjectNodes {
 }
 
 const evaluators = new WeakMap<Database, Evaluator<PyNode>>();
+const soundEvaluators = new WeakMap<Database, Evaluator<PyNode>>();
 const projects = new WeakMap<Database, BoundProject>();
 const withoutFacts = new WeakMap<object, Evaluator<PyNode>>();
+const soundWithoutFacts = new WeakMap<object, Evaluator<PyNode>>();
 const modulesByTree = new WeakMap<object, ModuleBinding>();
 
 /** Register the parsed project, so reads through `db` can follow the facts back to nodes. */
@@ -60,16 +63,43 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   }
   const bound = projectOver(db, nodes);
   projects.set(db, bound);
+  startEvaluators(db, bound.context);
+}
+
+function startEvaluators(db: Database, context: EvaluationContext): void {
   evaluators.set(
     db,
     new Evaluator(
-      pythonLowering({
-        context: bound.context,
-        originOf: calleeOrigin,
-        rows: pythonRows,
-      }),
+      pythonLowering({ context, originOf: calleeOrigin, rows: pythonRows }),
     ),
   );
+  soundEvaluators.set(db, soundEvaluatorOver(context));
+}
+
+function soundEvaluatorOver(
+  context: EvaluationContext | null,
+): Evaluator<PyNode> {
+  return new Evaluator(
+    pythonSoundLowering({ context, originOf: calleeOrigin }),
+    { sound: true },
+  );
+}
+
+/**
+ * Every value `node` can have when the program runs, or a hole where
+ * the sound evaluator cannot cover every run.
+ */
+export function soundValueOf(node: PyNode, db: Database | undefined): Value {
+  const bound = db === undefined ? undefined : soundEvaluators.get(db);
+  if (bound !== undefined) {
+    return bound.evaluate(node);
+  }
+  let local = soundWithoutFacts.get(node.tree);
+  if (local === undefined) {
+    local = soundEvaluatorOver(null);
+    soundWithoutFacts.set(node.tree, local);
+  }
+  return local.evaluate(node);
 }
 
 /**
@@ -80,16 +110,7 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
 export function forgetEvaluations(db: Database): void {
   const bound = projects.get(db);
   if (bound !== undefined) {
-    evaluators.set(
-      db,
-      new Evaluator(
-        pythonLowering({
-          context: bound.context,
-          originOf: calleeOrigin,
-          rows: pythonRows,
-        }),
-      ),
-    );
+    startEvaluators(db, bound.context);
   }
 }
 

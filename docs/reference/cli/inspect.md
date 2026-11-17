@@ -107,6 +107,20 @@ A path whose body moved under the same status and the same test prints as one li
 
 A key that went away while another came with the same value prints as `renamed to`, and a value too long for the line prints as what kind of value it is. Anything else prints as a `~ was` line and a `now` line. `otherwise` marks the path taken when none of the tests above it matched.
 
+A path whose test the change made impossible says so under its line, with the values that make it impossible. Here a helper that used to return `null` when it found nothing returns `{}` instead, and an object is always truthy:
+
+```
+~ serves GET /orders/{id}  src/orders.ts::get  (2 outcomes)
+  outcomes
+    ~ was  responds 404 { error }  when  !fetchOrder()
+      now  responds 404 { error }  when  !loadOrder()
+           can no longer happen: loadOrder() is always an object, which is truthy
+    ~ was  responds 200 Order (src/orders.ts)  when  fetchOrder()
+      now  responds 200 Order (src/orders.ts)  when  loadOrder()
+```
+
+A path the change made possible again prints `can happen again`, and a new path that can never run prints `can never happen`. In the JSON, the outcome has `cannotHappen` with the same reason, or `canHappenAgain: true`. [A branch that can never run](/reference/summary-format#a-branch-that-can-never-run) says when suss decides a test is impossible.
+
 When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
 
 A deployable's environment gets a block of its own when its template and its code are compared together, as they are across two folders. It lists each variable the template started or stopped declaring, and each variable the code the deployable runs started or stopped reading. That includes code that runs once at startup, which no request reaches through a call:

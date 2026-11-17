@@ -17,7 +17,12 @@ import {
   SyntaxKind,
 } from "ts-morph";
 
-import { firesOn, runsBefore, splitAtHandOffs } from "@suss/extractor";
+import {
+  firesOn,
+  runsBefore,
+  splitAtHandOffs,
+  withSettledCondition,
+} from "@suss/extractor";
 
 import { walkBodyOnce } from "./bodyWalks.js";
 import {
@@ -34,6 +39,7 @@ import {
   runInvocationRecognizers,
 } from "./resolve/invocationEffects.js";
 import { helperPathsFor, responseHandedAt } from "./responseHandOff.js";
+import { settledConditionOf } from "./settledConditions.js";
 import {
   type FoundTerminal,
   findTerminals,
@@ -60,6 +66,7 @@ import type {
   RawBranch,
   RawCondition,
   RawEffect,
+  SettledCondition,
   TerminalPattern,
 } from "@suss/extractor";
 import type { FunctionRoot } from "./conditions.js";
@@ -369,6 +376,7 @@ export function extractRawBranches(
     }
   }
 
+  const settled = new Map<Node, SettledCondition | null>();
   const rawBranches: RawBranch[] = terminals.flatMap(
     ({ node, terminal, whenAlso }) => {
       // Dead-code terminals (no entry path reaches them) produce no
@@ -380,7 +388,17 @@ export function extractRawBranches(
         // that tells them apart. The path conditions cannot, because
         // both were reached exactly the same way.
         const conditions: RawCondition[] = [
-          ...infos.map(conditionInfoToRawCondition),
+          ...infos.map((info) =>
+            withSettledCondition(
+              conditionInfoToRawCondition(info),
+              info.expression,
+              settled,
+              () =>
+                info.expression === null
+                  ? null
+                  : settledConditionOf(info.expression, resolution),
+            ),
+          ),
           ...(whenAlso === undefined ? [] : [whenAlso]),
         ];
         return {

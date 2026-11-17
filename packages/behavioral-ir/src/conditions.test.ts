@@ -5,6 +5,7 @@ import {
   boundaryGuardsOf,
   guardSubject,
   polarityOf,
+  truthTestSubject,
 } from "./conditions.js";
 import { storageBinding } from "./index.js";
 
@@ -248,6 +249,25 @@ describe("guardSubject", () => {
         subject: { type: "unresolved", sourceText: "a && b" },
         negated: false,
       }),
+    ).toBeNull();
+  });
+});
+
+describe("truthTestSubject", () => {
+  it("finds what a test of truth is about through its negations", () => {
+    const test: Predicate = {
+      type: "truthinessCheck",
+      subject: theRow,
+      negated: true,
+    };
+    expect(truthTestSubject(test)).toBe(theRow);
+    expect(truthTestSubject({ type: "negation", operand: test })).toBe(theRow);
+  });
+
+  it("has no subject for any other condition", () => {
+    expect(truthTestSubject(null)).toBeNull();
+    expect(
+      truthTestSubject({ type: "nullCheck", subject: theRow, negated: false }),
     ).toBeNull();
   });
 });

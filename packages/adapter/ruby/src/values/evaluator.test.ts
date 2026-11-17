@@ -5,7 +5,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { literalOf, literalsOf, pathOf } from "@suss/values";
+import {
+  hole,
+  literalOf,
+  literalsOf,
+  pathOf,
+  sequence,
+  unbounded,
+} from "@suss/values";
 
 import { bodyStatements, field } from "../ast.js";
 import {
@@ -15,6 +22,7 @@ import {
 import { emitValueFacts } from "../facts/values.js";
 import { emitRequireFacts } from "../facts.js";
 import { parseRuby } from "../parser.js";
+import { settledConditionOf } from "../paths/settledConditions.js";
 import { findRubyFiles } from "../project.js";
 import {
   bindEvaluator,
@@ -25,6 +33,7 @@ import {
   possibleValueNodes,
   stringValueOf,
 } from "./evaluator.js";
+import { rubyTruthiness } from "./truthiness.js";
 
 import type { Value } from "@suss/values";
 import type { RbNode } from "../parser.js";
@@ -96,6 +105,377 @@ async function projectValues(files: Record<string, string>) {
   };
   return { db, subject, parsed };
 }
+
+/** The condition of the first `if` or `unless` in `def check`, and what it comes to on every run. */
+async function settledCheck(files: Record<string, string>) {
+  const { db, parsed } = await projectValues(files);
+  const check = parsed
+    .flatMap(({ root }) => root.descendantsOfType("method"))
+    .find((method) => field(method, "name")?.text === "check");
+  const test = check?.descendantsOfType(["if", "unless"])[0];
+  const condition = test === undefined ? null : field(test, "condition");
+  if (condition === null) {
+    throw new Error("check has no if");
+  }
+  return settledConditionOf(condition, db);
+}
+
+const orders = (helper: string, guard = "!order") => ({
+  "app/orders.rb": `
+class Orders
+  def check(id)
+    order = load_order(id)
+    if ${guard}
+      nil
+    end
+  end
+
+  private
+
+${helper}
+end
+`,
+});
+
+describe("a condition read with the sound evaluator", () => {
+  it("reads a hash a helper always returns as true", async () => {
+    expect(
+      await settledCheck(
+        orders(`
+  def load_order(id)
+    row = Order.find_by(id: id)
+    row ? { id: row.id } : {}
+  end`),
+      ),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("counts zero and an empty string as true", async () => {
+    expect(
+      await settledCheck(
+        orders(
+          `
+  def load_order(id)
+    0
+  end`,
+          "order",
+        ),
+      ),
+    ).toMatchObject({ truth: true, every: "truthy" });
+    expect(
+      await settledCheck(
+        orders(
+          `
+  def load_order(id)
+    ""
+  end`,
+          "order",
+        ),
+      ),
+    ).toMatchObject({ truth: true, every: "truthy" });
+  });
+
+  const unsettled = async (files: Record<string, string>) =>
+    expect(await settledCheck(files)).toBeNull();
+
+  it("leaves a helper that may return false or nil alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    row = Order.find_by(id: id)
+    row ? { id: row.id } : false
+  end`),
+    );
+  });
+
+  it("leaves a method another class can override alone", async () => {
+    await unsettled({
+      ...orders(`
+  def load_order(id)
+    {}
+  end`),
+      "app/archived_orders.rb": `
+class ArchivedOrders < Orders
+  def load_order(id)
+    nil
+  end
+end
+`,
+    });
+  });
+
+  it("leaves a method that returns from a block alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    [nil].each { |row| return row }
+    {}
+  end`),
+    );
+  });
+
+  it("leaves a method that ends on an assignment or a rescue alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    found = {}
+  end`),
+    );
+    await unsettled(
+      orders(`
+  def load_order(id)
+    begin
+      {}
+    rescue StandardError
+      nil
+    end
+  end`),
+    );
+  });
+
+  it("leaves a local a block writes alone", async () => {
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check(ids)
+    order = {}
+    ids.each { |id| order = nil }
+    if !order
+      nil
+    end
+  end
+end
+`,
+    });
+  });
+
+  it("leaves an instance variable alone", async () => {
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check
+    @order = {}
+    if !@order
+      nil
+    end
+  end
+end
+`,
+    });
+  });
+
+  it("leaves a call on another receiver alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    Order.new
+  end`),
+    );
+  });
+
+  it("reads a call on self, a return inside an if, a default and a parenthesized test", async () => {
+    expect(
+      await settledCheck({
+        "app/orders.rb": `
+class Orders
+  def check(id)
+    order = self.load_order(id)
+    if (!order)
+      nil
+    end
+  end
+
+  def load_order(id, fallback = nil)
+    if id
+      return { id: id }
+    end
+    { id: fallback }
+  end
+end
+`,
+      }),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("leaves a helper that returns two values or takes a block alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    return {}, nil
+  end`),
+    );
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check(id, &blk)
+    order = load_order(id, &blk)
+    if !order
+      nil
+    end
+  end
+
+  def load_order(id, &blk)
+    {}
+  end
+end
+`,
+    });
+  });
+
+  it("leaves a local every other way of binding it writes alone", async () => {
+    const bound = [
+      "order, other = {}, 1",
+      "for order in [nil]\n    end",
+      "case id\n    in [order]\n      nil\n    end",
+      "case id\n    in {order:}\n      nil\n    end",
+    ];
+    for (const binding of bound) {
+      await unsettled({
+        "app/orders.rb": `
+class Orders
+  def check(id)
+    ${binding}
+    while id
+      next
+    end
+    def helper; end
+    if !order
+      nil
+    end
+  end
+end
+`,
+      });
+    }
+  });
+});
+
+describe("a local Ruby binds twice", () => {
+  const unsettled = async (files: Record<string, string>) =>
+    expect(await settledCheck(files)).toBeNull();
+
+  it("leaves a local a for loop rebinds alone", async () => {
+    expect(
+      await settledCheck({
+        "app/orders.rb": `
+class Orders
+  def check(rows)
+    order = {}
+    for order in rows
+    end
+    if !order
+      nil
+    end
+  end
+end
+`,
+      }),
+    ).toBeNull();
+  });
+
+  it("leaves a method that ends on an append or a multiple assignment alone", async () => {
+    await unsettled(
+      orders(`
+  def load_order(id)
+    found = []
+    found << id
+  end`),
+    );
+    await unsettled(
+      orders(`
+  def load_order(id)
+    first, rest = nil, id
+  end`),
+    );
+  });
+
+  it("leaves a call alone when Ruby binds its arguments another way", async () => {
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check(id)
+    order = load_order(id: id)
+    if order
+      nil
+    end
+  end
+
+  def load_order(found = nil)
+    found
+  end
+end
+`,
+    });
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check(id)
+    order = load_order(1)
+    if order
+      nil
+    end
+  end
+
+  def load_order(found = nil, id)
+    found
+  end
+end
+`,
+    });
+    await unsettled({
+      "app/orders.rb": `
+class Orders
+  def check(id)
+    order = load_order(nil)
+    if order
+      nil
+    end
+  end
+
+  def load_order(*ids)
+    ids
+  end
+end
+`,
+    });
+  });
+
+  it("leaves a method whose ensure returns alone", async () => {
+    expect(
+      await settledCheck(
+        orders(`
+  def load_order(id)
+    begin
+      { id: id }
+    ensure
+      return nil
+    end
+  end`),
+      ),
+    ).toBeNull();
+  });
+
+  it("reads past a lambda's own return", async () => {
+    expect(
+      await settledCheck(
+        orders(`
+  def load_order(id)
+    skip = -> { return nil }
+    { id: id }
+  end`),
+      ),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+});
+
+describe("Ruby's rule for what counts as true", () => {
+  it("counts every list and hash as true and cannot tell for a reference", () => {
+    expect(rubyTruthiness(sequence([]))).toBe(true);
+    expect(rubyTruthiness(unbounded(hole("x")))).toBe(true);
+    expect(rubyTruthiness({ kind: "ref", id: 0 })).toBeNull();
+    expect(rubyTruthiness(hole("x"))).toBeNull();
+  });
+});
 
 describe("literals and names", () => {
   it("reads a string literal", async () => {

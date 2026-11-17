@@ -26,6 +26,7 @@ import {
 import { nodeId, readKey } from "../facts/values.js";
 import { rubyLowering } from "./lowering.js";
 import { rubyRows } from "./rows.js";
+import { rubySoundLowering } from "./soundLowering.js";
 
 import type { Database } from "@suss/datalog";
 import type { Value } from "@suss/values";
@@ -52,6 +53,10 @@ const filesByTree = new WeakMap<object, string>();
 /** Every file's root, by the path the facts key it on, per database. */
 const rootsByDb = new WeakMap<Database, ReadonlyMap<string, RbNode>>();
 
+const soundEvaluators = new WeakMap<Database, Evaluator<RbNode>>();
+const soundWithoutFacts = new WeakMap<object, Evaluator<RbNode>>();
+const definitionCounts = new WeakMap<Database, ReadonlyMap<string, number>>();
+
 /** Registers the parsed project, so reads through `db` can follow the facts back to nodes. */
 export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   for (const entry of nodes.files) {
@@ -63,7 +68,64 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
   );
   const context = contextOver(db, nodes);
   contexts.set(db, context);
+  const named = namesOfDefinitions(nodes.definitions.values());
+  definitionCounts.set(db, named);
+  startEvaluators(db, context, named);
+}
+
+function startEvaluators(
+  db: Database,
+  context: EvaluationContext,
+  named: ReadonlyMap<string, number>,
+): void {
   evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
+  soundEvaluators.set(db, soundEvaluatorOver(context, named));
+}
+
+function soundEvaluatorOver(
+  context: EvaluationContext | null,
+  named: ReadonlyMap<string, number>,
+): Evaluator<RbNode> {
+  return new Evaluator(
+    rubySoundLowering({
+      context,
+      definitionsNamed: (name) => named.get(name) ?? 0,
+    }),
+    { sound: true },
+  );
+}
+
+/** How many method definitions there are under each name. */
+function namesOfDefinitions(
+  definitions: Iterable<RbNode>,
+): ReadonlyMap<string, number> {
+  const named = new Map<string, number>();
+  for (const definition of definitions) {
+    const name = field(definition, "name")?.text;
+    if (name !== undefined) {
+      named.set(name, (named.get(name) ?? 0) + 1);
+    }
+  }
+  return named;
+}
+
+/**
+ * Every value `node` can have when the program runs, or a hole where
+ * the sound evaluator cannot cover every run. Without facts, only the
+ * methods in the node's own file count as the project's.
+ */
+export function soundValueOf(node: RbNode, db: Database | undefined): Value {
+  const bound = db === undefined ? undefined : soundEvaluators.get(db);
+  if (bound !== undefined) {
+    return bound.evaluate(node);
+  }
+  let local = soundWithoutFacts.get(node.tree);
+  if (local === undefined) {
+    const inFile = methodDefinitionsIn("", node.tree.rootNode).values();
+    local = soundEvaluatorOver(null, namesOfDefinitions(inFile));
+    soundWithoutFacts.set(node.tree, local);
+  }
+  return local.evaluate(node);
 }
 
 /**
@@ -115,10 +177,7 @@ export function resolutionKeyOf(node: RbNode): string | null {
 export function forgetEvaluations(db: Database): void {
   const context = contexts.get(db);
   if (context !== undefined) {
-    evaluators.set(
-      db,
-      new Evaluator(rubyLowering({ context, rows: rubyRows })),
-    );
+    startEvaluators(db, context, definitionCounts.get(db) ?? new Map());
   }
 }
 

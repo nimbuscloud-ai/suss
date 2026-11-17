@@ -37,6 +37,7 @@ import {
   type RunFindingSchema,
   type SummaryDiffSchema,
   type TransitionSchema,
+  type UnreachableSchema,
   type ValueRefSchema,
 } from "./schemas.js";
 import { disambiguateSummaryIds } from "./summaryId.js";
@@ -139,6 +140,7 @@ export {
   guardSubject,
   type Polarity,
   polarityOf,
+  truthTestSubject,
 } from "./conditions.js";
 export { dropIdleReceivers, withConstructions } from "./constructions.js";
 export { sameUnit, withDeclaredDelivery } from "./declaredDelivery.js";
@@ -375,6 +377,7 @@ export type Effect = z.infer<typeof EffectSchema>;
 export type RenderNode = z.infer<typeof RenderNodeSchema>;
 
 export type Transition = z.infer<typeof TransitionSchema>;
+export type Unreachable = z.infer<typeof UnreachableSchema>;
 export type ProvenanceSlot = z.infer<typeof ProvenanceSlotSchema>;
 export type ProvenanceEntry = z.infer<typeof ProvenanceEntrySchema>;
 export type Gap = z.infer<typeof GapSchema>;

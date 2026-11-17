@@ -31,6 +31,7 @@ import {
 
 import { contractStatusGaps } from "./contractStatusGaps.js";
 import { type InputRead, inputReadsOf, mergeInputReads } from "./inputReads.js";
+import { unreachableOf } from "./settledConditions.js";
 
 export type { InputRead } from "./inputReads.js";
 
@@ -55,6 +56,7 @@ import type {
   TestMetadata,
   Transition,
   TypeShape,
+  Unreachable,
   ValueRef,
   WrapperReference,
 } from "@suss/behavioral-ir";
@@ -317,6 +319,8 @@ export interface RawCondition {
   structured: Predicate | null;
   polarity: "positive" | "negative";
   source: ConditionSource;
+  /** Set when the condition can never be true on this branch; `withSettledTruth` sets it. */
+  neverHolds?: Omit<Unreachable, "condition">;
 }
 
 export interface RawTerminal {
@@ -877,6 +881,10 @@ export function assembleSummary(
     if (provenance.length > 0) {
       transition.provenance = provenance;
     }
+    const unreachable = unreachableOf(branch.conditions);
+    if (unreachable !== null) {
+      transition.unreachable = unreachable;
+    }
     return transition;
   });
 
@@ -1398,6 +1406,10 @@ export {
   packGradients,
   packPathCheck,
 } from "./packHealth.js";
+export {
+  type SettledCondition,
+  withSettledCondition,
+} from "./settledConditions.js";
 export { createTimer, noopTimer } from "./timing.js";
 
 export type {

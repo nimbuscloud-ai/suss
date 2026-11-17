@@ -13,19 +13,24 @@ import {
   equals,
   extended,
   fallback,
+  fallbackRow,
   isPresent,
   joined,
   joinedPath,
   literalOf,
   negated,
+  negationRow,
   operand,
   plus,
   type Row,
   readableFallback,
+  takesLeftWhenFalse,
   text,
   truthOf,
   type Value,
 } from "@suss/values";
+
+import { javascriptTruthiness } from "./truthiness.js";
 
 const PATH_MODULES = ["path", "node:path", "path/posix", "node:path/posix"];
 
@@ -207,4 +212,17 @@ export const typescriptRows: readonly Row[] = [
   ...stringRows,
   ...sequenceRows,
   ...calleeRows,
+];
+
+/**
+ * The rows a sound evaluator uses: `!`, `&&`, `||` and `??`, with an
+ * unknown left side joining the two sides instead of being read as the
+ * right one. `+` and `==` are left out, since a hole on one side leaves
+ * what kind of value comes out unknown.
+ */
+export const typescriptSoundRows: readonly Row[] = [
+  negationRow("!", javascriptTruthiness),
+  fallbackRow("&&", takesLeftWhenFalse(javascriptTruthiness)),
+  fallbackRow("||", javascriptTruthiness),
+  fallbackRow("??", isPresent),
 ];

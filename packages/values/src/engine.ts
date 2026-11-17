@@ -1,16 +1,16 @@
 /**
  * The evaluator: the abstract value of one expression at the place it
- * is written.
- *
- * Asked about an expression, the engine runs the statements of the
- * enclosing function or module up to that expression, keeping a local
- * heap so that a push through an alias is seen by every name bound to
- * the same array, then evaluates the expression against that state. A
- * name declared outside the function is read at the point the function
- * is written, and a name declared in another file is read through the
- * lowering's resolution. A call is inlined when its callee is a project
- * function whose body has no loop, under a depth cap; a library call is
- * looked up in the lowering's rows; any other call is a hole.
+ * is written. The engine runs the statements of the enclosing function
+ * or module up to that expression, keeping a local heap so that a push
+ * through an alias is seen by every name bound to the same array, then
+ * evaluates the expression against that state. A name declared outside
+ * the function is read at the point the function is written, and a name
+ * declared in another file is read through the lowering's resolution. A
+ * call is inlined when its callee is a project function whose body has
+ * no loop, under a depth cap; a library call is looked up in the
+ * lowering's rows; any other call is a hole. A sound evaluator gives a
+ * hole wherever its value would not cover every run, and DESIGN.md lists
+ * what it gives up to keep to that.
  */
 
 import {
@@ -27,7 +27,7 @@ import {
   type Site,
   statementsOf,
 } from "./language.js";
-import { join, joinAll, widen } from "./lattice.js";
+import { join, joinAll, sameValue, widen } from "./lattice.js";
 import {
   concat,
   constant,
@@ -36,7 +36,6 @@ import {
   hole,
   type Item,
   text,
-  truthOf,
   unbounded,
   type Value,
 } from "./value.js";
@@ -74,6 +73,11 @@ interface State {
   readonly heap: Map<number, Value>;
   /** Parameters no call site filled; a read of one goes to the lowering. */
   readonly parameters: Set<string>;
+  /**
+   * The first allocation the function this state runs made. A caller may
+   * still refer to anything made before it, through a name of its own.
+   */
+  readonly madeFrom: number;
 }
 
 interface AllocatedByDeferredCall {
@@ -91,6 +95,11 @@ interface Outcome {
 interface Arguments {
   readonly positional: Value[];
   readonly named: Map<string, Value>;
+  /**
+   * False when a spread left the positions unknown, so an argument after
+   * it may land on a different parameter than its index says.
+   */
+  readonly placed: boolean;
 }
 
 export interface EvaluateOptions<N = unknown> {
@@ -115,6 +124,12 @@ export interface EvaluateOptions<N = unknown> {
 export interface EvaluatorOptions {
   /** How many statements one `evaluate` call may run before it stops. */
   readonly statementBudget?: number;
+  /**
+   * Give back a hole wherever the value would not cover every run, as the
+   * header describes. A run that uses up its statement budget is a hole
+   * too, since the statements it skipped could have returned anything.
+   */
+  readonly sound?: boolean;
 }
 
 export class Evaluator<N extends object> {
@@ -125,6 +140,9 @@ export class Evaluator<N extends object> {
   /** The current call's `given` values, keyed by `idOf`. */
   private givenById: ReadonlyMap<unknown, Value> | undefined;
   private readonly statementBudget: number;
+  private readonly sound: boolean;
+  /** Whether the current `evaluate` call ran out of statements. */
+  private exhausted = false;
   private readonly stateAfterStatement = new Map<unknown, State>();
   private readonly outerByNode = new Map<unknown, Value>();
   private readonly writtenByNode = new Map<unknown, Value>();
@@ -162,6 +180,7 @@ export class Evaluator<N extends object> {
     options: EvaluatorOptions = {},
   ) {
     this.statementBudget = options.statementBudget ?? STATEMENT_BUDGET;
+    this.sound = options.sound ?? false;
     this.methodRows = groupBy(
       lowering.rows.filter((row) => row.kind === "method"),
       (row) => row.method,
@@ -207,12 +226,32 @@ export class Evaluator<N extends object> {
    */
   evaluate(node: N, options: EvaluateOptions<N> = {}): Value {
     this.statements = 0;
+    this.exhausted = false;
+    if (this.sound) {
+      return this.withinBudget(() =>
+        forcedThrough(this.evaluateUnderSite(node, options)),
+      );
+    }
     if (options.given === undefined) {
       return this.evaluateUnderSite(node, options);
     }
     return this.withGiven(options.given, () =>
       forcedThrough(this.evaluateUnderSite(node, options)),
     );
+  }
+
+  /**
+   * A sound run that used up its budget skipped statements, so its value
+   * is a hole, and the states it remembered on the way may be missing
+   * those statements too.
+   */
+  private withinBudget(run: () => Value): Value {
+    const value = run();
+    if (!this.exhausted) {
+      return value;
+    }
+    this.stateAfterStatement.clear();
+    return hole("value");
   }
 
   /**
@@ -245,6 +284,7 @@ export class Evaluator<N extends object> {
         bindings: new Map(),
         heap: state.heap,
         parameters: new Set(),
+        madeFrom: this.nextAllocation,
       };
       this.bindParameters(callee, args, inner, 0);
       const bound = new Map<string, Value>();
@@ -402,11 +442,17 @@ export class Evaluator<N extends object> {
     if (shape.kind === "loop") {
       const after = cloneState(state);
       this.run(shape.body, after, root, depth);
-      const entry = widenState(state, after, this.allocatedByDeferredCalls);
+      const entry = this.afterLoop(state, after);
       return this.runPath(shape.body, rest, entry, root, depth, memo);
     }
     if (shape.kind === "block") {
       return this.runPath(shape.body, rest, state, root, depth, memo);
+    }
+    if (this.sound) {
+      // Whatever the opaque statement ran before the target is unknown.
+      const inside = cloneState(state);
+      this.widenHeap(inside);
+      return inside;
     }
     return state;
   }
@@ -430,6 +476,7 @@ export class Evaluator<N extends object> {
 
   private execute(stmt: N, state: State, root: N, depth: number): Outcome {
     if (++this.statements > this.statementBudget) {
+      this.exhausted = true;
       return { returns: [], completes: false };
     }
     const shape = this.lowering.statement(stmt);
@@ -468,10 +515,7 @@ export class Evaluator<N extends object> {
     if (shape.kind === "loop") {
       const after = cloneState(state);
       const outcome = this.run(shape.body, after, root, depth);
-      replaceState(
-        state,
-        widenState(state, after, this.allocatedByDeferredCalls),
-      );
+      replaceState(state, this.afterLoop(state, after));
       return { returns: outcome.returns, completes: true };
     }
     if (shape.kind === "return") {
@@ -490,12 +534,19 @@ export class Evaluator<N extends object> {
     if (shape.kind === "block") {
       return this.run(shape.body, state, root, depth);
     }
+    if (this.sound) {
+      // The lowering could not say what this statement does, so it may
+      // have returned anything and changed any object.
+      this.widenHeap(state);
+      return { returns: [hole("value")], completes: true };
+    }
     return completes;
   }
 
   /**
    * A name some nested function writes to is unknown from its
-   * declaration on, since that function can run at any point after.
+   * declaration on, since that function can run at any point after. A
+   * sound run reads only a name the lowering says is written once.
    */
   private unlessNestedWrite(
     root: N,
@@ -503,10 +554,40 @@ export class Evaluator<N extends object> {
     value: Value,
     state: State,
   ): Value {
+    if (this.sound) {
+      return this.lowering.writtenOnce?.(root, name) === true
+        ? value
+        : hole(name);
+    }
     if (!this.lowering.mutatedInNestedFunction(root, name)) {
       return value;
     }
     return named(widenAway(force(this.materialize(value, state))), name);
+  }
+
+  /**
+   * The state after a loop that ran some unknown number of times. A sound
+   * run keeps only what the body left as it was: a name the body bound
+   * again is a hole, and an object the body changed is widened.
+   */
+  private afterLoop(before: State, after: State): State {
+    if (!this.sound) {
+      return widenState(before, after, this.allocatedByDeferredCalls);
+    }
+    return combineStates(
+      before,
+      after,
+      (left, right) => (sameValue(left, right) ? left : hole("value")),
+      this.allocatedByDeferredCalls,
+      (left, right) => (sameValue(left, right) ? left : widenAway(right)),
+    );
+  }
+
+  /** Every object this state can reach, widened, since code nobody can see may have changed it. */
+  private widenHeap(state: State): void {
+    for (const [id, content] of state.heap) {
+      state.heap.set(id, widenAway(content));
+    }
   }
 
   private branch(
@@ -519,33 +600,135 @@ export class Evaluator<N extends object> {
     const settled =
       condition === null
         ? null
-        : truthOf(this.expression(condition, state, depth));
+        : this.truthOf(this.expression(condition, state, depth), state);
     if (settled !== null && arms.length === 2) {
       const arm = arms[settled ? 0 : 1] ?? [];
       return this.run(arm, state, root, depth);
     }
     const returns: Value[] = [];
     const completing: State[] = [];
+    const ended: State[] = [];
     for (const arm of arms) {
       const armState = cloneState(state);
       const outcome = this.run(arm, armState, root, depth);
       returns.push(...outcome.returns);
-      if (outcome.completes) {
-        completing.push(armState);
-      }
+      (outcome.completes ? completing : ended).push(armState);
     }
     const [first, ...rest] = completing;
+    const joined =
+      first === undefined
+        ? state
+        : rest.reduce((acc, other) => this.joinedStates(acc, other), first);
+    if (this.sound) {
+      this.keepWhatArmsReturned(joined, ended);
+    }
     if (first === undefined) {
       return { returns, completes: false };
     }
-    replaceState(
-      state,
-      rest.reduce(
-        (acc, other) => joinStates(acc, other, this.allocatedByDeferredCalls),
-        first,
-      ),
-    );
+    replaceState(state, joined);
     return { returns, completes: true };
+  }
+
+  /**
+   * An arm that returned leaves behind the objects its return refers to,
+   * as that arm left them. A sound run joins them into the state after
+   * the branch, so reading a returned object reads every version of it.
+   */
+  private keepWhatArmsReturned(target: State, ended: readonly State[]): void {
+    for (const arm of ended) {
+      for (const [id, content] of arm.heap) {
+        const kept = target.heap.get(id);
+        target.heap.set(
+          id,
+          kept === undefined || sameValue(kept, content)
+            ? content
+            : join(kept, content),
+        );
+      }
+    }
+  }
+
+  /** Whether a condition is true, by the language's rule, with an object read through its reference. */
+  private truthOf(value: Value, state: State): boolean | null {
+    return this.lowering.truthiness(this.contentOf(value, state));
+  }
+
+  /** The state where two arms meet. */
+  private joinedStates(a: State, b: State): State {
+    const joined = joinStates(a, b, this.allocatedByDeferredCalls);
+    if (!this.sound) {
+      return joined;
+    }
+    for (const [name, left] of a.bindings) {
+      const right = b.bindings.get(name);
+      if (right !== undefined) {
+        joined.bindings.set(name, this.joinedValues(left, right, joined));
+      }
+    }
+    return joined;
+  }
+
+  /**
+   * Where two values meet. A plain run joins them. A sound run that meets
+   * two objects nothing else refers to makes the first one both. Two
+   * objects something else refers to become a copy of both, and both
+   * are widened, since a later write through that other name would not
+   * reach the copy. `bindingsLive` is false where the function's own
+   * names end, at its return.
+   */
+  private joinedValues(
+    left: Value,
+    right: Value,
+    state: State,
+    bindingsLive = true,
+  ): Value {
+    const a = force(left);
+    const b = force(right);
+    if (!this.sound || sameValue(a, b)) {
+      return join(a, b);
+    }
+    if (a.kind !== "ref" && b.kind !== "ref") {
+      return join(a, b);
+    }
+    const joined = join(this.contentOf(a, state), this.contentOf(b, state));
+    if (
+      a.kind === "ref" &&
+      b.kind === "ref" &&
+      !this.referredElsewhere(a.id, state, bindingsLive) &&
+      !this.referredElsewhere(b.id, state, bindingsLive)
+    ) {
+      state.heap.set(a.id, joined);
+      return a;
+    }
+    this.escape(a, state);
+    this.escape(b, state);
+    return join(this.contentOf(a, state), this.contentOf(b, state));
+  }
+
+  /**
+   * Whether anything but the value being joined may refer to an
+   * allocation: a caller, for one made before this function ran, or a
+   * name or another object in this state.
+   */
+  private referredElsewhere(
+    id: number,
+    state: State,
+    bindingsLive: boolean,
+  ): boolean {
+    if (id < state.madeFrom) {
+      return true;
+    }
+    const refersHere = (value: Value): boolean => {
+      const forced = force(value);
+      return forced.kind === "ref" && forced.id === id;
+    };
+    if (bindingsLive && [...state.bindings.values()].some(refersHere)) {
+      return true;
+    }
+    return [...state.heap].some(
+      ([other, content]) =>
+        other !== id && valuesInside(content).some(refersHere),
+    );
   }
 
   private assign(
@@ -587,6 +770,14 @@ export class Evaluator<N extends object> {
       return;
     }
     this.escape(written, state);
+    this.widenHeapWhenSound(state);
+  }
+
+  /** A write to something the engine cannot follow, which a sound run takes to have changed any object. */
+  private widenHeapWhenSound(state: State): void {
+    if (this.sound) {
+      this.widenHeap(state);
+    }
   }
 
   /** A write to `object.name`. A null name is an index that did not evaluate to one value. */
@@ -600,6 +791,7 @@ export class Evaluator<N extends object> {
     const target = force(this.expression(object, state, depth));
     if (target.kind !== "ref") {
       this.escape(written, state);
+      this.widenHeapWhenSound(state);
       return;
     }
     const content = this.allocationIn(state, target.id) ?? hole("value");
@@ -659,7 +851,20 @@ export class Evaluator<N extends object> {
       if (bound !== undefined) {
         return bound;
       }
+      if (this.sound) {
+        return this.unwritten(node);
+      }
       return this.outer(node, shape.text, !state.parameters.has(shape.text));
+    }
+    if (this.sound && (shape.kind === "member" || shape.kind === "element")) {
+      // A getter, a prototype or a write through another name can each
+      // change what a member read gives back, and whatever it gives back
+      // is out of the engine's sight from then on.
+      const object = this.expression(shape.object, state, depth);
+      for (const inside of valuesInside(this.contentOf(object, state))) {
+        this.escape(inside, state);
+      }
+      return this.unwritten(node);
     }
     if (shape.kind === "member") {
       return this.member(node, shape.object, shape.name, state, depth);
@@ -698,7 +903,10 @@ export class Evaluator<N extends object> {
       );
     }
     if (shape.kind === "conditional") {
-      const settled = truthOf(this.expression(shape.condition, state, depth));
+      const settled = this.truthOf(
+        this.expression(shape.condition, state, depth),
+        state,
+      );
       if (settled !== null) {
         return this.expression(
           settled ? shape.whenTrue : shape.whenFalse,
@@ -706,10 +914,15 @@ export class Evaluator<N extends object> {
           depth,
         );
       }
-      return join(
+      return this.joinedValues(
         this.expression(shape.whenTrue, state, depth),
         this.expression(shape.whenFalse, state, depth),
+        state,
       );
+    }
+    if (this.sound && shape.kind === "function") {
+      // The function may run later, from anywhere, and change what it reads.
+      this.escapeFreeNames(node, state);
     }
     return this.unwritten(node);
   }
@@ -983,6 +1196,11 @@ export class Evaluator<N extends object> {
     if (fromRow !== null) {
       return fromRow;
     }
+    if (this.sound) {
+      // A deferred call that nobody forces never widens what it was
+      // given, so a sound run makes every call when it reaches it.
+      return this.inlineOrEscape(node, argValues, state, depth, receiver);
+    }
     const touchesHeap =
       allArguments(argValues).some((value) => value.kind === "ref") ||
       args.some(
@@ -1042,10 +1260,18 @@ export class Evaluator<N extends object> {
     argValues: Arguments,
     state: State,
     depth: number,
+    receiver: Value | null = null,
   ): Value {
     const inlined = this.inline(node, argValues, state, depth);
     if (inlined !== null) {
       return inlined;
+    }
+    if (this.sound) {
+      const given = receiver === null ? [] : [receiver];
+      for (const value of [...allArguments(argValues), ...given]) {
+        this.escape(value, state);
+      }
+      return this.unwritten(node);
     }
     // The lowering may still resolve the call to a value, as it does for
     // a declared wrapper that passes one argument through.
@@ -1066,6 +1292,7 @@ export class Evaluator<N extends object> {
   ): Arguments {
     const positional: Value[] = [];
     const named = new Map<string, Value>();
+    let placed = true;
     for (const arg of args) {
       const value = this.expression(arg.node, state, depth);
       if (arg.kind === "named") {
@@ -1079,11 +1306,14 @@ export class Evaluator<N extends object> {
       const spread = this.contentOf(value, state);
       if (spread.kind === "sequence") {
         positional.push(...spread.items.map((item) => item.value));
+        placed =
+          placed && spread.items.every((item) => item.presence === "one");
         continue;
       }
       positional.push(hole("value"));
+      placed = false;
     }
-    return { positional, named };
+    return { positional, named, placed };
   }
 
   private applyRow(
@@ -1148,6 +1378,9 @@ export class Evaluator<N extends object> {
     if (depth >= INLINE_DEPTH_CAP) {
       return null;
     }
+    if (this.sound && !args.placed) {
+      return null;
+    }
     const fn = this.lowering.callable(node);
     const shape = fn === null ? null : this.lowering.functionOf(fn);
     if (fn === null || shape === null || this.containsLoop(shape.body)) {
@@ -1157,8 +1390,22 @@ export class Evaluator<N extends object> {
       bindings: new Map(),
       heap: state.heap,
       parameters: new Set(),
+      madeFrom: this.nextAllocation,
     };
     this.bindParameters(shape, args, inner, depth);
+    if (this.sound) {
+      for (const { name } of shape.parameters) {
+        inner.bindings.set(
+          name,
+          this.unlessNestedWrite(
+            fn,
+            name,
+            inner.bindings.get(name) ?? hole(name),
+            inner,
+          ),
+        );
+      }
+    }
     const returned = expressionBodyOf(shape.body);
     if (returned !== null) {
       return this.expression(returned, inner, depth + 1);
@@ -1167,7 +1414,14 @@ export class Evaluator<N extends object> {
     if (outcome.completes) {
       outcome.returns.push(constant(undefined));
     }
-    return joinAll(outcome.returns);
+    const [first, ...rest] = outcome.returns;
+    if (first === undefined) {
+      return hole("value");
+    }
+    return rest.reduce<Value>(
+      (joined, value) => this.joinedValues(joined, value, inner, false),
+      first,
+    );
   }
 
   /** Bound in order, so a default can read a parameter before it. */
@@ -1264,29 +1518,49 @@ export class Evaluator<N extends object> {
   /** A callback passed to an unknown call may run at any time, so every allocation it can reach escapes. */
   private escapeCallbacks(args: readonly Element<N>[], state: State): void {
     for (const arg of args) {
-      if (this.lowering.expression(arg.node).kind !== "function") {
-        continue;
-      }
-      for (const name of this.lowering.freeNamesOf(arg.node)) {
-        const bound = state.bindings.get(name);
-        if (bound !== undefined) {
-          this.escape(bound, state);
-        }
+      if (this.lowering.expression(arg.node).kind === "function") {
+        this.escapeFreeNames(arg.node, state);
       }
     }
   }
 
-  /** Widens an allocation that code the engine cannot see now has a reference to. */
-  private escape(value: Value, state: State): void {
+  private escapeFreeNames(fn: N, state: State): void {
+    for (const name of this.lowering.freeNamesOf(fn)) {
+      const bound = state.bindings.get(name);
+      if (bound !== undefined) {
+        this.escape(bound, state);
+      }
+    }
+  }
+
+  /**
+   * Widens an allocation that code the engine cannot see now has a
+   * reference to. A sound run widens every allocation reachable from it
+   * too, since that code can follow the references.
+   */
+  private escape(value: Value, state: State, seen = new Set<number>()): void {
     const forced = force(value);
-    if (forced.kind !== "ref") {
+    if (forced.kind !== "ref" && this.sound) {
+      for (const inner of valuesInside(forced)) {
+        this.escape(inner, state, seen);
+      }
       return;
     }
+    if (forced.kind !== "ref" || seen.has(forced.id)) {
+      return;
+    }
+    seen.add(forced.id);
     const content = this.allocationIn(state, forced.id);
     if (content === undefined) {
       return;
     }
     state.heap.set(forced.id, widenAway(content));
+    if (!this.sound) {
+      return;
+    }
+    for (const inner of valuesInside(content)) {
+      this.escape(inner, state, seen);
+    }
   }
 
   /** The value with every `ref` replaced by what the heap has for it. */
@@ -1349,6 +1623,17 @@ function widenAway(content: Value): Value {
     return hole("value");
   }
   return content;
+}
+
+/** The values a record or a list keeps, one level down. */
+function valuesInside(content: Value): Value[] {
+  if (content.kind === "record") {
+    return [...content.fields.values()].map((item) => item.value);
+  }
+  if (content.kind === "sequence") {
+    return content.items.map((item) => item.value);
+  }
+  return content.kind === "unbounded" ? [content.element] : [];
 }
 
 /** The value with every deferral inside it computed, however deep. */
@@ -1414,7 +1699,12 @@ function literalOfValue(value: Value): string | null {
 }
 
 function emptyState(): State {
-  return { bindings: new Map(), heap: new Map(), parameters: new Set() };
+  return {
+    bindings: new Map(),
+    heap: new Map(),
+    parameters: new Set(),
+    madeFrom: 0,
+  };
 }
 
 function allArguments(args: Arguments): Value[] {
@@ -1426,6 +1716,7 @@ function cloneState(state: State): State {
     bindings: new Map(state.bindings),
     heap: new Map(state.heap),
     parameters: state.parameters,
+    madeFrom: state.madeFrom,
   };
 }
 
@@ -1468,6 +1759,7 @@ function combineStates(
   b: State,
   combine: (left: Value, right: Value) => Value,
   allocatedByDeferredCalls: DeferredAllocations,
+  combineContent: (left: Value, right: Value) => Value = combine,
 ): State {
   const bindings = new Map<string, Value>();
   for (const name of new Set([...a.bindings.keys(), ...b.bindings.keys()])) {
@@ -1491,9 +1783,9 @@ function combineStates(
       }
       continue;
     }
-    heap.set(id, combine(left, right));
+    heap.set(id, combineContent(left, right));
   }
-  return { bindings, heap, parameters: a.parameters };
+  return { bindings, heap, parameters: a.parameters, madeFrom: a.madeFrom };
 }
 
 function groupBy<T>(

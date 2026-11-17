@@ -164,6 +164,28 @@ Conditions are structured when the reader could take the expression apart, and o
 
 The `id` is content-addressed: `${functionName}:${terminalKind}:${statusKey}:${hash7}`, where the hash is over the ordered condition chain's source text. Reordering branches keeps the ids. Changing a status, a condition or a terminal kind gives you a new one.
 
+### A branch that can never run
+
+A transition whose conditions can never all be true keeps its place, and says why under `unreachable`. This route tests what `loadOrder` found, and `loadOrder` returns `toOrder(row)` when a row came back and `{}` when none did:
+
+```json
+"unreachable": {
+  "condition": 0,
+  "values": {
+    "type": "record",
+    "properties": {
+      "id": { "type": "union", "variants": [{ "type": "unknown" }, { "type": "undefined" }] },
+      "total": { "type": "union", "variants": [{ "type": "unknown" }, { "type": "undefined" }] }
+    }
+  },
+  "every": "truthy"
+}
+```
+
+`condition` is the position in `conditions` of the one that can never be true, here `!loadOrder()`. `values` is every value its subject can have, an object that has `id` and `total` or has neither, and `every` says what the language makes of each: in JavaScript every object is truthy, so the 404 never happens.
+
+suss sets the field only for a test of a value's truth, such as `x`, `!x` or `not x`, and only when it read every value that can reach the test. It follows the value through names written once and through calls to project functions it can see whole, under each language's own rule: JavaScript counts every object and array as true, Python counts an empty dict, list, tuple or string as false, and Ruby counts everything but `nil` and `false` as true. A value read off an input, a member, a name from outside the function, or a call it cannot follow leaves the transition alone.
+
 ## One effect
 
 The transition above has an `invocation` effect, which records that a call fired and what it was passed. The other kind is `interaction`, which records a typed boundary crossing. This one is from `suss extract -f aws-lambda -f aws-dynamodb` over a Lambda that reads a DynamoDB table:
