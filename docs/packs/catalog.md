@@ -13,7 +13,7 @@ npm install --save-dev @suss/cli
 
 Sixty-two packs read code today, across fifty-one frameworks, eight HTTP and GraphQL clients, and the Node runtime. Ten contract readers turn a declared artifact into summaries in the same format. `@suss/contract-intent` reads the intent documents your team writes, separately from all of those.
 
-Most of that is TypeScript and JavaScript. Four of the packs read another language: flask-restx and FastAPI read Python through `@suss/adapter-python`, and graphql-ruby and rails read Ruby through `@suss/adapter-ruby`. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
+Most of the packs read TypeScript and JavaScript. The rest read Python through `@suss/adapter-python` or Ruby through `@suss/adapter-ruby`: routes, database calls, outbound HTTP, background jobs and tests in each. A Python or Ruby pack's row says which language it reads, and rspec reads Ruby. `suss extract` runs those two adapters as well, and the [Python and Ruby guide](/guides/python-and-ruby) shows how.
 
 The quickest way to find your packs is to let suss look:
 

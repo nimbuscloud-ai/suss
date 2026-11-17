@@ -101,7 +101,29 @@ export function honoFramework(): PatternPack {
 
 `discovery` finds the units. `terminals` describes what producing an output looks like. `inputMapping` describes how the unit's arguments arrive. `protocol` gives the transport the boundary crosses, and `name` is what a summary records as the pack that recognized it. [Pack patterns](/packs/patterns) has every variant of each field.
 
-A pack can also declare optional fields for things a library does that the three required ones do not cover: `contractReading` for a framework with declared response schemas, `invocationRecognizers` and `accessRecognizers` for calls that produce an effect, `subUnits` for callbacks the runtime schedules, `requiresImport` to skip files that never import the library.
+A pack can also declare optional fields for things a library does that the three required ones do not cover: `contractReading` for a framework with declared response schemas, `requestRecognizers` for the requests a client sends, `invocationRecognizers` and `accessRecognizers` for calls that produce an effect, `subUnits` for callbacks the runtime schedules, `requiresImport` to skip files that never import the library.
+
+## Declaring the calls a library offers
+
+A pack fills the recognizer fields from declarations. It declares each kind of call with a builder from [`@suss/recognize`](https://github.com/nimbuscloud-ai/suss/tree/main/packages/recognize), and the builder compiles the declaration into those fields. Here is the Redis pack, cut down to two commands:
+
+```ts
+import { declaredBy, pack, storageCalls } from "@suss/recognize";
+
+const COMMANDS = storageCalls({ system: "redis", client: declaredBy("ioredis", "redis") })
+  .methods({
+    get: { kind: "read", selector: { at: 0 } },
+    hset: { kind: "write", selector: { at: 0 }, fields: { at: 1 } },
+  })
+  .example('redis.get("user_online:42")');
+
+export default pack("redis", [COMMANDS], {
+  languages: ["typescript", "javascript"],
+  recognizedAs: "@suss/framework-redis",
+});
+```
+
+The declaration says where a match starts, here a receiver whose `get` one of those modules declared, which methods count, and what each one reads or writes. No part of it is TypeScript syntax. Each adapter states facts about its own language, and `@suss/recognize` works out what the declaration asks from those facts, so the SQLAlchemy and pg-ruby packs are declared the same way in Python and Ruby. Client packs declare their requests with `httpRequests`, test runner packs their cases with a `testCases` match, and React Router its routes with a `routeTable`. [Pack patterns](/packs/patterns#declared-calls) lists every builder.
 
 Next to the pattern object, a pack exports a one-line description of itself:
 
