@@ -24,6 +24,7 @@ import { isFunctionRoot } from "../discovery/shared.js";
 import { isWrittenAgain } from "../facts/assignments.js";
 import { boundInProgram, dottedPathOf, nodeId } from "../facts/extract.js";
 import { MAPPING_METHOD } from "../facts/languageWords.js";
+import { fileMentions } from "../fileMentions.js";
 import { parameterReads } from "../parameterReads.js";
 import { extractShape } from "../shapes/shapes.js";
 import { elementCollectionOf } from "../values/elements.js";
@@ -734,7 +735,7 @@ export function callOpsFor(
     nameAt: (index, unsettled) =>
       nameAt(argumentsOf()[index], unsettled, resolve),
     calleeText: () => expression.getText(),
-    mentions: (word) => call.getSourceFile().getFullText().includes(word),
+    mentions: (word) => fileMentions(call.getSourceFile(), word),
     namedCallee: () => Node.isIdentifier(expression),
     calleeImportedAs: (modules) =>
       calleeImportedAs(expression, modules, reading.resolution),

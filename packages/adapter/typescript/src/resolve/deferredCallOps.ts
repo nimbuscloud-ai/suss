@@ -15,6 +15,7 @@
 import { Node, SyntaxKind } from "ts-morph";
 
 import { nodeId } from "../facts/extract.js";
+import { fileMentions } from "../fileMentions.js";
 import { peelValue } from "../walk/unwrap.js";
 import { opsOverFacts } from "./opsOverFacts.js";
 import { helperCalleeOf } from "./suppliedKeys.js";
@@ -59,7 +60,7 @@ export function deferredCallOps(
     },
     site: () => nodeId(call),
     file: () => call.getSourceFile().getFilePath(),
-    mentions: (word) => call.getSourceFile().getFullText().includes(word),
+    mentions: (word) => fileMentions(call.getSourceFile(), word),
     receiverIsFrom: (origin) => stated().receiverIsFrom(origin),
     receiverSettledFrom: (origin) => stated().receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => stated().receiverGlobal?.(paths),

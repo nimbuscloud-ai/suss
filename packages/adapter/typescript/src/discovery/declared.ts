@@ -14,6 +14,7 @@ import { discoverDeclared } from "@suss/recognize";
 import { factModuleOps } from "@suss/recognize/ops";
 
 import { nodeId } from "../facts/extract.js";
+import { fileMentions } from "../fileMentions.js";
 import { factSourceFor } from "../resolve/factSource.js";
 import { opsOverFacts } from "../resolve/opsOverFacts.js";
 import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
@@ -88,7 +89,7 @@ export function moduleOpsFor(
           }
           return { key: nodeId(node), name: node.getName() ?? null };
         }),
-      mentions: (word) => sourceFile.getFullText().includes(word),
+      mentions: (word) => fileMentions(sourceFile, word),
     },
   );
 }

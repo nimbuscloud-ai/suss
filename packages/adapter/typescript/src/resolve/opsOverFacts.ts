@@ -11,6 +11,7 @@ import { Node } from "ts-morph";
 import { factCallOps } from "@suss/recognize/ops";
 
 import { nodeId } from "../facts/extract.js";
+import { fileMentions } from "../fileMentions.js";
 import { type CallReading, callOpsFor } from "./callOps.js";
 import { factSourceFor, statedFactKey } from "./factSource.js";
 
@@ -123,7 +124,7 @@ function withNodeMembers(
     dropped: (owned) => ops.dropped?.(owned) ?? false,
     callerSite: () => ops.callerSite?.() ?? null,
     enclosingBody: () => ops.enclosingBody?.() ?? null,
-    mentions: (word) => node.getSourceFile().getFullText().includes(word),
+    mentions: (word) => fileMentions(node.getSourceFile(), word),
     parameterReadsAt: (index) => nodes().parameterReadsAt?.(index) ?? null,
     classAt: (index) => nodes().classAt?.(index) ?? null,
     readingArguments: (first, last) => nodes().readingArguments?.(first, last),
