@@ -26,6 +26,7 @@ const RUNNER: TestCasesMatch = {
   files: { matching: ["*"] },
   calls: {
     from: { origin: "imported", importedFrom: ["check-runner"] },
+    body: "function",
     groups: { names: ["group"] },
     cases: { names: ["check", "verify"] },
     modifiers: {

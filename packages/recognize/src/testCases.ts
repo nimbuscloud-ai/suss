@@ -175,12 +175,40 @@ function valueIsFrom(value: ValueOps, origin: ReceiverOrigin): boolean {
 /** What the adapter hands the reader beside the match. */
 export interface CaseReading {
   readonly module: ModuleOps;
+  /** The run's shared groups, which an include of the calls form reads in its place. */
+  readonly shared?: SharedGroups;
+}
+
+/**
+ * The shared groups a run's files write and where each is included,
+ * which the adapter reads across files and keeps, as RSpec looks an
+ * include's shared group up by its title anywhere in the run.
+ */
+export interface SharedGroups {
+  /** The call that writes the shared group the include at this site reads, or null when the run reads none for it. */
+  includedAt(include: string): CallOps | null;
+  /** Whether the call at this site writes a shared group the run reads. */
+  defines(site: string): boolean;
+  /** Each include of the shared group written at this site. */
+  includersOf(definition: string): readonly SharedGroupInclude[];
+}
+
+/** An include of a shared group, with the groups and shared groups around it, outermost first. */
+export interface SharedGroupInclude {
+  readonly call: CallOps;
+  readonly groups: readonly CallOps[];
 }
 
 /** A case, with the functions the runner calls before it, in the order it calls them. */
 export interface CaseRun {
   readonly found: FoundCase;
   readonly before: readonly ValueOps[];
+  /**
+   * For a case written as a call, the runner calls whose bodies it runs
+   * through, outermost first, each followed by the shared groups it
+   * includes in place. Unset for a method or a function.
+   */
+  readonly groups?: readonly CallOps[];
 }
 
 /** Whether the runner collects the file at all, whatever the PRDs list. */
@@ -336,7 +364,7 @@ function skips(rules: SkipRules | undefined, markers: readonly Decorator[]) {
 }
 
 /** A skip written on self as one of the function's own statements, with no block and not inside another statement. */
-function skipsAsItRuns(
+export function skipsAsItRuns(
   rules: SkipRules | undefined,
   fn: ValueOps | null,
 ): boolean {

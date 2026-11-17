@@ -1,6 +1,7 @@
 // @suss/recognize: write a pack as data, and let any adapter run it.
 
 export { callbackPositions, callbacks } from "./callbacks.js";
+export { callCaseRuns, caseAt, sharedGroupsWritten } from "./caseCalls.js";
 export {
   association,
   callback,
@@ -83,6 +84,7 @@ export type {
   ProjectHelpers,
 } from "@suss/extractor";
 export type { Callbacks, CallbacksSpec } from "./callbacks.js";
+export type { CaseRunsWith, SharedGroupsWritten } from "./caseCalls.js";
 export type {
   AccessKind,
   AccessPathLink,
@@ -321,5 +323,7 @@ export type {
   FoundCase,
   FoundMock,
   MockRead,
+  SharedGroupInclude,
+  SharedGroups,
 } from "./testCases.js";
 export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";

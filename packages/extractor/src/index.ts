@@ -226,6 +226,7 @@ export type {
   RouteTableMatch,
   RouteVersioning,
   RunnerCalls,
+  SharedInclude,
   SkipRules,
   SubclassOfMatch,
   TerminalExtraction,
