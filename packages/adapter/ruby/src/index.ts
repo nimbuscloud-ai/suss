@@ -134,7 +134,6 @@ export type {
   RbStoragePattern,
   RbTestCases,
   RbTestClasses,
-  RbTestMocks,
   RubyDiscoveryPattern,
   RubyPack,
 } from "./pack.js";

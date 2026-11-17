@@ -6,6 +6,11 @@
 
 import type { RbTestCases, RubyPack } from "../pack.js";
 
+const PREDICATE_MATCHERS = [
+  { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
+  { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
+];
+
 export function rspecPattern(files?: string[]): RbTestCases {
   return {
     cases: {
@@ -37,6 +42,43 @@ export function rspecPattern(files?: string[]): RbTestCases {
       },
       before: { calls: ["before", "let!", "subject!"] },
       skips: { statements: ["skip", "pending"], metadata: ["skip"] },
+      runner: {
+        names: [
+          "expect",
+          "is_expected",
+          "allow",
+          "receive",
+          "eq",
+          "be",
+          "be_nil",
+          "stub_const",
+        ],
+        prefixes: PREDICATE_MATCHERS.map((one) => one.prefix),
+        chains: true,
+      },
+      mocks: [
+        {
+          replacesMessages: {
+            by: { methods: ["to", "not_to"] },
+            targets: ["allow", "expect", "allow_any_instance_of"],
+            messages: ["receive", "receive_messages"],
+            of: { at: 0 },
+          },
+        },
+        {
+          replacesConstant: {
+            by: { methods: ["stub_const"] },
+            name: { at: 0 },
+          },
+        },
+        {
+          standsIn: {
+            by: { methods: ["instance_double", "class_double"] },
+            of: { at: 0 },
+            becomes: "as_stubbed_const",
+          },
+        },
+      ],
     },
     lazyValues: ["let"],
     eagerValues: ["let!"],
@@ -44,32 +86,11 @@ export function rspecPattern(files?: string[]): RbTestCases {
     subjectReads: ["subject", "is_expected"],
     subjectValue: "subject",
     describedClass: "described_class",
-    runnerMethods: [
-      "expect",
-      "is_expected",
-      "allow",
-      "receive",
-      "eq",
-      "be",
-      "be_nil",
-      "stub_const",
-    ],
-    predicateMatchers: [
-      { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
-      { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
-    ],
+    predicateMatchers: PREDICATE_MATCHERS,
     expectations: {
       starts: ["expect"],
       onSubject: "is_expected",
       runs: ["to", "not_to", "to_not"],
-    },
-    mocks: {
-      targets: ["allow", "expect", "allow_any_instance_of"],
-      expectations: ["to", "not_to"],
-      messages: ["receive", "receive_messages"],
-      constantStubs: ["stub_const"],
-      doubles: ["instance_double", "class_double"],
-      constantDoubleMethod: "as_stubbed_const",
     },
   };
 }

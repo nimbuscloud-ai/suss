@@ -30,6 +30,7 @@ import type {
   ModuleOps,
   Patchers,
   ReceiverOrigin,
+  RunnerCalls,
   SkipRules,
   TestCasesMatch,
   ValueOps,
@@ -85,7 +86,17 @@ export type MockRead =
       readonly replaces: "member";
       readonly member: string;
       readonly of: number | "receiver";
-    };
+    }
+  /** Members replaced on the argument at `receiverArgument` of the call this one is made on. */
+  | {
+      readonly replaces: "members";
+      readonly members: readonly string[];
+      readonly receiverArgument: number;
+    }
+  /** The constant the argument at `at` gives the name of. */
+  | { readonly replaces: "constant"; readonly at: number }
+  /** A stand-in, which replaces the constant at `at` when that is set. */
+  | { readonly replaces: "standIn"; readonly at: number | null };
 
 /**
  * What the call replaces, by the first mock rule whose patchers it is
@@ -107,10 +118,16 @@ export function mockRead(
   return null;
 }
 
-type MockKind = "replacesModule" | "replacesMember";
+type MockKind =
+  | "replacesModule"
+  | "replacesMember"
+  | "replacesMessages"
+  | "replacesConstant"
+  | "standsIn";
 
+/** A rule is an object of one key, its kind. */
 function mockKind(rule: MockRule): MockKind {
-  return "replacesModule" in rule ? "replacesModule" : "replacesMember";
+  return Object.keys(rule)[0] as MockKind;
 }
 
 const MOCK_READS: {
@@ -134,7 +151,75 @@ const MOCK_READS: {
           of: of === "receiver" ? of : of.at,
         };
   },
+  replacesMessages: (
+    { replacesMessages: { by, targets, messages, of } },
+    call,
+    takes,
+  ) => {
+    const target = patches(by, call, takes)
+      ? (call.receiverValue?.()?.asCall?.() ?? null)
+      : null;
+    const message =
+      target !== null && targets.includes(methodOf(target))
+        ? chainStart(call.valueAt(0))
+        : null;
+    return message === null || !messages.includes(methodOf(message))
+      ? null
+      : {
+          replaces: "members",
+          members: membersGiven(message),
+          receiverArgument: of.at,
+        };
+  },
+  replacesConstant: ({ replacesConstant: { by, name } }, call, takes) =>
+    patches(by, call, takes) ? { replaces: "constant", at: name.at } : null,
+  standsIn: ({ standsIn: { by, of, becomes } }, call, takes) => {
+    if (!patches(by, call, takes)) {
+      return null;
+    }
+    const made = call.chainedOn?.()?.method() === becomes;
+    return { replaces: "standIn", at: made ? of.at : null };
+  },
 };
+
+/** The method a call makes, or its callee when it is written on self. */
+function methodOf(call: CallOps): string {
+  return call.method() ?? call.calleeText();
+}
+
+/** The call a chain written in place starts with: `receive(:x)` in `receive(:x).and_return(1)`. */
+function chainStart(value: ValueOps | null): CallOps | null {
+  const seen = new Set<string>();
+  let current = value?.asCall?.() ?? null;
+  while (current !== null) {
+    const receiver = current.receiverValue?.()?.asCall?.() ?? null;
+    const site = receiver?.site?.() ?? "";
+    if (receiver === null || seen.has(site)) {
+      return current;
+    }
+    seen.add(site);
+    current = receiver;
+  }
+  return null;
+}
+
+/** The symbols a call is given and the keywords it passes, in the order of each. */
+function membersGiven(call: CallOps): string[] {
+  const symbols: string[] = [];
+  for (let at = 0; at < call.argumentCount(); at++) {
+    const symbol = symbolAt(call.valueAt(at));
+    if (symbol !== null) {
+      symbols.push(symbol);
+    }
+  }
+  return [...symbols, ...(call.keywordNames?.() ?? [])];
+}
+
+/** The text of a Ruby symbol, which the source writes as a name that evaluates to its text, or null for anything else. */
+export function symbolAt(value: ValueOps | null): string | null {
+  const symbol = value?.form?.() === "name" ? value.evaluated?.() : null;
+  return typeof symbol === "string" ? symbol : null;
+}
 
 function patches(
   by: Patchers,
@@ -260,18 +345,52 @@ export function caseRuns(
  * Whether a call in a case or in a function the runner calls before it
  * goes to the runner itself, and so calls no project code: a call on
  * self whose method is one of `runner.names` or starts with one of
- * `runner.prefixes`.
+ * `runner.prefixes`, and with `runner.chains`, a call made on what such
+ * a call gives back.
  */
 export function isRunnerCall(match: TestCasesMatch, call: CallOps): boolean {
   const runner = match.runner;
-  if (runner === undefined || !isWrittenOnSelf(call)) {
-    return false;
-  }
-  const method = call.calleeText();
+  const method = runner === undefined ? null : runnerMethodOf(runner, call);
   return (
-    (runner.names ?? []).includes(method) ||
-    (runner.prefixes ?? []).some((prefix) => method.startsWith(prefix))
+    runner !== undefined &&
+    method !== null &&
+    ((runner.names ?? []).includes(method) ||
+      (runner.prefixes ?? []).some((prefix) => method.startsWith(prefix)))
   );
+}
+
+/** The name a call is checked against the runner's by. */
+function runnerMethodOf(runner: RunnerCalls, call: CallOps): string | null {
+  if (runner.chains === true) {
+    return chainOrigin(call);
+  }
+  return isWrittenOnSelf(call) ? call.calleeText() : null;
+}
+
+/**
+ * The name a chain written in place starts from: the callee of a call
+ * written on self, or the name the first receiver is written as, as
+ * `expect` in `expect(x).to eq(y)` or `order` in `order.cancel`. Null
+ * when the chain starts on anything else.
+ */
+function chainOrigin(call: CallOps): string | null {
+  const seen = new Set<string>();
+  for (let current = call; ; ) {
+    const receiver = current.receiverValue?.() ?? null;
+    if (receiver === null) {
+      return isWrittenOnSelf(current) ? current.calleeText() : null;
+    }
+    if (receiver.form?.() === "name") {
+      return receiver.source?.() ?? null;
+    }
+    const inner = receiver.asCall?.() ?? null;
+    const site = inner?.site?.() ?? "";
+    if (inner === null || seen.has(site)) {
+      return null;
+    }
+    seen.add(site);
+    current = inner;
+  }
 }
 
 interface Collected {

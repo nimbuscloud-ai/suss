@@ -8,7 +8,7 @@ import { discoverTestCases } from "./testCases.js";
 
 import type { CallOps, ModuleOps, TestCasesMatch } from "@suss/extractor";
 import type { FactSource } from "./factOps.js";
-import type { SharedGroups } from "./testCases.js";
+import type { MockRead, SharedGroups } from "./testCases.js";
 
 const FILE = "/t/src/orders.test.ts";
 const at = (span: string): string => `${FILE}:${span}`;
@@ -245,6 +245,11 @@ const IMPORTED = new Map([
   ["vi", "vi"],
 ]);
 
+/** The member a mock replaces, the only other kind vitest's rules read. */
+function mocked(read: MockRead): string | null {
+  return "member" in read ? read.member : null;
+}
+
 function module(
   file = FILE,
   imported: ReadonlyMap<string, string> = IMPORTED,
@@ -329,7 +334,7 @@ describe("the cases a runner writes as calls", () => {
     expect(
       found.map((one) =>
         one.mocks.map(({ read }) =>
-          read.replaces === "path" ? read.path : read.member,
+          "path" in read ? read.path : mocked(read),
         ),
       ),
     ).toEqual([
