@@ -112,6 +112,39 @@ describe("a function that calls httpx", () => {
   });
 });
 
+describe("a client built with a base URL", () => {
+  async function pathUnder(base: string, path: string): Promise<unknown> {
+    const units = await unitsIn(
+      [
+        "import httpx",
+        "",
+        "def fetch_orders():",
+        `    with httpx.Client(base_url="${base}") as client:`,
+        `        return client.get("${path}")`,
+      ].join("\n"),
+    );
+    return boundary(units).path;
+  }
+
+  it("puts the call's path after the base's, with or without a leading slash", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "/orders")).toBe(
+      "/v1/orders",
+    );
+    expect(await pathUnder("https://api.example.com/v1/", "orders")).toBe(
+      "/v1/orders",
+    );
+  });
+
+  it("goes to an absolute URL the call states, and not under the base", async () => {
+    expect(
+      await pathUnder(
+        "https://api.example.com/v1",
+        "https://other.example.com/orders",
+      ),
+    ).toBe("/orders");
+  });
+});
+
 describe("the declaration's example", () => {
   it("makes the function it is written in a client", async () => {
     const units = await unitsIn(
