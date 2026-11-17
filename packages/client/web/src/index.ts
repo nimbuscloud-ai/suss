@@ -24,7 +24,7 @@ import type { RequestMethod } from "@suss/recognize";
 /** The build of this pack, which the extraction cache keys on. */
 const PACK_VERSION = "1";
 
-/** What a caller reads off a fetch `Response`, and what fetch does with a redirect. */
+/** What a caller reads off a fetch `Response`, and what fetch does with a redirect by default. */
 const RESPONSE = {
   responseSemantics: [
     {
@@ -42,11 +42,7 @@ const RESPONSE = {
   // final response, unless the call passes `redirect: "manual"` or
   // `redirect: "error"`.
   redirectDelivery: "followed",
-  redirectOption: { name: "redirect", handsBack: ["manual", "error"] },
-} satisfies Pick<
-  PatternPack,
-  "responseSemantics" | "redirectDelivery" | "redirectOption"
->;
+} satisfies Pick<PatternPack, "responseSemantics" | "redirectDelivery">;
 
 const FETCH_CALL: RequestMethod = {
   sends: { from: { at: 1, property: ["method"] }, default: "GET" },
@@ -67,7 +63,10 @@ export const FETCH = httpRequests({
   ),
 })
   .methods({ fetch: FETCH_CALL })
-  .response(clientResponseOf(RESPONSE))
+  .response({
+    ...clientResponseOf(RESPONSE),
+    redirectOption: { name: "redirect", handsBack: ["manual", "error"] },
+  })
   .example('fetch("https://api.example.com/orders")');
 
 export function webFetchPack(): PatternPack {

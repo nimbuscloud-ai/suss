@@ -33,14 +33,15 @@ const MEMBER_OF: Record<
   headers: () => "headers",
 };
 
-/** What a pack's response members and deliveries say, as a request chain's `response` takes them. */
+/**
+ * What a pack's response members and deliveries say, as a request
+ * chain's `response` takes them. The option a call sets to change how a
+ * redirect comes back belongs to the chain alone, so the pack adds it.
+ */
 export function clientResponseOf(
   pack: Pick<
     PatternPack,
-    | "responseSemantics"
-    | "failureDelivery"
-    | "redirectDelivery"
-    | "redirectOption"
+    "responseSemantics" | "failureDelivery" | "redirectDelivery"
   >,
 ): ClientResponse {
   const members: Partial<Record<ResponseMember, string[]>> = {};
@@ -58,8 +59,5 @@ export function clientResponseOf(
     ...(pack.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: pack.redirectDelivery }),
-    ...(pack.redirectOption === undefined
-      ? {}
-      : { redirectOption: pack.redirectOption }),
   };
 }

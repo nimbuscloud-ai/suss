@@ -1789,8 +1789,6 @@ export interface PatternPack {
    * `"response"`.
    */
   redirectDelivery?: RedirectDelivery;
-  /** The option one call sets to change `redirectDelivery` for itself. */
-  redirectOption?: RedirectOption;
   /**
    * Build extra code units from a parent unit's body, for callbacks the
    * runtime schedules that are not top-level declarations: React event

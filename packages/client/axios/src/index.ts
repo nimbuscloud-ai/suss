@@ -23,7 +23,7 @@ import {
   spelled,
 } from "@suss/recognize";
 
-import type { PatternPack } from "@suss/extractor";
+import type { ClientResponse, PatternPack } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 import type {
   HttpRequests,
@@ -83,14 +83,16 @@ const RESPONSE = {
   // axios follows redirects unless the call or the instance sets
   // `maxRedirects: 0`.
   redirectDelivery: "followed",
-  redirectOption: { name: "maxRedirects", handsBack: [0] },
 } satisfies Pick<
   PatternPack,
-  | "responseSemantics"
-  | "failureDelivery"
-  | "redirectDelivery"
-  | "redirectOption"
+  "responseSemantics" | "failureDelivery" | "redirectDelivery"
 >;
+
+/** The response every chain declares: the pack's members and deliveries, and the option that hands a redirect back. */
+const CHAIN_RESPONSE: ClientResponse = {
+  ...clientResponseOf(RESPONSE),
+  redirectOption: { name: "maxRedirects", handsBack: [0] },
+};
 
 /** A verb that takes its config after the URL, and one that takes it after the body. */
 function verb(sends: string, config: number): RequestMethod {
@@ -147,7 +149,7 @@ export const AXIOS = httpRequests({
   .methods(METHODS)
   .calls(CONFIG_CALL)
   .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
-  .response(clientResponseOf(RESPONSE))
+  .response(CHAIN_RESPONSE)
   .example('axios.get("https://api.example.com/orders")');
 
 /**
@@ -159,7 +161,7 @@ function factoryRequests(factory: AxiosClientFactory): HttpRequests {
   return httpRequests({ client: madeFrom(factory.module, factory.export) })
     .methods(METHODS)
     .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
-    .response(clientResponseOf(RESPONSE));
+    .response(CHAIN_RESPONSE);
 }
 
 function isPathShapedSpecifier(specifier: string): boolean {
