@@ -1,43 +1,41 @@
 /**
- * Tests written as a class, the way Minitest and Rails' test cases write
- * them. A class whose ancestry reaches one of the pack's base classes is
- * a test class, and each `def test_*` method or `test "..." do` block in
- * it is a `test` unit named by the class and the method name the runner
- * gives the test, so `test "cancels twice"` is `test_cancels_twice`.
+ * Minitest's tests as `test` units. The minitest pack declares which
+ * classes are test classes, which of their methods are tests, what runs
+ * before each, and which calls are the runner's or replace a method, and
+ * `@suss/recognize` reads them through the module ops. ActiveSupport's
+ * `test "cancels twice" do` is the method `test_cancels_twice`, which the
+ * pack's class-body declaration states, and its unit is recorded at the
+ * `test` call.
  *
- * A test runs its class's `setup` blocks and `setup` method first, so
- * their calls count as the test's own. The runner's assertions call no
- * project code and are left out. A stub, `Order.stub(:cancel, 1)` or
- * mocha's `Order.expects(:cancel)`, is recorded against the file that
- * defines the class it replaces a method on.
+ * Each file is read once and kept as nodes, since the reach walk asks
+ * about a test's block or method until the run ends, and keeping the ops
+ * would keep every value they read alive with them.
  */
 
-import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
-import { literalOf } from "@suss/values";
-
-import { bodyStatements, children, field, symbolValue } from "./ast.js";
-import { reachesBase } from "./baseClass.js";
-import { nodeId } from "./facts/values.js";
-import { calleeMethodName } from "./paths/effects.js";
-import { walkClasses } from "./scope.js";
+import { isListedTestFile } from "@suss/extractor";
 import {
-  firstArgument,
-  moduleOfConstant,
-  oneLine,
-  skipsAsItRuns,
-  testUnitOf,
-} from "./testCases.js";
-import { evaluatedValue } from "./values/evaluator.js";
+  caseRuns,
+  collectsFile,
+  isRunnerCall,
+  mockRead,
+} from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
+import { isObserved } from "@suss/resolution";
+
+import { children, field } from "./ast.js";
+import { rubyModuleOps } from "./declaredDiscovery.js";
+import { factSourceOf } from "./factSource.js";
+import { nodeId } from "./facts/values.js";
+import { moduleOfConstant, oneLine, testUnitOf } from "./testCases.js";
+import { nodeOfResolutionKey } from "./values/evaluator.js";
 
 import type { TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawCodeStructure } from "@suss/extractor";
+import type { RawCodeStructure, TestCasesMatch } from "@suss/extractor";
+import type { CaseRun } from "@suss/recognize";
 import type { RbTestClasses, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
-import type { ClassInfo } from "./scope.js";
-import type { ExampleRun, TestUnitOptions } from "./testCases.js";
-
-const BLOCK_TYPES = new Set(["block", "do_block"]);
+import type { ExampleRun, TestUnitOptions, Title } from "./testCases.js";
 
 export function testClassPatternsIn(
   packs: readonly RubyPack[],
@@ -45,16 +43,128 @@ export function testClassPatternsIn(
   return packs.flatMap((pack) => pack.testClasses ?? []);
 }
 
-/** One test in a test class: a method, or a block given to a test call. */
+/** One test as nodes: what it runs first to last, and where its unit is recorded. */
 interface ClassTest {
-  readonly node: RbNode;
-  readonly name: string;
+  readonly titles: readonly Title[];
+  /** The test's own block or method, then what the runner runs before it. */
+  readonly blocks: readonly RbNode[];
+  readonly anchor: RbNode;
+  readonly skipped: boolean;
+  /** The runner that collected the test, which says which calls are its own and which replace a method. */
+  readonly cases: TestCasesMatch;
+}
+
+/** The tests of every file the run reads, each file read once per pattern, by the key of the block or method the test runs. */
+export class ClassTestIndex {
+  private readonly byPattern = new Map<
+    RbTestClasses,
+    Map<string, ReadonlyMap<string, ClassTest>>
+  >();
+
+  constructor(
+    private readonly patterns: readonly RbTestClasses[],
+    private readonly facts: Database,
+  ) {}
+
+  /** The tests in one file, in source order, when a pattern collects the file and the PRDs list it. */
+  testsIn(file: string, root: RbNode): ClassTest[] {
+    return this.patterns.flatMap((pattern) =>
+      collectsFile(pattern.cases, file) &&
+      isListedTestFile(file, pattern.cases.files.listed)
+        ? [...this.readFile(file, root, pattern).values()]
+        : [],
+    );
+  }
+
+  /** The run of the test this block or method is, for the reach walk, or null when it is none. */
+  runOf(node: RbNode, file: string): ExampleRun | null {
+    const root = node.tree.rootNode as RbNode;
+    for (const pattern of this.patterns) {
+      if (
+        !collectsFile(pattern.cases, file) ||
+        !isListedTestFile(file, pattern.cases.files.listed)
+      ) {
+        continue;
+      }
+      const test = this.readFile(file, root, pattern).get(nodeId(file, node));
+      if (test !== undefined) {
+        return this.runFor(test, file);
+      }
+    }
+    return null;
+  }
+
+  /** What the runner runs for one test, its runner calls told apart through the ops at each call's key. */
+  runFor(test: ClassTest, file: string): ExampleRun {
+    const source = factSourceOf(this.facts);
+    return {
+      blocks: test.blocks,
+      isRunnerCall: (call) => {
+        const ops = factCallOps(nodeId(file, call), source);
+        return ops !== null && isRunnerCall(test.cases, ops);
+      },
+      fileOf: () => file,
+    };
+  }
+
+  private readFile(
+    file: string,
+    root: RbNode,
+    pattern: RbTestClasses,
+  ): ReadonlyMap<string, ClassTest> {
+    const byFile = this.byPattern.get(pattern) ?? new Map();
+    this.byPattern.set(pattern, byFile);
+    const known = byFile.get(file);
+    // A recording cache has to see every file the answer reads, per charge.
+    if (known !== undefined && !isObserved(this.facts)) {
+      return known;
+    }
+    const found = new Map<string, ClassTest>();
+    const runs = caseRuns(pattern.cases, {
+      module: rubyModuleOps(root, file, this.facts),
+    });
+    for (const [key, run] of runs) {
+      const test = classTestOf(run, pattern.cases, this.facts);
+      if (test !== null) {
+        found.set(key, test);
+      }
+    }
+    byFile.set(file, found);
+    return found;
+  }
+}
+
+/** A case the reader found, as nodes, or null when a function it runs has no node in the run. */
+function classTestOf(
+  run: CaseRun,
+  cases: TestCasesMatch,
+  facts: Database,
+): ClassTest | null {
+  const runs = run.found.runs;
+  if (runs === null) {
+    return null;
+  }
+  const blocks = [runs, ...run.before].map((fn) => {
+    const key = fn.site?.();
+    return key === undefined ? null : nodeOfResolutionKey(key, facts);
+  });
+  const anchor = nodeOfResolutionKey(run.found.at, facts);
+  if (anchor === null || blocks.some((block) => block === null)) {
+    return null;
+  }
+  return {
+    titles: run.found.titles,
+    blocks: blocks as RbNode[],
+    anchor,
+    skipped: run.found.skipped,
+    cases,
+  };
 }
 
 /** One `test` unit per test in each test class the file defines, when a pack reads it. */
 export function testClassUnits(
   root: RbNode,
-  patterns: readonly RbTestClasses[],
+  index: ClassTestIndex | undefined,
   options: TestUnitOptions & {
     readonly onClassSeed: (
       raw: RawCodeStructure,
@@ -64,229 +174,53 @@ export function testClassUnits(
   },
 ): RawCodeStructure[] {
   const facts = options.facts;
-  if (facts === undefined) {
+  if (index === undefined || facts === undefined) {
     return [];
   }
-  return patterns.flatMap((pattern) => {
-    if (!readsFile(options.absoluteFile, pattern)) {
-      return [];
-    }
-    return testClassesIn(root, options.absoluteFile, pattern, facts).flatMap(
-      (info) =>
-        testsIn(info, pattern, facts).map((test) => {
-          const run = classTestRun(
-            test.node,
-            info,
-            pattern,
-            options.absoluteFile,
-          );
-          const raw = testUnitOf({
-            titles: [
-              { text: info.qualifiedName, unresolved: false },
-              { text: test.name, unresolved: false },
-            ],
-            run,
-            mocks: run.blocks.flatMap((block) =>
-              stubsIn(block, pattern, options),
-            ),
-            skipped: skipsAsItRuns(test.node, pattern.skipStatements),
-            anchor: anchorOf(test.node),
-            body: test.node,
-            options,
-          });
-          options.onClassSeed(raw, test.node, info.qualifiedName);
-          return raw;
-        }),
-    );
+  return index.testsIn(options.absoluteFile, root).map((test) => {
+    const [body] = test.blocks;
+    const raw = testUnitOf({
+      titles: test.titles,
+      run: index.runFor(test, options.absoluteFile),
+      mocks: test.blocks.flatMap((block) =>
+        stubsIn(block, test.cases, options),
+      ),
+      skipped: test.skipped,
+      anchor: test.anchor,
+      body: body as RbNode,
+      options,
+    });
+    options.onClassSeed(raw, body as RbNode, test.titles[0]?.text ?? "");
+    return raw;
   });
-}
-
-function readsFile(file: string, pattern: RbTestClasses): boolean {
-  return (
-    matchesTestFileName(file, pattern.filePatterns) &&
-    isListedTestFile(file, pattern.files)
-  );
-}
-
-function testClassesIn(
-  root: RbNode,
-  file: string,
-  pattern: RbTestClasses,
-  facts: Database,
-): ClassInfo[] {
-  const found: ClassInfo[] = [];
-  walkClasses(root, (info) => {
-    if (reachesBase(facts, nodeId(file, info.node), pattern.baseClassNames)) {
-      found.push(info);
-    }
-  });
-  return found;
-}
-
-function testsIn(
-  info: ClassInfo,
-  pattern: RbTestClasses,
-  facts: Database,
-): ClassTest[] {
-  return classStatements(info).flatMap((statement): ClassTest[] => {
-    const method = testMethodName(statement, pattern);
-    if (method !== null) {
-      return [{ node: statement, name: method }];
-    }
-    const block = testBlockOf(statement, pattern);
-    const description = block === null ? null : descriptionOf(statement, facts);
-    if (block === null || description === null) {
-      return [];
-    }
-    const { prefix, spacesAs } = pattern.blockTestName;
-    return [
-      {
-        node: block,
-        name: `${prefix}${description.trim().split(/\s+/).join(spacesAs)}`,
-      },
-    ];
-  });
-}
-
-function classStatements(info: ClassInfo): RbNode[] {
-  return info.bodyNode === null ? [] : bodyStatements(info.bodyNode);
-}
-
-function testMethodName(
-  statement: RbNode,
-  pattern: RbTestClasses,
-): string | null {
-  const name = statement.type === "method" ? field(statement, "name") : null;
-  return name !== null && name.text.startsWith(pattern.testMethodPrefix)
-    ? name.text
-    : null;
-}
-
-/** The block of a `test "..." do` call, or null when the statement is none. */
-function testBlockOf(statement: RbNode, pattern: RbTestClasses): RbNode | null {
-  if (
-    statement.type !== "call" ||
-    field(statement, "receiver") !== null ||
-    !pattern.testBlockMethods.includes(calleeMethodName(statement) ?? "")
-  ) {
-    return null;
-  }
-  return field(statement, "block");
-}
-
-function descriptionOf(call: RbNode, facts: Database): string | null {
-  const first = firstArgument(call);
-  return first === null ? null : literalOf(evaluatedValue(first, facts));
-}
-
-/** A method is recorded where it is written, and a block where its `test` call is. */
-function anchorOf(node: RbNode): RbNode {
-  return BLOCK_TYPES.has(node.type) ? (node.parent ?? node) : node;
-}
-
-/** What one test runs: its own body, then its class's setup blocks and setup method. */
-function classTestRun(
-  node: RbNode,
-  info: ClassInfo,
-  pattern: RbTestClasses,
-  file: string,
-): ExampleRun {
-  const setup = classStatements(info).flatMap((statement): RbNode[] => {
-    const name = statement.type === "method" ? field(statement, "name") : null;
-    if (name !== null && pattern.setupMethodNames.includes(name.text)) {
-      return [statement];
-    }
-    const block = field(statement, "block");
-    const isSetupCall =
-      statement.type === "call" &&
-      field(statement, "receiver") === null &&
-      pattern.setupBlockMethods.includes(calleeMethodName(statement) ?? "");
-    return isSetupCall && block !== null ? [block] : [];
-  });
-  return {
-    blocks: [node, ...setup],
-    isRunnerCall: (call) => isAssertion(call, pattern),
-    fileOf: () => file,
-  };
-}
-
-/** A check the runner gives a test, `assert_equal a, b`, written on self. */
-function isAssertion(call: RbNode, pattern: RbTestClasses): boolean {
-  if (call.type !== "call" || field(call, "receiver") !== null) {
-    return false;
-  }
-  const method = calleeMethodName(call) ?? "";
-  return (
-    pattern.assertionPrefixes.some((prefix) => method.startsWith(prefix)) ||
-    pattern.skipStatements.includes(method)
-  );
 }
 
 /**
- * The run of a test in a test class, for the reach walk, when this node
- * is one: a test method, or the block of a test call, in a class that
- * reaches one of the pattern's bases.
- */
-export function classTestRunAt(
-  node: RbNode,
-  file: string,
-  patterns: readonly RbTestClasses[],
-  facts: Database,
-): ExampleRun | null {
-  for (const pattern of patterns) {
-    if (!readsFile(file, pattern)) {
-      continue;
-    }
-    const statement = BLOCK_TYPES.has(node.type) ? node.parent : node;
-    const isTest =
-      statement !== null &&
-      (testMethodName(statement, pattern) !== null ||
-        testBlockOf(statement, pattern)?.id === node.id);
-    const info = isTest && statement !== null ? classAround(statement) : null;
-    if (
-      info !== null &&
-      reachesBase(facts, nodeId(file, info.node), pattern.baseClassNames)
-    ) {
-      return classTestRun(node, info, pattern, file);
-    }
-  }
-  return null;
-}
-
-/** The class a statement is written directly in, read the way `walkClasses` reads it. */
-function classAround(statement: RbNode): ClassInfo | null {
-  const body = statement.parent;
-  const classNode = body?.parent ?? null;
-  if (classNode === null || classNode.type !== "class") {
-    return null;
-  }
-  let found: ClassInfo | null = null;
-  walkClasses(classNode.tree.rootNode as RbNode, (info) => {
-    if (info.node.id === classNode.id) {
-      found = info;
-    }
-  });
-  return found;
-}
-
-/**
- * The methods a test replaces with a stub. `Order.stub(:cancel, 1)` and
- * `Order.expects(:cancel)` replace `cancel` on `Order`, and
- * `Order.any_instance.stubs(:cancel)` on its instances, which the checker
- * matches the same way.
+ * The methods a block replaces with a stub, in the order its calls are
+ * written, each call read against the runner's mock rules. A lambda or a
+ * block written inside it is read too, since a stub there runs with it.
  */
 function stubsIn(
   block: RbNode,
-  pattern: RbTestClasses,
+  cases: TestCasesMatch,
   options: TestUnitOptions,
 ): TestMock[] {
+  const rules = cases.mocks ?? [];
+  const facts = options.facts;
+  if (rules.length === 0 || facts === undefined) {
+    return [];
+  }
+  const source = factSourceOf(facts);
   const found: TestMock[] = [];
   const visit = (node: RbNode): void => {
     for (const child of children(node)) {
-      const mock =
-        child.type === "call" ? stubOf(child, pattern, options) : null;
-      if (mock !== null) {
-        found.push(mock);
+      const ops =
+        child.type === "call"
+          ? factCallOps(nodeId(options.absoluteFile, child), source)
+          : null;
+      const read = ops === null ? null : mockRead(rules, ops, () => false);
+      if (read?.replaces === "member" && read.of === "receiver") {
+        found.push(stubOf(child, read.member, options));
       }
       visit(child);
     }
@@ -295,24 +229,20 @@ function stubsIn(
   return found;
 }
 
+/**
+ * A stub as the checker matches it: the file that defines the class whose
+ * method it replaces, `Order` in `Order.any_instance.stubs(:cancel)`, and
+ * the call as written up to the block it runs, which is the test's code.
+ */
 function stubOf(
   call: RbNode,
-  pattern: RbTestClasses,
+  name: string,
   options: TestUnitOptions,
-): TestMock | null {
-  if (!pattern.stubMethods.includes(calleeMethodName(call) ?? "")) {
-    return null;
-  }
-  const first = firstArgument(call);
-  const name = first === null ? null : symbolValue(first);
-  if (name === null) {
-    return null;
-  }
+): TestMock {
   const module = moduleOfConstant(
     constantBehind(field(call, "receiver")),
     options,
   );
-  // The block a stub runs is the test's code, not part of the stub.
   const block = field(call, "block");
   const written = oneLine(
     block === null

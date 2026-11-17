@@ -37,7 +37,6 @@ import {
   extractionCacheDirFor,
   extractionConfigStamp,
   KeptParses,
-  matchesTestFileName,
   moduleInitStructure,
   noopTimer,
   ownersWhereWritten,
@@ -49,6 +48,7 @@ import {
   stampModules,
   storedPathsOfRun,
 } from "@suss/extractor";
+import { collectsFile } from "@suss/recognize";
 import {
   addPackWords,
   DependencyLedger,
@@ -137,7 +137,7 @@ import {
   registerTestFileNames,
   testPatternsIn,
 } from "./testCases.js";
-import { classTestRunAt, testClassPatternsIn } from "./testClasses.js";
+import { ClassTestIndex, testClassPatternsIn } from "./testClasses.js";
 import { emitFactoryFacts, factoriesIn } from "./testFactories.js";
 import {
   emitSharedGroupBinds,
@@ -308,6 +308,8 @@ export class RunFacts {
   private readonly parameterDefaults: WrittenDefault[] = [];
   /** The shared groups the run's test files define, once every file is in. Undefined when no pack reads tests. */
   sharedGroups: SharedGroupIndex | undefined;
+  /** The test classes the run's test files define, once every file is in. Undefined when no pack reads test classes. */
+  classTests: ClassTestIndex | undefined;
 
   constructor(db: Database, packs: readonly RubyPack[]) {
     this.db = db;
@@ -360,9 +362,7 @@ export class RunFacts {
         ...this.parsed
           .map(({ file }) => file)
           .filter((file) =>
-            classTests.some((one) =>
-              matchesTestFileName(file, one.filePatterns),
-            ),
+            classTests.some((one) => collectsFile(one.cases, file)),
           ),
       ]);
       emitFactoryFacts(
@@ -381,6 +381,11 @@ export class RunFacts {
     // Whether a class reaches a pack's base is known only once every
     // constant is bound, so class bodies are read last.
     this.stateClassBodies(associations);
+    // A test class's tests include the methods its class body defines.
+    const classTests = testClassPatternsIn(this.packs);
+    if (classTests.length > 0) {
+      this.classTests = new ClassTestIndex(classTests, this.db);
+    }
     // The environment chain reads a default only once `ENV` is bound.
     emitDefaultReadFacts(factSourceOf(this.db), this.parameterDefaults);
   }
@@ -406,14 +411,14 @@ export class RunFacts {
       );
       for (const [classKey, methods] of definedMethodsOf(bodies)) {
         for (const method of methods) {
-          emitDefinedMethod(
-            this.db,
-            classKey,
-            method.name,
-            lambdaKey(file, method),
-          );
+          emitDefinedMethod(this.db, classKey, method, lambdaKey(file, method));
         }
-        this.definedMethods.set(classKey, methods);
+        // The reach walk enters a class method by name. A test block runs
+        // only as its test, so the walk starts there and nothing calls it.
+        this.definedMethods.set(
+          classKey,
+          methods.filter((method) => method.defines === "singleton"),
+        );
       }
       emitClassCallbacks(this.db, bodies);
     }
@@ -928,6 +933,7 @@ async function runRuby(
         facts: db,
         onReachSeed,
         sharedGroups: facts.sharedGroups,
+        classTests: facts.classTests,
         tallies,
       })),
       ...moduleExportUnits(root, file, {
@@ -1069,7 +1075,7 @@ async function runRuby(
     }
   }
 
-  const classTests = testClassPatternsIn(options.packs);
+  const classTests = facts.classTests;
   const reached = await timer.timeAsync("summarize", () =>
     reachedFunctions(seeds, {
       context: reachContext,
@@ -1084,9 +1090,9 @@ async function runRuby(
       examples: exampleReads(
         testPatternsIn(options.packs),
         facts.sharedGroups,
-        classTests.length === 0
+        classTests === undefined
           ? null
-          : (node, file) => classTestRunAt(node, file, classTests, db),
+          : (node, file) => classTests.runOf(node, file),
       ),
       ...(reuse === null ? {} : { replay: new WalkReplay(reuse, rootsByFile) }),
       ...(ledger === null ? {} : { ledger }),

@@ -73,12 +73,18 @@ function source(over: Partial<FactSource> = {}): FactSource {
   add("objectValue", "Mixin");
   add("rbConstantName", "Mixin", "Mixin");
   call("m1", "has_many", "items");
+  add("objectValue", "Tests");
+  call("t1", "test", "title");
+  add("callBlock", "t1", "testBlock");
+  call("t2", "test", "unsettled");
+  add("callBlock", "t2", "otherBlock");
   add("bodyCallAt", "Account", "0", "c1");
 
   const bodies: Record<string, string[]> = {
     Account: ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"],
     Other: ["o1"],
     Mixin: ["m1"],
+    Tests: ["t1", "t2"],
   };
   const names: Record<string, string> = {
     items: "items",
@@ -180,6 +186,31 @@ describe("the reader of a class body", () => {
       { kind: "method", name: "recent" },
       { kind: "association", name: "items2", target: { written: "Item" } },
     ]);
+  });
+
+  it("defines an instance method from a call's block, named the way the library turns the string it settles to into a name", () => {
+    const tests = classBody({
+      calls: {
+        test: definesMethod({
+          name: { at: 0 },
+          body: { block: true },
+          kind: "instance",
+          naming: { prefix: "test_", spacesAs: "_" },
+        }),
+      },
+    });
+    const facts = source({
+      formOf: (key) => (key.endsWith("Block") ? "function" : "other"),
+      evaluatedOf: (key) => (key === "title" ? " cancels  twice " : null),
+    });
+
+    expect(
+      declareClassBody(tests, classOf("Tests", facts)).map((one) =>
+        one.kind === "method"
+          ? [one.name, one.body.site?.(), one.defines]
+          : [one.kind],
+      ),
+    ).toEqual([["test_cancels_twice", "testBlock", "instance"]]);
   });
 
   it("reads no field for a declaration that lists none", () => {

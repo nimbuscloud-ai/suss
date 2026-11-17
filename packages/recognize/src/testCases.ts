@@ -3,20 +3,22 @@
  * adapter hands out. pytest writes a case as a function of the module, or
  * as a method of a class it collects by its name or by its ancestry, and
  * it collects a class written inside a collected class the same way,
- * under a title of its own. vitest writes its cases as calls.
+ * under a title of its own. Minitest writes a case as a method of a class
+ * that reaches one of its test cases, `test "x" do` among them. vitest
+ * writes its cases as calls.
  *
  * The reader says what each case is: its titles, the function it runs
- * and where that function is written. The adapter builds the unit.
- * `caseRuns` gives the reach walk each case with the functions the runner
- * calls before it. A module's own cases are the functions and classes it
- * declares at its top level, the last of two with one name winning as in
- * pytest. One it imports is not one.
+ * and where its unit is recorded. The adapter builds the unit. `caseRuns`
+ * gives the reach walk each case with what the runner calls before it.
+ * A module's own cases are those at its top level, the last of a name
+ * winning as it does in pytest. One it imports is not one.
  */
 
 import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
 import { bySourceOrder } from "@suss/resolution";
 
 import { callCases } from "./caseCalls.js";
+import { isWrittenOnSelf } from "./classBody.js";
 
 import type {
   BeforeCase,
@@ -46,7 +48,7 @@ export interface FoundCase {
   readonly titles: readonly CaseTitle[];
   /** The function the case runs, or null for a case written as a call that passes none, such as `it.todo("later")`. */
   readonly runs: ValueOps | null;
-  /** The key the unit is recorded at: the function's, or for a case written as a call, the call's. */
+  /** Where the unit is recorded: the function's key, or for a block or a case written as a call, the key of the call. */
   readonly at: string;
   /**
    * What is written on the case: the function's decorators, then for
@@ -76,13 +78,13 @@ export function decoratorIsFrom(
   return origins.some((origin) => valueIsFrom(decorator.value, origin));
 }
 
-/** What a patcher replaces: the object at a dotted path, or a member of the argument at a position. */
+/** What a patcher replaces: the object at a dotted path, or a member of the argument at a position or of what the call is made on. */
 export type MockRead =
   | { readonly replaces: "path"; readonly path: string }
   | {
       readonly replaces: "member";
       readonly member: string;
-      readonly of: number;
+      readonly of: number | "receiver";
     };
 
 /**
@@ -126,7 +128,11 @@ const MOCK_READS: {
     const name = patches(by, call, takes) ? stringAt(call, member.at) : null;
     return name === null
       ? null
-      : { replaces: "member", member: name, of: of.at };
+      : {
+          replaces: "member",
+          member: name,
+          of: of === "receiver" ? of : of.at,
+        };
   },
 };
 
@@ -136,6 +142,13 @@ function patches(
   takes: (parameter: string) => boolean,
 ): boolean {
   if ((by.from ?? []).some((origin) => call.isFrom(origin))) {
+    return true;
+  }
+  const methods = by.methods ?? [];
+  if (
+    methods.length > 0 &&
+    methods.includes(call.method() ?? call.calleeText())
+  ) {
     return true;
   }
   const [root, ...rest] = call.calleeText().split(".");
@@ -209,14 +222,34 @@ export function caseRuns(
   }
   return new Map(
     collectedIn(match, read.module).map((one) => [
-      one.found.at,
+      one.site,
       { found: one.found, before: beforeCase(match, one, read.module) },
     ]),
   );
 }
 
+/**
+ * Whether a call in a case or in a function the runner calls before it
+ * goes to the runner itself, and so calls no project code: a call on
+ * self whose method is one of `runner.names` or starts with one of
+ * `runner.prefixes`.
+ */
+export function isRunnerCall(match: TestCasesMatch, call: CallOps): boolean {
+  const runner = match.runner;
+  if (runner === undefined || !isWrittenOnSelf(call)) {
+    return false;
+  }
+  const method = call.calleeText();
+  return (
+    (runner.names ?? []).includes(method) ||
+    (runner.prefixes ?? []).some((prefix) => method.startsWith(prefix))
+  );
+}
+
 interface Collected {
   readonly found: FoundCase;
+  /** The key of the function the case runs. */
+  readonly site: string;
   /** The classes around the case, outermost first. */
   readonly classes: readonly CaseClass[];
 }
@@ -246,7 +279,7 @@ function collectedIn(match: TestCasesMatch, module: ModuleOps): Collected[] {
   );
   return found.map((one) => {
     const markers = [
-      ...(decorators.get(one.found.at) ?? []),
+      ...(decorators.get(one.site) ?? []),
       ...[...one.classes]
         .reverse()
         .flatMap((around) => [
@@ -259,7 +292,13 @@ function collectedIn(match: TestCasesMatch, module: ModuleOps): Collected[] {
     ];
     return {
       ...one,
-      found: { ...one.found, markers, skipped: skips(match.skips, markers) },
+      found: {
+        ...one.found,
+        markers,
+        skipped:
+          skips(match.skips, markers) ||
+          skipsAsItRuns(match.skips, one.found.runs),
+      },
     };
   });
 }
@@ -293,6 +332,24 @@ function skips(rules: SkipRules | undefined, markers: readonly Decorator[]) {
   return (
     origins !== undefined &&
     markers.some((marker) => decoratorIsFrom(marker, origins))
+  );
+}
+
+/** A skip written on self as one of the function's own statements, with no block and not inside another statement. */
+function skipsAsItRuns(
+  rules: SkipRules | undefined,
+  fn: ValueOps | null,
+): boolean {
+  const statements = rules?.statements ?? [];
+  if (fn === null || statements.length === 0) {
+    return false;
+  }
+  return (fn.bodyCalls?.() ?? []).some(
+    (call) =>
+      isWrittenOnSelf(call) &&
+      statements.includes(call.calleeText()) &&
+      (call.block?.() ?? null) === null &&
+      call.nestedBodyCall?.() !== true,
   );
 }
 
@@ -378,28 +435,34 @@ function reachesCaseBase(classes: ClassCases, cls: ClassValueOps): boolean {
   return cls.inherits(classes.inherits ?? []);
 }
 
-/** A case is recorded at its function's key, so a function the adapter cannot key is no case. */
+/**
+ * A case is recorded at its function's key, so a function the adapter
+ * cannot key is no case. A block is recorded at the call it is written
+ * with, `test "x"`, which is where the source declares the case.
+ */
 function caseRunning(
   fn: ValueOps,
   titles: readonly string[],
   classes: readonly CaseClass[],
 ): Collected[] {
-  const at = fn.site?.();
-  return at === undefined
-    ? []
-    : [
-        {
-          found: {
-            titles: titles.map((text) => ({ text, unresolved: false })),
-            runs: fn,
-            at,
-            markers: [],
-            skipped: false,
-            mocks: [],
-          },
-          classes,
-        },
-      ];
+  const site = fn.site?.();
+  if (site === undefined) {
+    return [];
+  }
+  return [
+    {
+      found: {
+        titles: titles.map((text) => ({ text, unresolved: false })),
+        runs: fn,
+        at: fn.blockCall?.()?.site?.() ?? site,
+        markers: [],
+        skipped: false,
+        mocks: [],
+      },
+      site,
+      classes,
+    },
+  ];
 }
 
 /**
@@ -427,17 +490,77 @@ function beforeCase(
     const fn = moduleFunction(module, name);
     return fn === null ? [] : [fn];
   });
-  const fromClasses = collected.classes.flatMap(({ cls }) => {
+  return [...fromModule, ...classesBefore(match, before, collected.classes)];
+}
+
+/**
+ * The case's own class's blocks and methods in the order it writes them,
+ * when the match lists the methods. Otherwise each class's methods from
+ * the outermost class in: a class the runner collects by its ancestry
+ * runs the methods listed for that, and any other class the ones listed
+ * for a class collected by its name.
+ */
+function classesBefore(
+  match: TestCasesMatch,
+  before: BeforeCase,
+  classes: readonly CaseClass[],
+): ValueOps[] {
+  const methods = before.methods ?? [];
+  if (isMethodList(methods)) {
+    const own = classes[classes.length - 1];
+    return own === undefined
+      ? []
+      : writtenBefore(own.cls, before.calls ?? [], methods);
+  }
+  return classes.flatMap(({ cls }) => {
     const names =
       match.classes !== undefined && reachesCaseBase(match.classes, cls)
-        ? before.methods?.byAncestry
-        : before.methods?.byName;
-    return (names ?? []).flatMap((name) => {
+        ? methods.byAncestry
+        : methods.byName;
+    return names.flatMap((name) => {
       const method = cls.method(name, "instance");
       return method === null ? [] : [method];
     });
   });
-  return [...fromModule, ...fromClasses];
+}
+
+function isMethodList(
+  methods: NonNullable<BeforeCase["methods"]>,
+): methods is readonly string[] {
+  return Array.isArray(methods);
+}
+
+/** The blocks of the class body's calls on self and the methods the class writes under the names, in source order. */
+function writtenBefore(
+  cls: ClassValueOps,
+  calls: readonly string[],
+  methods: readonly string[],
+): ValueOps[] {
+  const blocks =
+    calls.length === 0
+      ? []
+      : cls.bodyCalls().flatMap((call) => {
+          const block =
+            isWrittenOnSelf(call) && calls.includes(call.calleeText())
+              ? (call.block?.() ?? null)
+              : null;
+          const at = call.site?.();
+          return block === null || at === undefined
+            ? []
+            : [{ at, value: block }];
+        });
+  const named =
+    methods.length === 0
+      ? []
+      : cls.members("instance").flatMap((member) => {
+          const at = member.value.site?.();
+          return methods.includes(member.name) && at !== undefined
+            ? [{ at, value: member.value }]
+            : [];
+        });
+  return [...blocks, ...named]
+    .sort((a, b) => bySourceOrder(a.at, b.at))
+    .map((one) => one.value);
 }
 
 function moduleFunction(module: ModuleOps, name: string): ValueOps | null {

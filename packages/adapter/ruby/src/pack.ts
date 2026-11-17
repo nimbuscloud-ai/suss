@@ -19,6 +19,7 @@ import type {
   PackWords,
   PatternPack,
   RequestRecognizer,
+  TestCasesMatch,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
@@ -273,33 +274,13 @@ export interface RbTestCases {
 
 /**
  * Tests written as a class, the way Minitest and Rails' test cases write
- * them: a class that extends one of `baseClassNames`, with a method per
- * test or a `test "..." do` block per test. Each becomes a `test` unit
- * named by the class and then the test's method name.
+ * them. `@suss/recognize` reads the cases the match declares, and each
+ * becomes a `test` unit named by the class and then the test's method
+ * name. A `test "..." do` block is a method only when a class-body
+ * declaration states the method it defines.
  */
 export interface RbTestClasses {
-  /** Base names of the files the runner loads, where `*` matches any run of characters: `*_test.rb`. */
-  filePatterns: string[];
-  /** The library's test case classes, as a project writes them: `Minitest::Test`, `ActiveSupport::TestCase`. */
-  baseClassNames: string[];
-  /** What a test method's name starts with: `test_`. */
-  testMethodPrefix: string;
-  /** Calls that declare a test as a block, given its description: `test`. */
-  testBlockMethods: string[];
-  /** How the library turns a block test's description into the method it defines: `test_` in front, each run of spaces as `_`. */
-  blockTestName: { prefix: string; spacesAs: string };
-  /** Calls whose block runs before each test: `setup`. */
-  setupBlockMethods: string[];
-  /** Methods the runner calls before each test: `setup`. */
-  setupMethodNames: string[];
-  /** Calls that, written as a statement in a test, mark it as not run: `skip`. */
-  skipStatements: string[];
-  /** Prefixes of the checks the runner gives a test, which call no project code: `assert`, `refute`. */
-  assertionPrefixes: string[];
-  /** Calls that replace a method on the object they are called on, given its name first: `stub`, `stubs`, `expects`. */
-  stubMethods: string[];
-  /** Read only these files, matched on whole path segments from the end. */
-  files?: string[];
+  cases: TestCasesMatch;
 }
 
 /**

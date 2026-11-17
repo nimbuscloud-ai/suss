@@ -263,6 +263,10 @@ class FactCall implements CallOps {
     return this.key;
   }
 
+  nestedBodyCall(): boolean {
+    return this.source.db.lookup("nestedBodyCall", 0, this.key).length > 0;
+  }
+
   /**
    * The call whose callee reads a method off what this call returns, as
    * `.set(v)` does off `db.update(t)`. It is one hop of the
@@ -1118,6 +1122,12 @@ class FactValue implements ValueOps {
 
   bodyCalls(): readonly CallOps[] {
     return bodyCallsOf(this.key, this.facts);
+  }
+
+  /** `callBlock(r, b)` read by its second column. */
+  blockCall(): CallOps | null {
+    const call = only(this.facts.db.lookup("callBlock", 1, this.key), 0);
+    return call === null ? null : factCallOps(call, this.facts);
   }
 
   object(): ValueOps | null {

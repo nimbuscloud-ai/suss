@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
 
-import { factModuleOps } from "./factOps.js";
-import { global, imported } from "./ops.js";
+import { factCallOps, factModuleOps } from "./factOps.js";
+import { global, imported, rubyConstants } from "./ops.js";
 import {
   caseRuns,
   collectsFile,
   decoratorIsFrom,
   discoverTestCases,
+  isRunnerCall,
   mockRead,
 } from "./testCases.js";
 
 import type {
   CallOps,
+  ClassValueOps,
   ModuleOps,
   TestCasesMatch,
   ValueOps,
@@ -320,5 +322,170 @@ describe("the test cases a runner collects", () => {
       "TestOrders",
       "test_cancel",
     ]);
+  });
+});
+
+const RB = "/t/test/order_test.rb";
+const rb = (span: string): string => `${RB}:${span}`;
+
+/**
+ * `class OrderTest < ActiveSupport::TestCase` with, in source order: a
+ * `setup do` block; `def test_one`, which skips inside an `if`, stubs
+ * `cancel` on `Order.any_instance` and asserts; a `def setup`; and
+ * `test "two" do`, whose block skips as a statement and which the class
+ * body declares as the method `test_two`.
+ */
+function minitestSource(): FactSource {
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  const texts: Record<string, string> = {};
+  const call = (key: string, text: string, on?: [string, string]) => {
+    add("call", key, `${key}#callee`);
+    texts[`${key}#callee`] = text;
+    if (on !== undefined) {
+      add("readsProperty", `${key}#callee`, on[0], on[1]);
+    }
+  };
+  const cls = rb("0-900");
+  add("objectValue", cls);
+  add("rbConstantName", cls, "OrderTest");
+  add("extends", cls, rb("20-43"));
+
+  call(rb("50-90"), "setup");
+  add("callBlock", rb("50-90"), rb("56-90"));
+  add("func", rb("56-90"));
+
+  add("func", rb("130-190"));
+  add("holdsProperty", cls, "test_one", rb("130-190"));
+  call(rb("140-150"), "skip");
+  add("bodyCallAt", rb("130-190"), "0", rb("140-150"));
+  add("nestedBodyCall", rb("140-150"));
+  call(rb("155-170"), "Order.any_instance", ["Order#ref", "any_instance"]);
+  call(rb("155-185"), "Order.any_instance.stubs", [rb("155-170"), "stubs"]);
+  add("callArg", rb("155-185"), "0", "cancel");
+  call(rb("186-189"), "assert_equal");
+
+  add("func", rb("200-250"));
+  add("holdsProperty", cls, "setup", rb("200-250"));
+
+  call(rb("300-400"), "test");
+  add("callBlock", rb("300-400"), rb("310-400"));
+  add("func", rb("310-400"));
+  add("holdsProperty", cls, "test_two", rb("310-400"));
+  call(rb("320-330"), "skip");
+  add("bodyCallAt", rb("310-400"), "0", rb("320-330"));
+
+  return {
+    db,
+    read: () => undefined,
+    writtenAs: () => null,
+    anchorCalls: () => [],
+    importedFrom: () => false,
+    importedAs: (key, module) =>
+      key === rb("20-43") && module === "ActiveSupport" ? ["TestCase"] : [],
+    shapeOf: () => null,
+    textOf: (key) => texts[key] ?? key,
+    literalOf: () => null,
+    nameOf: () => null,
+    evaluatedOf: (key) => (key === "cancel" ? key : null),
+    argOf: (key) => ({ kind: "identifier", name: key }),
+    classBodyCalls: (key) => (key === cls ? [rb("50-90"), rb("300-400")] : []),
+  };
+}
+
+function minitest(): TestCasesMatch {
+  return {
+    type: "testCases",
+    files: { matching: ["*_test.rb"] },
+    classes: {
+      inherits: rubyConstants("ActiveSupport::TestCase"),
+      methods: { pattern: "^test_" },
+    },
+    before: { calls: ["setup"], methods: ["setup"] },
+    skips: { statements: ["skip"] },
+    runner: { prefixes: ["assert"], names: ["skip"] },
+    mocks: [
+      {
+        replacesMember: {
+          by: { methods: ["stub", "stubs"] },
+          member: { at: 0 },
+          of: "receiver",
+        },
+      },
+    ],
+  };
+}
+
+describe("a runner that writes its cases as the methods of a test class", () => {
+  const module = (): ModuleOps =>
+    factModuleOps(RB, minitestSource(), {
+      calls: () => [],
+      classes: () => [rb("0-900")],
+    });
+  const ops = (key: string): CallOps => {
+    const found = factCallOps(key, minitestSource());
+    if (found === null) {
+      throw new Error(`no call at ${key}`);
+    }
+    return found;
+  };
+
+  it("records a block's case at the call it is written with, and skips only on a statement of its own", () => {
+    const found = discoverTestCases(minitest(), module());
+
+    expect(
+      found.map((one) => [one.titles.map((title) => title.text), one.at]),
+    ).toEqual([
+      [["OrderTest", "test_one"], rb("130-190")],
+      [["OrderTest", "test_two"], rb("300-400")],
+    ]);
+    expect(found.map((one) => one.runs?.site?.())).toEqual([
+      rb("130-190"),
+      rb("310-400"),
+    ]);
+    expect(found.map((one) => one.skipped)).toEqual([false, true]);
+  });
+
+  it("runs the setup blocks and methods the class writes, in the order it writes them, and tells the runner's calls apart", () => {
+    const runs = caseRuns(minitest(), { module: module() });
+
+    expect(runs.get(rb("130-190"))?.before.map((fn) => fn.site?.())).toEqual([
+      rb("56-90"),
+      rb("200-250"),
+    ]);
+    expect(runs.get(rb("310-400"))?.found.at).toBe(rb("300-400"));
+    expect(isRunnerCall(minitest(), ops(rb("186-189")))).toBe(true);
+    expect(isRunnerCall(minitest(), ops(rb("140-150")))).toBe(true);
+    expect(isRunnerCall(minitest(), ops(rb("155-185")))).toBe(false);
+    expect(isRunnerCall(pytest(), ops(rb("186-189")))).toBe(false);
+  });
+
+  it("reads a stub as replacing a member of what it is called on, by its method whatever that is", () => {
+    const rules = minitest().mocks ?? [];
+
+    expect(mockRead(rules, ops(rb("155-185")), () => false)).toEqual({
+      replaces: "member",
+      member: "cancel",
+      of: "receiver",
+    });
+    expect(mockRead(rules, ops(rb("186-189")), () => false)).toBeNull();
+  });
+
+  it("finds no case in a method the adapter cannot key", () => {
+    const real = module().classes()[0] as ClassValueOps;
+    const unkeyed: ClassValueOps = Object.assign(Object.create(real), {
+      members: (kind: "instance" | "singleton") =>
+        real.members(kind).map((member) => ({
+          ...member,
+          value: Object.assign(Object.create(member.value), {
+            site: undefined,
+          }),
+        })),
+    });
+    const one: ModuleOps = Object.assign(Object.create(module()), {
+      classes: () => [unkeyed],
+    });
+
+    expect(discoverTestCases(minitest(), one)).toEqual([]);
   });
 });
