@@ -9,6 +9,7 @@
  *   node scripts/byteCheck.mjs --main <bin.js | ref> --branch <bin.js>
  *
  * Each extract runs with --no-cache and prints its time and peak memory.
+ * Under an input that differs, `suss inspect --diff` says what changed.
  * The run exits non-zero when any input differs or fails. CONTRIBUTING.md
  * has the details: which build is which, field clones, and --expect.
  */
@@ -47,6 +48,11 @@ const REPO_LISTS = ["repos.json", "libraryRepos.json"].map((name) =>
 // times longer has hung.
 const EXTRACT_TIMEOUT_MS = 20 * 60 * 1000;
 
+// Long enough to name every unit a typical change moves, and short enough
+// that one input's report does not push the rest of the table off screen.
+const DIFF_BUDGET = 4000;
+const INSPECT_TIMEOUT_MS = 5 * 60 * 1000;
+
 // Another extract running beside a field app slows both, so each field
 // app waits a while for the load to fall first.
 const FIELD_LOAD_PER_CORE = 0.5;
@@ -64,6 +70,7 @@ const { values } = parseArgs({
     extra: { type: "string" },
     only: { type: "string" },
     expect: { type: "string" },
+    diff: { type: "string" },
     out: {
       type: "string",
       default: path.join(os.tmpdir(), "suss-byte-check"),
@@ -89,6 +96,8 @@ const USAGE = `byteCheck.mjs: extract the same inputs with two builds and compar
   --extra <a,b | all>    add apps that each exercise one library: ${EXTRA_INPUTS.map((i) => i.name).join(", ")}
   --only <a,b>           run the inputs whose name contains one of these
   --expect <text>        refuse to run unless only the branch's dist contains <text>
+  --diff <chars | off>   how many characters of the branch's \`suss inspect --diff\` to
+                         print under an input that differs (default ${DIFF_BUDGET}), or off
   --out <dir>            where both builds write their summaries (default ${path.join(os.tmpdir(), "suss-byte-check")})
   --repos-dir <dir>      the first-run clones (default ~/.cache/suss-first-run/repos)
   --list                 print each input's command and stop
@@ -103,6 +112,25 @@ function fail(message) {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 }
+
+/** How many characters of `inspect --diff` to print, or null to print none. */
+function diffBudget(text) {
+  if (text === undefined) {
+    return DIFF_BUDGET;
+  }
+  if (text === "off") {
+    return null;
+  }
+  const budget = Number(text);
+  if (!Number.isInteger(budget) || budget <= 0) {
+    fail(
+      `--diff takes a number of characters, such as --diff 8000, or off. It got ${text}.`,
+    );
+  }
+  return budget;
+}
+
+const diffChars = diffBudget(values.diff);
 
 // ---------------------------------------------------------------------------
 // Builds
@@ -417,6 +445,48 @@ function compareOutputs(left, right) {
   return { offset, line, context: [around(a), around(b)] };
 }
 
+/**
+ * What the branch build's `inspect --diff` says changed between the two
+ * summaries, as lines to print. The branch build reads them because
+ * main's may not know the branch's summary format.
+ */
+function changeReport(build, left, right, budget, nodeFlags) {
+  const res = spawnSync(
+    process.execPath,
+    [
+      ...nodeFlags,
+      build.bin,
+      "inspect",
+      "--diff",
+      left,
+      right,
+      "--budget",
+      String(budget),
+    ],
+    {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: INSPECT_TIMEOUT_MS,
+    },
+  );
+  if (res.error !== undefined) {
+    const why =
+      res.error.code === "ETIMEDOUT"
+        ? `timed out after ${seconds(INSPECT_TIMEOUT_MS)}`
+        : res.error.message;
+    return [`inspect --diff failed: ${why}`];
+  }
+  if (res.status !== 0) {
+    const tail = (res.stderr ?? "").trim().split("\n").at(-1) ?? "";
+    return [`inspect --diff exited ${res.status}: ${tail}`];
+  }
+  const report = (res.stdout ?? "").trimEnd();
+  if (report === "") {
+    return ["inspect --diff printed nothing"];
+  }
+  return report.split("\n");
+}
+
 /** Where a path an input hides is kept while both builds extract it. */
 function hiddenAt(at) {
   return `${at}.hidden-by-byte-check`;
@@ -709,6 +779,18 @@ for (const [index, input] of inputs.entries()) {
     process.stdout.write(
       `    main:   ${result.diff.context[0]}\n    ${branch.label}: ${result.diff.context[1]}\n`,
     );
+  }
+
+  if (result.status === "differs" && diffChars !== null) {
+    const report = changeReport(
+      branch,
+      mainRun.outFile,
+      branchRun.outFile,
+      diffChars,
+      nodeFlags,
+    );
+    const indented = report.map((line) => (line === "" ? "" : `    ${line}`));
+    process.stdout.write(`\n${indented.join("\n")}\n\n`);
   }
 }
 
