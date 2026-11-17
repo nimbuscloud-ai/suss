@@ -36,7 +36,7 @@ const SHARED_FIXTURE_FILE = "conftest.py";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
   return {
@@ -78,22 +78,31 @@ export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
               byAncestry: ["setUpClass", "setUp", "asyncSetUp"],
             },
           },
+          skips: {
+            decorators: {
+              origins: [
+                {
+                  origin: "global",
+                  paths: [
+                    "pytest.mark.skip",
+                    "pytest.mark.skipif",
+                    "pytest.mark.xfail",
+                    "unittest.skip",
+                    "unittest.skipIf",
+                    "unittest.skipUnless",
+                    "unittest.expectedFailure",
+                  ],
+                },
+              ],
+              variable: "pytestmark",
+            },
+          },
         },
         usesFixtureMarkers: ["pytest.mark.usefixtures"],
         fixtureDecorators: ["pytest.fixture"],
         fixtureNameKeyword: "name",
         autouseKeyword: "autouse",
         sharedFixtureFiles: [SHARED_FIXTURE_FILE],
-        skipDecorators: [
-          "pytest.mark.skip",
-          "pytest.mark.skipif",
-          "pytest.mark.xfail",
-          "unittest.skip",
-          "unittest.skipIf",
-          "unittest.skipUnless",
-          "unittest.expectedFailure",
-        ],
-        markerVariable: "pytestmark",
         reservedParameters: ["self", "cls", "request"],
         mocks: {
           patchers: [

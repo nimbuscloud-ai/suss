@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readTestMetadata } from "@suss/behavioral-ir";
+import { global } from "@suss/recognize";
 
 import { extractPythonProject, findPythonFiles } from "./project.js";
 
@@ -20,8 +21,6 @@ const RUNNER: PyTestCases = {
   fixtureNameKeyword: "name",
   autouseKeyword: "autouse",
   sharedFixtureFiles: ["conftest.py"],
-  skipDecorators: ["pytest.mark.skip", "pytest.mark.xfail", "unittest.skip"],
-  markerVariable: "pytestmark",
   reservedParameters: ["self", "request"],
   mocks: {
     patchers: ["unittest.mock.patch", "unittest.mock.patch.object"],
@@ -52,6 +51,14 @@ function cases(listed?: string[]): TestCasesMatch {
       methods: {
         byName: ["setup_class", "setup_method"],
         byAncestry: ["setUpClass", "setUp"],
+      },
+    },
+    skips: {
+      decorators: {
+        origins: [
+          global("pytest.mark.skip", "pytest.mark.xfail", "unittest.skip"),
+        ],
+        variable: "pytestmark",
       },
     },
   };

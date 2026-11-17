@@ -20,7 +20,10 @@ import type {
   BeforeCase,
   ClassCases,
   ClassValueOps,
+  Decorator,
   ModuleOps,
+  ReceiverOrigin,
+  SkipRules,
   TestCasesMatch,
   ValueOps,
 } from "@suss/extractor";
@@ -40,6 +43,32 @@ export interface FoundCase {
   readonly runs: ValueOps;
   /** The function's key, which the unit is recorded at. */
   readonly at: string;
+  /**
+   * What is written on the case: the function's decorators, then for
+   * each class around it, innermost first, its decorators and the
+   * markers its `skips.decorators.variable` lists, then the module's.
+   */
+  readonly markers: readonly Decorator[];
+  readonly skipped: boolean;
+}
+
+/** Whether the decorator, or what a marker variable lists, comes from one of the origins: a call by its callee. */
+export function decoratorIsFrom(
+  decorator: Decorator,
+  origins: readonly ReceiverOrigin[],
+): boolean {
+  if (decorator.form === "call") {
+    return origins.some((origin) => decorator.call.isFrom(origin));
+  }
+  return origins.some((origin) => valueIsFrom(decorator.value, origin));
+}
+
+/** A global is a path through the module's imports, `pytest.mark.skip`; any other origin is read off the call the value is. */
+function valueIsFrom(value: ValueOps, origin: ReceiverOrigin): boolean {
+  if (origin.origin === "global") {
+    return value.globalPath?.(origin.paths) !== undefined;
+  }
+  return value.asCall?.()?.isFrom(origin) ?? false;
 }
 
 /** What the adapter hands the reader beside the match. */
@@ -97,12 +126,81 @@ export function caseRuns(
 interface Collected {
   readonly found: FoundCase;
   /** The classes around the case, outermost first. */
-  readonly classes: readonly ClassValueOps[];
+  readonly classes: readonly CaseClass[];
+}
+
+/** A class a case is written in, and the class as a value, for its decorators and what its body assigns. */
+interface CaseClass {
+  readonly cls: ClassValueOps;
+  readonly value: ValueOps | null;
 }
 
 function collectedIn(match: TestCasesMatch, module: ModuleOps): Collected[] {
-  return [...functionCases(match, module), ...classCases(match, module)].sort(
-    (a, b) => bySourceOrder(a.found.at, b.found.at),
+  const found = [
+    ...functionCases(match, module),
+    ...classCases(match, module),
+  ].sort((a, b) => bySourceOrder(a.found.at, b.found.at));
+  if (found.length === 0) {
+    return found;
+  }
+  const decorators = decoratorsBySite(module);
+  const variable = match.skips?.decorators?.variable;
+  const listedIn = (value: ValueOps | null | undefined): Decorator[] =>
+    variable === undefined || value === null || value === undefined
+      ? []
+      : markersListed(value);
+  const inModule = listedIn(
+    variable === undefined ? null : module.export([variable]),
+  );
+  return found.map((one) => {
+    const markers = [
+      ...(decorators.get(one.found.at) ?? []),
+      ...[...one.classes]
+        .reverse()
+        .flatMap((around) => [
+          ...(decorators.get(around.value?.site?.() ?? "") ?? []),
+          ...listedIn(
+            variable === undefined ? null : around.value?.member?.(variable),
+          ),
+        ]),
+      ...inModule,
+    ];
+    return {
+      ...one,
+      found: { ...one.found, markers, skipped: skips(match.skips, markers) },
+    };
+  });
+}
+
+function decoratorsBySite(
+  module: ModuleOps,
+): ReadonlyMap<string, readonly Decorator[]> {
+  const bySite = new Map<string, readonly Decorator[]>();
+  for (const { definition, decorators } of module.decorated()) {
+    const site = definition.site?.();
+    if (site !== undefined) {
+      bySite.set(site, decorators);
+    }
+  }
+  return bySite;
+}
+
+/** A marker variable set to a list gives each item, and set to anything else gives that one value. */
+function markersListed(value: ValueOps): Decorator[] {
+  const items = value.items();
+  return (items.length > 0 ? items : [value]).map((item) => {
+    const call = item.asCall?.() ?? null;
+    return call === null
+      ? { form: "value", value: item }
+      : { form: "call", call };
+  });
+}
+
+function skips(rules: SkipRules | undefined, markers: readonly Decorator[]) {
+  const origins = rules?.decorators?.origins;
+  return (
+    origins !== undefined &&
+    markers.some((marker) => decoratorIsFrom(marker, origins))
   );
 }
 
@@ -132,7 +230,8 @@ function classCases(match: TestCasesMatch, module: ModuleOps): Collected[] {
   for (const cls of module.classes()) {
     const name = cls.name();
     if (name !== null && collectsClass(classes, name, cls)) {
-      collectClass(classes, cls, [name], [], found);
+      const value = module.export([name]);
+      collectClass(classes, { cls, value }, [name], [], found);
     }
   }
   return found;
@@ -140,12 +239,13 @@ function classCases(match: TestCasesMatch, module: ModuleOps): Collected[] {
 
 function collectClass(
   classes: ClassCases,
-  cls: ClassValueOps,
+  written: CaseClass,
   titles: readonly string[],
-  around: readonly ClassValueOps[],
+  around: readonly CaseClass[],
   found: Collected[],
 ): void {
-  const within = [...around, cls];
+  const { cls } = written;
+  const within = [...around, written];
   const methods = new RegExp(classes.methods.pattern);
   for (const member of cls.members("instance")) {
     if (methods.test(member.name)) {
@@ -160,7 +260,13 @@ function collectClass(
   for (const nested of cls.classes()) {
     const inner = nested.value.asClass?.() ?? null;
     if (inner !== null && collectsClass(classes, nested.name, inner)) {
-      collectClass(classes, inner, [...titles, nested.name], within, found);
+      collectClass(
+        classes,
+        { cls: inner, value: nested.value },
+        [...titles, nested.name],
+        within,
+        found,
+      );
     }
   }
 }
@@ -184,7 +290,7 @@ function reachesCaseBase(classes: ClassCases, cls: ClassValueOps): boolean {
 function caseRunning(
   fn: ValueOps,
   titles: readonly string[],
-  classes: readonly ClassValueOps[],
+  classes: readonly CaseClass[],
 ): Collected[] {
   const at = fn.site?.();
   return at === undefined
@@ -195,6 +301,8 @@ function caseRunning(
             titles: titles.map((text) => ({ text, unresolved: false })),
             runs: fn,
             at,
+            markers: [],
+            skipped: false,
           },
           classes,
         },
@@ -226,7 +334,7 @@ function beforeCase(
     const fn = moduleFunction(module, name);
     return fn === null ? [] : [fn];
   });
-  const fromClasses = collected.classes.flatMap((cls) => {
+  const fromClasses = collected.classes.flatMap(({ cls }) => {
     const names =
       match.classes !== undefined && reachesCaseBase(match.classes, cls)
         ? before.methods?.byAncestry
