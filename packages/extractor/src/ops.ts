@@ -650,6 +650,8 @@ export interface ElementAttribute {
  * A library base a class's ancestry reaches: one of `named`, as one of
  * the modules in `from` exports it. Ruby has no imports, so `from` lists
  * the library's own constant: `ViewComponent` for `ViewComponent::Preview`.
+ * A declaration that says what a class extends lists these, and a class
+ * matches when it reaches any one of them.
  */
 export interface Inherits {
   readonly from: readonly string[];
@@ -658,8 +660,8 @@ export interface Inherits {
 
 /** A class, as the facts answer the questions a discovery pattern asks it. */
 export interface ClassValueOps {
-  /** Whether the class's ancestry reaches the base, through any of the project's own classes between. */
-  inherits(spec: Inherits): boolean;
+  /** Whether the class's ancestry reaches any one of the bases, through any of the project's own classes between. */
+  inherits(bases: readonly Inherits[]): boolean;
   /**
    * Whether the class's declaration writes a base class: `class Account
    * < ApplicationRecord`, `class Item(Base)`, `class A extends B`. A Ruby

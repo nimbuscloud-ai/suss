@@ -16,7 +16,7 @@ import {
   describeClassBody,
 } from "./classBody.js";
 import { type FactSource, factModuleOps, factValueOps } from "./factOps.js";
-import { imported, inherits } from "./ops.js";
+import { imported } from "./ops.js";
 
 import type { ClassValueOps } from "@suss/extractor";
 import type { ClassDeclaration } from "./classBody.js";
@@ -204,7 +204,7 @@ describe("the reader of a class body", () => {
   it("reads a class that reaches the base, and a body that writes none, when the declaration names one", () => {
     const gated = classBody({
       ...LIBRARY,
-      in: inherits({ from: ["lib"], named: ["Model"] }),
+      in: [{ from: ["lib"], named: ["Model"] }],
     });
     const facts = source();
     expect(declareClassBody(gated, classOf("Account", facts))).not.toEqual([]);
@@ -212,6 +212,19 @@ describe("the reader of a class body", () => {
     expect(said(declareClassBody(gated, classOf("Mixin", facts)))).toEqual([
       ITEMS,
     ]);
+  });
+
+  it("reads a class that reaches any one of the bases the declaration lists", () => {
+    const either = classBody({
+      ...LIBRARY,
+      in: [
+        { from: ["other"], named: ["Model"] },
+        { from: ["lib"], named: ["Model"] },
+      ],
+    });
+    const facts = source();
+    expect(declareClassBody(either, classOf("Account", facts))).not.toEqual([]);
+    expect(declareClassBody(either, classOf("Other", facts))).toEqual([]);
   });
 
   it("counts one data link for each call and field a declaration reads", () => {
@@ -228,13 +241,20 @@ describe("the reader of a class body", () => {
 
 describe("the class ops a class body is read through", () => {
   it("reach a base by the name the class writes, where the adapter says it spells the spec", () => {
-    const spec = inherits({ from: ["lib"], named: ["Model"] });
+    const spec = [{ from: ["lib"], named: ["Model"] }];
     expect(classOf("Patched").inherits(spec)).toBe(false);
     const spelled = source({
       spellsBase: (written, asked) =>
         asked.from.some((module) => written === `${module}::Model`),
     });
     expect(classOf("Patched", spelled).inherits(spec)).toBe(true);
+    expect(
+      classOf("Patched", spelled).inherits([
+        { from: ["other"], named: ["Model"] },
+        ...spec,
+      ]),
+    ).toBe(true);
+    expect(classOf("Patched", spelled).inherits([])).toBe(false);
   });
 
   it("say whether the declaration writes a base class", () => {

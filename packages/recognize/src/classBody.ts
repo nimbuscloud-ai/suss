@@ -30,7 +30,7 @@ import type {
 
 /** A class-body declaration, with whatever it leaves out read as nothing. */
 export function classBody(declared: {
-  readonly in?: Inherits;
+  readonly in?: readonly Inherits[];
   readonly calls?: Readonly<Record<string, ClassBodyMeaning>>;
   readonly fields?: ClassBodyFields;
 }): ClassBodyDeclaration {

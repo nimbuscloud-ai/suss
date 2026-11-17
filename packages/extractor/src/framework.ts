@@ -575,14 +575,14 @@ export interface ManifestEntry {
 }
 
 /**
- * A class the file exports whose ancestry reaches a library base, or a
- * Ruby class written inside a module, as `module Billing; class Nightly`
- * writes one. Its methods of one kind are the units, each named
- * `Class.method`, with a Ruby class under its full name.
+ * A class the file exports whose ancestry reaches one of the library
+ * bases, or a Ruby class written inside a module, as `module Billing;
+ * class Nightly` writes one. Its methods of one kind are the units, each
+ * named `Class.method`, with a Ruby class under its full name.
  */
 export interface SubclassOfMatch {
   type: "subclassOf";
-  inherits: Inherits;
+  inherits: readonly Inherits[];
   /** Which members are units: instance methods or class methods, all of them, the listed names, or the names a pattern matches. */
   members: {
     kind: "instance" | "singleton";
@@ -1610,10 +1610,10 @@ export function pooledWords(
 /** What a library reads out of a class body: calls written there outside every method, and fields assigned from a call. */
 export interface ClassBodyDeclaration {
   /**
-   * Read only classes whose ancestry reaches this base, and every body
-   * that writes no base class: a Ruby module, or a class reopened bare.
+   * Read only classes whose ancestry reaches one of these bases, and every
+   * body that writes no base class: a Ruby module, or a class reopened bare.
    */
-  readonly in?: Inherits;
+  readonly in?: readonly Inherits[];
   /** What each call does, by the name it is written under with no receiver. */
   readonly calls: Readonly<Record<string, ClassBodyMeaning>>;
   readonly fields: ClassBodyFields;

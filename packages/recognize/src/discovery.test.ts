@@ -274,7 +274,7 @@ describe("namedExport", () => {
 
 describe("subclassOf", () => {
   it("takes the members of one kind of a class whose ancestry reaches the base, through a class between", () => {
-    const inherits = { from: ["lib"], named: ["Base"] };
+    const inherits = [{ from: ["lib"], named: ["Base"] }];
     expect(
       found({ type: "subclassOf", inherits, members: { kind: "singleton" } }),
     ).toEqual(["handler Jobs::Weekly.run run Jobs::Weekly/run"]);
@@ -288,7 +288,28 @@ describe("subclassOf", () => {
     expect(
       found({
         type: "subclassOf",
-        inherits: { from: ["lib"], named: ["Other"] },
+        inherits: [{ from: ["lib"], named: ["Other"] }],
+        members: { kind: "singleton" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("takes a class whose ancestry reaches any one of the bases it lists", () => {
+    expect(
+      found({
+        type: "subclassOf",
+        inherits: [
+          { from: ["lib"], named: ["Other"] },
+          { from: ["other"], named: ["Base"] },
+          { from: ["lib"], named: ["Base"] },
+        ],
+        members: { kind: "singleton" },
+      }),
+    ).toEqual(["handler Jobs::Weekly.run run Jobs::Weekly/run"]);
+    expect(
+      found({
+        type: "subclassOf",
+        inherits: [],
         members: { kind: "singleton" },
       }),
     ).toEqual([]);
@@ -308,7 +329,7 @@ describe("subclassOf", () => {
       found(
         {
           type: "subclassOf",
-          inherits: { from: ["lib"], named: ["Base"] },
+          inherits: [{ from: ["lib"], named: ["Base"] }],
           members: { kind: "singleton" },
         },
         module,
@@ -326,7 +347,7 @@ describe("subclassOf", () => {
       comesTo: (key) => (key === "loopB" ? ["loopA"] : []),
     };
     expect(
-      inheritsFrom("loopA", { from: ["lib"], named: ["Base"] }, looped),
+      inheritsFrom("loopA", [{ from: ["lib"], named: ["Base"] }], looped),
     ).toBe(false);
   });
 
@@ -339,7 +360,7 @@ describe("subclassOf", () => {
         .map((m) => m.name),
     ).toEqual(["inst"]);
     expect(
-      nested?.asClass?.()?.inherits({ from: ["lib"], named: ["Base"] }),
+      nested?.asClass?.()?.inherits([{ from: ["lib"], named: ["Base"] }]),
     ).toBe(true);
     expect(moduleOf().export(["handle"])?.asClass?.()).toBeNull();
   });

@@ -9,7 +9,6 @@ import {
   callback,
   classBody,
   definesMethod,
-  inherits,
 } from "@suss/recognize";
 import { classMemberName } from "@suss/resolution";
 
@@ -475,7 +474,7 @@ describe("a scope ActiveRecord defines", () => {
 describe("a declaration read only in the library's own classes", () => {
   const MODELS_ONLY = classBody({
     ...ACTIVE_RECORD,
-    in: inherits({ from: ["ActiveRecord"], named: ["Base"] }),
+    in: [{ from: ["ActiveRecord"], named: ["Base"] }],
   });
 
   /** The classes each association is declared in, as `class: name`. */

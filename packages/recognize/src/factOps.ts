@@ -587,7 +587,7 @@ class FactCall implements CallOps {
       return typedInherits(this.key, origin);
     }
     return this.receiverClasses(this.calleeRead.object).some((cls) =>
-      inheritsFrom(cls, origin, this.source),
+      inheritsFrom(cls, [origin], this.source),
     );
   }
 
@@ -2026,8 +2026,8 @@ class FactClass implements ClassValueOps {
     private readonly facts: FactSource,
   ) {}
 
-  inherits(spec: Inherits): boolean {
-    return inheritsFrom(this.key, spec, this.facts);
+  inherits(bases: readonly Inherits[]): boolean {
+    return inheritsFrom(this.key, bases, this.facts);
   }
 
   /** `extendsNamed`, which every adapter states for a written base and none for a mixin. */
@@ -2120,16 +2120,20 @@ function memberAt(name: string, key: string, source: FactSource): ModuleMember {
 }
 
 /**
- * Whether the class's ancestry reaches one of the bases the spec lists:
- * a base imported from one of its modules under one of its names, or a
- * project class that reaches one. The receiver origin that matches an
- * instance of such a class reads the same walk.
+ * Whether the class's ancestry reaches any one of the bases: a base
+ * imported from one of a spec's modules under one of its names, or a
+ * project class that reaches one. The ancestry is walked once for all
+ * of them. The receiver origin that matches an instance of such a class
+ * reads the same walk.
  */
 export function inheritsFrom(
   cls: string,
-  spec: Inherits,
+  bases: readonly Inherits[],
   source: FactSource,
 ): boolean {
+  if (bases.length === 0) {
+    return false;
+  }
   const seen = new Set<string>();
   const reaches = (key: string): boolean => {
     if (seen.has(key)) {
@@ -2137,11 +2141,11 @@ export function inheritsFrom(
     }
     seen.add(key);
     return (
-      writesListedBase(key, spec, source) ||
+      writesListedBase(key, bases, source) ||
       source.db.lookup("extends", 0, key).some((row) => {
         const base = String(row[1]);
         return (
-          isListedBase(base, spec, source) ||
+          isListedBase(base, bases, source) ||
           (source.comesTo?.(base) ?? []).some(reaches)
         );
       })
@@ -2196,10 +2200,10 @@ function methodThroughBases(
   return null;
 }
 
-/** Whether a base the class writes by name, `extendsNamed`, is one the adapter says the spec spells. */
+/** Whether a base the class writes by name, `extendsNamed`, is one the adapter says one of the specs spells. */
 function writesListedBase(
   cls: string,
-  spec: Inherits,
+  bases: readonly Inherits[],
   source: FactSource,
 ): boolean {
   const spells = source.spellsBase;
@@ -2207,17 +2211,19 @@ function writesListedBase(
     spells !== undefined &&
     source.db
       .lookup("extendsNamed", 0, cls)
-      .some((row) => spells(String(row[1]), spec))
+      .some((row) => bases.some((spec) => spells(String(row[1]), spec)))
   );
 }
 
 function isListedBase(
   base: string,
-  spec: Inherits,
+  bases: readonly Inherits[],
   source: FactSource,
 ): boolean {
-  return spec.from.some((module) =>
-    source.importedAs(base, module).some((name) => spec.named.includes(name)),
+  return bases.some((spec) =>
+    spec.from.some((module) =>
+      source.importedAs(base, module).some((name) => spec.named.includes(name)),
+    ),
   );
 }
 
