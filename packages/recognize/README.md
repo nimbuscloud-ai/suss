@@ -23,10 +23,12 @@ const calls = storageCalls({
   .container(namespaceOf)
   .example('redis.get("user_online:42")');
 
-export default pack("redis", [calls], {
-  languages: ["typescript", "javascript"],
-  recognizedAs: "@suss/framework-redis",
-});
+export default function redisFramework() {
+  return pack("redis", [calls], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-redis",
+  });
+}
 ```
 
 This package never imports a syntax tree. Each adapter states facts

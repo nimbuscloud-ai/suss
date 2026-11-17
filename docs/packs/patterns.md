@@ -263,7 +263,7 @@ app = FastAPI()
 async def add_timing(request, call_next): ...
 ```
 
-The keys of `named` are the decorator methods, and each one says what unit the function under it becomes. `on` is asked of the call the decorator's receiver was written as, `FastAPI()` for `app`, so an object a project function returns does not count. A decorator written with no call, `@app.before_request`, is read through the object it is read off. The unit takes the function's own name, and a function written inside another function or a class counts. A class under the decorator gives no unit. Every adapter reads it through the module ops, and TypeScript and Python write decorators. The FastAPI and flask-restx packs declare their middleware and request hooks as `decoratedWrapper` forms, and the Python adapter reads each one through this pattern.
+The keys of `named` are the decorator methods, and each one says what unit the function under it becomes. `on` is asked of the call the decorator's receiver was written as, `FastAPI()` for `app`, so an object a project function returns does not count. A decorator written with no call, `@app.before_request`, is read through the object it is read off. The unit takes the function's own name, and a function written inside another function or a class counts. A class under the decorator doesn't become a unit. Every adapter reads the pattern through the module ops, though only TypeScript and Python have decorators. The FastAPI and flask-restx packs declare their middleware and request hooks as `decoratedWrapper` forms, and the Python adapter reads each one through this pattern.
 
 ### `entryObject`
 
@@ -827,10 +827,12 @@ const COMMANDS = storageCalls({ system: "redis", client: declaredBy("ioredis") }
   })
   .example('redis.get("user_online:42")');
 
-export default pack("redis", [COMMANDS], {
-  languages: ["typescript", "javascript"],
-  recognizedAs: "@suss/framework-redis",
-});
+export function redisFramework() {
+  return pack("redis", [COMMANDS], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-redis",
+  });
+}
 ```
 
 A declaration is a chain. It starts at the receiver a call is made on, here one whose method `ioredis` declared, and `constructedFrom`, `imported`, `typed`, `returnedBy`, `global` and the others in `@suss/recognize` say other ways a receiver can come from the library. The methods table says which calls count and what each one reads. `.example(...)` gives one call the declaration matches. A pack's test runs it with `runExamples`, and pack health lists a declaration that gives none.
@@ -846,7 +848,7 @@ A declaration is a chain. It starts at the receiver a call is made on, here one 
 | `runtimeReads`, `schemaReads` | a read of the environment, directly or through a schema | Node, Cloudflare Workers |
 | `streamWrites` | a write to stdout or stderr | Node |
 
-`pack(name, declarations, spec)` builds the whole `PatternPack` for a pack that only declares calls: the import gate from the modules the chains start at, the protocol from the wire they reach, and the recognizer fields below. A pack that discovers units as well writes its object by hand and fills the fields from the same declarations, with `requestRecognizersOf` for `requestRecognizers`, `subUnitsOf` for `subUnits`, and `declarationsIn` for the pack health report. A Python or Ruby pack sets the same fields.
+`pack(name, declarations, spec)` builds the whole `PatternPack` for a pack that only declares calls: the import gate from the modules the chains start at, the protocol from the wire they reach, and the recognizer fields below. A pack that discovers units as well writes its object by hand and fills the fields from the same declarations, with `requestRecognizersOf` for `requestRecognizers`, `subUnitsOf` for `subUnits`, and `declarationsIn` for the pack health report. A `PythonPack` or `RubyPack` takes the same recognizer fields.
 
 ### Requests a client sends
 
@@ -869,7 +871,7 @@ requestRecognizers: requestRecognizersOf([
 - `.baseUrl(pick)` reads the base URL off the construction the call's receiver was made by, as `axios.create({ baseURL })` or `httpx.Client(base_url=...)` states it. `joins` says how the library puts a path under it: `appended` after the base with one slash, or `resolved` the way a browser resolves a link, so a path that starts with `/` replaces the base's path.
 - `.response(response)` says what the caller reads off the response and how the library hands back a refusal or a redirect, as [`responseSemantics` and `failureDelivery`](#responsesemantics-and-failuredelivery) describe. `redirectOption` says which option makes one call hand a redirect back.
 
-A Ruby library that takes the host apart from the path, as `Net::HTTP.get(host, path)` does, writes `hostFirst` on a method's URL, and a builder's host and port are `reads: "host"` on `.baseUrl`. `clientCall` stays only for a client built from a contract, as ts-rest's `initClient` builds one.
+For a library that takes the host apart from the path, as Ruby's `Net::HTTP.get(host, path)` does, the pack writes `hostFirst` on a method's URL, and reads a builder's host and port with `reads: "host"` on `.baseUrl`. A client built from a contract, as ts-rest's `initClient` builds one, is a [`clientCall`](#clientcall) pattern instead.
 
 ### A message a handler reads
 

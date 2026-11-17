@@ -117,10 +117,12 @@ const COMMANDS = storageCalls({ system: "redis", client: declaredBy("ioredis", "
   })
   .example('redis.get("user_online:42")');
 
-export default pack("redis", [COMMANDS], {
-  languages: ["typescript", "javascript"],
-  recognizedAs: "@suss/framework-redis",
-});
+export function redisFramework() {
+  return pack("redis", [COMMANDS], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-redis",
+  });
+}
 ```
 
 The declaration says where a match starts, here a receiver whose `get` one of those modules declared, which methods count, and what each one reads or writes. No part of it is TypeScript syntax. Each adapter states facts about its own language, and `@suss/recognize` works out what the declaration asks from those facts, so the SQLAlchemy and pg-ruby packs are declared the same way in Python and Ruby. Client packs declare their requests with `httpRequests`, test runner packs their cases with a `testCases` match, and React Router its routes with a `routeTable`. [Pack patterns](/packs/patterns#declared-calls) lists every builder.
