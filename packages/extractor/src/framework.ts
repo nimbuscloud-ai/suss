@@ -502,7 +502,10 @@ export interface ManifestEntry {
  * A class the file exports whose ancestry reaches one of the library
  * bases, or a Ruby class written inside a module, as `module Billing;
  * class Nightly` writes one. Its methods of one kind are the units, each
- * named `Class.method`, with a Ruby class under its full name.
+ * named `Class.method`, with a Ruby class under its full name. A call in
+ * the class body that `calls` lists declares a unit too, named by the
+ * class and the call's argument, as graphql-ruby's `field :user_name`
+ * declares the field `userName` on its type.
  */
 export interface SubclassOfMatch {
   type: "subclassOf";
@@ -513,7 +516,30 @@ export interface SubclassOfMatch {
     names?: string[];
     pattern?: string;
   };
+  /** Calls in the class body that each declare a unit by naming it, by the name the call is written under. */
+  calls?: Readonly<Record<string, NamingCall>>;
+  /** The class's part of a unit's name: what a class-body call gives it, else its own name with a suffix taken off. */
+  className?: { readonly call?: string; readonly suffixRemoved?: string };
+  /** Classes that are bases, not units: `Types::BaseObject`. */
+  skipClasses?: readonly string[];
 }
+
+/** A call in a class body that declares a unit by naming it. */
+export interface NamingCall {
+  readonly name: { readonly at: number };
+  /** How the library turns a name into the unit's: snake case to camel case unless a keyword says otherwise. */
+  readonly naming?: {
+    readonly camel: { readonly keyword: string; readonly default: boolean };
+  };
+  /** What the unit runs, the first pick the call writes winning. */
+  readonly runs: readonly RunsPick[];
+}
+
+export type RunsPick =
+  /** The class's method of the unit's name, or of the name a keyword gives, found through its project ancestry. */
+  | { readonly method: "named" | { readonly keyword: string } }
+  /** Another class's method: the class a keyword refers to, as `mutation: Mutations::Approve` runs its `resolve`. */
+  | { readonly classAt: { readonly keyword: string }; readonly method: string };
 
 /**
  * A directive at module scope makes every exported function a unit; at

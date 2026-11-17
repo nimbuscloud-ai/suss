@@ -2,20 +2,22 @@
  * The discovery patterns every adapter reads the same way. A pack states
  * where a unit's function is (a deploy manifest, an export, a class
  * reaching a library base, a directive, a registration call) and this
- * reader finds it through the module ops each adapter hands out over its
- * own facts, so one declaration finds the same units in TypeScript,
- * Python and Ruby.
+ * reader finds it through the module ops over each adapter's facts, so
+ * one declaration finds the same units in TypeScript, Python and Ruby.
  *
  * Every reader ends the same way: a value whose `function()` settles to
  * one function, handed back as the adapter's own node so the adapter
  * builds the unit on it the way it builds any other. An entry object's
- * members have no function, so it hands back the values instead.
+ * members have no function, so it hands back the values instead. A unit
+ * a class-body call declares has a function only when what the call
+ * runs is found, and hands the call back in `namedBy`.
  */
 
 import picomatch from "picomatch";
 
 import { lastValueWins } from "@suss/extractor";
 
+import { isWrittenOnSelf } from "./classBody.js";
 import { readRouteTable } from "./routeTableDiscovery.js";
 
 import type {
@@ -34,8 +36,10 @@ import type {
   MemberPick,
   ModuleOps,
   NamedExportMatch,
+  NamingCall,
   ReceiverOrigin,
   RegisteredFunctionMatch,
+  RunsPick,
   SubclassOfMatch,
   UnitSpec,
   ValueEntry,
@@ -52,6 +56,40 @@ import type {
 export interface DeclaredUnit extends DiscoveredCustomUnit {
   readonly foundAt: readonly string[] | null;
   readonly decoratedBy?: DecoratedBy;
+  readonly namedBy?: NamedBy;
+}
+
+/**
+ * The call in a class body a `subclassOf` pattern found a unit under,
+ * for an adapter that reads the rest of what the call declares. The
+ * unit's `func` is the method it runs, or null when no pick found one.
+ */
+export interface NamedBy {
+  /** The call, the last one in the body under the unit's name. */
+  readonly call: CallOps;
+  /** The class whose body writes the call. */
+  readonly cls: ClassValueOps;
+  /** The class's part of the unit's name. */
+  readonly className: string;
+  /** The unit's own part of its name, after the call's naming, or the argument's source when the name does not settle. */
+  readonly name: string;
+  /** Whether the argument settles to a name. One that does not runs nothing. */
+  readonly settled: boolean;
+  /** The first pick the call writes, or null when none applies. */
+  readonly runs: RunsFound | null;
+}
+
+/** What one of a naming call's `runs` picks found. */
+export interface RunsFound {
+  readonly pick: RunsPick;
+  /** The keyword the pick read, `mutation` or `resolver_method`, or null for a pick of the unit's own name. */
+  readonly keyword: string | null;
+  /** The value written under that keyword: the class a `classAt` pick refers to, or the method's name. */
+  readonly written: ValueOps | null;
+  /** The name of the method the pick looked for, or null when the keyword's value does not settle to one. */
+  readonly methodName: string | null;
+  /** The method, or null when no class the pick reached defines it, or the class is not one the run read. */
+  readonly method: ValueOps | null;
 }
 
 /** The decorator a `decorated` pattern found a unit under. */
@@ -260,18 +298,18 @@ function readSubclasses(
   return [...fromExports, ...nested];
 }
 
-/** A unit for each member the match takes, when the class's ancestry reaches the base. */
+/** A unit for each member the match takes and each naming call, when the class's ancestry reaches the base. */
 function subclassUnits(
   match: SubclassOfMatch,
   kind: string,
   name: string,
   cls: ClassValueOps,
 ): DeclaredUnit[] {
-  if (!cls.inherits(match.inherits)) {
+  if (match.skipClasses?.includes(name) || !cls.inherits(match.inherits)) {
     return [];
   }
   const takes = nameFilter(match.members.names, match.members.pattern);
-  return cls
+  const members = cls
     .members(match.members.kind)
     .filter((member) => takes(member.name))
     .flatMap((member) => {
@@ -287,6 +325,198 @@ function subclassUnits(
             },
           ];
     });
+  return [...members, ...namingCallUnits(match, kind, name, cls)];
+}
+
+/**
+ * A unit for each call in the class body that the match's `calls`
+ * lists, named by the class and the call's argument. A library such as
+ * graphql-ruby keeps one declaration per name, so the last call under a
+ * name wins, at the place of the first.
+ */
+function namingCallUnits(
+  match: SubclassOfMatch,
+  kind: string,
+  written: string,
+  cls: ClassValueOps,
+): DeclaredUnit[] {
+  const listed = match.calls;
+  if (listed === undefined) {
+    return [];
+  }
+  const calls = cls.bodyCalls().filter(isWrittenOnSelf);
+  const className = classPartOf(match.className, written, calls);
+  const byName = new Map<string, NamedBy>();
+  for (const call of calls) {
+    const naming = listed[call.calleeText()];
+    const named =
+      naming === undefined ? null : namedByCall(call, naming, cls, className);
+    if (named !== null) {
+      byName.set(named.name, named);
+    }
+  }
+  return [...byName.values()].map((named) => ({
+    func: nodeOfFunction(named.runs?.method ?? null),
+    kind,
+    name: `${className}.${named.name}`,
+    foundAt: [className, named.name],
+    namedBy: named,
+  }));
+}
+
+/** What one naming call declares, or null when it writes no argument where its name goes. */
+function namedByCall(
+  call: CallOps,
+  naming: NamingCall,
+  cls: ClassValueOps,
+  className: string,
+): NamedBy | null {
+  const at = naming.name.at;
+  const argument = call.valueAt(at);
+  if (argument === null) {
+    return null;
+  }
+  const settled = call.nameAt(at, "nothing");
+  if (settled === null) {
+    const source = argument.source?.() ?? "";
+    return { call, cls, className, name: source, settled: false, runs: null };
+  }
+  return {
+    call,
+    cls,
+    className,
+    name: namedAs(settled, call, naming.naming),
+    settled: true,
+    runs: firstRunsPick(naming.runs, call, cls, settled),
+  };
+}
+
+/** The unit's part of its name: camel case unless the call's keyword turns it off. */
+function namedAs(
+  settled: string,
+  call: CallOps,
+  naming: NamingCall["naming"],
+): string {
+  if (naming === undefined) {
+    return settled;
+  }
+  const written = call.keywordAt?.(naming.camel.keyword)?.literal?.();
+  const camel = typeof written === "boolean" ? written : naming.camel.default;
+  return camel ? camelCased(settled) : settled;
+}
+
+/** `user_name` as `userName`, each part after an underscore starting in upper case. */
+function camelCased(name: string): string {
+  const [first, ...rest] = name.split("_");
+  return [
+    first,
+    ...rest.map((part) => part.charAt(0).toUpperCase() + part.slice(1)),
+  ].join("");
+}
+
+/** What the first pick whose keyword the call writes finds, a pick of the unit's own name always applying. */
+function firstRunsPick(
+  picks: readonly RunsPick[],
+  call: CallOps,
+  cls: ClassValueOps,
+  ownName: string,
+): RunsFound | null {
+  for (const pick of picks) {
+    const found = runsFor(pick, call, cls, ownName);
+    if (found !== null) {
+      return found;
+    }
+  }
+  return null;
+}
+
+/** What the pick finds, or null when it reads a keyword the call does not write. */
+function runsFor(
+  pick: RunsPick,
+  call: CallOps,
+  cls: ClassValueOps,
+  ownName: string,
+): RunsFound | null {
+  if ("classAt" in pick) {
+    return wiredRuns(pick, call);
+  }
+  if (pick.method === "named") {
+    return {
+      pick,
+      keyword: null,
+      written: null,
+      methodName: ownName,
+      method: cls.method(ownName, "instance"),
+    };
+  }
+  const { keyword } = pick.method;
+  const written = call.keywordAt?.(keyword) ?? null;
+  if (written === null) {
+    return null;
+  }
+  const methodName = written.name("nothing");
+  return {
+    pick,
+    keyword,
+    written,
+    methodName,
+    method: methodName === null ? null : cls.method(methodName, "instance"),
+  };
+}
+
+/** The method of the class a keyword refers to, when the run read that class. */
+function wiredRuns(
+  pick: Extract<RunsPick, { classAt: unknown }>,
+  call: CallOps,
+): RunsFound | null {
+  const { keyword } = pick.classAt;
+  const written = call.keywordAt?.(keyword) ?? null;
+  if (written === null) {
+    return null;
+  }
+  return {
+    pick,
+    keyword,
+    written,
+    methodName: pick.method,
+    method: written.asClass?.()?.method(pick.method, "instance") ?? null,
+  };
+}
+
+/**
+ * The class's part of a unit's name: the string the body's `call` sets,
+ * else the last segment of its own name less `suffixRemoved`, else its
+ * whole name when the match says nothing about it.
+ */
+function classPartOf(
+  naming: SubclassOfMatch["className"],
+  written: string,
+  calls: readonly CallOps[],
+): string {
+  if (naming === undefined) {
+    return written;
+  }
+  const set = naming.call === undefined ? null : setBy(naming.call, calls);
+  if (set !== null) {
+    return set;
+  }
+  const own = written.split("::").at(-1) ?? written;
+  const suffix = naming.suffixRemoved;
+  return suffix !== undefined && own.endsWith(suffix)
+    ? own.slice(0, own.length - suffix.length)
+    : own;
+}
+
+/** The string the first call under the name writes as its first argument. */
+function setBy(name: string, calls: readonly CallOps[]): string | null {
+  for (const call of calls) {
+    const literal =
+      call.calleeText() === name ? call.valueAt(0)?.literal?.() : undefined;
+    if (typeof literal === "string") {
+      return literal;
+    }
+  }
+  return null;
 }
 
 /**
