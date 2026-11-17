@@ -12,8 +12,14 @@
 
 import { testUnitName } from "@suss/behavioral-ir";
 import { isListedTestFile } from "@suss/extractor";
-import { callCaseRuns, caseAt, collectsFile } from "@suss/recognize";
-import { factValueOps } from "@suss/recognize/ops";
+import {
+  callCaseRuns,
+  caseAt,
+  collectsFile,
+  isRunnerCall,
+  mockRead,
+} from "@suss/recognize";
+import { factCallOps, factValueOps } from "@suss/recognize/ops";
 import { fileOfKey, isObserved } from "@suss/resolution";
 import { literalOf } from "@suss/values";
 
@@ -21,7 +27,6 @@ import {
   bodyStatements,
   children,
   field,
-  hashKeySymbolName,
   rangeOf,
   spanOf,
   symbolValue,
@@ -46,11 +51,17 @@ import type { Database } from "@suss/datalog";
 import type {
   CallCases,
   CallOps,
+  MockRule,
   RawCodeStructure,
   SharedInclude,
   ValueOps,
 } from "@suss/extractor";
-import type { CaseRun, CaseRunsWith, CaseTitle } from "@suss/recognize";
+import type {
+  CaseRun,
+  CaseRunsWith,
+  CaseTitle,
+  MockRead,
+} from "@suss/recognize";
 import type { GroupNames } from "./facts/specNames.js";
 import type { RbExpectations, RbTestCases, RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -183,7 +194,7 @@ class ExampleRuns {
       const example =
         run === null ? null : exampleOf(node, file, run, this.facts);
       if (example !== null) {
-        return exampleRun(example, pattern, this.shared);
+        return exampleRun(example, pattern, this.shared, this.facts);
       }
     }
     return null;
@@ -573,6 +584,7 @@ function exampleRun(
   example: Example,
   pattern: RbTestCases,
   shared: SharedGroupIndex | undefined,
+  facts: Database,
 ): ExampleRun {
   const byName = new Map<string, RbNode>();
   for (const group of example.groups) {
@@ -605,10 +617,11 @@ function exampleRun(
     ...pattern.subjectReads,
     pattern.describedClass,
   ]);
-  const isRunnerMethod = (name: string | null): boolean =>
-    name !== null &&
-    (pattern.runnerMethods.includes(name) ||
-      pattern.predicateMatchers.some((one) => name.startsWith(one.prefix)));
+  const fileOf = (node: RbNode): string =>
+    node.tree === example.block.tree
+      ? example.file
+      : (shared?.fileOf(node) ?? example.file);
+  const source = factSourceOf(facts);
   return {
     blocks,
     isRunnerCall: (call) => {
@@ -619,13 +632,11 @@ function exampleRun(
       if (predicateCallOf(call, pattern) !== null) {
         return false;
       }
-      return isRunnerMethod(chainOrigin(call));
+      const ops = factCallOps(nodeId(fileOf(call), call), source);
+      return ops !== null && isRunnerCall(pattern.cases, ops);
     },
     predicateOf: (call) => predicateCallOf(call, pattern),
-    fileOf: (node) =>
-      node.tree === example.block.tree
-        ? example.file
-        : (shared?.fileOf(node) ?? example.file),
+    fileOf,
   };
 }
 
@@ -643,7 +654,7 @@ function predicateCallOf(
   if (
     name === undefined ||
     field(call, "receiver") !== null ||
-    pattern.runnerMethods.includes(name)
+    (pattern.cases.runner?.names ?? []).includes(name)
   ) {
     return null;
   }
@@ -698,31 +709,6 @@ function expectationTarget(
     field(start, "block") === null
     ? firstArgument(start)
     : null;
-}
-
-/**
- * The name a call chain starts from when it starts on self:
- * `expect` in `expect(x).to eq(y)`, `is_expected` in `is_expected.to`,
- * `order` in a bare `order`. Null when the chain starts on anything else.
- */
-function chainOrigin(call: RbNode): string | null {
-  if (call.type === "identifier") {
-    return call.text;
-  }
-  let current = call;
-  for (;;) {
-    const receiver = field(current, "receiver");
-    if (receiver === null) {
-      return calleeMethodName(current) ?? null;
-    }
-    if (receiver.type === "identifier") {
-      return receiver.text;
-    }
-    if (receiver.type !== "call") {
-      return null;
-    }
-    current = receiver;
-  }
 }
 
 /** Every name a block reads that could be a `let` or the subject: a bare name, or a call on self with no arguments. */
@@ -821,16 +807,21 @@ function exampleUnit(
   if (example === null || anchor === null) {
     return null;
   }
-  const running = exampleRun(example, pattern, options.shared);
+  const running = exampleRun(example, pattern, options.shared, facts);
+  const rules = pattern.cases.mocks ?? [];
   const raw = testUnitOf({
     titles: run.found.titles,
     run: running,
-    mocks: running.blocks.flatMap((one) =>
-      mocksIn(one, pattern.mocks, {
-        ...options,
-        absoluteFile: options.shared?.fileOf(one) ?? options.absoluteFile,
-      }),
-    ),
+    // A pack that writes no mock rule needs no ops for its calls.
+    mocks:
+      rules.length === 0
+        ? []
+        : running.blocks.flatMap((one) =>
+            mocksIn(one, rules, facts, {
+              ...options,
+              absoluteFile: options.shared?.fileOf(one) ?? options.absoluteFile,
+            }),
+          ),
     skipped: run.found.skipped,
     anchor,
     body: example.block,
@@ -918,21 +909,28 @@ export function testUnitOf(parts: TestUnitParts): RawCodeStructure {
   };
 }
 
-function keyName(key: RbNode | null): string | null {
-  return key === null ? null : (hashKeySymbolName(key) ?? symbolValue(key));
-}
-
-/** Every mock a block sets up, in source order. */
+/**
+ * Every mock a block sets up, in source order: each call written in it,
+ * however deep, read against the runner's mock rules. A lambda or a
+ * block inside it counts, since a mock there runs with it.
+ */
 function mocksIn(
   block: RbNode,
-  spelled: RbTestCases["mocks"],
+  rules: readonly MockRule[],
+  facts: Database,
   options: TestUnitOptions,
 ): TestMock[] {
+  const source = factSourceOf(facts);
   const found: TestMock[] = [];
   const visit = (node: RbNode): void => {
     for (const child of children(node)) {
-      if (child.type === "call") {
-        found.push(...mockOf(child, spelled, options));
+      const ops =
+        child.type === "call"
+          ? factCallOps(nodeId(options.absoluteFile, child), source)
+          : null;
+      const read = ops === null ? null : mockRead(rules, ops, takesNothing);
+      if (read !== null) {
+        found.push(...mocksOf(child, read, options));
       }
       visit(child);
     }
@@ -941,113 +939,84 @@ function mocksIn(
   return found;
 }
 
-function mockOf(
+/** A call written in an example takes no fixture, so no patcher is handed one. */
+function takesNothing(): boolean {
+  return false;
+}
+
+function noMocks(): TestMock[] {
+  return [];
+}
+
+function mocksOf(
   call: RbNode,
-  spelled: RbTestCases["mocks"],
+  read: MockRead,
   options: TestUnitOptions,
 ): TestMock[] {
-  const method = calleeMethodName(call) ?? "";
-  const written = oneLine(call.text);
-  if (spelled.expectations.includes(method)) {
-    return messageMocks(call, spelled, options, written);
-  }
-  if (spelled.constantStubs.includes(method)) {
-    return [
-      withModule(moduleOfConstant(firstArgument(call), options), written),
-    ];
-  }
-  if (!spelled.doubles.includes(method)) {
-    return [];
-  }
-  // A double replaces a constant only when the test makes it one.
-  const parent = call.parent;
-  const stubbed =
-    parent !== null &&
-    parent.type === "call" &&
-    field(parent, "receiver")?.id === call.id &&
-    calleeMethodName(parent) === spelled.constantDoubleMethod;
-  return [
-    withModule(
-      stubbed ? moduleOfConstant(firstArgument(call), options) : null,
-      written,
-    ),
-  ];
+  return (
+    MOCKS[read.replaces] as (
+      call: RbNode,
+      read: MockRead,
+      options: TestUnitOptions,
+    ) => TestMock[]
+  )(call, read, options);
 }
+
+/**
+ * A mock as the checker matches it: the file that defines the class or
+ * the constant it replaces, the member's name when it replaces one, and
+ * the call on one line. RSpec's rules read members, constants and
+ * stand-ins, and no path.
+ */
+const MOCKS: {
+  readonly [K in MockRead["replaces"]]: (
+    call: RbNode,
+    read: Extract<MockRead, { readonly replaces: K }>,
+    options: TestUnitOptions,
+  ) => TestMock[];
+} = {
+  path: noMocks,
+  member: noMocks,
+  members: (call, read, options) => {
+    const target = field(call, "receiver");
+    const module =
+      target === null
+        ? null
+        : moduleOfConstant(argumentAt(target, read.receiverArgument), options);
+    return read.members.map((name) => ({
+      ...(module === null ? {} : { module }),
+      name,
+      written: oneLine(call.text),
+    }));
+  },
+  constant: (call, read, options) => [
+    withModule(
+      moduleOfConstant(argumentAt(call, read.at), options),
+      oneLine(call.text),
+    ),
+  ],
+  standIn: (call, read, options) => [
+    withModule(
+      read.at === null
+        ? null
+        : moduleOfConstant(argumentAt(call, read.at), options),
+      oneLine(call.text),
+    ),
+  ],
+};
 
 function withModule(module: string | null, written: string): TestMock {
   return module === null ? { written } : { module, written };
 }
 
-/**
- * `allow(Order).to receive(:cancel)`: the target is the argument of the
- * receiver call, and the method is the symbol at the start of the chain
- * passed to `to`. `receive_messages(cancel: 1, refund: 2)` replaces each key.
- */
-function messageMocks(
-  call: RbNode,
-  spelled: RbTestCases["mocks"],
-  options: TestUnitOptions,
-  written: string,
-): TestMock[] {
-  const target = field(call, "receiver");
-  if (
-    target === null ||
-    target.type !== "call" ||
-    !spelled.targets.includes(calleeMethodName(target) ?? "")
-  ) {
-    return [];
-  }
-  const message = chainStart(firstArgument(call));
-  if (
-    message === null ||
-    !spelled.messages.includes(calleeMethodName(message) ?? "")
-  ) {
-    return [];
-  }
-  const module = moduleOfConstant(firstArgument(target), options);
-  return messageNames(message).map((name) => ({
-    ...(module !== null ? { module } : {}),
-    name,
-    written,
-  }));
-}
-
-function messageNames(message: RbNode): string[] {
-  const args = field(message, "arguments");
-  return (args === null ? [] : bodyStatements(args)).flatMap((arg) => {
-    const symbol = symbolValue(arg);
-    if (symbol !== null) {
-      return [symbol];
-    }
-    const pairs =
-      arg.type === "pair"
-        ? [arg]
-        : arg.type === "hash"
-          ? bodyStatements(arg)
-          : [];
-    return pairs.flatMap((pair) => {
-      const name = keyName(field(pair, "key"));
-      return name === null ? [] : [name];
-    });
-  });
-}
-
-/** The innermost receiver of a chain: `receive(:x)` in `receive(:x).and_return(1)`. */
-function chainStart(node: RbNode | null): RbNode | null {
-  let current = node;
-  while (current !== null && current.type === "call") {
-    const receiver = field(current, "receiver");
-    if (receiver === null || receiver.type !== "call") {
-      return current;
-    }
-    current = receiver;
-  }
-  return null;
-}
-
 export function firstArgument(call: RbNode): RbNode | null {
+  return argumentAt(call, 0);
+}
+
+/** The argument written at this position, a keyword pair included. */
+function argumentAt(call: RbNode, at: number): RbNode | null {
   const args = field(call, "arguments");
-  return (args === null ? undefined : bodyStatements(args)[0]) ?? null;
+  return (args === null ? undefined : bodyStatements(args)[at]) ?? null;
 }
 
 /**

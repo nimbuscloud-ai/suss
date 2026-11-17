@@ -235,17 +235,13 @@ export interface RbTestCases {
   /** The call that gives back the class the nearest group around was given: `described_class`. */
   describedClass: string;
   /**
-   * Methods the library gives an example to call on itself to check or
-   * set something up, such as `expect`, `eq` and `allow`. A call made
-   * through one is no call into project code.
+   * The matchers the library makes up from a predicate method, as
+   * `be_cancelled` calls `cancelled?` on what the expectation is about.
+   * One the match's `runner.names` lists is the runner's own instead.
    */
-  runnerMethods: string[];
-  /** The matchers the library makes up from a predicate method, as `be_cancelled` calls `cancelled?` on what the expectation is about. */
   predicateMatchers: RbPredicateMatcher[];
   /** How an example states an expectation, which a predicate matcher is given to. */
   expectations: RbExpectations;
-  /** How the library replaces something for the length of an example. */
-  mocks: RbTestMocks;
 }
 
 /**
@@ -307,29 +303,6 @@ export interface RbExpectations {
   starts: string[];
   onSubject: string;
   runs: string[];
-}
-
-/**
- * The library's mock spellings. `allow(Order).to receive(:cancel)`
- * replaces one method: `targets` opens it, `expectations` joins it, and
- * `messages` says which method. `stub_const("Order", ...)` replaces a
- * whole constant. A double is a fake object the test hands over, and it
- * replaces nothing the test would otherwise reach unless the test makes
- * it the constant with `constantDoubleMethod`.
- */
-export interface RbTestMocks {
-  /** `allow`, `expect`, `allow_any_instance_of`. */
-  targets: string[];
-  /** `to`. */
-  expectations: string[];
-  /** `receive`, `receive_messages`. */
-  messages: string[];
-  /** `stub_const`. */
-  constantStubs: string[];
-  /** `instance_double`, `class_double`. */
-  doubles: string[];
-  /** `as_stubbed_const`, which makes a double the constant it stands in for. */
-  constantDoubleMethod: string;
 }
 
 /**

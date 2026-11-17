@@ -489,3 +489,153 @@ describe("a runner that writes its cases as the methods of a test class", () => 
     expect(discoverTestCases(minitest(), one)).toEqual([]);
   });
 });
+
+/**
+ * A call as RSpec writes it, read only as far as the runner and mock
+ * rules ask: a receiver and an argument are a call written in place or a
+ * name, and a name evaluates to its own text, as a Ruby symbol does.
+ */
+interface Written {
+  readonly callee: string;
+  readonly method?: string;
+  readonly on?: Written | string;
+  readonly args?: readonly (Written | string)[];
+  readonly keywords?: readonly string[];
+  /** The method of the call made on what this one gives back. */
+  readonly chainedWith?: string;
+  /** Written as a value that is neither a call nor a name, such as `[1]`. */
+  readonly literal?: boolean;
+}
+
+function written(one: Written): CallOps {
+  const value = (arg: Written | string): ValueOps =>
+    (typeof arg === "string"
+      ? { form: () => "name", evaluated: () => arg, source: () => arg }
+      : {
+          form: () => "other",
+          source: () => arg.callee,
+          asCall: () => (arg.literal === true ? null : written(arg)),
+        }) as unknown as ValueOps;
+  return {
+    method: () => one.method ?? null,
+    calleeText: () => one.callee,
+    site: () => one.callee,
+    receiverValue: () => (one.on === undefined ? null : value(one.on)),
+    valueAt: (at: number) => {
+      const arg = one.args?.[at];
+      return arg === undefined ? null : value(arg);
+    },
+    argumentCount: () => one.args?.length ?? 0,
+    keywordNames: () => one.keywords ?? [],
+    chainedOn: () =>
+      one.chainedWith === undefined
+        ? null
+        : written({ callee: `x.${one.chainedWith}`, method: one.chainedWith }),
+  } as unknown as CallOps;
+}
+
+const RSPEC_RUNNER: TestCasesMatch = {
+  type: "testCases",
+  files: { matching: ["*_spec.rb"] },
+  runner: { names: ["expect", "eq", "allow"], prefixes: ["be_"], chains: true },
+  mocks: [
+    {
+      replacesMessages: {
+        by: { methods: ["to"] },
+        targets: ["allow"],
+        messages: ["receive", "receive_messages"],
+        of: { at: 0 },
+      },
+    },
+    { replacesConstant: { by: { methods: ["stub_const"] }, name: { at: 0 } } },
+    {
+      standsIn: {
+        by: { methods: ["instance_double"] },
+        of: { at: 0 },
+        becomes: "as_stubbed_const",
+      },
+    },
+  ],
+};
+
+describe("a runner whose calls chain, and the mocks RSpec writes", () => {
+  const expectX: Written = { callee: "expect", args: ["x"] };
+  const allowOrder: Written = { callee: "allow", args: ["Order"] };
+  const to = (on: Written, arg: Written): Written => ({
+    callee: `${on.callee}.to`,
+    method: "to",
+    on,
+    args: [arg],
+  });
+
+  it("reads a call made on what a runner call gives back as the runner's, from the name the chain starts at", () => {
+    const runs = (one: Written) => isRunnerCall(RSPEC_RUNNER, written(one));
+    expect(runs(to(expectX, { callee: "eq", args: ["y"] }))).toBe(true);
+    expect(runs({ callee: "be_valid" })).toBe(true);
+    expect(
+      runs({ callee: "order.cancel", method: "cancel", on: "order" }),
+    ).toBe(false);
+    expect(
+      runs({ callee: "x.save", method: "save", on: { callee: "build" } }),
+    ).toBe(false);
+    expect(
+      runs({
+        callee: "[1].each",
+        method: "each",
+        on: { callee: "[1]", literal: true },
+      }),
+    ).toBe(false);
+    const { chains: _chains, ...onSelf } = RSPEC_RUNNER.runner ?? {};
+    expect(
+      isRunnerCall(
+        { ...RSPEC_RUNNER, runner: onSelf },
+        written(to(expectX, { callee: "eq" })),
+      ),
+    ).toBe(false);
+  });
+
+  it("reads the members a message expectation replaces on what its target is given", () => {
+    const receive: Written = {
+      callee: "receive(:cancel).and_return",
+      method: "and_return",
+      on: { callee: "receive", args: ["cancel"] },
+    };
+    const messages: Written = {
+      callee: "receive_messages",
+      keywords: ["cancel", "refund"],
+    };
+    const read = (one: Written) =>
+      mockRead(RSPEC_RUNNER.mocks ?? [], written(one), () => false);
+    expect(read(to(allowOrder, receive))).toEqual({
+      replaces: "members",
+      members: ["cancel"],
+      receiverArgument: 0,
+    });
+    expect(read(to(allowOrder, messages))).toMatchObject({
+      members: ["cancel", "refund"],
+    });
+    expect(read(to(expectX, receive))).toBeNull();
+    expect(read(to(allowOrder, { callee: "eq", args: ["y"] }))).toBeNull();
+    expect(read(to(allowOrder, { callee: "[]", literal: true }))).toBeNull();
+  });
+
+  it("reads a constant a stub replaces by name, and a stand-in that becomes one only when it is made the constant", () => {
+    const read = (one: Written) =>
+      mockRead(RSPEC_RUNNER.mocks ?? [], written(one), () => false);
+    expect(read({ callee: "stub_const", args: ["Order"] })).toEqual({
+      replaces: "constant",
+      at: 0,
+    });
+    expect(read({ callee: "instance_double", args: ["Order"] })).toEqual({
+      replaces: "standIn",
+      at: null,
+    });
+    expect(
+      read({
+        callee: "instance_double",
+        args: ["Order"],
+        chainedWith: "as_stubbed_const",
+      }),
+    ).toEqual({ replaces: "standIn", at: 0 });
+  });
+});

@@ -738,6 +738,43 @@ export type MockRule =
         readonly member: { readonly at: number };
         readonly of: { readonly at: number } | "receiver";
       };
+    }
+  /**
+   * A message expectation, RSpec's `allow(Order).to receive(:cancel)`: a
+   * call of `by` made on a call of one of `targets`, passed a chain that
+   * starts with a call of one of `messages`. Each symbol and keyword the
+   * message is given is a member replaced on the argument at `of.at` of
+   * the target call, so `receive_messages(cancel: 1, refund: 2)` replaces
+   * two.
+   */
+  | {
+      readonly replacesMessages: {
+        readonly by: Patchers;
+        readonly targets: readonly string[];
+        readonly messages: readonly string[];
+        readonly of: { readonly at: number };
+      };
+    }
+  /** A constant the call replaces by the name it is given: `stub_const("Order", fake)`. */
+  | {
+      readonly replacesConstant: {
+        readonly by: Patchers;
+        readonly name: { readonly at: number };
+      };
+    }
+  /**
+   * A stand-in the test builds, as `instance_double(Order)` builds one.
+   * It replaces the constant at `of.at` when `becomes` is called on what
+   * the call gives back, as `.as_stubbed_const` makes it the constant,
+   * and otherwise replaces nothing the test would reach. The call counts
+   * as a mock either way.
+   */
+  | {
+      readonly standsIn: {
+        readonly by: Patchers;
+        readonly of: { readonly at: number };
+        readonly becomes: string;
+      };
     };
 
 /**
@@ -909,6 +946,13 @@ export interface RunnerCalls {
   readonly prefixes?: readonly string[];
   /** Whole method names: `skip`. */
   readonly names?: readonly string[];
+  /**
+   * Whether a call made on what one of these gives back is the runner's
+   * too, however long the chain, as `to` is in `expect(x).to eq(y)`. The
+   * chain is read as the source writes it, so one that starts from a name
+   * counts by the name's own spelling.
+   */
+  readonly chains?: boolean;
 }
 
 export type BindingExtraction = {
