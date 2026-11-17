@@ -28,7 +28,9 @@ export interface RailsEngine {
 }
 
 /** The base every engine class extends, which Ruby reaches through Rails' own constant. */
-const RAILS_ENGINE: Inherits = { from: ["Rails"], named: ["Engine"] };
+const RAILS_ENGINE: readonly Inherits[] = [
+  { from: ["Rails"], named: ["Engine"] },
+];
 
 /**
  * Every engine defined under one of `roots`, in the order the roots were

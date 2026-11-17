@@ -155,12 +155,12 @@ A `UnitSpec` can say which of the unit's parameters the platform fills when it c
 ```typescript
 {
   type: "subclassOf";
-  inherits: { from: string[]; named: string[] };
+  inherits: { from: string[]; named: string[] }[];
   members: { kind: "instance" | "singleton"; names?: string[]; pattern?: string };
 }
 ```
 
-`subclassOf` takes the methods of an exported class whose ancestry reaches one of `named` as one of the modules in `from` exports it, through any of the project's own classes in between. Each unit is named `Class.method`. Ruby has no imports, so `from` lists the library's constant: `ViewComponent` for `ViewComponent::Preview`. A Ruby class written inside a module, as `module Billing; class Nightly < Workers::WorkerEntrypoint` writes one, is read too, and its units are named under its full name, `Billing::Nightly.fetch`. A TypeScript or Python class the file does not export is not read.
+`subclassOf` takes the methods of an exported class whose ancestry reaches any one of the bases `inherits` lists, through any of the project's own classes in between. A class reaches a base when it extends one of `named` as one of the modules in `from` exports it. Each unit is named `Class.method`. Ruby has no imports, so `from` lists the library's constant: `ViewComponent` for `ViewComponent::Preview`. A Ruby class written inside a module, as `module Billing; class Nightly < Workers::WorkerEntrypoint` writes one, is read too, and its units are named under its full name, `Billing::Nightly.fetch`. A TypeScript or Python class the file does not export is not read.
 
 ### `marked`
 

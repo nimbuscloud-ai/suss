@@ -34,7 +34,6 @@ import {
   declareClassBodies,
   definesMethod,
   imported,
-  inherits,
 } from "@suss/recognize";
 import { classMemberName } from "@suss/resolution";
 import { createTestProject } from "@suss/test-project";
@@ -94,7 +93,7 @@ end
 /** The library's base, as Ruby and as an import spell where it comes from. */
 const GATED = classBody({
   ...LIBRARY,
-  in: inherits({ from: ["lib", "Lib"], named: ["Model"] }),
+  in: [{ from: ["lib", "Lib"], named: ["Model"] }],
 });
 
 const GATED_TYPESCRIPT = `
