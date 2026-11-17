@@ -1,8 +1,6 @@
 {
   "vitest": "vitest: the module its test functions and the vi helper are imported from",
   "test": "suss: code-unit kind; also vitest: the alias of it that declares a case",
-  "testCase": "suss: discovery match type for test cases written as calls",
-  "block": "suss: the testCase style where suites and cases are nested calls",
   "describe": "vitest: opens a suite of cases",
   "suite": "vitest: the alias of describe",
   "it": "vitest: declares one case",

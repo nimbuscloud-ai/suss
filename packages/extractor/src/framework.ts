@@ -26,6 +26,7 @@ import type {
 import type { LibraryEnvVars } from "./libraryEnvReads.js";
 import type {
   CallScope,
+  Imported,
   Inherits,
   ModuleMemberName,
   ReceiverOrigin,
@@ -488,7 +489,7 @@ export type DiscoveryMatch =
       workspaces?: true;
     }
   | CallbackArgumentMatch
-  | TestCaseMatch;
+  | TestCasesMatch;
 
 /**
  * Exports of the file by name. With `names` alone, the TypeScript adapter
@@ -760,69 +761,6 @@ export interface CallbackArgumentMatch {
   callbackPosition: number;
 }
 
-/**
- * Test cases written as nested calls, the way vitest, jest and mocha
- * write them: `describe("orders", () => { it("cancels", () => ...) })`.
- * Each case becomes a unit named by its title path, the suite titles
- * then its own, joined with ` > `. A title the adapter cannot read as a
- * string keeps its source text and is recorded as unresolved.
- */
-export interface TestCaseMatch {
-  type: "testCase";
-  style: "block";
-  /** The module the runner's functions are imported from, e.g. "vitest". */
-  importModule: string;
-  /** The functions that open a group of cases, e.g. ["describe", "suite"]. */
-  suiteNames: string[];
-  /** The functions that declare one case, e.g. ["it", "test"]. */
-  caseNames: string[];
-  /**
-   * Modifiers that mean the case does not run, written after a suite
-   * or case name: `it.skip`, `describe.todo`. A case under a skipped
-   * suite is skipped too.
-   */
-  skipModifiers: string[];
-  /**
-   * Modifiers that take arguments of their own and return the function
-   * to call, such as `it.skipIf(condition)`. The case called through one
-   * is read like any other.
-   */
-  argumentModifiers: string[];
-  /**
-   * Modifiers that take a table and declare one case per row, such as
-   * `it.each(rows)`. The runner fills the title in per row, so the case
-   * is read once, under the title as written, and that title is
-   * recorded as unresolved.
-   */
-  rowModifiers: string[];
-  /**
-   * How the runner replaces something before a case runs. `object` is
-   * the runner's helper object, imported from `importModule`.
-   * `moduleMethods` replace a whole module given its specifier
-   * (`vi.mock("./orders.js")`), and `memberMethods` replace one member
-   * given the object and the member's name (`vi.spyOn(orders, "cancel")`).
-   */
-  mocks?: {
-    object: string;
-    moduleMethods: string[];
-    memberMethods: string[];
-  };
-  /**
-   * Walk only these files, matched on whole path segments from the end,
-   * so `src/orders.test.ts` matches `/repo/pkg/src/orders.test.ts`. Left
-   * out, every file that imports the runner is walked.
-   */
-  files?: string[];
-  /**
-   * Names of the files where the runner's functions can be globals that
-   * need no import, as vitest's `globals: true` makes them, with `*` for
-   * any run of characters: `*.test.*`. Such a file is read whatever it
-   * imports, and a suite, case or mock name it does not bind itself is
-   * the runner's.
-   */
-  globalsIn?: string[];
-}
-
 /** The files a runner collects. */
 export interface FileSelection {
   /** Globs the file's name has to match, `*` being any run of characters: `test_*.py`. */
@@ -834,7 +772,7 @@ export interface FileSelection {
 /**
  * Test cases as a runner collects them, which `@suss/recognize` reads
  * through the module ops. Each case becomes a `test` unit named by its
- * titles: the classes around it, outermost first, then its own name.
+ * titles: the classes or groups around it, outermost first, then its own.
  */
 export interface TestCasesMatch {
   type: "testCases";
@@ -843,6 +781,8 @@ export interface TestCasesMatch {
   functions?: { readonly pattern: string };
   /** Cases written as methods of a class: pytest's `Test` classes and unittest's. */
   classes?: ClassCases;
+  /** Cases and the groups around them written as calls: vitest's `describe` and `it`. */
+  calls?: CallCases;
   /** What the runner calls before a case. Their calls count as the case's own. */
   before?: BeforeCase;
   skips?: SkipRules;
@@ -871,6 +811,48 @@ export type MockRule =
         readonly of: { readonly at: number };
       };
     };
+
+/**
+ * Groups and cases written as calls of the runner's functions:
+ * `describe("orders", () => { it("cancels", () => ...) })`. A case is in
+ * every group whose call it is written inside, through the functions
+ * passed to other calls, so `rows.forEach((row) => it(row, ...))` in a
+ * group is in that group. Its title is its first argument, and it runs
+ * the first function passed after that. A title that is no string keeps
+ * its source text and is recorded as unresolved.
+ */
+export interface CallCases {
+  /** Where the runner's functions are imported from, under the names the module exports them as. */
+  readonly from: Imported;
+  /**
+   * Files where the runner's functions are globals that need no import,
+   * as vitest's `globals: true` makes them in `*.test.*`. A runner name
+   * such a file does not bind at its top level is the runner's.
+   */
+  readonly globalsIn?: { readonly matching: readonly string[] };
+  /** The functions that open a group, and those that open one the runner skips, such as RSpec's `xdescribe`. */
+  readonly groups: CallNames;
+  readonly cases: CallNames;
+  /** What can be written after a group's or a case's name. */
+  readonly modifiers?: {
+    /** `it.skip`, `describe.todo`: the case, or every case in the group, does not run. */
+    readonly skip: readonly string[];
+    /** `it.skipIf(c)`: called with arguments of its own, it gives back the function to call. */
+    readonly takingArguments: readonly string[];
+    /**
+     * `it.each(rows)`: called with a table, it declares one case per row.
+     * The runner fills the title in per row, so the case is read once,
+     * under its title as written, which is recorded as unresolved.
+     */
+    readonly perRow: readonly string[];
+  };
+}
+
+/** A runner's functions of one kind, and those of that kind the runner skips. */
+export interface CallNames {
+  readonly names: readonly string[];
+  readonly skipped?: readonly string[];
+}
 
 /** Which calls patch: calls from one of the origins, or a method called on a parameter a fixture hands the function. */
 export interface Patchers {

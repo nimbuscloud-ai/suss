@@ -172,7 +172,7 @@ describe("the test cases a runner collects", () => {
       [["TestOrders", "TestNested", "test_inner"], at("220-260")],
       [["Cases", "test_works"], at("520-560")],
     ]);
-    expect(found.every((one) => one.runs.site?.() === one.at)).toBe(true);
+    expect(found.every((one) => one.runs?.site?.() === one.at)).toBe(true);
   });
 
   it("reads only a file whose name the runner collects, and only a listed one when the PRDs list files", () => {

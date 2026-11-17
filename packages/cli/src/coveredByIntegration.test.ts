@@ -18,13 +18,7 @@ import { runCli } from "./run.js";
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CheckIntentResult } from "@suss/checker-intent";
 
-let root: string;
-
-function write(relPath: string, content: string): void {
-  const full = path.join(root, relPath);
-  fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, content);
-}
+const FIXTURES = path.resolve(import.meta.dirname, "../../../fixtures");
 
 async function run(argv: string[]): Promise<number> {
   const swallow = (() => true) as typeof process.stdout.write;
@@ -40,119 +34,26 @@ async function run(argv: string[]): Promise<number> {
   }
 }
 
-const TEST_FILE = `
-import { describe, expect, it, vi } from "vitest";
-import { cancelOrder } from "./orders";
-import { refundOrder } from "./refunds";
+/** The vitest fixture: orders, refunds and checkout, a PRD, the tests it lists, and others it does not. */
+const VITEST = path.join(FIXTURES, "covered-by-vitest");
 
-describe("cancel", () => {
-  it("marks the order cancelled", () => {
-    expect(cancelOrder("o-1").status).toBe("cancelled");
-  });
-
-  it("refunds the payment", () => {
-    expect(refundOrder("o-1")).toBe(true);
-  });
-
-  it.skip("cancels twice without harm", () => {
-    cancelOrder("o-1");
-    cancelOrder("o-1");
-  });
-});
-`;
-
-const MOCKED_TEST_FILE = `
-import { it, vi } from "vitest";
-import { checkout } from "./checkout";
-
-vi.mock("./orders", () => ({ cancelOrder: () => ({ status: "cancelled" }) }));
-
-it("cancels on a failed checkout", () => {
-  checkout("o-1");
-});
-`;
-
-const PRD = `
-kind: prd
-title: Cancel an order
-purpose: A customer cancels an order they no longer want.
-audience: customers
-scenarios:
-  - title: cancelled
-    when: a customer cancels an order
-    expect: the order is cancelled
-    coveredBy: src/orders.test.ts > cancel > marks the order cancelled
-    about: cancelOrder
-  - title: renamed test
-    when: a customer cancels an order again
-    expect: nothing changes
-    coveredBy: src/orders.test.ts > cancel > cancels an order twice
-    about: cancelOrder
-  - title: wrong subject
-    when: a refund follows a cancel
-    expect: the payment goes back
-    coveredBy: src/orders.test.ts > cancel > refunds the payment
-    about: cancelOrder
-  - title: skipped
-    when: an order is cancelled twice
-    expect: the second cancel does nothing
-    coveredBy: src/orders.test.ts > cancel > cancels twice without harm
-    about: cancelOrder
-  - title: mocked
-    when: a checkout fails
-    expect: the order is cancelled
-    coveredBy: src/checkout.test.ts > cancels on a failed checkout
-    about: cancelOrder
-  - title: nothing yet
-    when: an order that shipped is cancelled
-    expect: the customer is told it is too late
-`;
-
+let root: string;
 let summaries: BehavioralSummary[];
 let intent: CheckIntentResult;
 
 beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-covered-by-"));
-  write("package.json", JSON.stringify({ name: "orders-api" }));
-  write(
-    "tsconfig.json",
-    JSON.stringify({
-      compilerOptions: { strict: true, module: "esnext" },
-      include: ["src"],
-    }),
-  );
-  write(
-    "src/orders.ts",
-    'export function cancelOrder(id: string) {\n  return { id, status: "cancelled" };\n}\n',
-  );
-  write(
-    "src/refunds.ts",
-    "export function refundOrder(id: string) {\n  return id.length > 0;\n}\n",
-  );
-  write(
-    "src/checkout.ts",
-    'import { cancelOrder } from "./orders";\nexport function checkout(id: string) {\n  return cancelOrder(id);\n}\n',
-  );
-  write("src/orders.test.ts", TEST_FILE);
-  write("src/checkout.test.ts", MOCKED_TEST_FILE);
-  // A test file no PRD lists, which the run should not read as tests.
-  write(
-    "src/unlisted.test.ts",
-    'import { it } from "vitest";\nit("is never read", () => {});\n',
-  );
-  write("intent/cancel.prd.yaml", PRD);
-
   const out = path.join(root, "summaries");
   fs.mkdirSync(out);
   expect(
     await run([
       "extract",
       "-p",
-      path.join(root, "tsconfig.json"),
+      path.join(VITEST, "tsconfig.json"),
       "-f",
       "vitest",
       "--intent",
-      path.join(root, "intent"),
+      path.join(VITEST, "intent"),
       "--no-cache",
       "-o",
       path.join(out, "code.json"),
@@ -166,7 +67,7 @@ beforeAll(async () => {
     "--dir",
     out,
     "--intent",
-    path.join(root, "intent"),
+    path.join(VITEST, "intent"),
     "--json",
     "--allow-empty",
     "-o",
@@ -266,8 +167,6 @@ const OTHER_RUNNERS = [
     titlesListed: "OrderTest > test_marks_the_order_cancelled",
   },
 ];
-
-const FIXTURES = path.resolve(import.meta.dirname, "../../../fixtures");
 
 describe.each(OTHER_RUNNERS)("a PRD listing $runner tests", (each) => {
   const project = path.join(FIXTURES, each.fixture);

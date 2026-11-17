@@ -1724,7 +1724,7 @@ function extractFromSourceFile(
       // is no boundary at all, so it keeps none.
       if (
         raw.boundaryBinding === null &&
-        matchedPattern?.match.type !== "testCase"
+        matchedPattern?.match.type !== "testCases"
       ) {
         if (unit.packageExportInfo !== undefined) {
           raw.boundaryBinding = packageExportBinding({

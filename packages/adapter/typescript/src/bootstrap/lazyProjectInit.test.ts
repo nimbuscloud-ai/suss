@@ -122,15 +122,14 @@ describe("createLazyProject", () => {
         {
           kind: "test",
           match: {
-            type: "testCase",
-            style: "block",
-            importModule: "runner",
-            suiteNames: ["describe"],
-            caseNames: ["it"],
-            skipModifiers: [],
-            argumentModifiers: [],
-            rowModifiers: [],
-            globalsIn: ["*.test.*"],
+            type: "testCases",
+            files: { matching: ["*"] },
+            calls: {
+              from: { origin: "imported", importedFrom: ["runner"] },
+              globalsIn: { matching: ["*.test.*"] },
+              groups: { names: ["describe"] },
+              cases: { names: ["it"] },
+            },
           },
           requiresImport: ["runner"],
         },
