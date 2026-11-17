@@ -19,6 +19,7 @@ import {
 } from "../ast.js";
 import { parameterShapes } from "../facts/values.js";
 import { declaredValueOf } from "./declaredType.js";
+import { pythonTruthiness } from "./truthiness.js";
 
 import type {
   Element,
@@ -116,6 +117,7 @@ export function pythonLowering(options: LoweringOptions): Lowering<PyNode> {
     freeNamesOf,
     holeNameOf: placeholderName,
     declaredValueOf: (node) => declaredValueOf(peelValue(node), writtenAs),
+    truthiness: pythonTruthiness,
     rows,
   };
 }
@@ -500,7 +502,8 @@ function blockStatements(block: PyNode | null): PyNode[] {
   return block === null ? [] : children(block);
 }
 
-function isRoot(node: PyNode): boolean {
+/** Whether a node is the module, a function or a lambda, the roots the engine runs a body of. */
+export function isRoot(node: PyNode): boolean {
   return ROOT_TYPES.has(node.type);
 }
 

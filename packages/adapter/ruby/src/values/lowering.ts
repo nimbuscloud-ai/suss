@@ -31,6 +31,7 @@ import {
   symbolValue,
 } from "../ast.js";
 import { ENVIRONMENT } from "../stdlib/environment.js";
+import { rubyTruthiness } from "./truthiness.js";
 
 import type {
   Element,
@@ -163,6 +164,7 @@ export function rubyLowering(options: LoweringOptions): Lowering<RbNode> {
     },
     freeNamesOf,
     holeNameOf: placeholderName,
+    truthiness: rubyTruthiness,
     rows,
   };
 }
@@ -740,7 +742,7 @@ const TAIL_BODY_TYPES = new Set([
  * returns: the last statement of the body, or the last one of a
  * branch arm that is itself in tail position.
  */
-function isTailExpression(node: RbNode): boolean {
+export function isTailExpression(node: RbNode): boolean {
   const parent = node.parent;
   if (parent === null) {
     return false;
@@ -793,7 +795,7 @@ function isLastStatement(node: RbNode, statements: readonly RbNode[]): boolean {
 }
 
 /** A block handed to a call runs as its own scope; the block inside a `-> {}` is the lambda's. */
-function isRoot(node: RbNode): boolean {
+export function isRoot(node: RbNode): boolean {
   if (OWN_ROOT_TYPES.has(node.type)) {
     return true;
   }

@@ -23,11 +23,31 @@ import {
   appended,
   equals,
   extended,
+  fallbackRow,
   joined,
-  negated,
+  negationRow,
   plus,
+  takesLeftWhenFalse,
 } from "./operations.js";
+import {
+  everyOption,
+  opposite,
+  stringIsEmpty,
+  truthinessFrom,
+} from "./truthiness.js";
 import { concat, constant, hole, text, type Value } from "./value.js";
+
+/** The test language counts values as true the way JavaScript does. */
+export const testTruthiness = truthinessFrom({
+  constant: ({ options }) => everyOption(options, Boolean),
+  string: (value) => opposite(stringIsEmpty(value)),
+  sequence: () => true,
+  unbounded: () => true,
+  record: () => true,
+  hole: () => null,
+  ref: () => null,
+  deferred: () => null,
+});
 
 export interface TestNode {
   shape: Expression<TestNode> | Statement<TestNode>;
@@ -43,6 +63,8 @@ export interface TestNode {
   /** Set on a read to say what its declared type limits it to. */
   declared?: Value;
   mutatedNames?: string[];
+  /** On a root: the names it writes more than once, which a sound run reads as holes. */
+  reboundNames?: string[];
   freeNames?: string[];
 }
 
@@ -346,12 +368,9 @@ const rows: Row[] = [
     arity: 2,
     apply: ([a, b]) => equals(a ?? hole("value"), b ?? hole("value")),
   },
-  {
-    kind: "operator",
-    operator: "!",
-    arity: 1,
-    apply: ([a]) => negated(a ?? hole("value")),
-  },
+  negationRow("!", testTruthiness),
+  fallbackRow("&&", takesLeftWhenFalse(testTruthiness)),
+  fallbackRow("||", testTruthiness),
   {
     kind: "method",
     method: "push",
@@ -450,6 +469,9 @@ export const testLowering: Lowering<TestNode> = {
   callable: (n) => n.calls ?? null,
   mutatedInNestedFunction: (root, text) =>
     root.mutatedNames?.includes(text) ?? false,
+  writtenOnce: (root, text) =>
+    !(root.reboundNames?.includes(text) ?? false) &&
+    !(root.mutatedNames?.includes(text) ?? false),
   freeNamesOf: (f) => f.freeNames ?? [],
   holeNameOf: (n) => {
     if (n.shape.kind === "name") {
@@ -461,5 +483,6 @@ export const testLowering: Lowering<TestNode> = {
     return "param";
   },
   declaredValueOf: (n) => n.declared ?? null,
+  truthiness: testTruthiness,
   rows,
 };

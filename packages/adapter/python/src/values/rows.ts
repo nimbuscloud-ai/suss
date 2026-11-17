@@ -15,24 +15,28 @@ import {
   equals,
   extended,
   fallback,
+  fallbackRow,
   formatArguments,
   hole,
   joined,
   joinedPath,
   literalOf,
   negated,
+  negationRow,
   operand,
   percentFormatted,
   plus,
   type Row,
   readableFallback,
   stripped,
+  takesLeftWhenFalse,
   text,
   truthOf,
   type Value,
 } from "@suss/values";
 
 import { ENVIRONMENT } from "../stdlib/environment.js";
+import { pythonTruthiness } from "./truthiness.js";
 
 const operatorRows: Row[] = [
   {
@@ -215,4 +219,16 @@ export const pythonRows: readonly Row[] = [
   ...stringRows,
   ...sequenceRows,
   ...calleeRows,
+];
+
+/**
+ * The rows a sound evaluator uses: `not`, `and` and `or`, with an
+ * unknown left side joining the two sides instead of being read as the
+ * right one. `+` and `==` are left out, since a hole on one side leaves
+ * what kind of value comes out unknown.
+ */
+export const pythonSoundRows: readonly Row[] = [
+  negationRow("not", pythonTruthiness),
+  fallbackRow("and", takesLeftWhenFalse(pythonTruthiness)),
+  fallbackRow("or", pythonTruthiness),
 ];

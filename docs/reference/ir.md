@@ -179,6 +179,7 @@ interface Transition {
   confidence?: ConfidenceInfo;
   expectedInput?: TypeShape;
   provenance?: ProvenanceEntry[];
+  unreachable?: { condition: number; values: TypeShape; every: "truthy" | "falsy" };
   metadata?: Record<string, unknown>;
 }
 ```
@@ -208,6 +209,7 @@ One transition records that when all of these conditions hold, this output comes
 
   The client reads `body.name` and `body.email`, so a provider `200` without `email` is a mismatch. The field is absent on provider transitions, and on client transitions where the field tracking could not resolve the accesses.
 - **`provenance`** says where the value in each column an effect writes, or picks rows by, came from: a path off one of the unit's inputs, a literal, or the place suss stopped following it. Each entry is `{ at, from }`, where `at` gives the effect's position in `effects` and the column, and `from` is a list of `ValueRef`s. It is absent when no effect of the transition has such a column. [Where a value came from](/reference/summary-format#where-a-value-came-from) has an example.
+- **`unreachable`** is set when the transition can never run, because one of its conditions can never be true. `condition` is that condition's position in `conditions`, `values` is every value the condition's subject can have, and `every` says what the language makes of each of them. The transition stays in the list, so the summary still shows the code. [A branch that can never run](/reference/summary-format#a-branch-that-can-never-run) says when suss sets it.
 
 ### `Predicate`
 

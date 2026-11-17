@@ -813,6 +813,20 @@ export const ProvenanceEntrySchema = z.object({
   from: z.array(ValueRefSchema),
 });
 
+/**
+ * Why a transition can never run: one of its conditions can never be
+ * true. `condition` is that condition's position in `conditions`.
+ * `values` is every value the condition's subject can have, read from
+ * the code that produces it, and `every` says what the language makes of
+ * each of them, so a condition that needs the other answer fails on all
+ * of them.
+ */
+export const UnreachableSchema = z.object({
+  condition: z.number().int().min(0),
+  values: TypeShapeSchema,
+  every: z.enum(["truthy", "falsy"]),
+});
+
 export const TransitionSchema = z.object({
   id: z.string(),
   conditions: z.array(PredicateSchema),
@@ -824,6 +838,8 @@ export const TransitionSchema = z.object({
   expectedInput: TypeShapeSchema.optional(),
   /** Absent when no effect of the transition is given a value suss read. */
   provenance: z.array(ProvenanceEntrySchema).optional(),
+  /** Absent unless the transition can never run. */
+  unreachable: UnreachableSchema.optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 

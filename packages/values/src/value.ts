@@ -259,19 +259,11 @@ export function settledConstantOf(value: Value): Constant | undefined {
   return takenOverUnread(value) ? undefined : constantOf(value);
 }
 
-/** The one string, number or boolean a value settles on, or null. */
-export function scalarOf(value: Value): string | number | boolean | null {
-  const text = literalOf(value);
-  if (text !== null) {
-    return text;
-  }
-  const settled = constantOf(value);
-  return typeof settled === "number" || typeof settled === "boolean"
-    ? settled
-    : null;
-}
-
-/** Whether a condition is settled, and which way, or null when it is not. */
+/**
+ * Whether a condition is settled, and which way, or null when it is not.
+ * The plain rows for `||` and `&&` still read a value's truth this way;
+ * the engine and a sound run use the language's own `truthiness`.
+ */
 export function truthOf(value: Value): boolean | null {
   const forced = force(value);
   if (forced.kind === "constant" && forced.options.length === 1) {
@@ -282,4 +274,16 @@ export function truthOf(value: Value): boolean | null {
     return literal === null ? null : literal !== "";
   }
   return null;
+}
+
+/** The one string, number or boolean a value settles on, or null. */
+export function scalarOf(value: Value): string | number | boolean | null {
+  const text = literalOf(value);
+  if (text !== null) {
+    return text;
+  }
+  const settled = constantOf(value);
+  return typeof settled === "number" || typeof settled === "boolean"
+    ? settled
+    : null;
 }

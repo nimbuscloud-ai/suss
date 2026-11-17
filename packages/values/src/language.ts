@@ -10,6 +10,7 @@
  * language shares the engine. Only the lowering and the table change.
  */
 
+import type { Truthiness } from "./truthiness.js";
 import type { Value } from "./value.js";
 
 export type Literal = string | number | boolean | null | undefined;
@@ -181,6 +182,15 @@ export interface Lowering<N> {
   callable(node: N): N | null;
   /** Whether a function nested in `root` writes to, or calls a method on, `name`. */
   mutatedInNestedFunction(root: N, name: string): boolean;
+  /**
+   * Whether every write to `name` in `root` is one the engine follows:
+   * `root` binds it exactly once, as one of its own parameters or with
+   * a declaration or assignment the lowering expresses, and nothing else
+   * in `root` or in a function nested in it writes it. A sound evaluator
+   * reads any other name as a hole, and reads every name as one when the
+   * lowering leaves this out.
+   */
+  writtenOnce?(root: N, name: string): boolean;
   /** The names a function reads from its enclosing scopes. */
   freeNamesOf(fn: N): readonly string[];
   /** The name to give a hole that replaces this expression. */
@@ -199,6 +209,12 @@ export interface Lowering<N> {
    * by this key. Left out, the node itself is the key.
    */
   idOf?(node: N): unknown;
+  /**
+   * The language's rule for which values count as true in a condition.
+   * The engine settles a branch or a `?:` with it, so each language
+   * states its own and the engine never decides.
+   */
+  readonly truthiness: Truthiness;
   readonly rows: readonly Row[];
 }
 

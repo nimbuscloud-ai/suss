@@ -41,12 +41,15 @@ export {
   equals,
   extended,
   fallback,
+  fallbackRow,
   formatArguments,
   type GetterPositions,
   isPresent,
   joined,
   joinedPath,
   negated,
+  negatedBy,
+  negationRow,
   operand,
   percentFormatted,
   plus,
@@ -54,6 +57,7 @@ export {
   recased,
   startsWith,
   stripped,
+  takesLeftWhenFalse,
 } from "./operations.js";
 export {
   hostOf,
@@ -63,6 +67,17 @@ export {
   routePatternOf,
   statedRequestPath,
 } from "./routePath.js";
+export {
+  everyOption,
+  hasNoEntries,
+  opposite,
+  type SettledTest,
+  settledTest,
+  stringIsEmpty,
+  type Truthiness,
+  type TruthTable,
+  truthinessFrom,
+} from "./truthiness.js";
 export { shapeOfValue } from "./typeShape.js";
 export {
   type Constant,

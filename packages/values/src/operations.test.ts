@@ -9,11 +9,14 @@ import {
   equals,
   extended,
   fallback,
+  fallbackRow,
   formatArguments,
   isPresent,
   joined,
   joinedPath,
   negated,
+  negatedBy,
+  negationRow,
   operand,
   percentFormatted,
   plus,
@@ -21,8 +24,10 @@ import {
   recased,
   startsWith,
   stripped,
+  takesLeftWhenFalse,
   isPresent as takesLeftWhenPresent,
 } from "./operations.js";
+import { testTruthiness } from "./testLowering.js";
 import {
   concat,
   constant,
@@ -40,6 +45,8 @@ import {
   unbounded,
   type Value,
 } from "./value.js";
+
+import type { Row } from "./language.js";
 
 describe("appended and extended", () => {
   it("adds to a known sequence", () => {
@@ -245,6 +252,32 @@ describe("fallback and isPresent", () => {
   it("cannot tell when a constant is sometimes null", () => {
     expect(isPresent({ kind: "constant", options: [1, null] })).toBeNull();
     expect(isPresent({ kind: "constant", options: [1, 2] })).toBe(true);
+  });
+});
+
+describe("the rows for a language's logic operators", () => {
+  const same = (value: Value): Value => value;
+  const applied = (row: Row, operands: Value[]): Value => {
+    if (row.kind !== "operator") {
+      throw new Error("expected an operator row");
+    }
+    return row.apply(operands, same);
+  };
+
+  it("negates by the language's rule", () => {
+    expect(applied(negationRow("!", testTruthiness), [record([])])).toEqual(
+      constant(false),
+    );
+    expect(negatedBy(testTruthiness, hole("x"))).toEqual(hole("value"));
+  });
+
+  it("takes the side of `&&` and `||` the rule settles", () => {
+    const and = fallbackRow("&&", takesLeftWhenFalse(testTruthiness));
+    const or = fallbackRow("||", testTruthiness);
+    expect(applied(and, [constant(0), text("b")])).toEqual(constant(0));
+    expect(applied(and, [constant(1), text("b")])).toEqual(text("b"));
+    expect(applied(or, [constant(0), text("b")])).toEqual(text("b"));
+    expect(applied(and, [hole("x"), text("b")])).toEqual(hole("x"));
   });
 });
 
