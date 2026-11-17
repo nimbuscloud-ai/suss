@@ -143,7 +143,7 @@ tree-sitter hands back a fresh wrapper object every time a child is read, so two
 
 Each question to `@suss/resolution` runs the rules over every fact the project emitted. A question costs about the same whether it covers one key or a thousand. Asking key by key runs the rules again for every key, and on a large Rails app that took almost the whole extraction time.
 
-So code with many nodes to ask about asks about them together, through `askWrittenValues` in `values/evaluator.ts`. `discoverUnits` does this for the client patterns before it reads any call site. It asks one question covering every call receiver in the file, then one covering the URLs passed to the receivers that turned out to belong to the library. `storageEffects` and the environment reader batch the same way, one method at a time: one question for the receivers of every storage chain in a body, and one for every callee key in it. No check enforces this, because code that asks per site gets the same answer, only slower.
+So code with many nodes to ask about asks about them together, through `askWrittenValues` in `values/evaluator.ts`. The client walk in `clientCalls.ts` does this before it hands any call to a pack's request hooks. It asks one question covering every call receiver in every method of the file. `storageEffects` and the environment reader batch the same way, one method at a time: one question for the receivers of every storage chain in a body, and one for every callee key in it. No check enforces this, because code that asks per site gets the same answer, only slower.
 
 ### Where a local goes
 
@@ -340,21 +340,24 @@ A call to a method the project defines itself is skipped. `wantedDeclaredName` l
 
 ## A statement the project wrote itself
 
-A model call shows what it touches in the call. A SQL statement shows it in its text, so the adapter passes the text to `@suss/sql`, and the parse gives the tables, the columns, and what the statement picks rows by. A pack declares the library that runs the statement:
+A model call shows what it touches in the call. A SQL statement shows it in its text, so the adapter passes the text to `@suss/sql`, and the parse gives the tables, the columns, and what the statement picks rows by.
+
+The pg and BigQuery packs declare the calls that run a statement with `sqlStatements` from `@suss/recognize`, which runs through the ops the section after this one describes. ActiveRecord declares its connection's statements with a `rawSql` pattern, which this adapter reads itself:
 
 ```ts
 rawSql: [
   {
-    constantName: "PG",
-    clientBuilders: ["connect"],
-    statements: { exec: { at: 0 }, prepare: { at: 1 } },
+    constantName: "ActiveRecord::Base",
+    baseClasses: ["ActiveRecord::Base"],
+    clientBuilders: ["connection", "lease_connection", "retrieve_connection"],
+    statements: { execute: { at: 0 }, select_all: { at: 0 } },
     storageSystem: "postgresql",
     dialect: "postgresql",
   },
 ]
 ```
 
-Ruby code declares no types, so the adapter works out the receiver by following it back to the call that produced it. The chain starts at `constantName`, a call in `clientBuilders` returns a client, and `writtenNodeOf` follows each step. A connection stored in a local, in an instance variable or behind a method all give the same result:
+Ruby code declares no types, so either reader works out the receiver by following it back to the call that produced it. For a `rawSql` pattern the chain starts at `constantName`, a call in `clientBuilders` returns a client, and `writtenNodeOf` follows each step. A connection stored in a local, in an instance variable or behind a method all give the same result, as the pg pack's `PG.connect` shows:
 
 ```ruby
 conn = PG.connect(ENV["DATABASE_URL"])
@@ -370,7 +373,7 @@ conn.exec("SELECT name FROM accounts WHERE id = #{id}")   # read, picking by id
 conn.exec("SELECT id FROM #{params[:table]}")             # nothing: no table settled
 ```
 
-Some libraries select part of the store before the statement is sent, and some reach rows with no statement at all. `addressing` declares the calls in the middle of such a chain, and `rowCalls` declares the calls at the end:
+Some libraries select part of the store before the statement is sent, and some reach rows with no statement at all. The BigQuery pack declares that with `.scope(...)` and `.container(...)` on its `@suss/recognize` chains. A `rawSql` pattern says the same with `addressing` for the calls in the middle of such a chain and `rowCalls` for the calls at the end, though no shipped pack writes either now:
 
 ```ts
 addressing: { dataset: { says: "scope", at: 0 }, table: { says: "container", at: 0 } },
@@ -441,7 +444,7 @@ The read itself happens in the source class and not at the call. When a pack dec
 
 ## The methods a write runs on its own
 
-A model registers methods for the library to run around a write, so a body that writes through the model runs them without calling them by name. `callbacks` on a storage pattern declares which event each write method fires, which class-body call registers a callback for which events, and the keyword that limits one registration to fewer events.
+A model registers methods for the library to run around a write, so a body that writes through the model runs them without calling them by name. `callbacks.eventOf` on a storage pattern declares which events each write method fires. The pack's `classBodies` declaration says which class-body call registers a callback for which events, with `callback(...)` from `@suss/recognize`, and its `narrowedBy` gives the keyword that limits one registration to fewer events.
 
 The adapter reads the registrations once per class body into `classCallback(class, event, method)`. `wantedCallbackMethod` in `@suss/resolution` joins that fact to the ancestry and to the `def` behind the name. A callback registered on a base class therefore counts for every class below it. It follows the ancestry chain the base names already come from, with no walk of its own.
 
@@ -464,7 +467,7 @@ The storage recognizer asks the same rules about a receiver that is not written 
 
 ## What an association reaches
 
-`associations` on the same storage pattern lists the class-body calls that declare an association from one model to another. The list is split by whether the association name is written in the singular or the plural. Each such call the adapter reads in a class or module body becomes one fact:
+The pack's `classBodies` declaration lists the class-body calls that declare an association from one model to another, each written with `association(...)` from `@suss/recognize`, which says where the name is, where a `class_name` keyword gives the target, and whether the name is written in the plural. Each such call the adapter reads in a class or module body becomes one fact:
 
 ```
 declaresAssociation  app/models/account.rb:0-812  statuses  app/models/account.rb:0-812#association:statuses
@@ -482,7 +485,7 @@ The facts do not record whether an association is a collection. `@account.status
 
 ## What a scope defines
 
-`scopes` on a storage pattern lists the class-body calls that define a class method from a lambda. ActiveRecord's `scope :recent, -> { order(:created_at) }` defines `Account.recent`. The value facts record it the way they record `def self.recent`, as a property of the class holding the lambda:
+A `definesMethod(...)` entry in the pack's `classBodies` declaration says which class-body call defines a class method from a lambda. ActiveRecord's `scope :recent, -> { order(:created_at) }` defines `Account.recent`. The value facts record it the way they record `def self.recent`, as a property of the class holding the lambda:
 
 ```
 holdsProperty  app/models/account.rb:0-812  self.recent  app/models/account.rb:40-75
@@ -573,7 +576,7 @@ A predicate matcher is a call RSpec turns into a method call on the value under 
 
 A shared group, `shared_examples "x"`, is found by name when a group includes it: in the including file first, then in any file the run reads. The adapter keeps that table across files, from what `@suss/recognize` says each file writes, and hands it to the reader, since the reader reads one file at a time and the title is looked up across all of them. Its examples become test units of each includer, filed and named under the includer, with `it_behaves_like` adding a nested title. They seed the walk once, at their block in the shared group's file, so the walk cannot tell one includer from another. With one includer, the example runs through that includer's groups; with several, it runs through the shared group's own blocks alone. A name the shared group reads but does not define is keyed on the shared group, and once every file is in, the run binds it to what each include site has under that name. Several includers with different values leave it unsettled, which is the answer when which includer ran is not known. A group that includes a shared group in place, with `include_context`, owns every name no nearer group defines, and the run binds the names the shared group defines there. A support file that defines shared groups is read the same way as a test file for this, and doesn't produce units of its own.
 
-A pack with `testClasses` reads tests written as a class, as Minitest and Rails' test cases write them. A class whose ancestry reaches one of `baseClassNames`, directly or through a project class, as the shared ancestry rules follow it, is a test class. Each `test_*` method in it is a test, and so is each `test "..." do` block, named by the method the library defines for it. A method test seeds the walk at the method, with the class as its self, and a block test at its block. Either one runs the class's `setup` blocks and `setup` method first, the same way an RSpec example runs its hooks.
+A pack with `testClasses` reads tests written as a class, as Minitest and Rails' test cases write them. Each entry is a `testCases` match with a `classes` form, which `@suss/recognize` reads through the module ops. A class whose ancestry reaches one of `classes.inherits`, directly or through a project class, as the shared ancestry rules follow it, is a test class. Each method in it whose name matches `classes.methods.pattern` is a test, and so is each `test "..." do` block, since the Minitest pack's class-body declaration says `test` defines the method `test_` and its description. A method test seeds the walk at the method, with the class as its self, and a block test at its block. Either one runs what `before` lists first, the class's `setup` blocks and `setup` method, the same way an RSpec example runs its hooks.
 
 A pack with `factories` says how a test data library builds a record from a factory it looks up by name, as factory_bot's `create(:order)` and Fabrication's `Fabricate(:order)` do. Once every file is in, the run reads each definition wherever it is written and works out its class: the class keyword it gives, else the class of the factory it builds on or is nested in, else the class its own name camelizes to with the project's acronyms, looked up by qualified name among the classes the run defines. Each build in a file the run reads as tests is then stated as `instanceOf` that class, so a method called on the record resolves the way one called on `Order.new` does. A build anywhere else is left alone.
 

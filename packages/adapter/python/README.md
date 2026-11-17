@@ -37,7 +37,7 @@ Code outside the facility never reads a node's text to find out what a value is.
 
 ## Where it fits
 
-It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web-tree-sitter`. The `fastapi`, `flask-restx` and `sqlalchemy` packs consume its `PythonPack` contract. Nothing in this package hardcodes what a particular library's decorators are called.
+It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog`, `@suss/resolution`, `@suss/recognize` and `web-tree-sitter`. Every Python pack is a `PythonPack`, from the route packs to the clients and pytest. A pack's `@suss/recognize` declarations run over the ops this adapter builds from its facts. Nothing in this package hardcodes what a particular library's decorators are called.
 
 `grammar/tree-sitter-python.wasm` is a checked-in binary, and the build does not produce it. [Where it comes from](./grammar/README.md).
 
