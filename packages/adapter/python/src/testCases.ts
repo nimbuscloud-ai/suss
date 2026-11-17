@@ -22,17 +22,19 @@ import {
   decoratorIsFrom,
   discoverTestCases,
   global,
+  mockRead,
 } from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
 import {
   fileOfKey,
   isObserved,
   noteFileMissing,
   noteKeyRead,
 } from "@suss/resolution";
-import { literalOf } from "@suss/values";
 
 import { children, field, isFunction, parameterNameAndType } from "./ast.js";
 import { pythonModuleOps } from "./declaredDiscovery.js";
+import { factSourceOf } from "./factSource.js";
 import { originsOf } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 import { resolveAbsoluteModule } from "./moduleResolver.js";
@@ -40,13 +42,13 @@ import { bodyCalls } from "./paths/effects.js";
 import { libraryUnit } from "./reach/closure.js";
 import { reachedFunctionOf } from "./reach/resolveCallee.js";
 import { resolveName, scopeAt } from "./scope.js";
-import { evaluatedValue, nodeOfResolutionKey } from "./values/evaluator.js";
+import { nodeOfResolutionKey } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { Decorator, RawCodeStructure, ValueOps } from "@suss/extractor";
-import type { FoundCase } from "@suss/recognize";
+import type { FoundCase, MockRead } from "@suss/recognize";
 import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyTestCases, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
@@ -106,6 +108,10 @@ export class PythonTestIndex {
   private readonly reached = new Map<
     string,
     ReadonlyMap<string, ReachedTest>
+  >();
+  private readonly decoratorCalls = new Map<
+    string,
+    ReadonlyMap<string, readonly string[]>
   >();
   private readonly fixtureMarks = new Map<
     string,
@@ -533,41 +539,78 @@ export class PythonTestIndex {
 
   /** The mocks written on the test and its classes, in its body, and in each fixture and `setUp` it runs through. */
   private mocksOf(file: BoundPythonFile, test: CollectedTest): TestMock[] {
-    const pattern = test.pattern;
+    const decoratorsOn = (
+      on: BoundPythonFile,
+      node: PyNode,
+    ): readonly string[] =>
+      this.decoratorCallsIn(on).get(nodeId(on.file, node)) ?? [];
     const onTest = [test.node, ...enclosingClasses(test.node)].flatMap((node) =>
-      decoratorsOf(node).map((decorator) => ({
+      decoratorsOn(file, node).map((call) => ({
         file,
         owner: test.node,
-        call: decorator,
+        call,
       })),
     );
     const inBodies = this.bodiesRunBy(
       reachedFunctionOf(file, test.node),
-    ).flatMap((fn) => [
-      ...decoratorsOf(fn.node).map((call) => ({
-        file: fn.file,
-        owner: fn.node,
-        call,
-      })),
-      ...callsIn(fn.node, this.context.facts).map((call) => ({
-        file: fn.file,
-        owner: fn.node,
-        call,
-      })),
-    ]);
+    ).flatMap((fn) =>
+      [
+        ...decoratorsOn(fn.file, fn.node),
+        ...callsIn(fn.node, this.context.facts).map((call) =>
+          nodeId(fn.file.file, call),
+        ),
+      ].map((call) => ({ file: fn.file, owner: fn.node, call })),
+    );
+    const rules = test.pattern.cases.mocks ?? [];
+    const source = factSourceOf(this.context.facts);
     const mocks: TestMock[] = [];
     const seen = new Set<string>();
     for (const site of [...onTest, ...inBodies]) {
-      if (!this.isPatcher(site.call, site.file, site.owner, pattern)) {
-        continue;
-      }
-      const mock = this.mockOf(site.call, site.file);
+      const ops = factCallOps(site.call, source);
+      const read =
+        ops === null
+          ? null
+          : mockRead(rules, ops, (name) =>
+              parameterNames(site.owner).includes(name),
+            );
+      const mock =
+        read === null ? null : this.mockOf(read, site.call, site.file);
       if (mock !== null && !seen.has(mock.written)) {
         seen.add(mock.written);
         mocks.push(mock);
       }
     }
     return mocks;
+  }
+
+  /**
+   * The keys of the decorator calls on each function and class in one
+   * file, by the key of what each is written on, read once through the
+   * module ops. A decorator that is no call patches nothing.
+   */
+  private decoratorCallsIn(
+    file: BoundPythonFile,
+  ): ReadonlyMap<string, readonly string[]> {
+    const known = this.decoratorCalls.get(file.file);
+    if (known !== undefined && !isObserved(this.context.facts)) {
+      return known;
+    }
+    const found = new Map<string, string[]>();
+    this.decoratorCalls.set(file.file, found);
+    for (const { definition, decorators } of pythonModuleOps(
+      file,
+      this.context.facts,
+    ).decorated()) {
+      const key = definition.site?.();
+      const calls = decorators.flatMap((one) => {
+        const site = one.form === "call" ? one.call.site?.() : undefined;
+        return site === undefined ? [] : [site];
+      });
+      if (key !== undefined && calls.length > 0) {
+        found.set(key, calls);
+      }
+    }
+    return found;
   }
 
   /** The test itself, then every fixture and `setUp` it runs through, each once. */
@@ -589,55 +632,29 @@ export class PythonTestIndex {
     return found;
   }
 
-  /** Whether a call replaces something: a patcher the file imports, or one a fixture handed the function. */
-  private isPatcher(
-    call: PyNode,
-    file: BoundPythonFile,
-    owner: PyNode,
-    pattern: PyTestCases,
-  ): boolean {
-    const callee = calleeOf(call);
-    const dotted = dottedOrigin(callee, file);
-    if (dotted !== null && pattern.mocks.patchers.includes(dotted)) {
-      return true;
-    }
-    const [root, ...rest] = callee.text.split(".");
-    const handed = pattern.mocks.fixturePatchers.find(
-      (one) => one.fixture === root && one.methods.includes(rest.join(".")),
-    );
-    return (
-      handed !== undefined &&
-      call.type === "call" &&
-      parameterNames(owner).includes(handed.fixture)
-    );
-  }
-
   /**
-   * What one patcher replaces. A dotted string is followed to the project
-   * file that defines the thing at that path. An object and a member name
-   * give the file its module or class is defined in, and the member.
+   * What one patcher replaces, as the mock rules read it. A dotted path is
+   * followed to the project file that defines the thing at that path. A
+   * member gives the file the object's module or class is defined in.
    */
-  private mockOf(call: PyNode, file: BoundPythonFile): TestMock | null {
-    const [first, second] = positionalArguments(call);
-    if (first === undefined) {
+  private mockOf(
+    read: MockRead,
+    callKey: string,
+    file: BoundPythonFile,
+  ): TestMock | null {
+    const call = nodeOfResolutionKey(callKey, this.context.facts);
+    if (call === null) {
       return null;
     }
     const written = oneLine(call.text);
-    const target = literalOf(evaluatedValue(first, this.context.facts));
-    if (target !== null) {
-      return { ...this.dottedTarget(target), written };
+    if (read.replaces === "path") {
+      return { ...this.dottedTarget(read.path), written };
     }
-    const member =
-      second === undefined
-        ? null
-        : literalOf(evaluatedValue(second, this.context.facts));
-    if (member === null) {
-      return null;
-    }
-    const owner = this.objectModule(first, file);
+    const object = positionalArguments(call)[read.of];
+    const owner = object === undefined ? null : this.objectModule(object, file);
     return {
       ...(owner === null ? {} : { module: owner }),
-      name: member,
+      name: read.member,
       written,
     };
   }
@@ -780,22 +797,6 @@ function definitionsIn(container: PyNode): PyNode[] {
         }
         return field(statement, "definition") ?? statement;
       });
-}
-
-/** The decorators written on a definition, each as the expression after `@`. */
-function decoratorsOf(definition: PyNode): PyNode[] {
-  const parent = definition.parent;
-  if (parent === null || parent.type !== "decorated_definition") {
-    return [];
-  }
-  return children(parent)
-    .filter((child) => child.type === "decorator")
-    .map((decorator) => decorator.namedChild(0) ?? decorator);
-}
-
-/** What a marker or a patcher calls: the callee of a call, or the expression itself when it is not called. */
-function calleeOf(expr: PyNode): PyNode {
-  return expr.type === "call" ? (field(expr, "function") ?? expr) : expr;
 }
 
 /** The dotted name an expression resolves to through the file's imports, as in `pytest.mark.skip`. */

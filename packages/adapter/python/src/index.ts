@@ -83,7 +83,6 @@ export type {
   PyStatusCall,
   PyTaskArguments,
   PyTestCases,
-  PyTestMocks,
   PythonDiscoveryPattern,
   PythonPack,
   PyWrapperForm,
