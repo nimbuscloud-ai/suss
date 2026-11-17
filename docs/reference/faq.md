@@ -299,6 +299,6 @@ Anything that needs a running system, a database of history, or a server.
 
 ## How do I add a new framework?
 
-Write a `PatternPack`: declarative configuration saying how the framework registers handlers, where a status code attaches to a response, and what counts as an effect.
+Write a pack: data saying how the framework registers handlers, where a status code attaches to a response, and which of a library's calls are effects, declared with `@suss/recognize`.
 
 Most packs are 100 to 300 lines of data and none of them forks the analyzer. [Write a pack](/packs/write-a-pack) walks through one.

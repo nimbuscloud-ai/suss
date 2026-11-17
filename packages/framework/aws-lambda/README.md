@@ -23,7 +23,7 @@ The pack has no import gate, on purpose. A TypeScript handler imports `APIGatewa
 
 ## Python and Ruby handlers
 
-`-f aws-lambda-python` and `-f aws-lambda-ruby` read the same templates for those adapters. Each handler the template points at gets a `handler` summary with its deployable unit, and the call walk starts from it, so the functions it calls get summaries too. A handler that nothing in the code calls had no summary before this.
+`-f aws-lambda-python` and `-f aws-lambda-ruby` read the same templates for those adapters. Each handler the template points at gets a `handler` summary with its deployable unit, even when nothing in the code calls it, and the call walk starts from it, so the functions it calls get summaries too.
 
 The `Handler` string is split the way each runtime reads it:
 
@@ -90,7 +90,7 @@ The subject itself is a field of the message, and `suss check` compares the fiel
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor` for the `PatternPack` type, and on `@suss/manifest-aws` to load the template tree and read the function resources and their events. It uses `@suss/recognize` for the declared invoke chains, and `@suss/adapter-typescript` for the discovery context the callback uses to ask about a file's exported functions. `ts-morph` is a peer dependency.
+The pack depends on `@suss/extractor` for the `PatternPack` type and the `manifest` discovery pattern, on `@suss/manifest-aws` to load the template tree and read the function resources and their events, and on `@suss/contract-serverless` to read a service file the same way the contract reader does. It uses `@suss/recognize` for the declared invoke chains, and the `PythonPack` and `RubyPack` types from `@suss/adapter-python` and `@suss/adapter-ruby` for the Python and Ruby packs. The adapter finds each handler at its export through its own facts, so the pack doesn't read syntax itself.
 
 ## Coverage
 

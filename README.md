@@ -97,7 +97,7 @@ Each step takes a little more work than the one before, and needs a little more 
 
 ## What it reads
 
-TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes and SQLAlchemy queries. In Ruby, it reads Rails controllers, graphql-ruby schemas and ActiveRecord. The full list is in [Packs](#packs) below. One run reads one repository. To check across two repositories, you publish one side's summaries and hand them to the other side's run; see [Work across services](docs/guides/work-across-services.md).
+TypeScript is the furthest along: Express, Fastify, Hono, NestJS, Next.js and ts-rest on the server, fetch, axios and Apollo on the client, Prisma, Drizzle, Mongoose, node-postgres and BigQuery for storage, Lambda handlers, and the AWS clients for SQS, SNS, EventBridge, DynamoDB and S3. In Python, suss reads FastAPI and flask-restx routes, SQLAlchemy queries, requests, httpx and aiohttp calls, Celery tasks and pytest tests. In Ruby, it reads Rails controllers, graphql-ruby schemas, ActiveRecord, Faraday and Net::HTTP calls, ActiveJob and Sidekiq jobs, and RSpec and Minitest tests. The full list is in [Packs](#packs) below. One run reads one repository. To check across two repositories, you publish one side's summaries and hand them to the other side's run; see [Work across services](docs/guides/work-across-services.md).
 
 ## Install
 

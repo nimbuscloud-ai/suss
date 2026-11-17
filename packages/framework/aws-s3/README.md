@@ -4,7 +4,7 @@ This pack records which S3 buckets a TypeScript service reads and writes, and wh
 
 ## What this package is
 
-A pattern pack. It matches the command a call is given, and reads everything else from the command: which bucket, which key, and whether the call reads or writes.
+A pack declared with `@suss/recognize`. It matches the command a call is given, and reads everything else from the command: which bucket, which key, and whether the call reads or writes.
 
 ```ts
 import { s3Framework } from "@suss/framework-aws-s3";
@@ -53,4 +53,4 @@ When the pack cannot settle a name, it records null, and null pairs with nothing
 
 ## Where it fits in suss
 
-The pack depends on `@suss/behavioral-ir` for the binding it builds, and on `@suss/adapter-typescript` for the import check and for looking up what a name was written as. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the bucket. For an `aws_s3_bucket` resource, that is `@suss/terraform-aws`.
+The pack depends only on `@suss/recognize`, which compiles the declaration into the recognizer hooks the adapters call and asks the running adapter whether a command came from `@aws-sdk/client-s3` and what a name was written as. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the bucket. For an `aws_s3_bucket` resource, that is `@suss/terraform-aws`.

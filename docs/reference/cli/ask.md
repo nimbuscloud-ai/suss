@@ -77,7 +77,7 @@ A module that [`suss.json`](/reference/cli/extract#modules-of-one-application) l
 
 A service call counts as both a read and a write, since a request sends a body out and gets a response back. Calling a deployed unit by name does the same two things and is reported as `invokes`, because a service made of Lambdas would otherwise read as every function reading and writing every other one.
 
-When the unit an item is about provides a boundary itself, the item gives that boundary after the location: `discoverUnits (src/discovery.ts:150, provides fn:@suss/adapter-python::discoverUnits) calls builtSubjects`. Read the boundary from there. The summary id only spells it out when two summaries share a name.
+When the unit an item is about provides a boundary itself, the item gives that boundary after the location: `discoverUnits (src/discovery.ts:172, provides fn:@suss/adapter-python::discoverUnits) calls decoratedUnits`. Read the boundary from there. The summary id only spells it out when two summaries share a name.
 
 ## Example
 

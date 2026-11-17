@@ -79,8 +79,8 @@ Extraction is a straight line with one intermediate data structure, `RawCodeStru
 The extractor never sees an AST node. It works on `RawCodeStructure`, which is plain data, and three things follow from that:
 
 1. **The extractor is testable on hand-written input.** `assembleSummary(raw)` is a pure function, so its tests need no compiler and run in under 50ms.
-2. **Adding a language means writing an adapter.** The new adapter produces `RawCodeStructure` and the extractor does not change. Python and Ruby were added that way.
-3. **Pack authors touch neither.** A pack describes patterns as data.
+2. **Adding a language means writing an adapter.** The new adapter produces `RawCodeStructure` and the extractor does not change. Python and Ruby were added that way. An adapter also states facts about its source, and every pack declared with `@suss/recognize` runs on any adapter that states them.
+3. **Pack authors touch neither.** A pack describes patterns and declarations as data.
 
 ## Packages and what each owns
 
@@ -118,9 +118,10 @@ The extractor never sees an AST node. It works on `RawCodeStructure`, which is p
     │     ├─ @suss/adapter-python, @suss/adapter-ruby   tree-sitter parsers
     │     │                              emitting the same RawCodeStructure
     │     │
-    │     ├─ @suss/recognize             the pack vocabulary, plus @suss/sql
-    │     │                              for reading which tables a statement
-    │     │                              touches
+    │     ├─ @suss/recognize             what a pack declares its calls in,
+    │     │                              and the ops over an adapter's facts
+    │     │                              that run the declarations; @suss/sql
+    │     │                              reads which tables a statement touches
     │     │
     │     └─ @suss/packs                 every framework, client and runtime
     │                                    pack in one install. The catalog is
@@ -153,7 +154,7 @@ The extractor never sees an AST node. It works on `RawCodeStructure`, which is p
 - `@suss/adapter-typescript`: depends on the IR, the extractor, ts-morph, `@suss/datalog` for its whole-program passes, `@suss/resolution` for the rules those passes join on, and `@suss/values`. It is the heaviest package.
 - `@suss/datalog`: zero dependencies. A semi-naive Datalog evaluator with stratified negation, where rules are plain data. Nothing in it refers to the IR or the AST, so an analysis written against fact patterns stays language-independent.
 - `@suss/resolution`: a language-neutral list of Datalog rules, with no parser and no file access. The rules work out one thing, which function a value comes down to, and they compose one hop at a time, so a factory handing off to another factory, or a barrel re-exporting a wrapper, resolves without a rule written for that case. An adapter reads source into facts (`binds`, `paramOf`, `callArg`, `reExports`, and a handful more), concatenates its own rules, and evaluates on `@suss/datalog`. When an answer comes back empty, suspect the facts before the rules. `packages/resolution/DESIGN.md` has the fact vocabulary and the cases left unresolved on purpose, and [How suss follows a value](/theory/resolving-values) works through one example end to end.
-- **Packs** depend on `@suss/extractor` for the `PatternPack` type, and on `@suss/recognize` where they describe an effect a library performs rather than a boundary it serves, plus a `@suss/manifest-*` package where discovery is manifest-driven. A pack is data.
+- **Packs** depend on `@suss/extractor` for the `PatternPack` type, or on `@suss/adapter-python` or `@suss/adapter-ruby` for `PythonPack` and `RubyPack`. A pack that declares the calls a library offers, the requests a client sends, a route table or a runner's test cases depends on `@suss/recognize`, which compiles the declarations and reads them through each adapter's facts. A pack whose discovery comes from a deploy manifest also depends on a `@suss/manifest-*` package. A pack is data.
 - `@suss/manifest-*`: parse deploy manifests (SAM and CloudFormation templates, and the rest) into plain data. They depend on no IR and on no other `@suss` package. Contract readers (manifest as specification) and framework packs (manifest as a discovery index) both read through them, so the parsing happens once and neither side depends on the other.
 - `@suss/contract-*`: depend on the IR, plus on each other where they compose (`cloudformation` delegates to `openapi` and `aws-apigateway`). They produce `BehavioralSummary[]` from specs, manifests and schemas, and mark what they produce `confidence.source: "derived"`. See [Contract sources](/packs/contract-sources).
 - `@suss/checker`: depends on the IR and on `@suss/datalog`. Pairwise comparison is a pure function over two `BehavioralSummary` values returning `Finding[]`. Nothing in it touches extraction, the AST or packs, and it works on the serialized IR.
@@ -173,7 +174,7 @@ No pack exists whose only job is to translate the language specification. That w
 
 ### A known tension in `PatternPack`
 
-`PatternPack` was designed around provider-side extraction. Client discovery came later, through the `clientCall` match and the `returnStatement` terminal. It works, and it leaves structural noise behind. `inputMapping` means nothing for a client, because a client receives no framework-structured input. `returnStatement` and `throwExpression` are boilerplate every client pack repeats. `contractReading` applies only to providers and is at the top level anyway.
+`PatternPack` was designed around provider-side extraction. A client pack declares its requests with `httpRequests` under `requestRecognizers` and leaves `discovery` empty, and it still has to fill in the provider's fields. `inputMapping` means nothing for a client, because a client receives no framework-structured input. `returnStatement` and `throwExpression` are boilerplate every client pack repeats. `contractReading` applies only to providers and is at the top level anyway.
 
 Splitting `PatternPack` into provider and client sub-interfaces, with defaults for the client terminals, is the fix. Leave it while there are three client packs for TypeScript, and split it once a fourth ships and the boilerplate has become a pattern.
 
@@ -190,7 +191,7 @@ Step 5 is assembly: each entry-to-terminal path becomes one `Transition`, pairin
 
 Two mechanisms run alongside and feed effects and sub-units into the same pipeline:
 
-- **Recognizers** fire when the walker reaches a specific call or property access inside a unit. The runtime-node pack's scheduling recognizer fires on `setTimeout(...)` and attaches a scheduling effect to the surrounding unit; its env-var recognizer fires on `process.env.X` and attaches a config-read effect.
+- **Recognizers** fire when the walker reaches a specific call or property access inside a unit. The runtime-node pack declares `setTimeout(...)` with `callbacks` and `process.env.X` with `runtimeReads`, both from `@suss/recognize`. The declarations compile to recognizers, and they attach a scheduling effect and a config-read effect to the surrounding unit.
 - **Sub-units** are new code units created inside an existing one, usually a callback passed to a host function such as `setTimeout(callback)` or a Promise executor. The walker descends into the sub-unit and runs recognizer dispatch there, so an effect in a nested function body is not missed.
 
 ## Whole-program passes
@@ -235,5 +236,5 @@ Each variant declares its identity key, its pairing key, and how two sides agree
 - **Cross-service aggregation.** `@suss/checker` compares two summaries at a time. Aggregating across an organization, tracking boundaries over commits, and alerting on regressions are separate concerns that take pairwise findings as input. See [Cross-boundary checking](/why/cross-boundary-checking).
 - **Runtime tracing.** Everything is static. suss never instruments your code and never reads anything from your running system.
 - **Semantics for a dependency's calls.** Seeing `await db.findById(id)`, the extractor records that the subject is the result of `db.findById`. It records nothing about what Prisma's `findById` does. Cross-boundary comparison only needs subjects to be stable, so it does not need to know what they mean.
-- **A shared adapter abstraction layer.** Three adapters ship, and each has its own analysis logic over its own parser. What they share is the layer above them: `assembleSummary` turns a `RawCodeStructure` into a summary for all three, so gap detection and confidence scoring have one implementation. Some tree-walking patterns are conceptually language-agnostic, such as finding every property access on a variable within a subtree, but a shared `@suss/adapter-core` should wait until the same pattern has been written twice for a reason.
+- **A shared adapter abstraction layer.** Three adapters ship, and each has its own analysis logic over its own parser. They share the layers above and beside them. `assembleSummary` turns a `RawCodeStructure` into a summary for all three, so gap detection and confidence scoring have one implementation. `@suss/resolution` gives them one set of rules for following a value, and `@suss/recognize` reads a pack's declarations off the facts each adapter states, so a declared pack runs on all three. Walking the syntax tree stays with each adapter, and a shared `@suss/adapter-core` should wait until the same walk has been written twice for a reason.
 - **A linter.** A finding describes what two sides of a contract disagree on. It is not a style rule or a code-quality opinion.

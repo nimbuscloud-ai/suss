@@ -21,7 +21,24 @@ The Python and Ruby adapters parse with tree-sitter compiled to WASM, so neither
 
 ## Frameworks and libraries
 
-Everything suss recognizes comes from a pack, and the packs ship inside `@suss/cli`. [Pack catalog](/packs/catalog) lists them all, with the libraries each one reads. `suss init` matches your dependencies against that list and prints the commands for your project.
+Everything suss recognizes in a library comes from a pack, and the packs ship inside `@suss/cli`. [Pack catalog](/packs/catalog) lists them all, with the libraries each one reads. `suss init` matches your dependencies against that list and prints the commands for your project.
+
+What each language has a pack for:
+
+| | TypeScript and JavaScript | Python | Ruby |
+|---|---|---|---|
+| Routes | Express, Fastify, Hono, NestJS, Next.js, ts-rest, AWS Lambda behind API Gateway | FastAPI, flask-restx | Rails |
+| Handlers a deployment lists | AWS Lambda, Cloudflare Workers | AWS Lambda | AWS Lambda |
+| GraphQL | Apollo Server, NestJS GraphQL, Apollo Client | | graphql-ruby |
+| Outbound HTTP | fetch, axios, ts-rest | requests, httpx, aiohttp | Faraday, Net::HTTP |
+| Databases and stores | Prisma, Drizzle, TypeORM, Mongoose, pg, Redis, DynamoDB, S3, GCS, BigQuery, SSM, Secrets Manager | SQLAlchemy, SQLModel, BigQuery | ActiveRecord, pg, BigQuery |
+| Queues and jobs | SQS, SNS, EventBridge, BullMQ, NestJS microservices | Celery | ActiveJob, ActionMailer, Sidekiq |
+| Tests | vitest | pytest | RSpec, Minitest, factory_bot, Fabrication |
+| Frontend | React, React Router, TanStack Query, Zustand | | |
+| A package's exports | package-exports | | |
+| The environment, output and exit code | Node | built into the adapter | built into the adapter |
+
+A Python or Ruby handler that AWS Lambda runs gets no route binding, since neither adapter reads a Lambda response envelope yet.
 
 ## Modules and resolution
 

@@ -73,7 +73,7 @@ A table passed as a `TableReference` or a `Table` object is not read. The pack r
 
 ## Where it fits in suss
 
-The pack depends on `@suss/adapter-python` for the `PythonPack` contract it fills in, and on `@suss/ir-core` for the declaration. The adapter reads the statement with `@suss/sql`, and the storage pass in `@suss/checker` pairs what this pack records with whatever declares the table.
+The pack depends on `@suss/recognize`, where its statement and table calls are declared, on `@suss/adapter-python` for the `PythonPack` contract it fills in, and on `@suss/ir-core` for the declaration. `@suss/recognize` reads the statement with `@suss/sql`, and the storage pass in `@suss/checker` pairs what this pack records with whatever declares the table.
 
 ```bash
 npx @suss/cli extract --lang python -f bigquery-python -o summaries/python.json
