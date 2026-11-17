@@ -18,6 +18,12 @@ import { statedRequestPath } from "@suss/values";
 
 import { NOTHING_STATED, statedValue } from "./compile.js";
 import { linkIn } from "./compileReads.js";
+import {
+  hostBase,
+  NOWHERE,
+  urlOrHostFirst,
+  urlReadingOf,
+} from "./httpRequestsHost.js";
 import { modulesOf, opsIn } from "./ops.js";
 
 import type {
@@ -38,6 +44,7 @@ import type {
   RequestMethod,
   StartLink,
 } from "./chain.js";
+import type { UrlReading } from "./httpRequestsHost.js";
 import type { CallOps, ReceiverOrigin, ValueOps } from "./ops.js";
 
 /** A request chain's links, picked out once when it compiles. */
@@ -204,11 +211,11 @@ function claimOf(
   ops: CallOps,
   site: string | undefined,
 ): RequestClaim | null {
-  const sent = sentBy(meaning, ops);
-  if (sent === null) {
+  const sent = sentBy(meaning, ops, site);
+  const own = sent === null ? null : sent.url(site);
+  if (sent === null || own === null) {
     return null;
   }
-  const own = sent.url.url?.(site) ?? NOWHERE;
   const placed = underBase(baseOf(requesting.base, ops, site), own);
   const redirectDelivery =
     redirectAt(requesting.response, ops) ?? meaning.redirects;
@@ -220,16 +227,22 @@ function claimOf(
   };
 }
 
-/** A URL the adapter cannot read. */
-const NOWHERE: UrlTarget = { path: undefined, host: undefined };
-
-/** The method the call sends and the value it states the URL as, or null when either is missing. */
+/**
+ * The method the call sends and how it states the URL, or null when
+ * either is missing. A request object kept on a field can differ between
+ * the constructions at each `site`.
+ */
 function sentBy(
   meaning: RequestMethod,
   ops: CallOps,
-): { method: string; url: ValueOps } | null {
+  site: string | undefined,
+): { method: string; url: UrlReading } | null {
   if ("url" in meaning) {
-    const url = urlArgument(ops, meaning.url);
+    const url = urlOrHostFirst(
+      ops,
+      urlArgument(ops, meaning.url),
+      meaning.url.hostFirst,
+    );
     const { sends } = meaning;
     if (typeof sends === "string") {
       return withUrl(sends, url);
@@ -239,7 +252,9 @@ function sentBy(
     return withUrl(method?.toUpperCase() ?? null, url);
   }
   const { sends } = meaning;
-  const built = ops.argument(sends.object);
+  const built = madeBy(ops.valueAt(sends.object), site, () =>
+    ops.argument(sends.object),
+  );
   if (built === null || built.method() !== "new") {
     return null;
   }
@@ -247,7 +262,7 @@ function sentBy(
   const requestClass = written.slice(0, written.length - ".new".length);
   return withUrl(
     sends.classes[requestClass] ?? null,
-    urlArgument(built, sends.url),
+    urlReadingOf(urlArgument(built, sends.url)),
   );
 }
 
@@ -273,9 +288,30 @@ const SPLATTED: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
 
 function withUrl(
   method: string | null,
-  url: ValueOps | null,
-): { method: string; url: ValueOps } | null {
+  url: UrlReading | null,
+): { method: string; url: UrlReading } | null {
   return method === null || url === null ? null : { method, url };
+}
+
+/**
+ * The call a value was made by, through everything the adapter's rules
+ * say it was written as, a call into one of the project's own methods
+ * included, and under the construction at `site` when one is given.
+ * `otherwise` reads it where the adapter cannot say.
+ */
+function madeBy(
+  value: ValueOps | null,
+  site: string | undefined,
+  otherwise: () => CallOps | null,
+): CallOps | null {
+  if (value?.asCall === undefined) {
+    return otherwise();
+  }
+  return value.asCall(
+    site === undefined
+      ? { follow: "writtenAs" }
+      : { follow: "writtenAs", site },
+  );
 }
 
 /** The string a value comes to, or null for anything else. */
@@ -290,14 +326,32 @@ function baseOf(
   ops: CallOps,
   site: string | undefined,
 ): { url: UrlTarget; joins: BaseJoin } | null {
-  const built = link === null ? null : ops.receiver();
-  const stated =
-    link === null || built === null ? null : statedValue(built, link.at);
-  if (link === null || stated === null) {
+  const built =
+    link === null
+      ? null
+      : madeBy(ops.receiverValue?.() ?? null, undefined, () => ops.receiver());
+  if (link === null || built === null) {
     return null;
   }
-  return { url: stated.url?.(site) ?? NOWHERE, joins: link.joins };
+  const url = BASE_READ[link.reads ?? "url"](built, link, site);
+  return url === null ? null : { url, joins: link.joins };
 }
+
+/** How a construction states its base: a URL, or a host with its port. */
+const BASE_READ: Record<
+  NonNullable<BaseUrlLink["reads"]> | "url",
+  (
+    built: CallOps,
+    link: BaseUrlLink,
+    site: string | undefined,
+  ) => UrlTarget | null
+> = {
+  url: (built, link, site) => {
+    const stated = statedValue(built, link.at);
+    return stated === null ? null : (stated.url?.(site) ?? NOWHERE);
+  },
+  host: hostBase,
+};
 
 /**
  * Where a call's own URL goes under its client's base. An absolute URL

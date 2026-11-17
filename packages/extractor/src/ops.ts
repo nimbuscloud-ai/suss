@@ -344,6 +344,20 @@ export interface ValueOps {
    */
   url?(site?: string): UrlTarget | null;
   /**
+   * What this value comes to read as a host, with `port` after it when
+   * one is given, the way `hostOf` reads the host of
+   * `http://host:port`. A port the source writes as the language's
+   * literal for no value is left out. Undefined when it reads as no host,
+   * or when the adapter cannot read it. `site` is read as `url` reads it.
+   */
+  host?(port: ValueOps | null, site?: string): string | undefined;
+  /**
+   * Whether this value comes to a string, whether or not every part of
+   * it settles: `"/orders/#{id}"` does, and a hash or a value suss
+   * cannot read does not. `site` is read as `url` reads it.
+   */
+  isString?(site?: string): boolean;
+  /**
    * The calls written as statements of the body of the function, block,
    * class or file this value is, in source order, through the branches of
    * a conditional and not into a nested function or block. Empty for any
@@ -497,8 +511,11 @@ export interface ValueOps {
    * says `namesAndFields`: then a name or a field is read as the call it
    * was written as, `users.router` as the `APIRouter(...)` the module
    * assigns to `router`, the way `CallOps.receiver` reads a receiver.
+   * `writtenAs` reads a call there as what the adapter's rules say it
+   * was written as too, such as the construction a method returns, and
+   * with a site, as the construction at that site made the instance.
    */
-  asCall?(how?: { readonly follow: "namesAndFields" }): CallOps | null;
+  asCall?(how?: AsCallFollowing): CallOps | null;
   /**
    * Each call a name or a field may have been written as, when it is
    * written as more than one, such as a name assigned twice, where
@@ -1281,6 +1298,12 @@ export interface FactSource {
   /** The keys of the values in the collection a call returns, in order, or null when the rules settle the call on no one collection. Unset says nothing. */
   returnedItemsOf?(call: string): readonly string[] | null;
   /**
+   * What `writtenAs` gives for the key when its object is the instance
+   * the construction at `site` made, so a field each construction sets
+   * differently settles.
+   */
+  writtenUnder?(key: string, site: string): string | null;
+  /**
    * Every call the anchor rules reach behind a value. An adapter may leave
    * out the calls its own check of the origin turns down; the ops check
    * each one that comes back against the origin as well.
@@ -1422,6 +1445,14 @@ export interface FactSource {
    * and the adapter reads that argument where the call writes it.
    */
   urlOf?(key: string, site?: string, at?: ArgumentRead): UrlTarget | null;
+  /** What `ValueOps.host` gives for the value at `host`, with the value at `port` after it. */
+  hostOf?(
+    host: ValueAt,
+    port: ValueAt | null,
+    site?: string,
+  ): string | undefined;
+  /** What `ValueOps.isString` gives for the value at the key, read where `urlOf` reads it. */
+  isStringOf?(key: string, site?: string, at?: ArgumentRead): boolean;
   /** What `CallOps.constructionSites` gives for the call at the key. */
   constructionSitesOf?(call: string): readonly string[];
   /** What `CallOps.splats` gives for the call at the key. */
@@ -1569,6 +1600,17 @@ export interface Splats {
 export interface ArgumentRead {
   readonly call: string;
   readonly at: number | { readonly keyword: string };
+}
+
+/** How `ValueOps.asCall` follows a value to the call it was written as. */
+export type AsCallFollowing =
+  | { readonly follow: "namesAndFields" }
+  | { readonly follow: "writtenAs"; readonly site?: string };
+
+/** A value the ops handed out: its key, and the argument it was read off when it was. */
+export interface ValueAt {
+  readonly key: string;
+  readonly at?: ArgumentRead | undefined;
 }
 
 /** One argument that becomes a read's key, as a fact source states it. */

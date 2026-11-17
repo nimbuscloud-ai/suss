@@ -130,6 +130,7 @@ export type {
   FunctionsLink,
   GetterMeaning,
   GettersLink,
+  HostFirst,
   HttpRequestEnding,
   InputLink,
   InputRule,
@@ -204,6 +205,7 @@ export type {
   UnitInvokeMethod,
   UnitWhenInPlaceLink,
   UnitWhenNamedInParentLink,
+  UrlArgument,
   WholeMessage,
   WriteMeaning,
   WritesLink,
@@ -214,7 +216,11 @@ export type { ReadSpellings, SiteRead } from "./compileReads.js";
 export type { ConfiguredCallSpec } from "./configuredSends.js";
 export type { DeclaredUnit, DecoratedBy } from "./discovery.js";
 export type { RanExample, RunOverCode } from "./example.js";
-export type { HttpRequests, HttpRequestsSpec } from "./httpRequests.js";
+export type {
+  BaseUrlPick,
+  HttpRequests,
+  HttpRequestsSpec,
+} from "./httpRequests.js";
 export type {
   MessageReceives,
   MessageReceivesSpec,

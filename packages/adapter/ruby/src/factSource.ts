@@ -21,8 +21,9 @@ import {
   GLOBAL_MODULE,
   givenBackFunction,
   handedNamesReaching,
+  noteKeyRead,
 } from "@suss/resolution";
-import { scalarOf } from "@suss/values";
+import { concat, hostOf, pathOf, scalarOf, text } from "@suss/values";
 
 import { numberLiteralValue, rangeOf, stringLiteralValue } from "./ast.js";
 import { decodedIn, encodedIn } from "./encoded.js";
@@ -36,9 +37,12 @@ import {
   resolveStreamObjects,
   resolveValues,
   writtenValueOf,
+  writtenValueUnder,
 } from "./facts/resolve.js";
+import { writtenArgument } from "./facts/values.js";
 import { argOf } from "./paths/effects.js";
 import {
+  constructionSitesOf,
   evaluatedValue,
   nodeOfResolutionKey,
   stringValueOf,
@@ -46,7 +50,13 @@ import {
 import { writtenShapeOf } from "./writtenShape.js";
 
 import type { Database } from "@suss/datalog";
-import type { EffectArg, FactSource, ValueForm } from "@suss/extractor";
+import type {
+  EffectArg,
+  FactSource,
+  ValueAt,
+  ValueForm,
+} from "@suss/extractor";
+import type { Value } from "@suss/values";
 import type { EncodedNode } from "./encoded.js";
 import type { RbNode } from "./parser.js";
 
@@ -72,6 +82,24 @@ export function rubyFactSource(db: Database): RubyFactSource {
   // A name has no node, so its value is what it was written as.
   const valueNode = (key: string): RbNode | null =>
     nodeAt(key) ?? nodeAt(writtenValueOf(db, key));
+  // The argument as the call writes it, so a name is read at the
+  // assignment that reaches the call. The call can be a construction in
+  // another file, whose syntax a cached run then depends on.
+  const writtenNode = (value: ValueAt): RbNode | null => {
+    const call = value.at === undefined ? null : nodeAt(value.at.call);
+    if (call !== null && value.at !== undefined) {
+      noteKeyRead(db, value.at.call);
+    }
+    const argument =
+      call === null || value.at === undefined
+        ? null
+        : writtenArgument(call, value.at.at);
+    return argument ?? valueNode(value.key);
+  };
+  const evaluatedAt = (value: ValueAt, site: string | undefined) => {
+    const node = writtenNode(value);
+    return node === null ? null : evaluatedValue(node, db, undefined, site);
+  };
   const textOf = (key: string): string => {
     const node = nodeAt(key);
     return node === null ? nameIn(key) : calleeText(node);
@@ -81,6 +109,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
     db,
     read: () => undefined,
     writtenAs: (key) => writtenValueOf(db, key),
+    writtenUnder: (key, site) => writtenValueUnder(db, key, site),
     anchorCalls: (key) => anchorCallsOf(db, key),
     importedFrom: (key, module) =>
       libraryPathsOf(db, key).some(
@@ -91,6 +120,13 @@ export function rubyFactSource(db: Database): RubyFactSource {
         const inside = pathInModule(path, module);
         return inside === null ? [] : [inside];
       }),
+    importedUnder: (key, modules) =>
+      importedPathsOf(db, key).flatMap((path) =>
+        modules.flatMap((module) => {
+          const inside = pathInModule(path, module);
+          return inside === null ? [] : [inside];
+        }),
+      ),
     shapeOf: (key) => shapeOf(nodeAt(key)),
     memberName: (stated) => classMemberOf(stated) ?? stated,
     readsMembersAsCalls: true,
@@ -158,6 +194,31 @@ export function rubyFactSource(db: Database): RubyFactSource {
       return node === null
         ? null
         : scalarOf(evaluatedValue(node, db, bindings));
+    },
+    urlOf: (key, site, at) => {
+      const value = evaluatedAt({ key, at }, site);
+      return value === null
+        ? null
+        : { path: pathOf(value), host: hostOf(value) };
+    },
+    hostOf: (host, port, site) => {
+      const hostValue = evaluatedAt(host, site);
+      if (hostValue === null) {
+        return undefined;
+      }
+      const portNode = port === null ? null : writtenNode(port);
+      return hostWithPort(
+        hostValue,
+        portNode === null || portNode.type === "nil"
+          ? null
+          : evaluatedValue(portNode, db, undefined, site),
+      );
+    },
+    isStringOf: (key, site, at) =>
+      evaluatedAt({ key, at }, site)?.kind === "string",
+    constructionSitesOf: (call) => {
+      const node = nodeAt(call);
+      return node === null ? [] : constructionSitesOf(node, db);
     },
     comesTo: (key) => {
       resolveValues(db, [key]);
@@ -346,6 +407,23 @@ function globalPathOf(
   return only === undefined || more.length > 0 ? null : only;
 }
 
+/**
+ * The constant paths the value at this key reads, as a file's own import
+ * statements would say: the paths no file in the run defines, and the
+ * path of a class or module the project defines. Ruby reopens a class
+ * written again, so a project that writes `class Net::HTTP` to add a
+ * method still sends its requests through the library's class.
+ */
+function importedPathsOf(db: Database, key: string): string[] {
+  const bound = db.lookup("binds", 0, key).map((row) => String(row[1]));
+  return [
+    ...[key, ...bound].flatMap((one) => libraryPathsOf(db, one)),
+    ...bound.flatMap((one) =>
+      db.lookup("rbConstantName", 0, one).map((row) => String(row[1])),
+    ),
+  ];
+}
+
 /** The constant paths a library defines that the value at this key reads. */
 function libraryPathsOf(db: Database, key: string): string[] {
   return db
@@ -401,4 +479,20 @@ function literalOf(node: RbNode | null): string | number | boolean | null {
 /** The name at the end of a name key. */
 function nameIn(key: string): string {
   return key.slice(key.lastIndexOf("#") + 1);
+}
+
+/**
+ * A host a call takes as an argument of its own, with the port after it,
+ * written the way `hostOf` writes the host of `http://host:port`.
+ * Net::HTTP sends to that URL until a project turns TLS on, so a port of
+ * 80 is left out and any other port is kept.
+ */
+function hostWithPort(host: Value, port: Value | null): string | undefined {
+  return hostOf(
+    concat([
+      text("http://"),
+      host,
+      ...(port === null ? [] : [text(":"), port]),
+    ]),
+  );
 }
