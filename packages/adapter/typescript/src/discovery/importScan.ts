@@ -124,6 +124,16 @@ export function importBindsName(sourceFile: SourceFile, name: string): boolean {
   return specifierImportedAs(sourceFile, name) !== null;
 }
 
+/** Whether the file imports `name` or declares it outside any function. */
+export function bindsAtTopLevel(sourceFile: SourceFile, name: string): boolean {
+  return (
+    importBindsName(sourceFile, name) ||
+    sourceFile.getVariableDeclaration(name) !== undefined ||
+    sourceFile.getFunction(name) !== undefined ||
+    sourceFile.getClass(name) !== undefined
+  );
+}
+
 /**
  * The module a default or namespace import binds to this local name:
  * the project file it resolves to, or the specifier as written when it

@@ -17,7 +17,7 @@ import { nodeId } from "../facts/extract.js";
 import { factSourceFor } from "../resolve/factSource.js";
 import { opsOverFacts } from "../resolve/opsOverFacts.js";
 import { functionNameOf, memberNameOf } from "../walk/propertyName.js";
-import { importedNamesOf } from "./importScan.js";
+import { bindsAtTopLevel, importedNamesOf } from "./importScan.js";
 import { discoveredUnitOf } from "./shared.js";
 
 import type {
@@ -72,6 +72,7 @@ export function moduleOpsFor(
         }),
       elements: () => store.elementsWrittenIn(sourceFile),
       importedNames: (modules) => importedNamesOf(sourceFile, modules),
+      bindsAtTopLevel: (name) => bindsAtTopLevel(sourceFile, name),
       functions: () =>
         functionsIn(sourceFile).map((fn) => {
           access.state(fn);
