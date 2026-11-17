@@ -5,32 +5,58 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { readTestMetadata } from "@suss/behavioral-ir";
+import { classBody, definesMethod, rubyConstants } from "@suss/recognize";
 
 import { extractRubyProject, findRubyFiles } from "./project.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { RbTestClasses, RubyPack } from "./pack.js";
+import type { RubyPack } from "./pack.js";
+
+const BASES = rubyConstants("Minitest::Test", "ActiveSupport::TestCase");
 
 /** What a Minitest pack declares, written out here since the adapter cannot depend on the pack. */
 function minitestPack(files?: string[]): RubyPack {
-  const pattern: RbTestClasses = {
-    filePatterns: ["*_test.rb"],
-    baseClassNames: ["Minitest::Test", "ActiveSupport::TestCase"],
-    testMethodPrefix: "test_",
-    testBlockMethods: ["test"],
-    blockTestName: { prefix: "test_", spacesAs: "_" },
-    setupBlockMethods: ["setup"],
-    setupMethodNames: ["setup"],
-    skipStatements: ["skip"],
-    assertionPrefixes: ["assert", "refute"],
-    stubMethods: ["stub", "stubs", "expects"],
-    ...(files === undefined ? {} : { files }),
-  };
   return {
     name: "minitest",
     protocol: "in-process",
     discovery: [],
-    testClasses: [pattern],
+    classBodies: [
+      classBody({
+        in: BASES,
+        calls: {
+          test: definesMethod({
+            name: { at: 0 },
+            body: { block: true },
+            kind: "instance",
+            naming: { prefix: "test_", spacesAs: "_" },
+          }),
+        },
+      }),
+    ],
+    testClasses: [
+      {
+        cases: {
+          type: "testCases",
+          files: {
+            matching: ["*_test.rb"],
+            ...(files === undefined ? {} : { listed: files }),
+          },
+          classes: { inherits: BASES, methods: { pattern: "^test_" } },
+          before: { calls: ["setup"], methods: ["setup"] },
+          skips: { statements: ["skip"] },
+          runner: { prefixes: ["assert", "refute"], names: ["skip"] },
+          mocks: [
+            {
+              replacesMember: {
+                by: { methods: ["stub", "stubs", "expects"] },
+                member: { at: 0 },
+                of: "receiver",
+              },
+            },
+          ],
+        },
+      },
+    ],
   };
 }
 
@@ -226,6 +252,83 @@ describe("Minitest tests as test units", () => {
         written: "Order.expects(:audit)",
       },
     ]);
+  });
+
+  it("counts a skip only as one of the test's own statements, and a bare skip as one", async () => {
+    write("test/models/order_test.rb", [
+      "class OrderTest < ActiveSupport::TestCase",
+      '  test "bare" do',
+      "    skip",
+      "  end",
+      "",
+      '  test "when" do',
+      '    skip "no network" unless ENV["NETWORK"]',
+      "    Order.cancel(1)",
+      "  end",
+      "",
+      '  test "inside" do',
+      "    begin",
+      "      skip",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const skipped = (name: string) =>
+      readTestMetadata(testNamed(summaries, `OrderTest > ${name}`))?.skipped ??
+      false;
+
+    expect(skipped("test_bare")).toBe(true);
+    expect(skipped("test_when")).toBe(false);
+    expect(skipped("test_inside")).toBe(false);
+  });
+
+  it("records a stub on a class written in a module against the file that defines it", async () => {
+    write("app/models/billing/invoice.rb", [
+      "module Billing",
+      "  class Invoice",
+      "    def self.total",
+      "      1",
+      "    end",
+      "  end",
+      "end",
+    ]);
+    write("test/models/invoice_test.rb", [
+      "class InvoiceTest < ActiveSupport::TestCase",
+      "  def test_totals",
+      "    Billing::Invoice.any_instance.stubs(:total)",
+      "  end",
+      "end",
+    ]);
+
+    expect(
+      readTestMetadata(testNamed(await extract(), "InvoiceTest > test_totals"))
+        ?.mocks,
+    ).toEqual([
+      {
+        module: "app/models/billing/invoice.rb",
+        name: "total",
+        written: "Billing::Invoice.any_instance.stubs(:total)",
+      },
+    ]);
+  });
+
+  it("finds a test the class body declares in a loop, recorded at its test call", async () => {
+    write("test/models/order_test.rb", [
+      "class OrderTest < ActiveSupport::TestCase",
+      "  [1].each do |id|",
+      '    test "cancels each" do',
+      "      Order.cancel(id)",
+      "    end",
+      "  end",
+      "end",
+    ]);
+
+    const test = testNamed(await extract(), "OrderTest > test_cancels_each");
+
+    expect(test.location.range.start).toBe(3);
+    expect(linkedCalls(test)).toEqual(["Order.cancel"]);
   });
 
   it("reads only the listed files, and nothing without the pack", async () => {

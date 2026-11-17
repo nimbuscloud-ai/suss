@@ -995,6 +995,14 @@ export const EXTRA_INPUTS = [
     repo: "twenty",
     args: [...dir("packages/twenty-sdk"), ...packs("vitest")],
   },
+  // The one Rails app among the clones that writes Minitest, read with
+  // its tests. No other input runs the minitest pack outside the fixtures.
+  {
+    name: "minitest",
+    group: "extra",
+    repo: "loomio",
+    args: [...railsApp(railsIn(".")), ...packs("minitest")],
+  },
   {
     name: "sqlmodel",
     group: "extra",

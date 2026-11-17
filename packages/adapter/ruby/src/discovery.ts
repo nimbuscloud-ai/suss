@@ -105,7 +105,7 @@ import {
 import { stdlibEffects } from "./stdlib/dispatch.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
-import { testClassPatternsIn, testClassUnits } from "./testClasses.js";
+import { testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
 import { rubyNodeOfKey, stringValueOf } from "./values/evaluator.js";
 
@@ -160,6 +160,7 @@ import type { HandlerClasses, RaisesRead } from "./raisedStatuses.js";
 import type { HookDefinition } from "./resolverHooks.js";
 import type { RespondingHelper } from "./responseStatus.js";
 import type { ClassInfo } from "./scope.js";
+import type { ClassTestIndex } from "./testClasses.js";
 import type { SharedGroupIndex } from "./testSharedGroups.js";
 
 /**
@@ -247,6 +248,8 @@ export interface DiscoveryOptions extends BodyReadOptions {
   onReachSeed?: (raw: RawCodeStructure, seed: ReachSeed) => void;
   /** The shared groups the run's test files define, when a pack reads tests. */
   sharedGroups?: SharedGroupIndex | undefined;
+  /** The test classes the run's test files define, when a pack reads test classes. */
+  classTests?: ClassTestIndex | undefined;
   /** Where a pack hook that throws during discovery has the failure recorded. */
   tallies?: ReadonlyMap<string, PackTally> | undefined;
 }
@@ -425,7 +428,7 @@ export async function discoverUnits(
           enclosingQualifiedName: null,
         }),
     }),
-    ...testClassUnits(root, testClassPatternsIn(options.packs), {
+    ...testClassUnits(root, options.classTests, {
       filePath: options.filePath,
       absoluteFile,
       displayPathOf: options.displayPathOf ?? ((file) => file),

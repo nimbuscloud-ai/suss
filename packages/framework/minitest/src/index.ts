@@ -11,7 +11,10 @@
 
 import { z } from "zod";
 
+import { classBody, definesMethod, rubyConstants } from "@suss/recognize";
+
 import type { RubyPack } from "@suss/adapter-ruby";
+import type { TestCasesMatch } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 export const optionsSchema = z
@@ -29,7 +32,7 @@ export const optionsSchema = z
 export type MinitestPackOptions = z.infer<typeof optionsSchema>;
 
 /** Minitest's own test class, and the test cases Rails builds on it. */
-const TEST_CASE_CLASSES = [
+const TEST_CASE_CLASSES = rubyConstants(
   "Minitest::Test",
   "ActiveSupport::TestCase",
   "ActionDispatch::IntegrationTest",
@@ -42,28 +45,61 @@ const TEST_CASE_CLASSES = [
   "ActionCable::Channel::TestCase",
   "ActionCable::Connection::TestCase",
   "Rails::Generators::TestCase",
-];
+);
+
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
+
+/** ActiveSupport's `test "cancels twice" do` defines `test_cancels_twice` from its block. */
+const TEST_METHODS = classBody({
+  in: TEST_CASE_CLASSES,
+  calls: {
+    test: definesMethod({
+      name: { at: 0 },
+      body: { block: true },
+      kind: "instance",
+      naming: { prefix: "test_", spacesAs: "_" },
+    }),
+  },
+});
+
+function tests(files: readonly string[] | undefined): TestCasesMatch {
+  return {
+    type: "testCases",
+    files: {
+      matching: ["*_test.rb"],
+      ...(files === undefined ? {} : { listed: files }),
+    },
+    classes: { inherits: TEST_CASE_CLASSES, methods: { pattern: "^test_" } },
+    before: { calls: ["setup"], methods: ["setup", "before_setup"] },
+    skips: { statements: ["skip"] },
+    runner: {
+      prefixes: ["assert", "refute", "must_", "wont_", "flunk"],
+      names: ["skip"],
+    },
+    mocks: [
+      {
+        replacesMember: {
+          by: { methods: ["stub", "stubs", "expects"] },
+          member: { at: 0 },
+          of: "receiver",
+        },
+      },
+    ],
+  };
+}
 
 export function minitestFramework(options: MinitestPackOptions = {}): RubyPack {
   return {
     name: "minitest",
+    version: VERSION,
     protocol: "in-process",
     discovery: [],
-    testClasses: [
-      {
-        filePatterns: ["*_test.rb"],
-        baseClassNames: TEST_CASE_CLASSES,
-        testMethodPrefix: "test_",
-        testBlockMethods: ["test"],
-        blockTestName: { prefix: "test_", spacesAs: "_" },
-        setupBlockMethods: ["setup"],
-        setupMethodNames: ["setup", "before_setup"],
-        skipStatements: ["skip"],
-        assertionPrefixes: ["assert", "refute", "must_", "wont_", "flunk"],
-        stubMethods: ["stub", "stubs", "expects"],
-        ...(options.files !== undefined ? { files: options.files } : {}),
-      },
-    ],
+    classBodies: [TEST_METHODS],
+    testClasses: [{ cases: tests(options.files) }],
   };
 }
 

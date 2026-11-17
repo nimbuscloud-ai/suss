@@ -358,8 +358,9 @@ nestedBodyCall(r)           the call r, which bodyCallAt places among a
                             body's statements, is written inside another
                             statement of that body, such as an if, a try,
                             a with or a Ruby begin or loop, and not as
-                            one of the body's own statements. Nothing
-                            reads it yet
+                            one of the body's own statements. The ops'
+                            nestedBodyCall reads it, which is how a test
+                            runner's skip counts only as a statement
 callBlock(r, b)             the call r is written with the block b, which
                             is a function of its own, or which runs as
                             part of the class body around it, as a

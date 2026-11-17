@@ -26,11 +26,29 @@ async function extract(files?: string[]) {
 describe("minitestFramework", () => {
   it("discovers no routes and reads test files as test classes", () => {
     const pack = minitestFramework();
+    const cases = pack.testClasses?.[0]?.cases;
     expect(pack.discovery).toEqual([]);
-    expect(pack.testClasses?.[0]?.filePatterns).toEqual(["*_test.rb"]);
-    expect(pack.testClasses?.[0]?.baseClassNames).toContain(
-      "ActiveSupport::TestCase",
+    expect(cases?.files.matching).toEqual(["*_test.rb"]);
+    expect(cases?.classes?.inherits).toContainEqual({
+      from: ["ActiveSupport"],
+      named: ["TestCase"],
+    });
+    expect(cases?.classes?.inherits).toContainEqual({
+      from: ["ActionCable::Channel"],
+      named: ["TestCase"],
+    });
+  });
+
+  it("states the method a test block defines, only in a test class", () => {
+    const [tests] = minitestFramework().classBodies ?? [];
+    expect(tests?.in).toEqual(
+      minitestFramework().testClasses?.[0]?.cases.classes?.inherits,
     );
+    expect(tests?.calls.test).toMatchObject({
+      declares: "method",
+      body: { block: true },
+      kind: "instance",
+    });
   });
 
   it("takes a file list and nothing else, and suggests itself to no project", () => {

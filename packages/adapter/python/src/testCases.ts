@@ -650,7 +650,8 @@ export class PythonTestIndex {
     if (read.replaces === "path") {
       return { ...this.dottedTarget(read.path), written };
     }
-    const object = positionalArguments(call)[read.of];
+    const object =
+      read.of === "receiver" ? undefined : positionalArguments(call)[read.of];
     const owner = object === undefined ? null : this.objectModule(object, file);
     return {
       ...(owner === null ? {} : { module: owner }),

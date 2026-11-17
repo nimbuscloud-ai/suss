@@ -379,6 +379,8 @@ export interface ValueOps {
    * other value.
    */
   bodyCalls?(): readonly CallOps[];
+  /** The call this block is written with, `test "x"` for its `do ... end`, or null for any other value. */
+  blockCall?(): CallOps | null;
   /**
    * The object this value comes to, through names and through a call
    * that returns its argument, or null for anything else. A call into a
@@ -997,6 +999,12 @@ export interface CallOps {
    * ops themselves.
    */
   site?(): string;
+  /**
+   * Whether the call, which `bodyCalls()` lists among a body's
+   * statements, is written inside another statement of that body, such
+   * as an `if` or a Ruby `begin`, rather than as one of its own.
+   */
+  nestedBodyCall?(): boolean;
   /**
    * The call made on what this call returns, when the source writes one
    * there: `.set(v)` for `db.update(t)` in `db.update(t).set(v)`. Null
