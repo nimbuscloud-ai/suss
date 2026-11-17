@@ -527,11 +527,60 @@ describe("subclassOf", () => {
             "  end",
             "end",
             "",
+            "class Billing::Reopened < Workers::WorkerEntrypoint",
+            "end",
+            "",
+            "class Billing::Reopened",
+            "  def fetch(request)",
+            "    request",
+            "  end",
+            "end",
+            "",
           ].join("\n"),
         },
         ENTRYPOINTS,
       ),
-    ).toEqual(["handler Billing::Nightly.fetch function-call", ...expected]);
+    ).toEqual([
+      "handler Billing::Nightly.fetch function-call",
+      "handler Billing::Reopened.fetch function-call",
+      ...expected,
+    ]);
+  });
+
+  it("takes a Ruby class that reaches a project base the pattern lists, written short inside its module, and not the base itself", async () => {
+    expect(
+      await rubyUnits(
+        "subclass-project-base-rb",
+        {
+          "jobs.rb": [
+            "class Jobs::Base",
+            "  def fetch(request)",
+            "    request",
+            "  end",
+            "end",
+            "",
+            "module Jobs",
+            "  class Hourly < Base",
+            "    def fetch(request)",
+            "      request",
+            "    end",
+            "  end",
+            "end",
+            "",
+          ].join("\n"),
+        },
+        [
+          {
+            kind: "handler",
+            match: {
+              type: "subclassOf",
+              inherits: [{ from: ["Jobs"], named: ["Base"] }],
+              members: { kind: "instance", names: ["fetch"] },
+            },
+          },
+        ],
+      ),
+    ).toEqual(["handler Jobs::Hourly.fetch function-call"]);
   });
 });
 

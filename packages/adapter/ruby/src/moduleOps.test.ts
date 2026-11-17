@@ -65,6 +65,43 @@ describe("one Ruby file read on its own as module ops", () => {
     ]);
   });
 
+  it("reaches a base through any body written for the class, and a project base by its full name, though no class is its own base", () => {
+    const module = opsOf(
+      "class Types::BaseObject < GraphQL::Schema::Object\n" +
+        "end\n" +
+        "class Types::Reopened < Types::BaseObject\n" +
+        "end\n" +
+        "class Types::Reopened\n" +
+        "end\n" +
+        "module Types\n" +
+        "  class Query < BaseObject\n" +
+        "  end\n" +
+        "  module Node\n" +
+        "    include BaseObject\n" +
+        "  end\n" +
+        "end\n" +
+        "class Types::BaseObject\n" +
+        "end\n",
+    );
+    const project = [{ from: ["Types"], named: ["BaseObject"] }];
+    const library = [{ from: ["GraphQL::Schema"], named: ["Object"] }];
+    expect(
+      module
+        .classes()
+        .map((cls) =>
+          [cls.name(), cls.inherits(project), cls.inherits(library)].join(" "),
+        ),
+    ).toEqual([
+      "Types::BaseObject false true",
+      "Types::Reopened true true",
+      "Types::Reopened true true",
+      "Types false false",
+      "Types::Query true true",
+      "Types::Node true true",
+      "Types::BaseObject false true",
+    ]);
+  });
+
   it("evaluates a value with a block's variables bound, and a name with nothing written to it as nothing", () => {
     const module = opsOf(
       '%w[users].each do |root|\n  get "#{root}/x", to: target\nend\n',
