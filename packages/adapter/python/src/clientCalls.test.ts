@@ -14,29 +14,42 @@ import { parsePython } from "./parser.js";
 import { factsForFile } from "./project.js";
 import { bindModule } from "./scope.js";
 
-import type { RawCodeStructure } from "@suss/extractor";
-import type { PyClientCall, PythonPack } from "./pack.js";
+import type { ClientResponse, RawCodeStructure } from "@suss/extractor";
+import type { HttpRequests } from "@suss/recognize";
+import type { PythonPack } from "./pack.js";
 
-/** A library like requests, written the way a pack writes one. */
-const REQUEST_CALLS: PyClientCall = {
-  type: "clientCall",
-  importModule: ["httpclient"],
-  verbAttributeNames: { get: "GET", post: "POST" },
-  url: { position: 0, keyword: "url" },
-  methodCall: {
-    attribute: "send",
-    methodPosition: 0,
-    methodKeyword: "method",
-    urlPosition: 1,
-  },
-  receiverConstructors: ["Session"],
-};
+/**
+ * A library like requests, declared the way a pack declares one: the
+ * verbs and `send(method, url)` on the module and on a `Session`.
+ */
+function httpclient(
+  response: ClientResponse = {},
+  constructors: readonly string[] = ["Session"],
+): HttpRequests {
+  return httpRequests({
+    client: anyOf(
+      imported({ from: ["httpclient"], named: ["*", "get", "post", "send"] }),
+      ...(constructors.length === 0
+        ? []
+        : [
+            constructedFrom({ from: ["httpclient"], named: [...constructors] }),
+          ]),
+    ),
+  })
+    .methods({
+      ...verbs({ get: "GET", post: "POST" }, { at: 0, keyword: "url" }),
+      send: {
+        sends: { from: { at: 0, keyword: "method" } },
+        url: { at: 1, keyword: "url" },
+      },
+    })
+    .response(response);
+}
 
 const PACK: PythonPack = {
   name: "httpclient",
   protocol: "http",
   discovery: [],
-  clients: [REQUEST_CALLS],
   contextManagers: [{ module: "httpclient", returnsSelf: ["Session"] }],
 };
 
@@ -45,14 +58,14 @@ const FILE = "app/orders.py";
 /**
  * The units, with the facts a project run hands discovery, since the
  * rules are what say a receiver was built by the library's constructor.
- * The pack lists the pattern under `clients`, which the adapter reads as
- * the request chain that says the same thing.
  */
 async function unitsIn(
   source: string,
-  pattern: PyClientCall = REQUEST_CALLS,
+  requests: HttpRequests = httpclient(),
 ): Promise<RawCodeStructure[]> {
-  return unitsOf(source, [{ ...PACK, clients: [pattern] }]);
+  return unitsOf(source, [
+    { ...PACK, requestRecognizers: requestRecognizersOf([requests]) },
+  ]);
 }
 
 async function unitsOf(
@@ -315,16 +328,13 @@ describe("a function that calls a request function", () => {
         "def load():",
         '    return httpclient.get("/orders")',
       ].join("\n"),
-      {
-        ...REQUEST_CALLS,
-        response: {
-          statusCode: ["status_code"],
-          success: ["ok"],
-          body: ["json"],
-          failureDelivery: "response",
-          redirectDelivery: "followed",
-        },
-      },
+      httpclient({
+        statusCode: ["status_code"],
+        success: ["ok"],
+        body: ["json"],
+        failureDelivery: "response",
+        redirectDelivery: "followed",
+      }),
     );
 
     expect(units[0]).toMatchObject({
@@ -347,13 +357,10 @@ describe("a function that calls a request function", () => {
         "def load():",
         '    return httpclient.get("/orders")',
       ].join("\n"),
-      {
-        ...REQUEST_CALLS,
-        response: {
-          redirectDelivery: "followed",
-          redirectOption: { name: "allow_redirects", handsBack: [false] },
-        },
-      },
+      httpclient({
+        redirectDelivery: "followed",
+        redirectOption: { name: "allow_redirects", handsBack: [false] },
+      }),
     );
 
     const deliveryOf = (name: string) =>
@@ -417,7 +424,7 @@ describe("a function that calls a request function", () => {
         "        orders.sort()",
         "    orders.mark_loaded()",
       ].join("\n"),
-      { ...REQUEST_CALLS, response: { statusCode: ["status_code"] } },
+      httpclient({ statusCode: ["status_code"] }),
     );
 
     const conditions = (units[0]?.branches ?? []).map((branch) =>
@@ -520,7 +527,7 @@ describe("a function that calls a request function", () => {
         "        payload = response.json()",
         "        return self.unwrap(payload)",
       ].join("\n"),
-      { ...REQUEST_CALLS, response: { body: ["json"] } },
+      httpclient({ body: ["json"] }),
     );
 
     expect(outline(units[0])).toEqual([
@@ -700,7 +707,7 @@ describe("a function that calls a request function", () => {
         "def load():",
         '    return session.get("/orders")',
       ].join("\n"),
-      { ...REQUEST_CALLS, receiverConstructors: [] },
+      httpclient({}, []),
     );
 
     expect(units).toEqual([]);

@@ -23,7 +23,6 @@ import type {
   LibraryEnvVars,
   PackWords,
   PatternPack,
-  RedirectOption,
   RequestRecognizer,
   RouteTableDeclaration,
   TestCasesMatch,
@@ -62,12 +61,6 @@ export interface PythonPack {
    * otherwise it would match no decorator and nothing would say why (#188).
    */
   projectModules?: string[];
-  /**
-   * The callables the library gives a project for making a request, as
-   * a pack wrote them before `requestRecognizers`. Each pattern is read
-   * as the request chain that says the same thing.
-   */
-  clients?: PyClientCall[];
   /** The requests the library sends, as a pack declared with `@suss/recognize` compiles them. */
   requestRecognizers?: readonly RequestRecognizer[];
   /**
@@ -216,56 +209,6 @@ export interface PyContextManager {
   module: string;
   /** The class names the library documents as returning self. */
   returnsSelf: string[];
-}
-
-/**
- * The callables a library gives a project for making a request. A
- * function that calls one of them becomes a client unit, bound to the
- * method and path that call is made with.
- */
-export interface PyClientCall {
-  type: "clientCall";
-  /** The module the callables come from, `requests`. */
-  importModule: string[];
-  /** Attribute names that state the method themselves: `get` means GET. */
-  verbAttributeNames: Record<string, string>;
-  /** Where a call whose name states the method states its URL. */
-  url: { position: number; keyword: string };
-  /** A call that takes the method as an argument instead, `request("GET", url)`. */
-  methodCall?: {
-    attribute: string;
-    methodPosition: number;
-    methodKeyword?: string;
-    urlPosition: number;
-  };
-  /** Constructors whose instances take the same calls, `Session`. */
-  receiverConstructors?: string[];
-  /** What the response object gives a caller, so a guard on one of its members counts as a guard on a status. */
-  response?: PyClientResponse;
-}
-
-/**
- * The members a library's response object gives a caller. A test on one of
- * them shows which statuses the caller handles, and the checker compares
- * that against what the other side sends.
- */
-export interface PyClientResponse {
-  /** Members whose value is the status code: `status_code`. */
-  statusCode?: string[];
-  /** Members that say the request succeeded, meaning a status in 200 to 299: `ok`. */
-  success?: string[];
-  /** Members that give the body: `json`, `text`, `content`. */
-  body?: string[];
-  /** Whether a refused request comes back as a response or raises where it was made. */
-  failureDelivery?: "response" | "exception";
-  /** Whether the client follows a redirect itself or hands the 3xx back. */
-  redirectDelivery?: "followed" | "response";
-  /**
-   * The keyword argument one call passes to change `redirectDelivery`
-   * for itself: `allow_redirects` for requests, `follow_redirects` for
-   * httpx.
-   */
-  redirectOption?: RedirectOption;
 }
 
 /** An object a module exports that a route reads the request off. */
