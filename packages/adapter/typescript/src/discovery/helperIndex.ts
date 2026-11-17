@@ -18,6 +18,7 @@ import { Node, type SourceFile } from "ts-morph";
 import { runPackHook } from "@suss/extractor";
 
 import { nodeId } from "../facts/extract.js";
+import { fileMentions } from "../fileMentions.js";
 import { parameterNames, readHelperSinks } from "./helperReading.js";
 import { registrationSubjectsOf, subjectNodeFor } from "./registrationCall.js";
 import { functionValueOf } from "./resolveValue.js";
@@ -192,8 +193,7 @@ function noteExpanded(
 
 /** Whether this file writes any of these words, cheaply. */
 function mentionsAnyOf(file: SourceFile, written: readonly string[]): boolean {
-  const text = file.getFullText();
-  return written.some((word) => text.includes(word));
+  return written.some((word) => fileMentions(file, word));
 }
 
 /**
