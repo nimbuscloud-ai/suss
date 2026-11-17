@@ -22,6 +22,7 @@
   "decoratedFunctionRoute": "suss: PythonDiscoveryPattern variant tag, defined in @suss/adapter-python",
   "braces": "suss: path-template syntax name, defined in @suss/adapter-python; selects the {name} reader for FastAPI's Starlette-style paths",
   "router": "FastAPI: the include_router parameter that takes the router",
+  "methods": "FastAPI: the api_route keyword listing the methods the route serves, GET when it is not passed",
   "FastAPI": "FastAPI: the app constructor, whose dependencies, middleware and exception handlers reach every route",
   "dependencies": "FastAPI: the keyword on FastAPI(...), APIRouter(...) and a route decorator that lists dependencies run before the handler",
   "middleware": "FastAPI: the app decorator that registers a function run around every request",

@@ -1,4 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
+
+import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 
 import {
   fastapiFramework,
@@ -18,7 +24,7 @@ describe("fastapiFramework", () => {
   it("accepts fastapi's own module by default", () => {
     const pack = fastapiFramework();
     expect(pack.name).toBe("fastapi");
-    expect(pack.version).toBe("2");
+    expect(pack.version).toBe("3");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
@@ -96,7 +102,7 @@ describe("fastapiFramework", () => {
     ).toEqual(["fastapi", "myapp.compat"]);
   });
 
-  it("reads each verb decorator, include_router and APIRouter as the table's roles", () => {
+  it("reads each verb decorator, api_route, include_router and APIRouter as the table's roles", () => {
     expect(fastapiRoutes(["fastapi"])).toEqual({
       roots: {
         kinds: { FastAPI: 0 },
@@ -116,6 +122,10 @@ describe("fastapiFramework", () => {
         delete: SERVES("DELETE"),
         head: SERVES("HEAD"),
         options: SERVES("OPTIONS"),
+        api_route: {
+          ...SERVES("GET"),
+          methods: { pick: { keyword: "methods" }, unstated: ["GET"] },
+        },
         include_router: {
           role: "mount",
           table: [{ at: 0 }, { keyword: "router" }],
@@ -136,5 +146,63 @@ describe("fastapiFramework", () => {
   it("is the module's default export too", async () => {
     const mod = await import("./index.js");
     expect(mod.default).toBe(fastapiFramework);
+  });
+});
+
+describe("a route an api_route decorator declares", () => {
+  it("serves each method a methods list, tuple or set names, upper-cased, and GET when it names none", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fastapi-api-route-"));
+    fs.writeFileSync(
+      path.join(dir, "main.py"),
+      [
+        "from fastapi import APIRouter, FastAPI",
+        "",
+        "app = FastAPI()",
+        'router = APIRouter(prefix="/v1")',
+        "",
+        '@app.api_route("/orders", methods=["GET", "post"])',
+        "def orders():",
+        "    return []",
+        "",
+        '@app.api_route("/health")',
+        "def health():",
+        "    return {}",
+        "",
+        '@app.api_route("/stock", methods=("DELETE",))',
+        "def clear_stock():",
+        "    return {}",
+        "",
+        '@app.api_route("/tags", methods={"PATCH"})',
+        "def tag():",
+        "    return {}",
+        "",
+        '@router.api_route("/items/{item_id}", methods=["PUT"])',
+        "def replace_item(item_id: int):",
+        "    return {}",
+        "",
+        "app.include_router(router)",
+        "",
+      ].join("\n"),
+    );
+    const { summaries } = await extractPythonProject({
+      files: findPythonFiles(dir),
+      roots: [dir],
+      packs: [fastapiFramework()],
+      workspaceRoot: dir,
+    });
+    const served = summaries.flatMap((summary) => {
+      const semantics = summary.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest"
+        ? [`${summary.identity.name} ${semantics.method} ${semantics.path}`]
+        : [];
+    });
+    expect(served.sort()).toEqual([
+      "clear_stock DELETE /stock",
+      "health GET /health",
+      "orders GET /orders",
+      "orders POST /orders",
+      "replace_item PUT /v1/items/{item_id}",
+      "tag PATCH /tags",
+    ]);
   });
 });
