@@ -1,23 +1,50 @@
 // The values the shipped graphql-ruby pack supplies. The adapter's own source
 // contains none of these strings, so a test that passes proves the pack drives it.
 
+import { rubyConstants } from "@suss/recognize";
+
 import type { TypeShape } from "@suss/behavioral-ir";
+import type { SubclassOfMatch } from "@suss/extractor";
 import type { GraphqlObjectFields, RubyPack } from "../pack.js";
+
+/** graphql-ruby's object types and fields, as the pack declares them, for these bases. */
+export function graphqlFields(
+  bases: readonly string[] = ["Types::BaseObject"],
+  camelize = true,
+): SubclassOfMatch {
+  return {
+    type: "subclassOf",
+    inherits: rubyConstants(...bases),
+    skipClasses: bases,
+    members: { kind: "instance", names: [] },
+    className: { call: "graphql_name", suffixRemoved: "Type" },
+    calls: {
+      field: {
+        name: { at: 0 },
+        naming: { camel: { keyword: "camelize", default: camelize } },
+        runs: [
+          { classAt: { keyword: "mutation" }, method: "resolve" },
+          { classAt: { keyword: "resolver" }, method: "resolve" },
+          { method: { keyword: "resolver_method" } },
+          { method: "named" },
+        ],
+      },
+    },
+  };
+}
 
 export function graphqlObjectFieldsPattern(
   overrides: Partial<GraphqlObjectFields> = {},
 ): GraphqlObjectFields {
   return {
     type: "graphqlObjectFields",
-    baseClassNames: ["Types::BaseObject"],
+    fields: graphqlFields(),
     root: "/app/graphql",
     pathConvention: "railsUnderscore",
     fieldCallName: "field",
     typeCallName: "type",
     argumentCallName: "argument",
-    wiringKeywords: ["mutation", "resolver"],
     resolverMethodName: "resolve",
-    resolverMethodKeyword: "resolver_method",
     resolverHooks: {
       methods: ["ready?", "authorized?"],
       answerIsListHead: true,

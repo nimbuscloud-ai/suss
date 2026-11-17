@@ -17,6 +17,7 @@ import {
   restBinding,
 } from "@suss/behavioral-ir";
 import { absentReading, runPackHook, unreadableReading } from "@suss/extractor";
+import { discoverDeclared } from "@suss/recognize";
 import { spanOfKey } from "@suss/resolution";
 
 import {
@@ -34,7 +35,6 @@ import {
   NodeMap,
   rangeOf,
   readCallArgs,
-  runStatements,
   spanOf,
   symbolValue,
 } from "./ast.js";
@@ -47,6 +47,7 @@ import {
 import { claimedIn } from "./claims.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
+import { rubyModuleOps } from "./declaredDiscovery.js";
 import { ExceptionReader } from "./exceptionClasses.js";
 import { nodeId, readKey } from "./facts/values.js";
 import {
@@ -64,7 +65,6 @@ import {
   nullKeywordOf,
   objectTypeFields,
   orNull,
-  ownGraphqlName,
   ownTypeNode,
   resolvedName,
   resolverBranches,
@@ -96,17 +96,13 @@ import {
   helperResponse,
   responseBranches,
 } from "./responseStatus.js";
-import {
-  constantRefCandidates,
-  graphqlTypeNameFromQualified,
-  walkDefinitions,
-} from "./scope.js";
+import { constantRefCandidates, walkDefinitions } from "./scope.js";
 import { stdlibEffects } from "./stdlib/dispatch.js";
 import { methodStorage, type RbStorageOptions } from "./storage.js";
 import { testCaseUnits, testPatternsIn } from "./testCases.js";
 import { testClassUnits } from "./testClasses.js";
 import { typeShapeFromNode } from "./typeShape.js";
-import { rubyNodeOfKey, stringValueOf } from "./values/evaluator.js";
+import { nodeOfResolutionKey, rubyNodeOfKey } from "./values/evaluator.js";
 
 import type {
   DispatchTable,
@@ -127,6 +123,7 @@ import type {
   RawProvenance,
   Reading,
 } from "@suss/extractor";
+import type { DeclaredUnit, NamedBy, RunsFound } from "@suss/recognize";
 import type {
   AncestorLookup,
   Ancestry,
@@ -391,6 +388,7 @@ export async function discoverUnits(
     );
   }
 
+  const fieldsOf = fieldsInFile(root, options);
   for (const info of classes) {
     // A class reopened in the same file is still one class, so a method in
     // a later block can override a field declared in an earlier one.
@@ -407,6 +405,7 @@ export async function discoverUnits(
             ownBlocks,
             fileBlocks,
             options,
+            fieldsOf,
           )),
         );
       }
@@ -557,19 +556,69 @@ function unitsFor(
   ownBlocks: readonly ReachedBody[],
   fileBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
+  fieldsOf: FieldsInFile,
 ): Promise<RawCodeStructure[]> {
   const table: DispatchTable<
     RubyDiscoveryPattern,
     Promise<RawCodeStructure[]>
   > = {
     graphqlObjectFields: (p) =>
-      graphqlObjectFieldUnits(p, pack, info, ownBlocks, fileBlocks, options),
+      graphqlObjectFieldUnits(
+        p,
+        pack,
+        info,
+        ownBlocks,
+        fileBlocks,
+        options,
+        fieldsOf,
+      ),
     controllerActions: (p) =>
       controllerActionUnits(p, pack, info, ownBlocks, fileBlocks, options),
   };
   return dispatchByType(table, pattern);
 }
 
+/** The fields a pattern's `fields` declaration finds in one file, read once for every class the file writes. */
+type FieldsInFile = (pattern: GraphqlObjectFields) => readonly DeclaredUnit[];
+
+function fieldsInFile(root: RbNode, options: DiscoveryOptions): FieldsInFile {
+  const read = new Map<GraphqlObjectFields, readonly DeclaredUnit[]>();
+  return (pattern) => {
+    const known = read.get(pattern);
+    if (known !== undefined) {
+      return known;
+    }
+    const facts = options.facts;
+    const file = options.absoluteFile ?? options.filePath;
+    const found =
+      facts === undefined
+        ? []
+        : discoverDeclared(
+            pattern.fields,
+            "resolver",
+            rubyModuleOps(root, file, facts),
+          );
+    read.set(pattern, found);
+    return found;
+  };
+}
+
+/** The field call the declaration found, as the node the contract readers take. */
+function callNodeOf(
+  named: NamedBy,
+  facts: Database | undefined,
+): RbNode | null {
+  const site = named.call.site?.();
+  return site === undefined || facts === undefined
+    ? null
+    : nodeOfResolutionKey(site, facts);
+}
+
+/**
+ * A field unit for each field the pattern's `fields` declaration finds
+ * in this class block, the last call under a name winning at the place
+ * of the first, with the hooks the fields run after them.
+ */
 async function graphqlObjectFieldUnits(
   pattern: GraphqlObjectFields,
   pack: RubyPack,
@@ -577,42 +626,31 @@ async function graphqlObjectFieldUnits(
   ownBlocks: readonly ReachedBody[],
   fileBlocks: readonly ReachedBody[],
   options: DiscoveryOptions,
+  fieldsOf: FieldsInFile,
 ): Promise<RawCodeStructure[]> {
-  if (
-    info.bodyNode === null ||
-    pattern.baseClassNames.includes(info.qualifiedName)
-  ) {
+  const file = options.absoluteFile ?? options.filePath;
+  const classKey = nodeId(file, info.node);
+  const found = fieldsOf(pattern).flatMap((unit) => {
+    const named = unit.namedBy;
+    const call = named === undefined ? null : callNodeOf(named, options.facts);
+    return named !== undefined &&
+      call !== null &&
+      enclosingClassKey(call, file) === classKey
+      ? [{ named, call }]
+      : [];
+  });
+  const typeName = found[0]?.named.className;
+  if (typeName === undefined) {
     return [];
   }
   const ctx = fieldReadContext(pattern, options.cache, fileBlocks, options);
   const ancestry = await ancestryOf(info.qualifiedName, ownBlocks, ctx.lookup);
-  if (
-    !reachesConfiguredBase(ancestry, info.qualifiedName, pattern.baseClassNames)
-  ) {
-    return [];
-  }
-  const typeName =
-    ownGraphqlName(ownBlocks, pattern, ctx.types.blockConfigures) ??
-    graphqlTypeNameFromQualified(
-      info.qualifiedName,
-      pattern.typeNameConvention,
-    );
   const knownClasses = ownBlocks[0]?.knownClasses ?? new Set<string>();
   const scope: FileScope = { nesting: info.bodyNesting, knownClasses };
-
-  // The library stores fields by name, so a field declared again later in
-  // the body replaces the earlier one. Keying on the field name matches that.
-  const declsByName = new Map<string, FieldDeclaration>();
-  for (const stmt of runStatements(
-    info.bodyNode,
-    blockConfiguresCall(pattern),
-  )) {
-    const decl = await readFieldCall(stmt, scope, ctx, ancestry);
-    if (decl !== null) {
-      declsByName.set(decl.fieldName, decl);
-    }
+  const decls: FieldDeclaration[] = [];
+  for (const { named, call } of found) {
+    decls.push(await readFieldCall(named, call, scope, ctx, ancestry));
   }
-  const decls = [...declsByName.values()];
   const fields = decls.map((decl) => {
     const raw = buildFieldUnit(pack, pattern, typeName, decl, options);
     if (decl.body.reachSeed !== undefined) {
@@ -1405,28 +1443,18 @@ function bodyFromLookup(
  * look as if it had never been written.
  */
 async function readFieldCall(
+  named: NamedBy,
   stmt: RbNode,
   scope: FileScope,
   ctx: FieldReadContext,
   ancestry: Ancestry,
-): Promise<FieldDeclaration | null> {
-  if (stmt.type !== "call" || field(stmt, "receiver") !== null) {
-    return null;
-  }
-  if (field(stmt, "method")?.text !== ctx.pattern.fieldCallName) {
-    return null;
+): Promise<FieldDeclaration> {
+  if (!named.settled) {
+    return computedNameDeclaration(stmt, named.name);
   }
   const callArgs = readCallArgs(field(stmt, "arguments"));
-  const nameArg = callArgs.positional[0];
-  if (nameArg === undefined) {
-    return null;
-  }
-  const symbol = symbolValue(nameArg);
-  if (symbol === null) {
-    return computedNameDeclaration(stmt, nameArg);
-  }
   const read = await readFieldShape(
-    symbol,
+    named.runs,
     callArgs,
     scope,
     ctx,
@@ -1434,7 +1462,7 @@ async function readFieldCall(
     rangeOf(stmt),
   );
   return {
-    fieldName: resolvedName(symbol, callArgs, ctx.pattern),
+    fieldName: named.name,
     namedOnTheWire: true,
     node: stmt,
     contract: read.contract,
@@ -1446,11 +1474,11 @@ async function readFieldCall(
 /** A field whose name is computed when the class body runs, so the file does not contain the name the schema uses. */
 function computedNameDeclaration(
   stmt: RbNode,
-  nameArg: RbNode,
+  written: string,
 ): FieldDeclaration {
   const range = rangeOf(stmt);
   return {
-    fieldName: nameArg.text,
+    fieldName: written,
     namedOnTheWire: false,
     node: stmt,
     contract: null,
@@ -1458,7 +1486,7 @@ function computedNameDeclaration(
     body: {
       readings: [
         unreadableReading(
-          `This field is named by ${nameArg.text}, which is worked out when the class body runs, so the name the schema exposes it under was not read here`,
+          `This field is named by ${written}, which is worked out when the class body runs, so the name the schema exposes it under was not read here`,
           range,
         ),
       ],
@@ -1466,23 +1494,9 @@ function computedNameDeclaration(
   };
 }
 
-/** When a call uses more than one of the pattern's wiring keywords, the first one listed in the pattern wins. */
-function wiringReference(
-  callArgs: CallArgs,
-  wiringKeywords: readonly string[],
-): RbNode | null {
-  for (const keyword of wiringKeywords) {
-    const ref = callArgs.keyword[keyword];
-    if (ref !== undefined) {
-      return ref;
-    }
-  }
-  return null;
-}
-
 /** The contract is null when no shape could be read for the field, whether it wrote no type or one this reader does not follow. */
 async function readFieldShape(
-  symbol: string,
+  runs: RunsFound | null,
   callArgs: CallArgs,
   scope: FileScope,
   ctx: FieldReadContext,
@@ -1497,14 +1511,17 @@ async function readFieldShape(
       typeNode === undefined ? null : { node: typeNode, scope, file: ctx.file },
     nullable: nullKeywordOf(callArgs, ctx.pattern),
   };
-  const oneHopRef = wiringReference(callArgs, ctx.pattern.wiringKeywords);
-  if (oneHopRef !== null) {
-    return readWiredClass(oneHopRef, scope, own, ctx);
+  const wired =
+    runs === null || !("classAt" in runs.pick) || runs.keyword === null
+      ? undefined
+      : callArgs.keyword[runs.keyword];
+  if (wired !== undefined) {
+    return readWiredClass(wired, scope, own, ctx);
   }
 
   return {
     contract: await fieldContract(own, null, ctx),
-    body: methodBehindField(symbol, callArgs, ctx, ancestry, range),
+    body: methodBehindField(runs, callArgs, ctx, ancestry, range),
   };
 }
 
@@ -1582,25 +1599,30 @@ function wiredMethodArgs(
  * keyword's method even when none exists, so that is not a missing body.
  */
 function methodBehindField(
-  symbol: string,
+  runs: RunsFound | null,
   callArgs: CallArgs,
   ctx: FieldReadContext,
   ancestry: Ancestry,
   range: Range,
 ): BodyReport {
-  const keyword = ctx.pattern.resolverMethodKeyword;
-  const written = keyword === undefined ? undefined : callArgs.keyword[keyword];
+  const written =
+    runs?.keyword === null || runs?.keyword === undefined
+      ? undefined
+      : callArgs.keyword[runs.keyword];
   if (written === undefined) {
-    return bodyFromLookup(
-      methodInAncestry(ancestry, symbol, ctx.read),
-      range,
-      "This field",
-      NO_METHOD_BEHIND_IT,
-      ctx.bodyRead,
-    );
+    const own = runs?.methodName ?? null;
+    return own === null
+      ? NO_METHOD_BEHIND_IT
+      : bodyFromLookup(
+          methodInAncestry(ancestry, own, ctx.read),
+          range,
+          "This field",
+          NO_METHOD_BEHIND_IT,
+          ctx.bodyRead,
+        );
   }
 
-  const name = stringValueOf(written, ctx.facts);
+  const name = runs?.methodName ?? null;
   if (name === null) {
     return methodNotSettled(
       `This field is resolved by the method ${written.text}, which is worked out at run time, so nothing about what it does was read here`,

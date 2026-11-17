@@ -19,6 +19,7 @@ import type {
   PackWords,
   PatternPack,
   RequestRecognizer,
+  SubclassOfMatch,
   TestCasesMatch,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
@@ -703,11 +704,16 @@ export interface RbGraphqlTypeWrapper {
   typeArguments?: Record<string, { keyword: string; fallback: string }>;
 }
 
-/** A class or module whose ancestry reaches one of `baseClassNames` declares GraphQL fields through DSL calls in its own body. */
+/** A class or module whose ancestry reaches one of the type bases declares GraphQL fields through DSL calls in its own body. */
 export interface GraphqlObjectFields {
   type: "graphqlObjectFields";
-  /** The base classes the library's generator writes. The walk follows a project's own intermediate bases, so config only needs to add a base with a different name. */
-  baseClassNames: string[];
+  /**
+   * Which classes are object types and which calls in their bodies are
+   * fields, as `@suss/recognize`'s `subclassOf` reads them: each field's
+   * name, its type's name, and whether a wiring keyword or the type's
+   * own method resolves it.
+   */
+  fields: SubclassOfMatch;
   /** The directory a wiring keyword's referenced class is looked up under, which depends on the project's layout. */
   root: string;
   /** Other directories the project autoloads constants from, each read as the top of the namespace, after `root`. */
@@ -732,12 +738,8 @@ export interface GraphqlObjectFields {
   /** Classes whose instance, when a resolver returns one, the library reports as an error in place of the field's value. */
   returnedErrorClassNames?: string[];
   argumentCallName: string;
-  /** Keywords whose value is a class to read the declared contract from, one hop away. They are tried in the order listed. */
-  wiringKeywords: string[];
   /** The method a wired class defines to resolve the field it is wired to. */
   resolverMethodName: string;
-  /** The keyword on a field call that says which of the type's own methods resolves it, in place of the method with the field's name. */
-  resolverMethodKeyword?: string;
   /** The methods the library runs on a wired class before `resolverMethodName`, any of which can stop the field. */
   resolverHooks?: RbResolverHooks;
   /** The library's own classes that a project's class chain ends at. */

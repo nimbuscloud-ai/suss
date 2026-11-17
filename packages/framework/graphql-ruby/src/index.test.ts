@@ -10,22 +10,45 @@ describe("graphqlRubyFramework", () => {
     expect(pack.discovery).toEqual([
       {
         type: "graphqlObjectFields",
-        baseClassNames: [
-          "Types::BaseObject",
-          "Types::BaseInterface",
-          "Types::BaseInputObject",
-          "Types::BaseEnum",
-          "Types::BaseUnion",
-          "Types::BaseScalar",
-        ],
+        fields: {
+          type: "subclassOf",
+          inherits: [
+            { from: ["Types"], named: ["BaseObject"] },
+            { from: ["Types"], named: ["BaseInterface"] },
+            { from: ["Types"], named: ["BaseInputObject"] },
+            { from: ["Types"], named: ["BaseEnum"] },
+            { from: ["Types"], named: ["BaseUnion"] },
+            { from: ["Types"], named: ["BaseScalar"] },
+          ],
+          skipClasses: [
+            "Types::BaseObject",
+            "Types::BaseInterface",
+            "Types::BaseInputObject",
+            "Types::BaseEnum",
+            "Types::BaseUnion",
+            "Types::BaseScalar",
+          ],
+          members: { kind: "instance", names: [] },
+          className: { call: "graphql_name", suffixRemoved: "Type" },
+          calls: {
+            field: {
+              name: { at: 0 },
+              naming: { camel: { keyword: "camelize", default: true } },
+              runs: [
+                { classAt: { keyword: "mutation" }, method: "resolve" },
+                { classAt: { keyword: "resolver" }, method: "resolve" },
+                { method: { keyword: "resolver_method" } },
+                { method: "named" },
+              ],
+            },
+          },
+        },
         root: "/repo/app/graphql",
         pathConvention: "railsUnderscore",
         fieldCallName: "field",
         typeCallName: "type",
         argumentCallName: "argument",
-        wiringKeywords: ["mutation", "resolver"],
         resolverMethodName: "resolve",
-        resolverMethodKeyword: "resolver_method",
         resolverHooks: {
           methods: ["ready?", "authorized?"],
           answerIsListHead: true,
@@ -120,7 +143,9 @@ describe("graphqlRubyFramework", () => {
     const [pattern] = pack.discovery;
     expect(pattern?.type).toBe("graphqlObjectFields");
     const names =
-      pattern?.type === "graphqlObjectFields" ? pattern.baseClassNames : [];
+      pattern?.type === "graphqlObjectFields"
+        ? (pattern.fields.skipClasses ?? [])
+        : [];
     expect(names).toContain("Types::BaseObject");
     expect(names).toContain("Types::BaseInterface");
     expect(names).toContain("Types::AuthenticatedObject");
@@ -134,6 +159,10 @@ describe("graphqlRubyFramework", () => {
     const [pattern] = pack.discovery;
     expect(
       pattern?.type === "graphqlObjectFields" && pattern.camelizeDefault,
+    ).toBe(false);
+    expect(
+      pattern?.type === "graphqlObjectFields" &&
+        pattern.fields.calls?.field?.naming?.camel.default,
     ).toBe(false);
   });
 
