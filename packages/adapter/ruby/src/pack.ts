@@ -217,33 +217,17 @@ export interface RbMailers {
 
 /**
  * Tests written as nested blocks, the way RSpec writes them:
- * `describe Order do; it "cancels" do ... end; end`. Each example is a
- * `test` unit whose name is its group titles and its own. Every call
- * listed here is one the library defines; the adapter reads the nesting.
+ * `describe Order do; it "cancels" do ... end; end`. `@suss/recognize`
+ * reads the groups, the examples, the shared groups and the hooks that
+ * `cases` declares, and each example is a `test` unit whose name is its
+ * group titles and its own. The rest says what a `let` or a `subject` a
+ * group writes gives the examples in it, which the adapter states before
+ * the value facts exist, and how an example checks a result or replaces
+ * something.
  */
 export interface RbTestCases {
-  /** Base names of the files the runner loads, where `*` matches any run of characters: `*_spec.rb`. */
-  filePatterns: string[];
-  /** The constant a top-level group may be opened on, `RSpec` in `RSpec.describe`. */
-  receiver: string;
-  /** Calls that open a group of examples: `describe`, `context`. */
-  groupNames: string[];
-  /** Calls that open a group whose examples do not run: `xdescribe`, `xcontext`. */
-  skippedGroupNames: string[];
-  /** Calls that open a group other groups include by name, whose examples belong to whoever includes them: `shared_examples`. */
-  sharedGroupNames: string[];
-  /** Calls that include a shared group by name into the group they are written in: `it_behaves_like`, `include_context`. */
-  sharedIncludes: RbSharedInclude[];
-  /** Calls that declare one example: `it`, `specify`. */
-  exampleNames: string[];
-  /** Calls that declare an example that does not run: `xit`, `skip`. */
-  skippedExampleNames: string[];
-  /** Calls that, written as a statement in an example or a `before` block, mark the example as not run: `skip`, `pending`. */
-  skipStatements: string[];
-  /** Metadata keys that mark a group or an example as not run, written `:skip` or `skip: true`. */
-  skipMetadata: string[];
-  /** Hooks whose block runs before every example in the group: `before`. */
-  beforeHooks: string[];
+  /** The match's `calls` form says which calls open a group, declare an example, write a shared group and include one. */
+  cases: TestCasesMatch;
   /** Calls that define a value an example reads by name, run when it is first read: `let`. */
   lazyValues: string[];
   /** The same, run before every example whether it reads the value or not: `let!`. */
@@ -268,8 +252,6 @@ export interface RbTestCases {
   expectations: RbExpectations;
   /** How the library replaces something for the length of an example. */
   mocks: RbTestMocks;
-  /** Read only these files, matched on whole path segments from the end. Left out, every file matching `filePatterns` is read. */
-  files?: string[];
 }
 
 /**
@@ -331,17 +313,6 @@ export interface RbExpectations {
   starts: string[];
   onSubject: string;
   runs: string[];
-}
-
-/**
- * One way a group includes a shared group. With `nestedTitle`, the shared
- * examples run in a group of their own titled that and then the shared
- * group's name, as `it_behaves_like "x"` runs them under "behaves like x".
- * Without it they run in the including group itself.
- */
-export interface RbSharedInclude {
-  method: string;
-  nestedTitle?: string;
 }
 
 /**

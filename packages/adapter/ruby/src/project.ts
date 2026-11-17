@@ -1089,6 +1089,7 @@ async function runRuby(
       gapHandling,
       examples: exampleReads(
         testPatternsIn(options.packs),
+        db,
         facts.sharedGroups,
         classTests === undefined
           ? null

@@ -3,7 +3,8 @@
  * included. RSpec's `shared_examples "x"` is written once, often in a
  * support file, and `it_behaves_like "x"` in a spec runs its examples
  * there. An include finds its shared group by name, in its own file
- * first and then anywhere in the run.
+ * first and then anywhere in the run. `@suss/recognize` says what each
+ * file writes, and the index keeps it across files for the reader.
  *
  * A name read inside a shared group that the group does not define
  * comes from whoever includes it. The value facts key such a name on
@@ -12,38 +13,74 @@
  * values leave it unsettled, since which one ran is not known.
  */
 
-import { isObserved, noteKeyRead, noteLookup } from "@suss/resolution";
-import { literalOf } from "@suss/values";
-
-import { children, field } from "./ast.js";
-import { nodeId } from "./facts/values.js";
+import { sharedGroupsWritten } from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
 import {
-  firstArgument,
-  groupScope,
-  roleOf,
-  sharedGroupsIn,
-  sharedIncludeOf,
-} from "./testCases.js";
-import { evaluatedValue } from "./values/evaluator.js";
+  bySourceOrder,
+  isObserved,
+  noteKeyRead,
+  noteLookup,
+} from "@suss/resolution";
+
+import { rubyModuleOps } from "./declaredDiscovery.js";
+import { factSourceOf } from "./factSource.js";
+import { nodeId } from "./facts/values.js";
+import { groupScope } from "./testCases.js";
+import { nodeOfResolutionKey } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
+import type { CallOps } from "@suss/extractor";
+import type {
+  SharedGroupInclude,
+  SharedGroups,
+  SharedGroupsWritten,
+} from "@suss/recognize";
 import type { RbTestCases } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
-export interface SharedDefinition {
+interface SharedDefinition {
   readonly file: string;
-  readonly call: RbNode;
-  readonly name: string;
+  /** The key of the call that writes it. */
+  readonly site: string;
 }
 
-export interface IncludeSite {
+interface IncludeSite {
   readonly file: string;
+  readonly site: string;
   readonly call: RbNode;
-  /** The groups around the include, outermost first. */
-  readonly groups: readonly RbNode[];
+  /** The keys of the groups and shared groups around the include, outermost first. */
+  readonly groups: readonly string[];
+  readonly groupCalls: readonly RbNode[];
   /** Whether the shared examples run in a group of their own, as `it_behaves_like` runs them. */
   readonly nested: boolean;
   readonly definition: SharedDefinition;
+  readonly definitionCall: RbNode;
+}
+
+/** The node at each key, or null when one has none in the run. */
+function nodesAt(keys: readonly string[], db: Database): RbNode[] | null {
+  const nodes = keys.map((key) => nodeOfResolutionKey(key, db));
+  return nodes.every((node) => node !== null) ? (nodes as RbNode[]) : null;
+}
+
+/** Whether the file's text has the name of a call that writes or includes a shared group. */
+function mentionsSharedGroups({ root, pattern }: PatternedFile): boolean {
+  const shared = pattern.cases.calls?.shared;
+  const names = [
+    ...(shared?.names ?? []),
+    ...(shared?.includes ?? []).map((one) => one.method),
+  ];
+  const text = root.text;
+  return names.some((name) => text.includes(name));
+}
+
+function keyedDefinitions(
+  definitions: SharedGroupsWritten["definitions"],
+): { readonly site: string; readonly title: string }[] {
+  return definitions.flatMap(({ call, title }) => {
+    const site = call.site?.();
+    return site === undefined ? [] : [{ site, title }];
+  });
 }
 
 /** A test file and the pattern that reads it. */
@@ -53,77 +90,85 @@ export interface PatternedFile {
   readonly pattern: RbTestCases;
 }
 
-/** Values keyed by node, for nodes from any number of files. */
-class ByNode<V> {
-  private readonly byTree = new WeakMap<object, Map<number, V>>();
-
-  set(node: RbNode, value: V): void {
-    const known = this.byTree.get(node.tree) ?? new Map<number, V>();
-    this.byTree.set(node.tree, known);
-    known.set(node.id, value);
-  }
-
-  get(node: RbNode): V | undefined {
-    return this.byTree.get(node.tree)?.get(node.id);
-  }
-}
-
-export class SharedGroupIndex {
+export class SharedGroupIndex implements SharedGroups {
   private readonly definitions = new Map<string, SharedDefinition[]>();
-  private readonly definitionsByNode = new ByNode<SharedDefinition>();
-  private readonly sitesByNode = new ByNode<IncludeSite>();
-  private readonly sitesByDefinition = new Map<
-    SharedDefinition,
-    IncludeSite[]
-  >();
+  private readonly definitionsBySite = new Map<string, SharedDefinition>();
+  private readonly sitesBySite = new Map<string, IncludeSite>();
+  private readonly sitesByDefinition = new Map<string, IncludeSite[]>();
+  private readonly sitesByFile = new Map<string, IncludeSite[]>();
   private readonly filesByTree = new WeakMap<object, string>();
 
   constructor(
     private readonly db: Database,
     files: readonly PatternedFile[],
   ) {
-    for (const { file, root, pattern } of files) {
+    const source = factSourceOf(db);
+    // Most spec files write no shared group and no include, and reading
+    // one makes the ops for every call it writes.
+    const written = files.filter(mentionsSharedGroups).map((one) => ({
+      file: one.file,
+      ...sharedGroupsWritten(
+        one.pattern.cases,
+        rubyModuleOps(one.root, one.file, db, source),
+      ),
+    }));
+    for (const { file, root } of files) {
       this.filesByTree.set(root.tree, file);
-      for (const call of sharedGroupsIn(root, pattern)) {
-        const name = this.nameOf(call);
-        if (name === null) {
-          continue;
-        }
-        const definition = { file, call, name };
-        this.definitions.set(name, [
-          ...(this.definitions.get(name) ?? []),
+    }
+    for (const { file, definitions } of written) {
+      for (const { site, title } of keyedDefinitions(definitions)) {
+        const definition = { file, site };
+        this.definitions.set(title, [
+          ...(this.definitions.get(title) ?? []),
           definition,
         ]);
-        this.definitionsByNode.set(call, definition);
+        this.definitionsBySite.set(site, definition);
       }
     }
-    for (const one of files) {
-      this.recordIncludes(one, one.root, []);
+    for (const { file, includes } of written) {
+      for (const include of includes) {
+        this.recordInclude(file, include);
+      }
     }
   }
 
-  /** The include this call makes, or null when it makes none or names no shared group the run defines. */
-  includedAt(call: RbNode): IncludeSite | null {
-    const site = this.sitesByNode.get(call) ?? null;
-    this.noteRead(site?.definition ?? null);
-    return site;
+  /** The shared group the include at this site reads, noting its file for the cache, or null when it reads none the run defines. */
+  includedAt(include: string): CallOps | null {
+    const site = this.sitesBySite.get(include) ?? null;
+    if (site === null) {
+      return null;
+    }
+    noteKeyRead(this.db, site.definition.file);
+    return factCallOps(site.definition.site, factSourceOf(this.db));
   }
 
-  /** The shared group this call defines, or null. */
-  definitionAt(call: RbNode): SharedDefinition | null {
-    return this.definitionsByNode.get(call) ?? null;
+  defines(site: string): boolean {
+    return this.definitionsBySite.has(site);
   }
 
-  includersOf(definition: SharedDefinition): readonly IncludeSite[] {
+  /** Each include of the shared group, noting the list for the cache, so a run reads the shared group again when its includers change. */
+  includersOf(definition: string): readonly SharedGroupInclude[] {
     const sites = this.sitesByDefinition.get(definition) ?? [];
     if (isObserved(this.db)) {
       noteLookup(
         this.db,
-        `sharedIncluders:${nodeId(definition.file, definition.call)}`,
-        sites.map((site) => nodeId(site.file, site.call)).join(";"),
+        `sharedIncluders:${definition}`,
+        sites.map((site) => site.site).join(";"),
       );
     }
-    return sites;
+    const source = factSourceOf(this.db);
+    return sites.flatMap((site) => {
+      const call = factCallOps(site.site, source);
+      const groups = site.groups.flatMap(
+        (group) => factCallOps(group, source) ?? [],
+      );
+      return call === null ? [] : [{ call, groups }];
+    });
+  }
+
+  /** The include sites one file writes, in source order. */
+  sitesIn(file: string): readonly IncludeSite[] {
+    return this.sitesByFile.get(file) ?? [];
   }
 
   /** The file a node from a test or support file is written in. */
@@ -131,63 +176,51 @@ export class SharedGroupIndex {
     return this.filesByTree.get(node.tree) ?? null;
   }
 
-  private recordIncludes(
-    at: PatternedFile,
-    node: RbNode,
-    groups: readonly RbNode[],
-  ): void {
-    for (const child of children(node)) {
-      const role = roleOf(child, at.pattern);
-      const include = sharedIncludeOf(child, at.pattern);
-      if (include !== null && groups.length > 0) {
-        this.recordInclude(
-          at,
-          child,
-          groups,
-          include.nestedTitle !== undefined,
-        );
-        continue;
-      }
-      const opens = role === "opensGroup" || role === "sharedGroup";
-      const block = opens ? field(child, "block") : null;
-      if (block !== null) {
-        this.recordIncludes(at, block, [...groups, child]);
-        continue;
-      }
-      this.recordIncludes(at, child, groups);
-    }
-  }
-
   private recordInclude(
-    at: PatternedFile,
-    call: RbNode,
-    groups: readonly RbNode[],
-    nested: boolean,
+    file: string,
+    include: SharedGroupsWritten["includes"][number],
   ): void {
-    const name = this.nameOf(call);
-    const found = name === null ? [] : (this.definitions.get(name) ?? []);
-    const inFile = found.filter((one) => one.file === at.file);
+    const site = include.call.site?.();
+    const found = this.definitions.get(include.title) ?? [];
+    const inFile = found.filter((one) => one.file === file);
     const [definition, ...others] = inFile.length > 0 ? inFile : found;
-    if (definition === undefined || others.length > 0) {
+    const groups = include.groups.flatMap((group) => group.site?.() ?? []);
+    // The binds read each call's own statements, so a site is kept with its nodes.
+    const nodes =
+      site === undefined || definition === undefined
+        ? null
+        : nodesAt([site, definition.site, ...groups], this.db);
+    const [call, definitionCall, ...groupCalls] = nodes ?? [];
+    if (
+      site === undefined ||
+      definition === undefined ||
+      others.length > 0 ||
+      call === undefined ||
+      definitionCall === undefined
+    ) {
       return;
     }
-    const site = { file: at.file, call, groups, nested, definition };
-    this.sitesByNode.set(call, site);
-    this.sitesByDefinition.set(definition, [
-      ...(this.sitesByDefinition.get(definition) ?? []),
+    const recorded: IncludeSite = {
+      file,
       site,
+      call,
+      groups,
+      groupCalls,
+      nested: include.nests,
+      definition,
+      definitionCall,
+    };
+    this.sitesBySite.set(site, recorded);
+    this.sitesByDefinition.set(definition.site, [
+      ...(this.sitesByDefinition.get(definition.site) ?? []),
+      recorded,
     ]);
-  }
-
-  private nameOf(call: RbNode): string | null {
-    const first = firstArgument(call);
-    return first === null ? null : literalOf(evaluatedValue(first, this.db));
-  }
-
-  private noteRead(definition: SharedDefinition | null): void {
-    if (definition !== null) {
-      noteKeyRead(this.db, definition.file);
-    }
+    this.sitesByFile.set(
+      file,
+      [...(this.sitesByFile.get(file) ?? []), recorded].sort((a, b) =>
+        bySourceOrder(a.site, b.site),
+      ),
+    );
   }
 }
 
@@ -203,25 +236,10 @@ export function emitSharedGroupBinds(
   files: readonly PatternedFile[],
 ): void {
   for (const at of files) {
-    for (const site of sitesIn(index, at)) {
+    for (const site of index.sitesIn(at.file)) {
       emitSiteBinds(db, index, site, at.pattern);
     }
   }
-}
-
-function sitesIn(index: SharedGroupIndex, at: PatternedFile): IncludeSite[] {
-  const found: IncludeSite[] = [];
-  const visit = (node: RbNode): void => {
-    for (const child of children(node)) {
-      const site = index.includedAt(child);
-      if (site !== null) {
-        found.push(site);
-      }
-      visit(child);
-    }
-  };
-  visit(at.root);
-  return found;
 }
 
 function emitSiteBinds(
@@ -230,23 +248,20 @@ function emitSiteBinds(
   site: IncludeSite,
   pattern: RbTestCases,
 ): void {
-  const definition = site.definition;
-  const defined = groupScope(definition.call, pattern).values;
-  const sharedKey = nodeId(definition.file, definition.call);
+  const defined = groupScope(site.definitionCall, pattern).values;
   for (const [name, value] of visibleAt(index, site, pattern)) {
     if (!defined.has(name)) {
-      db.add("binds", [`${sharedKey}#${name}`, value]);
+      db.add("binds", [`${site.definition.site}#${name}`, value]);
     }
   }
   const including = site.groups[site.groups.length - 1];
   if (site.nested || including === undefined) {
     return;
   }
-  const includingKey = nodeId(index.fileOf(including) ?? site.file, including);
   for (const [name, block] of defined) {
     db.add("binds", [
-      `${includingKey}#${name}`,
-      nodeId(definition.file, block),
+      `${including}#${name}`,
+      nodeId(site.definition.file, block),
     ]);
   }
 }
@@ -258,9 +273,10 @@ function visibleAt(
   pattern: RbTestCases,
 ): Map<string, string> {
   const found = new Map<string, string>();
-  const scopes = [site.call, ...[...site.groups].reverse()];
+  const scopes = [site.call, ...[...site.groupCalls].reverse()];
   for (const scopeCall of scopes) {
     const file = index.fileOf(scopeCall) ?? site.file;
+    const scopeKey = nodeId(file, scopeCall);
     const scope = groupScope(scopeCall, pattern);
     for (const [name, block] of scope.values) {
       if (!found.has(name)) {
@@ -270,12 +286,12 @@ function visibleAt(
     if (scope.described !== null && !found.has(pattern.describedClass)) {
       found.set(
         pattern.describedClass,
-        `${nodeId(file, scopeCall)}:${pattern.describedClass}`,
+        `${scopeKey}:${pattern.describedClass}`,
       );
     }
 
     if (scope.described !== null && !found.has(pattern.subjectValue)) {
-      const implicit = `${nodeId(file, scopeCall)}:${pattern.subjectValue}`;
+      const implicit = `${scopeKey}:${pattern.subjectValue}`;
       found.set(pattern.subjectValue, implicit);
       found.set(pattern.expectations.onSubject, implicit);
     }
