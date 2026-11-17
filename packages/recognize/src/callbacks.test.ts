@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { callbacks } from "./callbacks.js";
+import { callbackPositions, callbacks } from "./callbacks.js";
 import { callbackHandedOver, compile } from "./compile.js";
 import { constructedFrom, global, modulesOf } from "./ops.js";
 import { pack, subUnitsOf } from "./pack.js";
@@ -548,5 +548,30 @@ describe("the callback one call hands over, for a reader that found the call", (
     expect(
       callbackHandedOver(bare, callOps({ callee: "depends", args: [NAME] })),
     ).toBeNull();
+  });
+});
+
+describe("the position each method of a callbacks chain takes its callback at", () => {
+  it("gives the first place a method lists, across every methods link, and leaves out a method that takes a block", () => {
+    const chain = callbacks({})
+      .methods({
+        Depends: { callback: { written: "callback", at: 0 } },
+        later: {
+          callback: [
+            { written: "argument", at: 1 },
+            { written: "callback", at: 0 },
+          ],
+        },
+      })
+      .methods({ each: { callback: { written: "block" } } })
+      .methods({
+        Security: { callback: { written: "callback", at: 0 } },
+      }).declared;
+
+    expect([...callbackPositions(chain)]).toEqual([
+      ["Depends", 0],
+      ["later", 1],
+      ["Security", 0],
+    ]);
   });
 });
