@@ -121,6 +121,7 @@ function withNodeMembers(
     returnedCall: () => ops.returnedCall?.() ?? null,
     dropped: (owned) => ops.dropped?.(owned) ?? false,
     callerSite: () => ops.callerSite?.() ?? null,
+    enclosingBody: () => ops.enclosingBody?.() ?? null,
     mentions: (word) => node.getSourceFile().getFullText().includes(word),
     parameterReadsAt: (index) => nodes().parameterReadsAt?.(index) ?? null,
     classAt: (index) => nodes().classAt?.(index) ?? null,

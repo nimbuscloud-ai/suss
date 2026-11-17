@@ -1238,6 +1238,69 @@ describe("the block a call is written with", () => {
 });
 
 /**
+ * The facts Ruby states for, in source order:
+ *
+ *   def run
+ *     group "a" do
+ *       check "b", -> { cancel(1) }
+ *     end
+ *   end
+ *
+ * with `makesCall` for the method and every block around a call, and
+ * `containsFn` from the method.
+ */
+function blocksAround(): FactSource {
+  const at = (span: string) => `/f.rb:${span}`;
+  const db = new Database();
+  const add = (relation: string, ...row: string[]) => db.add(relation, row);
+  add("func", at("0-100"));
+  add("call", at("10-90"), "group");
+  add("func", at("20-90"));
+  add("callBlock", at("10-90"), at("20-90"));
+  add("call", at("30-80"), "check");
+  add("func", at("40-80"));
+  add("callArg", at("30-80"), "1", at("40-80"));
+  add("call", at("50-60"), "cancel");
+  for (const [body, call] of [
+    ["0-100", "10-90"],
+    ["0-100", "30-80"],
+    ["20-90", "30-80"],
+    ["0-100", "50-60"],
+    ["20-90", "50-60"],
+    ["40-80", "50-60"],
+  ] as const) {
+    add("makesCall", at(body), at(call));
+  }
+  for (const fn of ["20-90", "40-80"]) {
+    add("containsFn", at("0-100"), at(fn));
+  }
+  return { ...source(), db };
+}
+
+describe("the body a call or a function is written in", () => {
+  it("is the innermost of the bodies around a call, the one that starts last", () => {
+    const facts = blocksAround();
+    expect(factCallOps("/f.rb:50-60", facts)?.enclosingBody?.()?.site?.()).toBe(
+      "/f.rb:40-80",
+    );
+    expect(factCallOps("/f.rb:10-90", facts)?.enclosingBody?.()?.site?.()).toBe(
+      "/f.rb:0-100",
+    );
+  });
+
+  it("is the body of the call a block is written with or a function is passed to, else the function it is declared in", () => {
+    const facts = blocksAround();
+    const bodyOf = (key: string) =>
+      factValueOps(key, facts).enclosingBody?.()?.site?.() ?? null;
+    expect(bodyOf("/f.rb:20-90")).toBe("/f.rb:0-100");
+    expect(bodyOf("/f.rb:40-80")).toBe("/f.rb:20-90");
+    expect(bodyOf("/f.rb:0-100")).toBeNull();
+    expect(factValueOps("/f.rb:40-80", facts).passedTo?.()?.at).toBe(1);
+    expect(factValueOps("/f.rb:20-90", facts).passedTo?.()).toBeNull();
+  });
+});
+
+/**
  * The facts for, in source order:
  *
  *   hook = Hook()
@@ -2917,6 +2980,17 @@ describe("what a route table asks of the facts", () => {
     const bare = factModuleOps("/f.py", source(), { calls: () => [] });
     bare.readingReceivers?.(new Set(["get"]), "calls");
     expect(bare.importedWhole?.(["fastapi"])).toEqual(new Set());
+  });
+
+  it("says what the file binds at its top level only when the adapter lists it", () => {
+    const module = factModuleOps("/f.ts", source(), {
+      calls: () => [],
+      bindsAtTopLevel: (name) => name === "it",
+    });
+    expect(module.bindsAtTopLevel?.("it")).toBe(true);
+    expect(module.bindsAtTopLevel?.("describe")).toBe(false);
+    const bare = factModuleOps("/f.py", source(), { calls: () => [] });
+    expect(bare.bindsAtTopLevel).toBeUndefined();
   });
 });
 
