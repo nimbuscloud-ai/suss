@@ -1427,6 +1427,19 @@ describe("railsFramework", () => {
       });
     });
 
+    it("reads an engine class its file reopens once, under the namespace the body with the base isolates", () => {
+      const pack = projectWith(app('  mount Billing::Engine, at: "/billing"'), {
+        "engines/billing/lib/billing/engine.rb": `${ENGINE_CLASS}class Billing::Engine\n  config.x = 1\nend\n`,
+        "engines/billing/config/routes.rb": ENGINE_ROUTES,
+      });
+      expect(
+        firstRoute(pattern(pack), "Billing::InvoicesController", "index"),
+      ).toEqual({ method: "GET", path: "/billing/invoices" });
+      expect(
+        firstRoute(pattern(pack), "InvoicesController", "index"),
+      ).toBeNull();
+    });
+
     it("adds an application draw block in an engine's routes file to the app's routes", () => {
       const pack = projectWith(app('  get "ping" => "status#show"'), {
         "engines/billing/lib/billing/engine.rb": ENGINE_CLASS,
