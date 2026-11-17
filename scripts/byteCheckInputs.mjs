@@ -1003,6 +1003,15 @@ export const EXTRA_INPUTS = [
     repo: "loomio",
     args: [...railsApp(railsIn(".")), ...packs("minitest")],
   },
+  // The smallest Rails app among the clones whose RSpec suite reads in
+  // full, with its specs and shared examples. No other input runs the
+  // rspec pack outside the fixtures.
+  {
+    name: "rspec",
+    group: "extra",
+    repo: "lobsters",
+    args: [...railsApp(railsIn(".")), ...packs("rspec")],
+  },
   {
     name: "sqlmodel",
     group: "extra",

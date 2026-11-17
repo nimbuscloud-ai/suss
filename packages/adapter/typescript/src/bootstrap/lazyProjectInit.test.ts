@@ -127,6 +127,7 @@ describe("createLazyProject", () => {
             calls: {
               from: { origin: "imported", importedFrom: ["runner"] },
               globalsIn: { matching: ["*.test.*"] },
+              body: "function",
               groups: { names: ["describe"] },
               cases: { names: ["it"] },
             },

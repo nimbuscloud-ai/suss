@@ -25,14 +25,26 @@ async function extract(files?: string[]) {
 describe("rspecFramework", () => {
   it("discovers no routes and reads spec files as tests", () => {
     const pack = rspecFramework();
+    const cases = pack.tests?.[0]?.cases;
     expect(pack.discovery).toEqual([]);
-    expect(pack.tests?.[0]?.filePatterns).toEqual(["*_spec.rb"]);
-    expect(pack.tests?.[0]?.files).toBeUndefined();
+    expect(cases?.files).toEqual({ matching: ["*_spec.rb"] });
+    expect(cases?.calls?.from).toEqual({ origin: "global", paths: ["RSpec"] });
+    expect(cases?.calls?.topLevelCases).toBe(false);
+  });
+
+  it("runs a let! and a subject! before every example, as the adapter reads them as values too", () => {
+    const [pattern] = rspecFramework().tests ?? [];
+    const before = pattern?.cases.before?.calls ?? [];
+    expect(before).toEqual(expect.arrayContaining(pattern?.eagerValues ?? []));
+    expect(before).toEqual(
+      expect.arrayContaining(pattern?.subjectNames.eager ?? []),
+    );
   });
 
   it("hands the file list it was given to the pattern", () => {
     expect(
-      rspecFramework({ files: ["spec/order_spec.rb"] }).tests?.[0]?.files,
+      rspecFramework({ files: ["spec/order_spec.rb"] }).tests?.[0]?.cases.files
+        .listed,
     ).toEqual(["spec/order_spec.rb"]);
   });
 

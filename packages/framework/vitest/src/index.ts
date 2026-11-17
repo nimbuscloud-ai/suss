@@ -99,6 +99,7 @@ export function vitestFramework(options: VitestPackOptions = {}): PatternPack {
           calls: {
             from: { origin: "imported", importedFrom: ["vitest"] },
             ...(globals ? { globalsIn: { matching: TEST_FILE_NAMES } } : {}),
+            body: "function",
             groups: { names: ["describe", "suite"] },
             cases: { names: ["it", "test"] },
             modifiers: {

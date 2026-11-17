@@ -26,6 +26,7 @@ import type {
 import type { LibraryEnvVars } from "./libraryEnvReads.js";
 import type {
   CallScope,
+  Global,
   Imported,
   Inherits,
   ModuleMemberName,
@@ -822,25 +823,55 @@ export type MockRule =
 
 /**
  * Groups and cases written as calls of the runner's functions:
- * `describe("orders", () => { it("cancels", () => ...) })`. A case is in
- * every group whose call it is written inside, through the functions
- * passed to other calls, so `rows.forEach((row) => it(row, ...))` in a
- * group is in that group. Its title is its first argument, and it runs
- * the first function passed after that. A title that is no string keeps
- * its source text and is recorded as unresolved.
+ * `describe("orders", () => { it("cancels", () => ...) })`, or RSpec's
+ * `describe Order do it "cancels" do ... end end`. A case is in every
+ * group whose call it is written inside, through the functions passed to
+ * other calls and the blocks written with them, so
+ * `rows.forEach((row) => it(row, ...))` in a group is in that group. A
+ * case written inside another case is none. Its title is its first
+ * argument, and it runs its body. A title that is no string keeps its
+ * source text and is recorded as unresolved.
  */
 export interface CallCases {
-  /** Where the runner's functions are imported from, under the names the module exports them as. */
-  readonly from: Imported;
+  /**
+   * Where the runner's functions come from: the module they are imported
+   * from, under the names it exports them as, or a global whose methods
+   * they are, as RSpec's `RSpec.describe`. A runner function of a global
+   * written on self counts too, as a bare `describe` does.
+   */
+  readonly from: Imported | Global;
   /**
    * Files where the runner's functions are globals that need no import,
    * as vitest's `globals: true` makes them in `*.test.*`. A runner name
    * such a file does not bind at its top level is the runner's.
    */
   readonly globalsIn?: { readonly matching: readonly string[] };
+  /**
+   * Where a group's or a case's body is: the block its call is written
+   * with, as Ruby writes it, or the first function passed after the
+   * title. A call written with no block is then none of the runner's.
+   */
+  readonly body: "block" | "function";
   /** The functions that open a group, and those that open one the runner skips, such as RSpec's `xdescribe`. */
   readonly groups: CallNames;
   readonly cases: CallNames;
+  /**
+   * Whether a case written outside every group is one. RSpec's `it` is a
+   * method of the group it is written in, so there it is not. Left out,
+   * it is.
+   */
+  readonly topLevelCases?: boolean;
+  /**
+   * Groups other groups include by title, and the calls that include
+   * them: RSpec's `shared_examples "x"` and `it_behaves_like "x"`. An
+   * include reads the shared group's cases in its place, so each group
+   * that includes it gets its own. One with a `nestedTitle` runs them in a
+   * group of its own, titled that and then the include's own title.
+   */
+  readonly shared?: {
+    readonly names: readonly string[];
+    readonly includes: readonly SharedInclude[];
+  };
   /** What can be written after a group's or a case's name. */
   readonly modifiers?: {
     /** `it.skip`, `describe.todo`: the case, or every case in the group, does not run. */
@@ -860,6 +891,13 @@ export interface CallCases {
 export interface CallNames {
   readonly names: readonly string[];
   readonly skipped?: readonly string[];
+}
+
+/** A call that includes a shared group by its title, and the title it runs its cases under, if any. */
+export interface SharedInclude {
+  readonly method: string;
+  /** `it_behaves_like "x"` runs them in a group titled `behaves like x`. */
+  readonly nestedTitle?: string;
 }
 
 /** Which calls patch: calls from one of the origins, or a method called on a parameter a fixture hands the function. */
@@ -888,9 +926,17 @@ export interface SkipRules {
   /**
    * Calls on self that stop a case where they run: Minitest's `skip`. One
    * counts when the case writes it as one of its own statements, with no
-   * block, and not inside another statement such as an `if`.
+   * block, and not inside another statement such as an `if`. For a case
+   * written as a call, one in the block of a `before.calls` call of a
+   * group around it counts too.
    */
   readonly statements?: readonly string[];
+  /**
+   * Metadata a group or a case is given that marks it as not run: a
+   * symbol argument, `it "x", :skip`, or a keyword whose value is written
+   * as anything but false or nil, `skip: "not yet"`.
+   */
+  readonly metadata?: readonly string[];
 }
 
 export interface ClassCases {
@@ -911,7 +957,9 @@ export interface ClassCases {
 export interface BeforeCase {
   /**
    * Calls written on self in the body of the case's class whose block
-   * runs before every case of the class: Minitest's `setup do`.
+   * runs before every case of the class: Minitest's `setup do`. For a
+   * case written as a call, those written as statements of each group
+   * around it, from the outermost in: RSpec's `before do` and `let!`.
    */
   readonly calls?: readonly string[];
   /**
