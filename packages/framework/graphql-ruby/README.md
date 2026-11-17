@@ -15,7 +15,7 @@ end
 
 `@suss/framework-graphql-ruby` exports a `RubyPack`. It covers:
 
-- **Discovery**: a class that extends a configured base class, whose body declares `field :name, Type, null: ...` calls. The base classes are graphql-ruby's own generated `Types::BaseObject` and any a project lists. Each field becomes its own resolver, keyed by `(typeName, fieldName)`. `typeName` is the class's short name with a trailing `Type` removed, which is graphql-ruby's default naming, so `Types::CampaignType` comes out as `Campaign`.
+- **Discovery**: a class that extends a configured base class, whose body declares `field :name, Type, null: ...` calls. The base classes are graphql-ruby's own generated `Types::BaseObject` and any a project lists. Each field becomes its own resolver, keyed by `(typeName, fieldName)`. `typeName` is the name a `graphql_name` call in the body gives, or else the class's short name with a trailing `Type` removed, which is graphql-ruby's default naming, so `Types::CampaignType` comes out as `Campaign`. The pack declares this as a `subclassOf` match with a `calls` entry for `field`, which `@suss/recognize` reads through the module ops.
 - **`mutation:` and `resolver:` wiring**: `field :x, mutation: Mutations::Y` and `field :x, resolver: Queries::Z` take their return type from the referenced class's `type` or `field` calls, and their arguments from its `argument` calls. The field's summary describes that class's `resolve` method. The class is found the way a call's receiver is, through the constants the run's files declare, so it can live outside `root`, in an engine or a pack directory. Only a class that no file in the run declares is looked for under `root`, by Rails' convention for mapping a constant to a path. This works on any object type, not only `Query` and `Mutation`.
 - **`resolver_method:`**: `field :total, Integer, resolver_method: :count_all` is read from the type's `count_all` method instead of a method named `total`.
 - **`ready?` and `authorized?`**: a Mutation or Resolver class runs `ready?`, then `authorized?`, then `resolve`. Each hook definition that runs gets a summary of its own, and the field lists it among its wrappers, the way a controller action lists a `before_action` filter. A hook that calls `super` runs the next definition along the ancestry too. A path through a hook that raises adds a throw to the field. A path that returns `false`, `nil`, or `false, payload` adds a return, since the field stops there and `resolve` never runs. Any other path lets the field go on.
@@ -29,10 +29,11 @@ end
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/adapter-ruby`, for the `RubyPack` type and the Ruby extraction pipeline. It has no analysis logic of its own.
+The pack depends on `@suss/adapter-ruby`, for the `RubyPack` type and the Ruby extraction pipeline, on `@suss/recognize` for the bases its `subclassOf` match lists, and on `@suss/contract-graphql` for the scalar types, so a contract read from Ruby uses the same shapes as one read from SDL. It has no analysis logic of its own.
 
 ## What it does not read yet
 
+- A type whose ancestry reaches `Types::BaseObject` through a project class in a file the run does not read is not read as a type, as when `--dir app/graphql/types` leaves the base out. Read the directory the base is declared in too.
 - A hook path whose answer is worked out at run time, such as `context[:user].admin?`, is read as letting the field go on. Only an answer written out as `false` or `nil`, or a `return` with no value, stops the field.
 - A raise inside a method that has a `rescue` clause is read as caught there, whichever class the clause names.
 - An object type nested inside a field's type is named and not read, so its ref has no definition. Fields an interface adds through `implements` are not read either.
@@ -55,7 +56,7 @@ const pack = graphqlRubyFramework({
 The defaults cover every type-level base class that `rails g graphql:install`
 generates, including the interface base. The adapter follows a class's
 whole ancestry, so a project base class between a type and
-`Types::BaseObject` needs no configuration. A base the walk cannot trace
+`Types::BaseObject` needs no configuration when the run reads its file. A base the walk cannot trace
 to a generated one, such as a base a gem defines under another name,
 goes in a dependency stub under `suss/stubs/`:
 

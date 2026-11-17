@@ -117,6 +117,6 @@ reaching the subject, and says which mock was in the way.
   `described_class`. Which includer ran is not known there, so the
   value is left unread.
 - Minitest. Its tests are methods on a class or blocks under a class,
-  and need their own pattern.
+  which `@suss/framework-minitest` reads.
 - Tests generated in a loop, such as `%w[a b].each { |x| it x do ... }`.
   The example is read once, under its title as written.

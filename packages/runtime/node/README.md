@@ -450,9 +450,7 @@ declares the variables. A read of the runtime itself, such as
 
 ## Where it fits in suss
 
-The pack depends on `@suss/extractor` for the `PatternPack` type, and
-on `@suss/behavioral-ir` for the boundary types its recognizers produce.
-It has no analysis logic of its own.
+The pack depends on `@suss/extractor` for the `PatternPack` type, on `@suss/recognize`, where its timers, environment reads, schema reads and stream writes are declared, on `@suss/resolution` for the name the runtime's own types are declared under, and on `@suss/behavioral-ir` for the boundary types its recognizers produce. It has no analysis logic of its own.
 
 The design is written up in
 [`design/proposals/runtime-node.md`](../../../design/proposals/runtime-node.md).

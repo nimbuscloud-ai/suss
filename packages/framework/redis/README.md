@@ -4,7 +4,7 @@ This pack records which Redis keys a TypeScript service reads and writes.
 
 ## What this package is
 
-A pattern pack. It matches Redis commands and records the same `storage-access` effects the other storage packs do, so a writer and a reader of the same key become two ends of one boundary.
+A pack declared with `@suss/recognize`. It matches Redis commands and records the same `storage-access` effects the other storage packs do, so a writer and a reader of the same key become two ends of one boundary.
 
 ```ts
 import { redisFramework } from "@suss/framework-redis";
@@ -57,4 +57,4 @@ Commands that write: `set`, `setex`, `setnx`, `psetex`, `getdel`, `append`, `inc
 
 ## Where it fits in suss
 
-The pack depends on `@suss/behavioral-ir` for the binding it builds, and on `@suss/adapter-typescript` for the declaration check and for looking up what a key was written as. Nothing declares a Redis key the way CloudFormation declares a table, so this pack pairs against other code. The storage pass in `@suss/checker` puts a writer and a reader of one namespace on the two sides of a boundary.
+The pack depends only on `@suss/recognize`, which compiles the declaration into the recognizer hooks the adapters call and asks the running adapter whether a Redis client declared a method and what a key was written as. Nothing declares a Redis key the way CloudFormation declares a table, so this pack pairs against other code. The storage pass in `@suss/checker` puts a writer and a reader of one namespace on the two sides of a boundary.
