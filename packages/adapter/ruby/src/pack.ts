@@ -18,6 +18,7 @@ import type {
   InvocationRecognizer,
   PackWords,
   PatternPack,
+  RequestRecognizer,
 } from "@suss/extractor";
 import type { UnwrapsByName } from "@suss/resolution";
 import type { BodyBlockKind, BodyBlocks } from "./ast.js";
@@ -90,8 +91,14 @@ export interface RubyPack {
   discovery: RubyDiscoveryPattern[];
   /** Patterns every adapter reads the same way, through the module ops over this adapter's facts. */
   declaredDiscovery?: DeclaredDiscoveryPattern[];
-  /** The calls the library offers a project for making a request. */
+  /**
+   * The calls the library offers a project for making a request, as a
+   * pack wrote them before `requestRecognizers`. Each pattern is read as
+   * the request chains that say the same thing.
+   */
   clients?: RbClientCall[];
+  /** The requests the library sends, as a pack declared with `@suss/recognize` compiles them. */
+  requestRecognizers?: readonly RequestRecognizer[];
   /** The library's model calls that read or write the database. */
   storage?: RbStoragePattern[];
   /**
@@ -420,7 +427,9 @@ export interface RbBodyBlock {
 /**
  * The calls a library offers a project for making a request. A method
  * that makes one becomes a client unit, bound to the request method and
- * path of the call.
+ * path of the call. The adapter reads a pattern as the request chains
+ * that say the same thing, which a pack can declare with
+ * `@suss/recognize` instead.
  */
 export interface RbClientCall {
   /** The constant the calls are made on, as a project writes it: `Faraday`, `Net::HTTP`. */

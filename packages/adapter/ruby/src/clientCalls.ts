@@ -2,27 +2,25 @@
  * Finds methods that call out over the network. Each becomes a client of
  * the boundary its call reaches.
  *
- * A pack says which constant the library's request calls are made on,
- * which method names send which request method, and where the URL is
- * written. This module reads the calls in each method body, evaluates the
- * URL the same way a route's path is evaluated, and reports the enclosing
- * method as a client of that method and path. A call at the top level of
- * a file has no unit to belong to. A URL that says nothing about where it
- * goes gives a client with no path. A request object passed for a URL is
- * read through the value facts, so a run without facts sees only request
- * objects built in the call itself.
+ * A pack declares the requests its library sends with `@suss/recognize`,
+ * and this module hands every call in each method body to those hooks,
+ * with the ops over the run's facts. Each request a hook finds makes the
+ * enclosing method a client of that method and path, so a method that
+ * makes two calls gets two units. A call at the top level of a file has
+ * no unit to belong to. A URL that says nothing about where it goes
+ * gives a client with no path. What the caller does with the response is
+ * read off the method's body here.
  */
 
-import {
-  hasNameHole,
-  restBinding,
-  statusMembersOf,
-  testsStatus,
-} from "@suss/behavioral-ir";
-import { concat, hostOf, pathOf, statedRequestPath, text } from "@suss/values";
+import { restBinding, statusMembersOf, testsStatus } from "@suss/behavioral-ir";
+import { runPackHook } from "@suss/extractor";
+import { factCallOps } from "@suss/recognize/ops";
 
-import { children, field, rangeOf, readCallArgs, spanOf } from "./ast.js";
+import { children, field, rangeOf, spanOf } from "./ast.js";
 import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
+import { packRequestHooks } from "./declaredClients.js";
+import { factSourceOf } from "./factSource.js";
+import { nodeId } from "./facts/values.js";
 import { invocationSites } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
 import {
@@ -31,170 +29,141 @@ import {
   throughResponseHelpers,
 } from "./responseHandOff.js";
 import { returnPathBranches } from "./responseStatus.js";
-import { compoundName } from "./scope.js";
-import {
-  askWrittenValues,
-  constructionSitesOf,
-  evaluatedValue,
-  writtenNodeOf,
-} from "./values/evaluator.js";
+import { askWrittenValues } from "./values/evaluator.js";
 
 import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawBranch, RawCodeStructure, RawEffect } from "@suss/extractor";
-import type { CallArgs, Range } from "./ast.js";
-import type { RbClientCall, RbHostArguments, RubyPack } from "./pack.js";
+import type {
+  CallOps,
+  ClientResponse,
+  PackTally,
+  RawBranch,
+  RawCodeStructure,
+  RawEffect,
+  RequestClaim,
+  RequestRecognizer,
+} from "@suss/extractor";
+import type { Range } from "./ast.js";
+import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
-
-/**
- * What one request call states about the boundary it reaches. The path
- * is null when the URL says nothing about where the request goes.
- */
-interface RequestCall {
-  method: string;
-  path: string | null;
-  host: string | undefined;
-}
-
-/** Where a URL goes: its path when it has one, and its host when it is absolute. */
-interface Target {
-  path: string | undefined;
-  host: string | undefined;
-}
-
-/** The base URL a connection was built with, whose path goes in front of a call's own. */
-interface Base {
-  path: string;
-  host: string | undefined;
-}
 
 export interface ClientCallOptions {
   filePath: string;
+  /** The path the facts key this file's nodes under, when it differs from `filePath`. */
+  factsPath?: string | undefined;
   facts?: Database | undefined;
+  /** Each pack's tally, which a hook that throws is charged to. */
+  tallies?: ReadonlyMap<string, PackTally> | undefined;
+}
+
+/** One group of a pack's request hooks, with the units its hooks found so far. */
+interface Requesting {
+  readonly pack: RubyPack;
+  readonly hooks: readonly RequestRecognizer[];
+  readonly units: RawCodeStructure[];
 }
 
 /**
- * One unit per request call a method in this file makes. A method that
- * makes two calls is a client of both boundaries, so it gets two. A
- * request in a block a pack claims is made by that block, so the block
- * is the client, under the name its own unit has.
+ * One unit per request a method in this file makes. A request in a
+ * block a pack claims is made by that block, so the block is the
+ * client, under the name its own unit has. Each group's units come
+ * together, in pack order, with each in the order the file writes it.
  */
 export function clientCallUnits(
   root: RbNode,
-  pack: RubyPack,
-  pattern: RbClientCall,
+  packs: readonly RubyPack[],
   options: ClientCallOptions,
 ): RawCodeStructure[] {
-  const requestsBy = (caller: RbNode, name: string, calls: RbNode[]) =>
-    calls.flatMap((call) =>
-      requestCalls(call, pattern, options).map((request) =>
-        clientUnit(caller, name, { ...request, call }, pattern, pack, options),
-      ),
-    );
-  return methodDefinitions(root).flatMap((method) => {
+  const { facts } = options;
+  const requesting: Requesting[] = packs.flatMap((pack) =>
+    packRequestHooks(pack).map((hooks) => ({ pack, hooks, units: [] })),
+  );
+  if (facts === undefined || requesting.length === 0) {
+    return [];
+  }
+  const source = factSourceOf(facts);
+  const factsPath = options.factsPath ?? options.filePath;
+  const requestsBy = (caller: RbNode, name: string, calls: RbNode[]) => {
+    for (const call of calls) {
+      const ops = factCallOps(nodeId(factsPath, call), source);
+      if (ops === null) {
+        continue;
+      }
+      for (const { pack, hooks, units } of requesting) {
+        for (const hook of hooks) {
+          for (const claim of claimsAt(hook, call, ops, pack, options)) {
+            units.push(
+              clientUnit(caller, name, { claim, call }, hook.response, pack, {
+                ...options,
+                facts,
+              }),
+            );
+          }
+        }
+      }
+    }
+  };
+  for (const method of methodDefinitions(root)) {
     const name = field(method, "name")?.text;
     if (name === undefined) {
-      return [];
+      continue;
     }
-    const claimed = claimedIn(method, options.facts);
-    return [
-      ...requestsBy(method, name, callsUnder(method, claimed)),
-      ...claimsNamedAfter(method, name, options.facts).flatMap((claim) =>
-        requestsBy(claim.node, claim.name, callsUnder(claim.node, claimed)),
-      ),
-    ];
-  });
+    const claimed = claimedIn(method, facts);
+    requestsBy(method, name, callsUnder(method, claimed));
+    for (const claim of claimsNamedAfter(method, name, facts)) {
+      requestsBy(claim.node, claim.name, callsUnder(claim.node, claimed));
+    }
+  }
+  return requesting.flatMap(({ units }) => units);
+}
+
+/** The requests one hook reads at the call. A hook that throws is charged to its pack, and the call makes none. */
+function claimsAt(
+  hook: RequestRecognizer,
+  call: RbNode,
+  ops: CallOps,
+  pack: RubyPack,
+  options: ClientCallOptions,
+): readonly RequestClaim[] {
+  return (
+    runPackHook(
+      options.tallies?.get(pack.name),
+      {
+        pack: pack.name,
+        hook: "requestRecognizers",
+        file: options.filePath,
+        line: rangeOf(call).start,
+      },
+      () => hook(call, { ops }),
+      null,
+    ) ?? []
+  );
 }
 
 /**
- * Settles what this file's request calls read, before any one of them is
- * read on its own. Each question runs the rules again, so asking per call
- * site is slow on a large project.
- *
- * It asks in two rounds. The first settles which receivers the library
- * built, since that decides which calls have a URL to read.
+ * Settles what the receivers of this file's calls were written as,
+ * before any request is read. Each question runs the rules again, so
+ * asking per call site is slow on a large project, and a receiver's
+ * origin is read off what it was written as.
  */
 export function askClientCallReads(
   root: RbNode,
-  patterns: readonly RbClientCall[],
-  options: ClientCallOptions,
+  facts: Database | undefined,
 ): void {
-  const facts = options.facts;
-  if (facts === undefined || patterns.length === 0) {
+  if (facts === undefined) {
     return;
   }
-  const calls: RbNode[] = [];
+  const receivers: RbNode[] = [];
   for (const method of methodDefinitions(root)) {
     // A request in a claimed block is read for the block's own unit.
-    calls.push(...callsUnder(method, undefined));
-  }
-  if (patterns.some((pattern) => (pattern.receiverBuilders ?? []).length > 0)) {
-    askWrittenValues(receiversOf(calls), facts);
-  }
-  askWrittenValues(requestArguments(calls, patterns, options), facts);
-}
-
-function receiversOf(calls: readonly RbNode[]): RbNode[] {
-  const found: RbNode[] = [];
-  for (const call of calls) {
-    const receiver = field(call, "receiver");
-    if (receiver !== null) {
-      found.push(receiver);
-    }
-  }
-  return found;
-}
-
-/** The URL, or the request object, each call on the library was given. */
-function requestArguments(
-  calls: readonly RbNode[],
-  patterns: readonly RbClientCall[],
-  options: ClientCallOptions,
-): RbNode[] {
-  const found: RbNode[] = [];
-  for (const call of calls) {
-    const receiver = field(call, "receiver");
-    const called = field(call, "method")?.text;
-    if (receiver === null || called === undefined) {
-      continue;
-    }
-    for (const pattern of patterns) {
-      if (!isLibraryReceiver(receiver, pattern, options)) {
-        continue;
+    for (const call of callsUnder(method, undefined)) {
+      const receiver = field(call, "receiver");
+      if (receiver !== null) {
+        receivers.push(receiver);
       }
-      found.push(...requestArgument(call, called, pattern));
     }
   }
-  return found;
-}
-
-/**
- * The URL a request method was given, with the host, path and port when
- * the method can take those instead, or the request object a sending
- * call was given.
- */
-function requestArgument(
-  call: RbNode,
-  called: string,
-  pattern: RbClientCall,
-): RbNode[] {
-  const args = readCallArgs(field(call, "arguments"));
-  if (pattern.verbMethodNames[called] !== undefined) {
-    const form = pattern.hostThenPath;
-    const places =
-      form === undefined || !form.methods.includes(called)
-        ? []
-        : [form.host, form.path, form.port];
-    return [
-      urlNodeIn(args, pattern),
-      ...places.map((place) => args.positional[place]),
-    ].filter((node): node is RbNode => node !== undefined);
-  }
-  const sent =
-    pattern.requestObject?.attribute === called
-      ? args.positional[0]
-      : undefined;
-  return sent === undefined ? [] : [sent];
+  askWrittenValues(receivers, facts);
 }
 
 /** Every method this file defines, in a class or outside one. */
@@ -208,391 +177,23 @@ function methodDefinitions(node: RbNode, found: RbNode[] = []): RbNode[] {
   return found;
 }
 
-/**
- * The requests this call makes, one per boundary. A URL the enclosing
- * class takes in `initialize` can differ per construction, so each
- * construction gives a request of its own.
- */
-function requestCalls(
-  call: RbNode,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-): RequestCall[] {
-  const receiver = field(call, "receiver");
-  const called = field(call, "method")?.text;
-  if (
-    receiver === null ||
-    called === undefined ||
-    !isLibraryReceiver(receiver, pattern, options)
-  ) {
-    return [];
-  }
-  const read = (site?: string): RequestCall | null =>
-    requestCall(
-      call,
-      called,
-      receiverBase(receiver, pattern, options, site),
-      pattern,
-      options,
-      site,
-    );
-
-  const plain = read();
-  if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
-    return [plain];
-  }
-
-  // Two constructions that give the same request count as one call,
-  // since nothing at the boundary tells them apart. A request with no
-  // path is the one left when no construction says where it goes.
-  const byBoundary = new Map<string, RequestCall>();
-  for (const site of constructionSitesOf(call, options.facts)) {
-    const stated = read(site);
-    if (stated !== null && stated.path !== null) {
-      byBoundary.set(
-        `${stated.method} ${stated.host ?? ""} ${stated.path}`,
-        stated,
-      );
-    }
-  }
-  if (byBoundary.size > 0) {
-    return [...byBoundary.values()];
-  }
-  return plain === null ? [] : [plain];
-}
-
-/** The request this call makes, or null when it cannot be read. */
-function requestCall(
-  call: RbNode,
-  called: string,
-  base: Base | null,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): RequestCall | null {
-  const args = readCallArgs(field(call, "arguments"));
-
-  const verb = pattern.verbMethodNames[called];
-  if (verb !== undefined) {
-    const hostFirst = hostThenPathOf(
-      call,
-      called,
-      args,
-      pattern,
-      options,
-      site,
-    );
-    const target =
-      hostFirst === undefined
-        ? targetAt(urlNodeIn(args, pattern), options, site)
-        : hostThenPathTarget(args, hostFirst, options, site);
-    return target === null
-      ? null
-      : { method: verb, ...underBase(base, target) };
-  }
-
-  const sent = pattern.requestObject;
-  if (sent === undefined || sent.attribute !== called) {
-    return null;
-  }
-  const built = requestBuilt(args.positional[0], sent, options, site);
-  if (built === null) {
-    return null;
-  }
-  const target = targetAt(built.url, options, site);
-  return target === null
-    ? null
-    : { method: built.method, ...underBase(base, target) };
-}
-
-type HostThenPath = NonNullable<RbClientCall["hostThenPath"]>;
-
-/**
- * Where this call takes its host, path and port, when it takes them in
- * place of a URL: a host-first method on the constant itself, with a
- * string where the path goes. A hash there, or a value suss cannot
- * read, leaves the first argument as the URL.
- */
-function hostThenPathOf(
-  call: RbNode,
-  called: string,
-  args: CallArgs,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): HostThenPath | undefined {
-  const form = pattern.hostThenPath;
-  const receiver = field(call, "receiver");
-  const path = form === undefined ? undefined : args.positional[form.path];
-  if (
-    form === undefined ||
-    path === undefined ||
-    receiver === null ||
-    !form.methods.includes(called) ||
-    !namesConstant(receiver, pattern.constantName)
-  ) {
-    return undefined;
-  }
-  return evaluatedValue(path, options.facts, undefined, site).kind === "string"
-    ? form
-    : undefined;
-}
-
-function hostThenPathTarget(
-  args: CallArgs,
-  form: HostThenPath,
-  options: ClientCallOptions,
-  site?: string,
-): Target | null {
-  const target = targetAt(args.positional[form.path], options, site);
-  return target === null
-    ? null
-    : { path: target.path, host: hostWithPort(args, form, options, site) };
-}
-
-/**
- * The host a call takes as an argument of its own, with the port beside
- * it, written the way `hostOf` writes the host of `http://host:port`.
- * Net::HTTP sends to that URL until a project turns TLS on, so a port of
- * 80 is left out and any other port is kept.
- */
-function hostWithPort(
-  args: CallArgs,
-  places: RbHostArguments,
-  options: ClientCallOptions,
-  site?: string,
-): string | undefined {
-  const host = args.positional[places.host];
-  if (host === undefined) {
-    return undefined;
-  }
-  const port = args.positional[places.port];
-  const portText =
-    port === undefined || port.type === "nil"
-      ? []
-      : [text(":"), evaluatedValue(port, options.facts, undefined, site)];
-  return hostOf(
-    concat([
-      text("http://"),
-      evaluatedValue(host, options.facts, undefined, site),
-      ...portText,
-    ]),
-  );
-}
-
-/**
- * A request's own URL under the base its connection was built with. An
- * absolute URL replaces the base, the way Faraday and Net::HTTP send it.
- * A path that says nothing about where the request goes is no path, and
- * the base's path does not go in front of it.
- */
-function underBase(
-  base: Base | null,
-  target: Target,
-): Pick<RequestCall, "path" | "host"> {
-  if (base === null || target.host !== undefined) {
-    const path = statedRequestPath(target.path, target.host);
-    return { path: path ?? null, host: target.host };
-  }
-  const path = statedRequestPath(target.path, base.host);
-  return {
-    path: path === undefined ? null : resolvedPath(base.path, path),
-    host: base.host,
-  };
-}
-
-// Pairing reads a hole at the front of a path as the base URL.
-const OPENING_HOLE = /^(\{[^{}]+\})(.*)$/;
-
-/**
- * The path a call's own path goes to under its connection's base path.
- * Faraday resolves it the way RFC 3986 resolves a reference: a path that
- * starts with `/` replaces the base's path, and any other path goes after
- * it with one slash between. A hole at the front of the base is the base
- * URL, which stays in front either way.
- */
-function resolvedPath(basePath: string, path: string): string {
-  const opening = OPENING_HOLE.exec(basePath);
-  if (opening !== null) {
-    return `${opening[1]}${resolvedPath(opening[2] ?? "", path)}`;
-  }
-  if (path.startsWith("/")) {
-    return withoutDotSegments(path);
-  }
-  // Faraday ends the base's path with a slash before it resolves, so the
-  // base's last segment stays.
-  const directory = basePath.endsWith("/") ? basePath : `${basePath}/`;
-  return withoutDotSegments(directory + path);
-}
-
-/** The path with each `.` dropped and each `..` taken back one segment, as RFC 3986 does. */
-function withoutDotSegments(path: string): string {
-  const segments = path.replace(/^\//, "").split("/");
-  const kept: string[] = [];
-  for (const segment of segments) {
-    if (segment === "..") {
-      kept.pop();
-    } else if (segment !== ".") {
-      kept.push(segment);
-    }
-  }
-  const last = segments.at(-1);
-  if (last === "." || last === "..") {
-    kept.push("");
-  }
-  return `/${kept.join("/")}`;
-}
-
-/**
- * The request object a call was given: what the facts say the argument
- * was written as, or the argument itself. The facts leave out a value
- * written as itself, which is the case for a request built in the call.
- */
-function requestBuilt(
-  argument: RbNode | undefined,
-  sent: NonNullable<RbClientCall["requestObject"]>,
-  options: ClientCallOptions,
-  site?: string,
-): { method: string; url: RbNode | undefined } | null {
-  if (argument === undefined) {
-    return null;
-  }
-  const written = writtenNodeOf(argument, options.facts, site) ?? argument;
-  if (written.type !== "call") {
-    return null;
-  }
-  const requestClass = field(written, "receiver")?.text;
-  const verb =
-    requestClass === undefined ? undefined : sent.constructors[requestClass];
-  if (verb === undefined) {
-    return null;
-  }
-  const args = readCallArgs(field(written, "arguments"));
-  return { method: verb, url: args.positional[sent.urlPosition] };
-}
-
-/** Whether a call on this receiver is a call on something the library gave the project. */
-function isLibraryReceiver(
-  receiver: RbNode,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-): boolean {
-  return (
-    namesConstant(receiver, pattern.constantName) ||
-    builderCallBehind(receiver, pattern, options.facts) !== null
-  );
-}
-
-/**
- * The base URL a builder gave the receiver, whose path goes in front of
- * a call's own path. A builder that takes a host and a port gives no
- * path. Null for a call on the library's constant.
- */
-function receiverBase(
-  receiver: RbNode,
-  pattern: RbClientCall,
-  options: ClientCallOptions,
-  site?: string,
-): Base | null {
-  const built = builderCallBehind(receiver, pattern, options.facts);
-  if (built === null) {
-    return null;
-  }
-  const args = readCallArgs(field(built, "arguments"));
-  if (pattern.builderHost !== undefined) {
-    const host = hostWithPort(args, pattern.builderHost, options, site);
-    return host === undefined ? null : { path: "", host };
-  }
-  const keyword = pattern.builderUrlKeyword;
-  // `Faraday.new(url: "...")` and `Faraday.new("...")` give the same base URL.
-  const base =
-    (keyword === undefined ? undefined : args.keyword[keyword]) ??
-    args.positional[0];
-  if (base === undefined) {
-    return null;
-  }
-  const value = evaluatedValue(base, options.facts, undefined, site);
-  return { path: pathOf(value) ?? "", host: hostOf(value) };
-}
-
-/** Whether this receiver is the constant the pack declared, such as `Faraday` or `Net::HTTP`. */
-function namesConstant(receiver: RbNode, constantName: string): boolean {
-  if (receiver.type === "constant") {
-    return receiver.text === constantName;
-  }
-  return (
-    receiver.type === "scope_resolution" &&
-    compoundName(receiver) === constantName
-  );
-}
-
-/**
- * The library's own builder call behind whatever a request was called
- * on. The receiver can be anything the facts settle: a local, an instance
- * variable, or a method that returns the class's one connection.
- */
-function builderCallBehind(
-  receiver: RbNode,
-  pattern: RbClientCall,
-  facts: Database | undefined,
-): RbNode | null {
-  const builders = pattern.receiverBuilders ?? [];
-  if (builders.length === 0) {
-    return null;
-  }
-
-  const written = writtenNodeOf(receiver, facts);
-  if (
-    written === null ||
-    written.type !== "call" ||
-    !builders.includes(field(written, "method")?.text ?? "")
-  ) {
-    return null;
-  }
-  const constant = field(written, "receiver");
-  return constant !== null && namesConstant(constant, pattern.constantName)
-    ? written
-    : null;
-}
-
-/** The URL argument, under the pack's keyword when it gives one and at the pack's position otherwise. */
-function urlNodeIn(args: CallArgs, pattern: RbClientCall): RbNode | undefined {
-  const keyword = pattern.url.keyword;
-  return (
-    (keyword === undefined ? undefined : args.keyword[keyword]) ??
-    args.positional[pattern.url.position]
-  );
-}
-
-/**
- * Where one node's URL goes, or null when the call has no URL there. A
- * URL passed as an object instead of a string, such as `URI("...")`,
- * comes back from the value tables as the string it was built from, so
- * nothing here needs to unwrap it.
- */
-function targetAt(
-  written: RbNode | undefined,
-  options: ClientCallOptions,
-  site?: string,
-): Target | null {
-  if (written === undefined) {
-    return null;
-  }
-  const value = evaluatedValue(written, options.facts, undefined, site);
-  return { path: pathOf(value), host: hostOf(value) };
+/** One request a hook found, and the call that makes it. */
+interface FoundRequest {
+  readonly claim: RequestClaim;
+  readonly call: RbNode;
 }
 
 /** The unit for the method the call is written in. */
 function clientUnit(
   method: RbNode,
   name: string,
-  request: RequestCall & { call: RbNode },
-  pattern: RbClientCall,
+  request: FoundRequest,
+  response: ClientResponse,
   pack: RubyPack,
-  options: ClientCallOptions,
+  options: ClientCallOptions & { facts: Database },
 ): RawCodeStructure {
   const range = rangeOf(method);
-  const accessors = responseAccessors(pattern);
+  const accessors = responseAccessors(response);
   const statusMembers = statusMembersOf(accessors);
   const reading: CallerReading = {
     facts: options.facts,
@@ -605,6 +206,7 @@ function clientUnit(
         callerBranches(helper, { facts: options.facts, statusMembers }),
     },
   };
+  const { claim } = request;
   return {
     identity: {
       name,
@@ -618,14 +220,17 @@ function clientUnit(
     },
     boundaryBinding: restBinding({
       transport: pack.protocol,
-      method: request.method,
-      path: request.path,
-      host: request.host,
+      method: claim.method,
+      path: claim.path,
+      host: claim.host,
       recognition: pack.name,
     }),
     parameters: [],
     branches: callerBranches(method, reading),
     ...accessors,
+    ...(claim.redirectDelivery === undefined
+      ? {}
+      : { redirectDelivery: claim.redirectDelivery }),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,
@@ -665,25 +270,23 @@ interface CallerReading {
 }
 
 /** The response members the pack declares for the body, the status and the success flag. */
-function responseAccessors(pattern: RbClientCall): {
+function responseAccessors(response: ClientResponse): {
   bodyAccessors?: string[];
   statusAccessors?: string[];
   successAccessors?: string[];
   failureDelivery?: "response" | "exception";
   redirectDelivery?: "followed" | "response";
 } {
-  const response = pattern.response;
-  if (response === undefined) {
-    return {};
-  }
   return {
-    ...(response.body === undefined ? {} : { bodyAccessors: response.body }),
+    ...(response.body === undefined
+      ? {}
+      : { bodyAccessors: [...response.body] }),
     ...(response.statusCode === undefined
       ? {}
-      : { statusAccessors: response.statusCode }),
+      : { statusAccessors: [...response.statusCode] }),
     ...(response.success === undefined
       ? {}
-      : { successAccessors: response.success }),
+      : { successAccessors: [...response.success] }),
     ...(response.failureDelivery === undefined
       ? {}
       : { failureDelivery: response.failureDelivery }),

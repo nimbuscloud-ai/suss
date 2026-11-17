@@ -888,6 +888,27 @@ function emitPairArgument(
   }
 }
 
+/**
+ * The argument a call writes at a position or under a keyword, counted
+ * the way `callArg` and `callKeywordArg` state them, or null when it
+ * writes none there.
+ */
+export function writtenArgument(
+  call: RbNode,
+  at: number | { readonly keyword: string },
+): RbNode | null {
+  const args = call.type === "call" ? field(call, "arguments") : null;
+  const passed = children(args);
+  if (typeof at === "number") {
+    return passed.filter((argument) => argument.type !== "pair")[at] ?? null;
+  }
+  const pair = passed.find((argument) => {
+    const key = argument.type === "pair" ? field(argument, "key") : null;
+    return key !== null && pairKeyText(key) === at.keyword;
+  });
+  return pair === undefined ? null : pairValue(pair);
+}
+
 /** Records an array's elements under their positions, as the other adapters do. */
 function emitArray(emitter: Emitter, array: RbNode): void {
   const objectKey = nodeId(emitter.filePath, array);

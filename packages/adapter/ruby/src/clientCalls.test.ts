@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { Database, profileEvaluationAsync } from "@suss/datalog";
+import {
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  verbs,
+} from "@suss/recognize";
 
 import {
   hostArgumentsPattern,
@@ -10,12 +16,17 @@ import {
 } from "./__fixtures__/httpClientPattern.js";
 import { clientCallUnits } from "./clientCalls.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
+import {
+  collectFileConstants,
+  emitConstantBindings,
+} from "./facts/constants.js";
 import { emitValueFacts } from "./facts/values.js";
 import { parseRuby } from "./parser.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
-import type { RbClientCall } from "./pack.js";
+import type { RbClientCall, RubyPack } from "./pack.js";
+import type { RbNode } from "./parser.js";
 
 const REQUEST_CALLS: RbClientCall = requestCallsPattern();
 
@@ -23,21 +34,34 @@ const PACK = httpClientTestPack(REQUEST_CALLS);
 
 const FILE = "app/clients/order_client.rb";
 
-async function unitsIn(
+/** The file's tree, with the facts a run states about it. */
+async function factsFor(
   source: string,
-  pattern: RbClientCall = REQUEST_CALLS,
-): Promise<RawCodeStructure[]> {
+): Promise<{ root: RbNode; facts: Database }> {
   const tree = await parseRuby(source);
   const facts = new Database();
   emitValueFacts(facts, FILE, tree.rootNode);
+  emitConstantBindings(facts, [collectFileConstants(FILE, tree.rootNode)]);
   bindEvaluator(facts, {
     files: [{ file: FILE, root: tree.rootNode }],
     definitions: methodDefinitionsIn(FILE, tree.rootNode),
   });
-  return clientCallUnits(tree.rootNode, PACK, pattern, {
-    filePath: FILE,
-    facts,
-  });
+  return { root: tree.rootNode, facts };
+}
+
+async function unitsIn(
+  source: string,
+  pattern: RbClientCall = REQUEST_CALLS,
+): Promise<RawCodeStructure[]> {
+  return unitsOf(source, httpClientTestPack(pattern));
+}
+
+async function unitsOf(
+  source: string,
+  ...packs: RubyPack[]
+): Promise<RawCodeStructure[]> {
+  const { root, facts } = await factsFor(source);
+  return clientCallUnits(root, packs, { filePath: FILE, facts });
 }
 
 /** Each branch of a unit as its terminal kind and the conditions on it. */
@@ -619,6 +643,74 @@ describe("a method that calls a request method", () => {
 
     expect(boundary(units).path).toBe("/orders");
   });
+
+  it("reads the request an endless method makes", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        '  def load = HttpClient.get("/orders")',
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units.map((unit) => unit.identity.name)).toEqual(["load"]);
+    expect(boundary(units)).toEqual({ method: "GET", path: "/orders" });
+  });
+
+  it("reads calls on a library class the project reopens", async () => {
+    const units = await unitsIn(
+      [
+        "class HttpClient",
+        "  def extra; end",
+        "end",
+        "",
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get("/orders")',
+        "  end",
+        "  def save",
+        '    conn = HttpClient.build(base: "https://api.example.com/v2")',
+        '    conn.post("orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(paths(units)).toEqual(["/orders", "/v2/orders"]);
+  });
+
+  it("reads a call on a value the builder made in place", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.build(base: "https://api.example.com/v2").get("orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).path).toBe("/v2/orders");
+  });
+
+  it("reads a builder's base URL however its key is written", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    conn = HttpClient.build(:base => "https://api.example.com/v2")',
+        '    conn.get("orders")',
+        "  end",
+        "  def save",
+        '    conn = HttpClient.build("base" => "https://api.example.com/v3")',
+        '    conn.post("orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(paths(units)).toEqual(["/v2/orders", "/v3/orders"]);
+  });
 });
 
 const WRAPPED_URLS: RbClientCall = wrappedUrlsPattern();
@@ -699,6 +791,22 @@ describe("a library that sends a request object", () => {
         "  def load(body)",
         "    conn = HttpClient.build",
         '    conn.send_it(OurOwn::Post.new(URI("https://api.example.com/orders")))',
+        "  end",
+        "end",
+      ].join("\n"),
+      WRAPPED_URLS,
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("says nothing about a request object a class method other than new made", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load(body)",
+        "    conn = HttpClient.build",
+        '    conn.send_it(HttpClient::Post.create(URI("https://api.example.com/orders")))',
         "  end",
         "end",
       ].join("\n"),
@@ -1057,6 +1165,90 @@ describe("a URL the constructor was given", () => {
   });
 });
 
+describe("a pack declared with @suss/recognize", () => {
+  const DECLARED: RubyPack = {
+    name: "declared",
+    protocol: "http",
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: imported({ from: ["HttpClient"], named: ["*"] }) })
+        .methods(verbs({ get: "GET" }, { at: 0 }))
+        .response({ statusCode: ["status"] }),
+    ]),
+  };
+
+  /** Each unit's name and its request, in the order they come back. */
+  function requests(units: RawCodeStructure[]): string[] {
+    return units.map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      return semantics?.name === "rest"
+        ? `${unit.identity.name} ${semantics.method} ${semantics.path}`
+        : unit.identity.name;
+    });
+  }
+
+  it("makes a method that calls the library a client, with the response members it declares", async () => {
+    const units = await unitsOf(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get("/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+      DECLARED,
+    );
+
+    expect(requests(units)).toEqual(["load GET /orders"]);
+    expect(units[0]?.statusAccessors).toEqual(["status"]);
+  });
+
+  it("keeps each pack's units together, in the order the packs run", async () => {
+    const units = await unitsOf(
+      [
+        "class OrderClient",
+        "  def first",
+        '    HttpClient.get("/a")',
+        "  end",
+        "  def second",
+        '    OtherClient.get("/b")',
+        "  end",
+        "  def third",
+        '    HttpClient.get("/c")',
+        "  end",
+        "end",
+      ].join("\n"),
+      DECLARED,
+      httpClientTestPack(requestCallsPattern({ constantName: "OtherClient" })),
+    );
+
+    expect(requests(units)).toEqual([
+      "first GET /a",
+      "third GET /c",
+      "second GET /b",
+    ]);
+  });
+
+  it("reads a pattern's calls on the constant and on a built value in the order the file writes them", async () => {
+    const units = await unitsOf(
+      [
+        "class OrderClient",
+        "  def first",
+        '    conn = HttpClient.build("api.example.com")',
+        '    conn.get("/a")',
+        "  end",
+        "  def second",
+        '    HttpClient.fetch("api.example.com", "/b")',
+        "  end",
+        "end",
+      ].join("\n"),
+      httpClientTestPack(hostArgumentsPattern()),
+    );
+
+    expect(requests(units)).toEqual(["first GET /a", "second GET /b"]);
+  });
+});
+
 describe("a file with several call sites", () => {
   /** A class that keeps one connection per name and calls through each of them. */
   function clientOver(names: readonly string[]): string {
@@ -1077,15 +1269,9 @@ describe("a file with several call sites", () => {
   }
 
   async function discovered(source: string) {
-    const tree = await parseRuby(source);
-    const facts = new Database();
-    emitValueFacts(facts, FILE, tree.rootNode);
-    bindEvaluator(facts, {
-      files: [{ file: FILE, root: tree.rootNode }],
-      definitions: methodDefinitionsIn(FILE, tree.rootNode),
-    });
+    const { root, facts } = await factsFor(source);
     return profileEvaluationAsync(() =>
-      discoverUnits(tree.rootNode, {
+      discoverUnits(root, {
         packs: [PACK],
         filePath: FILE,
         cache: createFileCache(

@@ -47,6 +47,7 @@ import {
 import { claimedIn } from "./claims.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
+import { packRequestHooks } from "./declaredClients.js";
 import { ExceptionReader } from "./exceptionClasses.js";
 import { nodeId, readKey } from "./facts/values.js";
 import {
@@ -135,7 +136,6 @@ import type {
   ReachedBody,
 } from "./ancestry.js";
 import type { BlockConfigures, BodyBlocks, CallArgs, Range } from "./ast.js";
-import type { ClientCallOptions } from "./clientCalls.js";
 import type { ConstantFileCache } from "./constantPath.js";
 import type { DynamicNames } from "./defineMethod.js";
 import type { ExceptionClass } from "./exceptionClasses.js";
@@ -375,19 +375,16 @@ export async function discoverUnits(
   }));
 
   const units: RawCodeStructure[] = [];
-  const clientOptions: ClientCallOptions = {
-    filePath: options.filePath,
-    ...(options.facts === undefined ? {} : { facts: options.facts }),
-  };
-  askClientCallReads(
-    root,
-    options.packs.flatMap((pack) => pack.clients ?? []),
-    clientOptions,
-  );
-  for (const pack of options.packs) {
-    for (const pattern of pack.clients ?? []) {
-      units.push(...clientCallUnits(root, pack, pattern, clientOptions));
-    }
+  if (options.packs.some((pack) => packRequestHooks(pack).length > 0)) {
+    askClientCallReads(root, options.facts);
+    units.push(
+      ...clientCallUnits(root, options.packs, {
+        filePath: options.filePath,
+        factsPath: options.absoluteFile,
+        facts: options.facts,
+        tallies: options.tallies,
+      }),
+    );
   }
 
   for (const info of classes) {

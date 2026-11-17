@@ -1241,7 +1241,7 @@ export type RequestMethod = SentAsNamed | SentFromArgument | SentAsObject;
 /** `requests.get(url)` sends GET whatever the call passes. */
 export interface SentAsNamed {
   readonly sends: string;
-  readonly url: OneArgument;
+  readonly url: UrlArgument;
   /** What this method does with a redirect, when it differs from the client's. */
   readonly redirects?: RedirectDelivery;
 }
@@ -1253,8 +1253,28 @@ export interface SentAsNamed {
  */
 export interface SentFromArgument {
   readonly sends: { readonly from: OneArgument; readonly default?: string };
-  readonly url: OneArgument;
+  readonly url: UrlArgument;
   readonly redirects?: RedirectDelivery;
+}
+
+/**
+ * Where a call states its URL. `hostFirst` is for a method that also
+ * takes the URL apart, as `Net::HTTP.get(host, path, port)` does.
+ */
+export interface UrlArgument extends OneArgument {
+  readonly hostFirst?: HostFirst;
+}
+
+/**
+ * The host, path and port a call passes in place of a URL. The call
+ * passes them when the argument at `path` reads as a string, and the
+ * URL where `UrlArgument` says otherwise: `Net::HTTP.get(uri, headers)`
+ * passes a hash second.
+ */
+export interface HostFirst {
+  readonly host: OneArgument;
+  readonly path: OneArgument;
+  readonly port?: OneArgument;
 }
 
 /**
@@ -1290,6 +1310,13 @@ export interface BaseUrlLink {
   readonly asks: "baseUrl";
   readonly at: OneArgument;
   readonly joins: BaseJoin;
+  /**
+   * `host` when the argument states a host and no path, as
+   * `Net::HTTP.new(host, port)` does, with the port at `port`. A call
+   * on the client then goes to that host with its own path.
+   */
+  readonly reads?: "host";
+  readonly port?: OneArgument;
 }
 
 /**

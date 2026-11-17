@@ -1896,12 +1896,33 @@ states (evaluated and upper-cased, with `default` for a call that
 states none), or the method of a request object built from one of the
 classes it lists. `.calls(meaning)` says what a call of the client
 itself sends, as `fetch(url)` or `api(config)` after `api =
-axios.create()`. `.baseUrl(pick)` reads the base URL off the call's
-receiver, which is the construction, and `joins` says how the library
-puts a path under it: `appended` writes it after the base with one
-slash, and `resolved` resolves it the way RFC 3986 does, so a path
+axios.create()`. `.baseUrl(pick)` reads the base URL off the
+construction the call's receiver was made by, and `joins` says how the
+library puts a path under it: `appended` writes it after the base with
+one slash, and `resolved` resolves it the way RFC 3986 does, so a path
 that starts with `/` replaces the base's path. An absolute URL on the
 call goes where it says.
+
+The construction is what `asCall({ follow: "writtenAs" })` gives for
+the receiver as written, which follows whatever the adapter's rules say
+the receiver was written as. In Ruby that includes a method the class
+writes, so `conn.get(path)` after `def conn = Faraday.new(url: base)`
+reads its base off that `Faraday.new`. An adapter whose receiver has no
+such value reads `CallOps.receiver()` instead. A request object is the
+construction the argument was made by, read the same way, and under each
+construction of the enclosing class when the plain reading finds none,
+since a class can be handed a different request each time it is built.
+
+Some libraries take the host apart from the path. A URL pick with
+`hostFirst` says where the call passes the host, the path and the
+port: `Net::HTTP.get(host, path, port)`. The call takes that form when
+the argument at `path` reads as a string (`ValueOps.isString`), and
+reads its URL as one argument otherwise, as `Net::HTTP.get(uri,
+headers)` does. `.baseUrl` with `reads: "host"` reads a construction
+that states a host and a port and no path, `Net::HTTP.new(host, port)`.
+Both read the host through `ValueOps.host`, which writes it with its
+port the way the host of `http://host:port` is written, so it pairs
+with an absolute URL to the same place.
 
 The hook asks its questions in order of cost. A method call is looked
 up in the table first, and a bare call by the name it is written with

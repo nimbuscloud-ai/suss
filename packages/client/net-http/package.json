@@ -46,7 +46,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@suss/adapter-ruby": "0.39.0"
+    "@suss/adapter-ruby": "0.39.0",
+    "@suss/recognize": "0.39.0"
   },
   "devDependencies": {
     "@suss/behavioral-ir": "*",

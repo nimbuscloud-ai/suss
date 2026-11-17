@@ -29,7 +29,7 @@ import {
 } from "./ops.js";
 
 import type { Effect } from "@suss/behavioral-ir";
-import type { ReceiverOrigin, ValueOps } from "@suss/extractor";
+import type { CallOps, ReceiverOrigin, ValueOps } from "@suss/extractor";
 
 /**
  * The facts for, in source order:
@@ -2910,7 +2910,19 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     call("viaSubmodule", "requests.adapters");
     add("readsProperty", "requests.adapters", "requests", "adapters");
     add("call", "bare", "get");
-    const written: Record<string, string> = { params: "dict", s: "made" };
+    add("imports", "other", "other", "*");
+    call("viaOtherSession", "t");
+    add("call", "otherMade", "other.Session");
+    add("readsProperty", "other.Session", "other", "Session");
+    call("viaUnimportedSession", "u");
+    add("call", "madeHere", "here.Session");
+    add("readsProperty", "here.Session", "here", "Session");
+    const written: Record<string, string> = {
+      params: "dict",
+      s: "made",
+      t: "otherMade",
+      u: "madeHere",
+    };
     const urls: { key: string; site?: string; at?: unknown }[] = [];
     return {
       urls,
@@ -2974,6 +2986,61 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     });
   });
 
+  it("hands the source the reads of a host and its port, and of a string", () => {
+    const asked: unknown[] = [];
+    const facts: FactSource = {
+      ...requesting().facts,
+      hostOf: (host, port, site) => {
+        asked.push({ host, port, site });
+        return "api.example.com:8080";
+      },
+      isStringOf: (key, site, at) => {
+        asked.push({ key, site, at });
+        return true;
+      },
+    };
+    const ops = factCallOps("viaModule", facts);
+    const host = ops?.valueAt(0);
+    const port = factCallOps("viaDict", facts)?.keywordAt?.("timeout");
+    expect(host?.host?.(port ?? null, "c1")).toBe("api.example.com:8080");
+    expect(host?.isString?.()).toBe(true);
+    expect(asked).toEqual([
+      {
+        host: { key: "url", at: { call: "viaModule", at: 0 } },
+        port: {
+          key: "five",
+          at: { call: "viaDict", at: { keyword: "timeout" } },
+        },
+        site: "c1",
+      },
+      { key: "url", site: undefined, at: { call: "viaModule", at: 0 } },
+    ]);
+  });
+
+  it("reads a call as the construction the source says it was written as, under a site when asked", () => {
+    const written: FactSource = {
+      ...requesting().facts,
+      writtenAs: (key) => (key === "viaParameter" ? "made" : null),
+    };
+    const value = factValueOps("viaParameter", written);
+    const siteOf = (call: CallOps | null | undefined) => call?.site?.();
+    expect(siteOf(value.asCall?.({ follow: "writtenAs" }))).toBe("made");
+    expect(siteOf(value.asCall?.({ follow: "writtenAs", site: "c1" }))).toBe(
+      "made",
+    );
+    expect(siteOf(value.asCall?.({ follow: "namesAndFields" }))).toBe(
+      "viaParameter",
+    );
+    const underSite = factValueOps("viaParameter", {
+      ...written,
+      writtenUnder: (key, site) =>
+        key === "viaParameter" && site === "c1" ? "viaSession" : null,
+    });
+    expect(
+      siteOf(underSite.asCall?.({ follow: "writtenAs", site: "c1" })),
+    ).toBe("viaSession");
+  });
+
   it("settles a receiver an import binds by the import", () => {
     expect(settled("viaModule", REQUESTS)).toBe(true);
     expect(settled("viaModule", SESSION)).toBe(false);
@@ -2991,6 +3058,15 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
 
   it("settles a member read off a whole module by the member's name", () => {
     expect(settled("viaSubmodule", REQUESTS)).toBe(false);
+    expect(
+      factCallOps("viaSubmodule", requesting().facts)?.receiverSettledFrom?.(
+        imported({ from: ["requests"], named: ["adapters"] }),
+      ),
+    ).toBe(true);
+  });
+
+  it("settles a construction of the same name from another module as no client", () => {
+    expect(settled("viaOtherSession", SESSION)).toBe(false);
   });
 
   it("settles a parameter as from no import, without following its callers", () => {
@@ -2999,6 +3075,29 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
 
   it("leaves open a name imported from a project file", () => {
     expect(settled("viaProject", REQUESTS)).toBeUndefined();
+  });
+
+  it("settles a receiver as imported where the adapter says so and no row does", () => {
+    const { facts } = requesting();
+    const reading: FactSource = {
+      ...facts,
+      importedUnder: (key, modules) =>
+        modules.includes("requests") && key === "arg" ? ["*"] : [],
+    };
+    expect(
+      factCallOps("viaParameter", reading)?.receiverSettledFrom?.(REQUESTS),
+    ).toBe(true);
+    expect(settled("viaParameter", REQUESTS)).toBe(false);
+    const constructing: FactSource = {
+      ...facts,
+      importedUnder: (key) => (key === "here" ? ["*"] : []),
+    };
+    expect(
+      factCallOps("viaUnimportedSession", constructing)?.receiverSettledFrom?.(
+        SESSION,
+      ),
+    ).toBe(true);
+    expect(settled("viaUnimportedSession", SESSION)).toBeUndefined();
   });
 
   it("settles a call with no receiver, and one into a project method, as from no client", () => {
