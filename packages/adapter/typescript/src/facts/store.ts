@@ -1688,16 +1688,10 @@ export class ResolutionStore {
     if (target.isInNodeModules() || target.isDeclarationFile()) {
       return [];
     }
-    const candidates = [...this.callerCandidates(target)].filter(
-      (one) => one !== target,
-    );
-    if (candidates.length === 0) {
-      return [target];
-    }
-    const [reaching] = this.graph.filesReachingFile([
-      { sourceFiles: candidates, target },
+    const [reaching = []] = this.graph.filesReachingFile([
+      { sourceFiles: this.callerCandidates(target), target },
     ]);
-    return [target, ...(reaching ?? [])];
+    return [target, ...reaching.filter((one) => one !== target)];
   }
 
   private stateCallsIn(sourceFile: SourceFile): void {
@@ -1719,14 +1713,16 @@ export class ResolutionStore {
     }
   }
 
-  private callerCandidates(target: SourceFile): Iterable<SourceFile> {
+  private callerCandidates(target: SourceFile): ReadonlySet<SourceFile> {
     if (this.possibleCallers.size > 0) {
       return this.possibleCallers;
     }
-    return target
-      .getProject()
-      .getSourceFiles()
-      .filter((one) => !one.isInNodeModules());
+    return new Set(
+      target
+        .getProject()
+        .getSourceFiles()
+        .filter((one) => !one.isInNodeModules()),
+    );
   }
 
   /**
