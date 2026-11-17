@@ -34,6 +34,7 @@ group("orders", () => {
 });
 setup(cancel(3));
 const local = 1;
+other.it.skip("later");
 `;
 
 const PYTHON = `
@@ -46,6 +47,7 @@ def orders():
         check("inside", lambda: cancel(2))
 
 setup(cancel(3))
+other.it.skip("later")
 `;
 
 const RUBY = `
@@ -56,6 +58,8 @@ group "orders" do
   check "inside", -> { cancel 2 }
 end
 setup(cancel(3))
+other = 1
+other.it.skip("later")
 `;
 
 let root: string;
@@ -160,6 +164,22 @@ describe("the ops over what code is written inside, asked of three languages", (
         site(inside?.enclosingBody?.()),
       );
       expect(handed(group, 1)?.enclosingBody?.()).toBeNull();
+    }
+  });
+
+  it("read a callee's member reads back to the name it starts from", async () => {
+    for (const module of [
+      typescriptModule(),
+      await pythonModule(),
+      rubyModule(),
+    ]) {
+      const [skip] = module.calls("file").filter((c) => c.method() === "skip");
+      expect(skip?.receiverValue?.()?.form?.()).not.toBe("name");
+      const member = skip?.member?.() ?? null;
+      expect(member?.method()).toBe("it");
+      const root = member?.receiverValue?.() ?? null;
+      expect(root?.form?.()).toBe("name");
+      expect(root?.source?.()).toBe("other");
     }
   });
 

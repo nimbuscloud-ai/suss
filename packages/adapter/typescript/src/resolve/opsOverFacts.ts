@@ -102,6 +102,7 @@ function withNodeMembers(
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),
     calleeText: () => ops.calleeText(),
     receiver: () => ops.receiver(),
+    receiverValue: () => ops.receiverValue?.() ?? null,
     site: () => ops.site?.() ?? nodeId(node),
     chainedOn: () => ops.chainedOn?.() ?? null,
     passedTo: () => ops.passedTo?.() ?? null,

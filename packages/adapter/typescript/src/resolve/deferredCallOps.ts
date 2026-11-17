@@ -69,6 +69,7 @@ export function deferredCallOps(
     argumentCount: () => stated().argumentCount(),
     nameAt: (index, unsettled) => stated().nameAt(index, unsettled),
     receiver: () => stated().receiver(),
+    receiverValue: () => stated().receiverValue?.() ?? null,
     chainedOn: () => stated().chainedOn?.() ?? null,
     passedTo: () => stated().passedTo?.() ?? null,
     enclosingBody: () => stated().enclosingBody?.() ?? null,
