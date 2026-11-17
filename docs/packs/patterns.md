@@ -377,20 +377,18 @@ new ApolloServer({
 
 Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)` semantics. Both `new Ctor(cfg)` and `ctor(cfg)` match, since Apollo's standalone server uses `new` and yoga uses a bare call. The Apollo pack declares `mapProperty: "resolvers"`.
 
-### `jsxElementRoute`
+### `routeTable`
 
 ```typescript
 {
-  type: "jsxElementRoute";
-  importModule: string | string[];
-  routeElement: string;
-  pathAttribute: string;
-  elementAttribute: string;
-  indexAttribute?: string;
+  type: "routeTable";
+  table: RouteTableDeclaration;
+  through?: "element";
+  unread: Record<RouteUnread, string>;
 }
 ```
 
-`jsxElementRoute` reads routes declared as JSX elements, the way client-side routers write them.
+`routeTable` reads the routes a table in one file declares, such as the JSX elements a client-side router is written with.
 
 ```tsx
 <Routes>
@@ -400,7 +398,7 @@ Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)
 </Routes>
 ```
 
-It covers the nested tree form, where a child path joins its parent's and an index route takes the parent's path, and the object-array form, where a factory call takes an array of route objects using the same property names. A route whose component cannot be read is still reported, as a boundary with nothing behind it. A route whose path cannot be read gets no path, and suss records a gap saying why. React Router uses it.
+The table says which elements or objects are routes, which of their attributes or keys give the path, the handler and the index flag, and where the nested routes are. `@suss/recognize` composes the paths, so a child path joins its parent's and an index route takes its parent's. Each route becomes one unit on the function its handler settles to, and with `through: "element"` that is the component the handler's JSX renders. A route whose path cannot be read gets no path, and its unit says why in the sentence `unread` gives for that reason. React Router declares its routes this way, as `REACT_ROUTER_ROUTES`.
 
 ### `packageExports`
 

@@ -13,8 +13,6 @@
  * code it matches.
  */
 
-import { jsxElementRouteTable } from "./jsxElementRouteTable.js";
-
 import type {
   BehavioralSummary,
   CodeUnitKind,
@@ -406,67 +404,6 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Routes declared as JSX elements, the way client-side routers write
-       * them. It reads the tree form, where a child path joins its parent's
-       * and an index route takes its parent's path, and the object form,
-       * where a factory call takes an array of route objects with the same
-       * property names. The pack supplies every name, and every adapter
-       * reads the match as the route table those names describe.
-       *
-       * Each route with a readable path becomes one unit whose target is the
-       * component its element attribute references, when that reference is
-       * a single identifier. A route whose component cannot be read is still
-       * reported, as a boundary with nothing behind it. A route whose path
-       * cannot be read gets no path and a gap saying why.
-       */
-      type: "jsxElementRoute";
-      /**
-       * Modules the route element and factories must be imported from,
-       * matched exactly. An aliased import still matches.
-       */
-      importModule: string | string[];
-      /** The route element's exported name. */
-      routeElement: string;
-      /** The attribute with the route's path pattern on it. */
-      pathAttribute: string;
-      /** The attribute with the JSX the route renders on it. */
-      elementAttribute: string;
-      /**
-       * The attribute that marks an index route, which renders at its
-       * parent's path. Leave it unset if the library has no index routes.
-       */
-      indexAttribute?: string;
-      /**
-       * The property with the routes nested under a route object on it,
-       * which is how the object form expresses what the JSX form expresses
-       * by nesting. Paths compose the same way in both. Leave it unset if
-       * the library's route objects do not nest.
-       */
-      childrenAttribute?: string;
-      /**
-       * Factory functions whose first argument is an array of route
-       * objects keyed by the same three attribute names. The array is read
-       * where it is written, or through the same value resolution the rest
-       * of discovery uses, so a `const` binding one hop away works the
-       * same as an inline literal.
-       */
-      routeObjectFactories?: string[];
-      /**
-       * Factory functions that turn JSX route elements into route objects.
-       * The JSX walk already reads those elements wherever they appear.
-       * Listing the factory keeps a route-object factory that is handed one
-       * of these calls from being reported as an unreadable route array.
-       */
-      elementsFactories?: string[];
-      /**
-       * The HTTP method recorded on each route binding this produces. A page
-       * route serves navigations, and the pack has to say which method those
-       * use rather than the adapter assuming one.
-       */
-      method: string;
-    }
-  | {
-      /**
        * The consumer side of the package-export boundary. The adapter finds
        * imports of the listed packages, records every call site, and emits
        * one `caller` unit per enclosing function, bound as
@@ -719,8 +656,7 @@ const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
 /**
  * The match, when every adapter reads it through the module ops, or
  * null. A `namedExport` with only `names` stays with the TypeScript
- * adapter's own handler, and a `jsxElementRoute` is read as the route
- * table it describes.
+ * adapter's own handler.
  */
 export function declaredMatchOf(
   match: DiscoveryMatch,
@@ -733,9 +669,6 @@ export function declaredMatchOf(
       match.bodyEndsIn !== undefined ||
       match.members !== undefined;
     return declared ? match : null;
-  }
-  if (match.type === "jsxElementRoute") {
-    return jsxElementRouteTable(match);
   }
   return DECLARED_TYPES.has(match.type)
     ? (match as DeclaredDiscoveryMatch)
