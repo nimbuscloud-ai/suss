@@ -25,6 +25,8 @@ vi.mock("./version.js", async (importOriginal) => {
   };
 });
 
+import { global } from "@suss/recognize";
+
 import {
   fastapiTestRoutes,
   fastapiTestWrappers,
@@ -792,6 +794,21 @@ describe("a test run replayed from the cache", () => {
             nested: true,
             methods: { pattern: "^test" },
           },
+          mocks: [
+            {
+              replacesModule: {
+                by: { from: [global("unittest.mock.patch")] },
+                path: { at: 0 },
+              },
+            },
+            {
+              replacesMember: {
+                by: { from: [global("unittest.mock.patch")] },
+                member: { at: 1 },
+                of: { at: 0 },
+              },
+            },
+          ],
         },
         usesFixtureMarkers: [],
         fixtureDecorators: ["pytest.fixture"],
@@ -799,7 +816,6 @@ describe("a test run replayed from the cache", () => {
         autouseKeyword: "autouse",
         sharedFixtureFiles: ["conftest.py"],
         reservedParameters: ["self"],
-        mocks: { patchers: ["unittest.mock.patch"], fixturePatchers: [] },
       },
     ],
   };

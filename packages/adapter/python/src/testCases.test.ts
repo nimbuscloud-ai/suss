@@ -13,6 +13,15 @@ import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { TestCasesMatch } from "@suss/extractor";
 import type { PyTestCases, PythonPack } from "./pack.js";
 
+/** The patchers mock imports and the ones the `mocker` and `monkeypatch` fixtures hand a function. */
+const PATCHERS = {
+  from: [global("unittest.mock.patch", "unittest.mock.patch.object")],
+  handed: [
+    { parameter: "mocker", methods: ["patch", "patch.object"] },
+    { parameter: "monkeypatch", methods: ["setattr"] },
+  ],
+};
+
 /** What a pytest pack declares, written out here since the adapter cannot depend on the pack. */
 const RUNNER: PyTestCases = {
   cases: cases(),
@@ -22,13 +31,6 @@ const RUNNER: PyTestCases = {
   autouseKeyword: "autouse",
   sharedFixtureFiles: ["conftest.py"],
   reservedParameters: ["self", "request"],
-  mocks: {
-    patchers: ["unittest.mock.patch", "unittest.mock.patch.object"],
-    fixturePatchers: [
-      { fixture: "mocker", methods: ["patch", "patch.object"] },
-      { fixture: "monkeypatch", methods: ["setattr"] },
-    ],
-  },
 };
 
 /** The cases pytest collects, reading only the listed files when there is a list. */
@@ -61,6 +63,10 @@ function cases(listed?: string[]): TestCasesMatch {
         variable: "pytestmark",
       },
     },
+    mocks: [
+      { replacesModule: { by: PATCHERS, path: { at: 0 } } },
+      { replacesMember: { by: PATCHERS, member: { at: 1 }, of: { at: 0 } } },
+    ],
   };
 }
 

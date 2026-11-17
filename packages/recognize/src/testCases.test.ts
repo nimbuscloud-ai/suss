@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { factModuleOps } from "./factOps.js";
-import { imported } from "./ops.js";
+import { global, imported } from "./ops.js";
 import {
   caseRuns,
   collectsFile,
   decoratorIsFrom,
   discoverTestCases,
+  mockRead,
 } from "./testCases.js";
 
 import type {
@@ -270,6 +271,44 @@ describe("the test cases a runner collects", () => {
     expect(
       decoratorIsFrom({ form: "value", value: {} as ValueOps }, [origin]),
     ).toBe(false);
+  });
+
+  it("reads what a patcher replaces by the first mock rule whose argument it writes as a string", () => {
+    const patch = global("unittest.mock.patch");
+    const by = {
+      from: [patch],
+      handed: [{ parameter: "mocker", methods: ["patch"] }],
+    };
+    const rules = [
+      { replacesModule: { by, path: { at: 0 } } },
+      { replacesMember: { by, member: { at: 1 }, of: { at: 0 } } },
+    ];
+    const call = (callee: string, args: readonly unknown[]) =>
+      ({
+        isFrom: (origin: unknown) => origin === patch && callee === "patch",
+        calleeText: () => callee,
+        valueAt: (at: number) =>
+          at < args.length ? ({ evaluated: () => args[at] } as ValueOps) : null,
+      }) as unknown as CallOps;
+    const takes = (name: string) => name === "mocker";
+
+    expect(mockRead(rules, call("patch", ["a.b.c"]), takes)).toEqual({
+      replaces: "path",
+      path: "a.b.c",
+    });
+    expect(mockRead(rules, call("patch", [null, "cancel"]), takes)).toEqual({
+      replaces: "member",
+      member: "cancel",
+      of: 0,
+    });
+    expect(
+      mockRead(rules, call("mocker.patch", ["a.b"]), takes)?.replaces,
+    ).toBe("path");
+    expect(mockRead(rules, call("mocker.patch", ["a.b"]), () => false)).toBe(
+      null,
+    );
+    expect(mockRead(rules, call("other", ["a.b"]), takes)).toBeNull();
+    expect(mockRead(rules, call("patch", [5]), takes)).toBeNull();
   });
 
   it("finds the case whatever the PRDs list, since the walk asks about a function it reached", () => {

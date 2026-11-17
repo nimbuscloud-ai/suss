@@ -199,21 +199,6 @@ export interface PyTestCases {
   sharedFixtureFiles: string[];
   /** Parameters the runner fills with something other than a fixture, which are never looked up: `self`, `request`. */
   reservedParameters: string[];
-  /** How a test replaces something before it runs. */
-  mocks: PyTestMocks;
-}
-
-/**
- * The calls that replace a module or a member for the length of a test.
- * A patcher called with a dotted string replaces the object at that path,
- * `patch("orders.service.cancel")`. Called with an object and a member
- * name, it replaces that member, `patch.object(OrderService, "cancel")`.
- */
-export interface PyTestMocks {
-  /** Patchers imported from a library, as dotted names: `unittest.mock.patch`, `unittest.mock.patch.object`. */
-  patchers: string[];
-  /** Patchers a fixture hands the test, by the fixture's parameter name and the methods called on it. */
-  fixturePatchers: { fixture: string; methods: string[] }[];
 }
 
 export type PythonDiscoveryPattern =

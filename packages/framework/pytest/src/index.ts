@@ -36,7 +36,30 @@ const SHARED_FIXTURE_FILE = "conftest.py";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "2";
+const VERSION = "3";
+
+/**
+ * The calls that replace something for the length of a test: mock's
+ * patchers, and those pytest-mock's `mocker` and pytest's `monkeypatch`
+ * fixtures hand a function that asks for them.
+ */
+const PATCHERS = {
+  from: [
+    {
+      origin: "global" as const,
+      paths: [
+        "unittest.mock.patch",
+        "unittest.mock.patch.object",
+        "mock.patch",
+        "mock.patch.object",
+      ],
+    },
+  ],
+  handed: [
+    { parameter: "mocker", methods: ["patch", "patch.object"] },
+    { parameter: "monkeypatch", methods: ["setattr"] },
+  ],
+};
 
 export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
   return {
@@ -97,6 +120,16 @@ export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
               variable: "pytestmark",
             },
           },
+          mocks: [
+            { replacesModule: { by: PATCHERS, path: { at: 0 } } },
+            {
+              replacesMember: {
+                by: PATCHERS,
+                member: { at: 1 },
+                of: { at: 0 },
+              },
+            },
+          ],
         },
         usesFixtureMarkers: ["pytest.mark.usefixtures"],
         fixtureDecorators: ["pytest.fixture"],
@@ -104,18 +137,6 @@ export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
         autouseKeyword: "autouse",
         sharedFixtureFiles: [SHARED_FIXTURE_FILE],
         reservedParameters: ["self", "cls", "request"],
-        mocks: {
-          patchers: [
-            "unittest.mock.patch",
-            "unittest.mock.patch.object",
-            "mock.patch",
-            "mock.patch.object",
-          ],
-          fixturePatchers: [
-            { fixture: "mocker", methods: ["patch", "patch.object"] },
-            { fixture: "monkeypatch", methods: ["setattr"] },
-          ],
-        },
       },
     ],
   };

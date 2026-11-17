@@ -541,6 +541,15 @@ callee's `isFrom`, and a value by `globalPath` for a global origin, so
 adapter reads the other markers it needs, pytest's `usefixtures`, off
 the same list.
 
+`mockRead` reads one call against `mocks`, in order. A rule applies
+when the call is one of its patchers, by its callee's `isFrom` or as a
+listed method on a parameter the caller says the function takes, and
+writes the argument the rule reads as a string: `replacesModule` gives
+the dotted path, and `replacesMember` the member's name and where the
+object is. The adapter lists the calls, since which functions a case
+runs through is its own, and turns a dotted path into a file with its
+module resolution.
+
 Neither reader keeps anything. The reach walk asks about every test
 function until the run ends, so the adapter reads each file once and
 keeps nodes, as the Python adapter's test index does. Keeping the ops
