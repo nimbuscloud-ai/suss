@@ -19,11 +19,11 @@ def fetch_order(order_id: str) -> dict:
 - **The verb functions**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`, each taking the URL first or as `url=`.
 - **`httpx.request("PATCH", url)`**: the method is the first argument and the URL the second, and either can be written as a keyword.
 - **A client**: `httpx.Client()` and `httpx.AsyncClient()` accept the same calls, whether the project assigns the client to a name or opens it as a context manager with `with` or `async with`.
+- **`base_url`** on a client: httpx puts a call's relative path after the base's path, with or without a leading `/`, so `client.get("/orders")` under `https://api.example.com/v1` goes to `/v1/orders`. An absolute URL on the call goes where it says.
 - **The URL**: read through the same value evaluator a route's path goes through, so an f-string and a name defined elsewhere both resolve to the path they produce.
 
 ## Where it stops
 
-- **`base_url` on a client is not read**, so a call on a client built with one is reported by its own path alone. The Faraday pack reads Faraday's `url:`, because Faraday puts a path there. httpx's `base_url` will be read the same way once a project needs it.
 - **A URL that cannot be settled** makes the function a client with no path, so the pack never guesses, and that binding pairs with nothing. A call at module level records nothing.
 - **The response**, meaning `raise_for_status()` and `response.status_code`, is not read yet.
 

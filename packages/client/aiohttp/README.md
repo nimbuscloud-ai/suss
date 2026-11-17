@@ -19,12 +19,13 @@ async def fetch_order(order_id: str) -> dict:
 
 - **The session methods**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`, each taking the URL first or as `url=`, and `session.request("PATCH", url)`. `head` hands a 3xx back to the caller unless the call passes `allow_redirects=True`, and every other call follows the redirect unless it passes `allow_redirects=False`, which is what aiohttp does.
 - **The session**: `aiohttp.ClientSession()`, opened with `async with` or kept in a plain assignment, in the same function that makes the call.
+- **`base_url`**, passed first or by keyword: a call's relative URL is resolved against it the way aiohttp's `URL.join` does, so `"orders"` under `https://api.example.com/v1/` goes to `/v1/orders`, and `"/orders"` replaces the base's path.
 - **The URL**: read through the same value evaluator a route's path goes through.
 
 ## Where it stops
 
 - **A session built somewhere else**, passed in as a parameter or kept on `self`, is not followed, so a call on it records nothing. Long-lived sessions in large services are usually set up this way. Following them needs the transitive consumer contract, since a read one hop back is not enough.
-- **`base_url` on a session is not read**, so a call is reported by its own path alone.
+- **A base whose path has no trailing `/`**, such as `ClientSession(base_url="https://api.example.com/v1")`, is one aiohttp 3.10 refuses, so a call on that session is reported by its own path alone. A base that ends in a value suss cannot settle is read the same way.
 - **The response** is not read yet.
 
 ## Usage

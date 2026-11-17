@@ -5,6 +5,8 @@
   "follow_redirects": "httpx: the keyword that turns following redirects on for one call",
   "Client": "httpx: the constructor for a client, whose instances take the same calls",
   "AsyncClient": "httpx: the constructor for an async client, whose instances take the same calls",
+  "base_url": "httpx: the keyword a client takes the base URL its relative paths go under",
+  "appended": "suss: the base URL join httpx's Client._merge_url makes, a relative path after the base's path with one slash between",
   "status_code": "httpx: Response.status_code, the status the server sent",
   "is_success": "httpx: Response.is_success, true for a status in 200 to 299",
   "json": "httpx: Response.json, the body parsed as JSON",

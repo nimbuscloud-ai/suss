@@ -2031,7 +2031,11 @@ construction the call's receiver was made by, and `joins` says how the
 library puts a path under it: `appended` writes it after the base with
 one slash, and `resolved` resolves it the way RFC 3986 does, so a path
 that starts with `/` replaces the base's path. An absolute URL on the
-call goes where it says.
+call goes where it says. `trailingSlash: "required"` is for a library
+that refuses a base whose path does not end with `/`, as aiohttp does
+since 3.10: that client is never built, so the call keeps its own path.
+A base path that ends in a hole is refused too, since it may or may not
+end with `/` when it runs.
 
 The construction is what `asCall({ follow: "writtenAs" })` gives for
 the receiver as written, which follows whatever the adapter's rules say
