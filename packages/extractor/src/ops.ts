@@ -378,6 +378,12 @@ export interface ValueOps {
   /** The value as the source wrote it, before any name in it is followed. */
   source?(): string;
   /**
+   * The value these ops are about, as a key that any two ops over the
+   * same value share, the way `CallOps.site()` keys a call. A key that is
+   * a node orders by `bySourceOrder`. Unset in an adapter that cannot say.
+   */
+  site?(): string;
+  /**
    * The text of each item of a list written out at this spot, a spread
    * as written, or null when the source writes anything else here.
    */
@@ -642,6 +648,13 @@ export interface ClassValueOps {
    * classes have none.
    */
   classes(): readonly ModuleMember[];
+  /**
+   * The method the class runs under the name: the first of that name it
+   * writes, else the one the nearest project class it extends writes,
+   * each base in the order the class writes them and through its own
+   * bases before the next. Null when none of them writes one.
+   */
+  method(name: string, kind: "instance" | "singleton"): ValueOps | null;
   /** The string the class body assigns to the name, shared or the class's own, or null. */
   attribute?(name: string): string | null;
   /**

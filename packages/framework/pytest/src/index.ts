@@ -32,9 +32,16 @@ export type PytestPackOptions = z.infer<typeof optionsSchema>;
 /** The file whose fixtures apply to every test in its directory and below. */
 const SHARED_FIXTURE_FILE = "conftest.py";
 
+/**
+ * What the extraction cache keys this pack's results on. Bump it on any
+ * change to the units it finds or what it reads into them.
+ */
+const VERSION = "1";
+
 export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
   return {
     name: "pytest",
+    version: VERSION,
     protocol: "in-process",
     discovery: [],
     // A test's fixtures can come from a conftest.py in any directory
@@ -43,18 +50,34 @@ export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
       files.filter((file) => path.basename(file) === SHARED_FIXTURE_FILE),
     tests: [
       {
-        filePatterns: ["test_*.py", "*_test.py"],
-        functionPrefix: "test",
-        classPrefix: "Test",
-        caseBaseClasses: [
-          "unittest.TestCase",
-          "unittest.IsolatedAsyncioTestCase",
-        ],
-        setUp: {
-          module: ["setup_module"],
-          function: ["setup_function"],
-          testClass: ["setup_class", "setup_method"],
-          caseClass: ["setUpClass", "setUp", "asyncSetUp"],
+        cases: {
+          type: "testCases",
+          files: {
+            matching: ["test_*.py", "*_test.py"],
+            ...(options.files !== undefined ? { listed: options.files } : {}),
+          },
+          functions: { pattern: "^test" },
+          classes: {
+            named: "^Test",
+            inherits: [
+              {
+                from: ["unittest"],
+                named: ["TestCase", "IsolatedAsyncioTestCase"],
+              },
+            ],
+            nested: true,
+            methods: { pattern: "^test" },
+          },
+          before: {
+            module: {
+              always: ["setup_module"],
+              forFunctions: ["setup_function"],
+            },
+            methods: {
+              byName: ["setup_class", "setup_method"],
+              byAncestry: ["setUpClass", "setUp", "asyncSetUp"],
+            },
+          },
         },
         usesFixtureMarkers: ["pytest.mark.usefixtures"],
         fixtureDecorators: ["pytest.fixture"],
@@ -84,7 +107,6 @@ export function pytestFramework(options: PytestPackOptions = {}): PythonPack {
             { fixture: "monkeypatch", methods: ["setattr"] },
           ],
         },
-        ...(options.files !== undefined ? { files: options.files } : {}),
       },
     ],
   };

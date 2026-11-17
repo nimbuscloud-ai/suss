@@ -951,6 +951,23 @@ export const EXTRA_INPUTS = [
       ),
     ],
   },
+  // The same app with its tests, the smallest whose pytest suite reads in
+  // full. No other input runs the pytest pack outside the fixtures.
+  {
+    name: "pytest",
+    group: "extra",
+    repo: "mealie",
+    args: [
+      ...lang("python"),
+      ...packs(
+        "fastapi",
+        "httpx",
+        "requests",
+        withConfig("sqlalchemy", POSTGRES),
+        "pytest",
+      ),
+    ],
+  },
   {
     name: "sqlmodel",
     group: "extra",

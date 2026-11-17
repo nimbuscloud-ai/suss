@@ -53,6 +53,7 @@ export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
 export { streamWrites } from "./streamWrites.js";
+export { caseRuns, collectsFile, discoverTestCases } from "./testCases.js";
 export { unitInvokes } from "./unitInvokes.js";
 
 // A declared pack imports its whole surface from here, including the
@@ -302,4 +303,10 @@ export type {
   StorageCallsSpec,
 } from "./storage.js";
 export type { StreamWrites, StreamWritesSpec } from "./streamWrites.js";
+export type {
+  CaseReading,
+  CaseRun,
+  CaseTitle,
+  FoundCase,
+} from "./testCases.js";
 export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";

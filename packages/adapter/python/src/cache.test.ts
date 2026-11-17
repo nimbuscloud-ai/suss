@@ -783,11 +783,16 @@ describe("a test run replayed from the cache", () => {
     discovery: [],
     tests: [
       {
-        filePatterns: ["test_*.py"],
-        functionPrefix: "test",
-        classPrefix: "Test",
-        caseBaseClasses: [],
-        setUp: { module: [], function: [], testClass: [], caseClass: [] },
+        cases: {
+          type: "testCases",
+          files: { matching: ["test_*.py"] },
+          functions: { pattern: "^test" },
+          classes: {
+            named: "^Test",
+            nested: true,
+            methods: { pattern: "^test" },
+          },
+        },
         usesFixtureMarkers: [],
         fixtureDecorators: ["pytest.fixture"],
         fixtureNameKeyword: "name",
@@ -854,6 +859,51 @@ describe("a test run replayed from the cache", () => {
     const before = await run(null);
     await run();
     write("tests/conftest.py", fixtureCalling("ship_order"));
+    const replayed = await run();
+    const fresh = await run(null);
+
+    expect(fresh.summaries).not.toEqual(before.summaries);
+    expect(replayed.summaries).toEqual(fresh.summaries);
+  });
+
+  it("runs a setUp added to a base class in another file, the same as a run without the cache", async () => {
+    const withSetUp: PythonPack = {
+      ...pytestLike,
+      tests: (pytestLike.tests ?? []).map((one) => ({
+        ...one,
+        cases: {
+          ...one.cases,
+          classes: {
+            inherits: [{ from: ["unittest"], named: ["TestCase"] }],
+            methods: { pattern: "^test" },
+          },
+          before: { methods: { byName: [], byAncestry: ["setUp"] } },
+        },
+      })),
+    };
+    const base = (body: string): string =>
+      `import unittest\nfrom app.orders import ship_order\n\n\nclass OrdersCase(unittest.TestCase):\n${body}`;
+    write("app/orders.py", "def ship_order(order_id):\n    return order_id\n");
+    write("tests/base.py", base("    pass\n"));
+    write(
+      "tests/test_orders.py",
+      "from tests.base import OrdersCase\n\n\nclass Shipping(OrdersCase):\n    def test_ships(self):\n        pass\n",
+    );
+    const run = (cacheDir?: null) =>
+      extractPythonProject({
+        files: findPythonFiles(tmpDir),
+        roots: [tmpDir],
+        packs: [withSetUp],
+        projectRoot: tmpDir,
+        ...(cacheDir === null ? { cacheDir } : {}),
+      });
+
+    const before = await run(null);
+    await run();
+    write(
+      "tests/base.py",
+      base('    def setUp(self):\n        ship_order("o-1")\n'),
+    );
     const replayed = await run();
     const fresh = await run(null);
 

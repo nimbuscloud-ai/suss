@@ -1,9 +1,9 @@
 /**
  * pytest tests as `test` units, so a PRD scenario can say which test
- * covers it. A test is a `test` function in a file the runner collects,
- * or a `test` method on a `Test` class or a `unittest.TestCase`
- * subclass, named by its classes and then its own name, the way a
- * pytest node id writes them. The pack says what each of those names is.
+ * covers it. The pack declares which functions and methods pytest
+ * collects, and `@suss/recognize` reads them through the module ops,
+ * each named by its classes and then its own name, the way a pytest node
+ * id writes them.
  *
  * pytest calls the fixtures a test asks for, by parameter name or through
  * a `usefixtures` marker, and the module's and classes' setup, before the
@@ -16,11 +16,17 @@
 import path from "node:path";
 
 import { testUnitName } from "@suss/behavioral-ir";
-import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
-import { isObserved, noteFileMissing, noteKeyRead } from "@suss/resolution";
+import { caseRuns, collectsFile, discoverTestCases } from "@suss/recognize";
+import {
+  fileOfKey,
+  isObserved,
+  noteFileMissing,
+  noteKeyRead,
+} from "@suss/resolution";
 import { constantOf, literalOf } from "@suss/values";
 
 import { children, field, isFunction, parameterNameAndType } from "./ast.js";
+import { pythonModuleOps } from "./declaredDiscovery.js";
 import { originsOf } from "./facts/resolve.js";
 import { nodeId } from "./facts/values.js";
 import { resolveAbsoluteModule } from "./moduleResolver.js";
@@ -28,12 +34,13 @@ import { bodyCalls } from "./paths/effects.js";
 import { libraryUnit } from "./reach/closure.js";
 import { reachedFunctionOf } from "./reach/resolveCallee.js";
 import { resolveName, scopeAt } from "./scope.js";
-import { evaluatedValue } from "./values/evaluator.js";
+import { evaluatedValue, nodeOfResolutionKey } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
 import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawCodeStructure } from "@suss/extractor";
+import type { RawCodeStructure, ValueOps } from "@suss/extractor";
+import type { FoundCase } from "@suss/recognize";
 import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyTestCases, PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
@@ -52,6 +59,12 @@ interface CollectedTest {
   readonly node: PyNode;
   readonly titles: string[];
   readonly pattern: PyTestCases;
+}
+
+/** A test the walk reached, with the setup pytest calls before it. */
+interface ReachedTest {
+  readonly test: CollectedTest;
+  readonly setUp: readonly ImpliedCall[];
 }
 
 interface Fixture {
@@ -73,7 +86,10 @@ export function pythonTestIndex(
 }
 
 export class PythonTestIndex {
-  private readonly collected = new Map<string, CollectedTest[]>();
+  private readonly reached = new Map<
+    string,
+    ReadonlyMap<string, ReachedTest>
+  >();
   private readonly fixturesByScope = new Map<string, Map<string, Fixture>>();
   private readonly implied = new Map<string, readonly ImpliedCall[]>();
 
@@ -84,9 +100,50 @@ export class PythonTestIndex {
 
   /** The tests in one file, when the file is collected and listed. */
   unitsIn(file: BoundPythonFile, options: UnitOptions): RawCodeStructure[] {
-    return this.testsIn(file)
-      .filter((test) => isListedTestFile(file.file, test.pattern.files))
-      .map((test) => this.testUnit(file, test, options));
+    const pattern = this.patternFor(file);
+    if (pattern === null) {
+      return [];
+    }
+    // The tests are kept as nodes before any unit is built, so the ops
+    // they were read through go before the walk that builds each unit.
+    const module = pythonModuleOps(file, this.context.facts);
+    const tests = discoverTestCases(pattern.cases, module).flatMap((found) => {
+      const test = collectedTest(file, found, pattern, this.context.facts);
+      return test === null ? [] : [test];
+    });
+    return tests.map((test) => this.testUnit(file, test, options));
+  }
+
+  /**
+   * Every test in one file the walk can reach, with its setup, by its
+   * function's key. A file is read once, and only nodes are kept, since
+   * the walk asks about each test until the run ends.
+   */
+  private reachedIn(file: BoundPythonFile): ReadonlyMap<string, ReachedTest> {
+    const known = this.reached.get(file.file);
+    // A recording cache has to see every file the answer reads, per charge.
+    if (known !== undefined && !isObserved(this.context.facts)) {
+      return known;
+    }
+    const found = new Map<string, ReachedTest>();
+    this.reached.set(file.file, found);
+    const pattern = this.patternFor(file);
+    if (pattern === null) {
+      return found;
+    }
+    const runs = caseRuns(pattern.cases, {
+      module: pythonModuleOps(file, this.context.facts),
+    });
+    for (const [key, run] of runs) {
+      const test = collectedTest(file, run.found, pattern, this.context.facts);
+      if (test !== null) {
+        found.set(key, {
+          test,
+          setUp: run.before.flatMap((fn) => this.impliedCallTo(fn)),
+        });
+      }
+    }
+    return found;
   }
 
   /** What pytest calls before this function runs, when it is a test or a fixture. */
@@ -103,8 +160,8 @@ export class PythonTestIndex {
   }
 
   private impliedCallsOf(source: ReachedFunction): ImpliedCall[] {
-    const test = this.testAt(source);
-    const pattern = test?.pattern ?? this.fixturePatternOf(source);
+    const reached = this.testAt(source);
+    const pattern = reached?.test.pattern ?? this.fixturePatternOf(source);
     if (pattern === null) {
       return [];
     }
@@ -115,23 +172,18 @@ export class PythonTestIndex {
       const fixture = this.fixtureFor(source, name, pattern);
       return fixture === null ? [] : [{ callee: name, target: fixture.target }];
     });
-    if (test === null) {
+    if (reached === null) {
       return calls;
     }
     const autouse = this.autouseFor(source, pattern).filter(
       ({ callee }) => !asked.includes(callee),
     );
-    const marked = this.usedFixtures(source, test).filter(
+    const marked = this.usedFixtures(source, reached.test).filter(
       ({ callee }) =>
         !asked.includes(callee) &&
         !autouse.some((one) => one.callee === callee),
     );
-    return [
-      ...autouse,
-      ...marked,
-      ...this.setUpCalls(source.file, test),
-      ...calls,
-    ];
+    return [...autouse, ...marked, ...reached.setUp, ...calls];
   }
 
   /** The fixtures a `usefixtures` marker on the test, a class around it, or a `pytestmark` asks for. */
@@ -191,84 +243,9 @@ export class PythonTestIndex {
 
   private patternFor(file: BoundPythonFile): PyTestCases | null {
     return (
-      this.patterns.find((pattern) =>
-        matchesTestFileName(file.file, pattern.filePatterns),
-      ) ?? null
+      this.patterns.find((pattern) => collectsFile(pattern.cases, file.file)) ??
+      null
     );
-  }
-
-  private testsIn(file: BoundPythonFile): CollectedTest[] {
-    const known = this.collected.get(file.file);
-    if (known !== undefined && !isObserved(this.context.facts)) {
-      return known;
-    }
-    const pattern = this.patternFor(file);
-    const found: CollectedTest[] = [];
-    if (pattern !== null) {
-      this.collectIn(file, file.root, pattern, [], found);
-    }
-    this.collected.set(file.file, found);
-    return found;
-  }
-
-  /** pytest collects `test` functions at module level and `test` methods on a class it collects, nested classes included. */
-  private collectIn(
-    file: BoundPythonFile,
-    container: PyNode,
-    pattern: PyTestCases,
-    titles: readonly string[],
-    found: CollectedTest[],
-  ): void {
-    for (const definition of definitionsIn(container)) {
-      const name = field(definition, "name")?.text;
-      if (name === undefined) {
-        continue;
-      }
-
-      if (isFunction(definition) && name.startsWith(pattern.functionPrefix)) {
-        found.push({ node: definition, titles: [...titles, name], pattern });
-        continue;
-      }
-
-      if (definition.type !== "class_definition") {
-        continue;
-      }
-      if (
-        name.startsWith(pattern.classPrefix) ||
-        this.isCaseClass(file, definition, pattern, new Set())
-      ) {
-        this.collectIn(file, definition, pattern, [...titles, name], found);
-      }
-    }
-  }
-
-  /** Whether a class extends one of the runner's case base classes, directly or through a project class. */
-  private isCaseClass(
-    file: BoundPythonFile,
-    classNode: PyNode,
-    pattern: PyTestCases,
-    visited: Set<string>,
-  ): boolean {
-    const key = nodeId(file.file, classNode);
-    if (visited.has(key)) {
-      return false;
-    }
-    visited.add(key);
-    const bases = field(classNode, "superclasses");
-    if (bases === null) {
-      return false;
-    }
-    return children(bases).some((base) => {
-      const dotted = dottedOrigin(base, file);
-      if (dotted !== null && pattern.caseBaseClasses.includes(dotted)) {
-        return true;
-      }
-      const project = this.projectClassOf(base, file);
-      return (
-        project !== null &&
-        this.isCaseClass(project.file, project.node, pattern, visited)
-      );
-    });
   }
 
   /** The project class a base class expression refers to, in this file or through an import. */
@@ -300,13 +277,23 @@ export class PythonTestIndex {
     return null;
   }
 
-  /** The collected test this function is, or null. */
-  private testAt(source: ReachedFunction): CollectedTest | null {
-    return (
-      this.testsIn(source.file).find(
-        (test) => test.node.id === source.node.id,
-      ) ?? null
-    );
+  /** The collected test this function is, with the setup pytest calls first, or null. */
+  private testAt(source: ReachedFunction): ReachedTest | null {
+    return this.reachedIn(source.file).get(functionKey(source)) ?? null;
+  }
+
+  /** A function the runner calls, as the walk follows a call to it, under the name it is written with. */
+  private impliedCallTo(fn: ValueOps): ImpliedCall[] {
+    const key = fn.site?.();
+    if (key === undefined) {
+      return [];
+    }
+    const file = this.context.filesByPath.get(fileOfKey(key));
+    const node = nodeOfResolutionKey(key, this.context.facts);
+    const name = node === null ? undefined : field(node, "name")?.text;
+    return file === undefined || node === null || name === undefined
+      ? []
+      : [{ callee: name, target: reachedFunctionOf(file, node) }];
   }
 
   /** The pattern whose fixture decorator is on this function, or null when it is not a fixture. */
@@ -509,72 +496,6 @@ export class PythonTestIndex {
     return [...byName.values()];
   }
 
-  /**
-   * The setup the runner calls before this test: the module's, then each
-   * class's from the outermost in. A class that extends a case base class
-   * runs the case class setup, and any other class the test class setup.
-   */
-  private setUpCalls(
-    file: BoundPythonFile,
-    test: CollectedTest,
-  ): ImpliedCall[] {
-    const setUp = test.pattern.setUp;
-    const classes = enclosingClasses(test.node).reverse();
-    const inModule = [
-      ...setUp.module,
-      ...(classes.length === 0 ? setUp.function : []),
-    ];
-    const moduleCalls = inModule.flatMap((name): ImpliedCall[] => {
-      const found = definitionsIn(file.root).find(
-        (one) => isFunction(one) && field(one, "name")?.text === name,
-      );
-      return found === undefined
-        ? []
-        : [{ callee: name, target: reachedFunctionOf(file, found) }];
-    });
-    const classCalls = classes.flatMap((classNode) => {
-      const isCase = this.isCaseClass(file, classNode, test.pattern, new Set());
-      const names = isCase ? setUp.caseClass : setUp.testClass;
-      return names.flatMap((name): ImpliedCall[] => {
-        const found = this.methodOn(file, classNode, name, new Set());
-        return found === null ? [] : [{ callee: name, target: found }];
-      });
-    });
-    return [...moduleCalls, ...classCalls];
-  }
-
-  /** The method a class declares under this name, or the nearest project base class that does. */
-  private methodOn(
-    file: BoundPythonFile,
-    classNode: PyNode,
-    name: string,
-    visited: Set<string>,
-  ): ReachedFunction | null {
-    const key = nodeId(file.file, classNode);
-    if (visited.has(key)) {
-      return null;
-    }
-    visited.add(key);
-    const own = definitionsIn(classNode).find(
-      (one) => isFunction(one) && field(one, "name")?.text === name,
-    );
-    if (own !== undefined) {
-      return reachedFunctionOf(file, own);
-    }
-    const bases = field(classNode, "superclasses");
-    for (const base of bases === null ? [] : children(bases)) {
-      const project = this.projectClassOf(base, file);
-      const found =
-        project === null
-          ? null
-          : this.methodOn(project.file, project.node, name, visited);
-      if (found !== null) {
-        return found;
-      }
-    }
-    return null;
-  }
-
   private isSkipped(file: BoundPythonFile, test: CollectedTest): boolean {
     return markersOn(file, test).some((marker) =>
       test.pattern.skipDecorators.includes(
@@ -765,6 +686,19 @@ function markersOn(file: BoundPythonFile, test: CollectedTest): PyNode[] {
 
 function functionKey(fn: ReachedFunction): string {
   return nodeId(fn.file.file, fn.node);
+}
+
+/** A case the reader found, as a test of this file, or null for one whose function another file writes. */
+function collectedTest(
+  file: BoundPythonFile,
+  found: FoundCase,
+  pattern: PyTestCases,
+  facts: Database,
+): CollectedTest | null {
+  const node = nodeOfResolutionKey(found.at, facts);
+  return node === null || node.tree !== file.root.tree
+    ? null
+    : { node, titles: found.titles.map((title) => title.text), pattern };
 }
 
 /** The functions and classes written directly in a module or class body, with their decorators taken off. */

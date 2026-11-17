@@ -1093,6 +1093,10 @@ class FactValue implements ValueOps {
     return this.facts.textOf(this.key);
   }
 
+  site(): string {
+    return this.key;
+  }
+
   writtenItems(): readonly string[] | null {
     return this.facts.writtenItemsOf?.(this.key) ?? null;
   }
@@ -1970,9 +1974,7 @@ class FactClass implements ClassValueOps {
 
   members(kind: "instance" | "singleton"): readonly ModuleMember[] {
     return this.facts.db.lookup("holdsProperty", 0, this.key).flatMap((row) => {
-      const stated = String(row[1]);
-      const own = classMemberOf(stated);
-      const name = kind === "singleton" ? own : own === null ? stated : null;
+      const name = memberName(String(row[1]), kind);
       const held = String(row[2]);
       return name === null || !isFunction(held, this.facts)
         ? []
@@ -1987,6 +1989,11 @@ class FactClass implements ClassValueOps {
       .filter((row) => isClassWritten(String(row[2]), this.facts))
       .sort((a, b) => bySourceOrder(String(a[2]), String(b[2])))
       .map((row) => memberAt(String(row[1]), String(row[2]), this.facts));
+  }
+
+  /** `members(kind)` on the class, then on each class an `extends` row of it `comesTo`, depth first. */
+  method(name: string, kind: "instance" | "singleton"): ValueOps | null {
+    return methodThroughBases(this.key, name, kind, this.facts, new Set());
   }
 
   /** The string the `holdsProperty` rows under the name state, shared or the class's own, when they agree on one. */
@@ -2078,6 +2085,52 @@ export function inheritsFrom(
     );
   };
   return reaches(cls);
+}
+
+/** The name a `holdsProperty` row states a member of this kind under, or null for a member of the other kind. */
+function memberName(
+  stated: string,
+  kind: "instance" | "singleton",
+): string | null {
+  const own = classMemberOf(stated);
+  if (kind === "singleton") {
+    return own;
+  }
+  return own === null ? stated : null;
+}
+
+function methodThroughBases(
+  cls: string,
+  name: string,
+  kind: "instance" | "singleton",
+  source: FactSource,
+  seen: Set<string>,
+): ValueOps | null {
+  if (seen.has(cls)) {
+    return null;
+  }
+  seen.add(cls);
+  const own = source.db
+    .lookup("holdsProperty", 0, cls)
+    .find(
+      (row) =>
+        memberName(String(row[1]), kind) === name &&
+        isFunction(String(row[2]), source),
+    );
+  if (own !== undefined) {
+    return factValueOps(String(own[2]), source);
+  }
+  for (const row of source.db.lookup("extends", 0, cls)) {
+    for (const base of source.comesTo?.(String(row[1])) ?? []) {
+      const found = isClassWritten(base, source)
+        ? methodThroughBases(base, name, kind, source, seen)
+        : null;
+      if (found !== null) {
+        return found;
+      }
+    }
+  }
+  return null;
 }
 
 /** Whether a base the class writes by name, `extendsNamed`, is one the adapter says the spec spells. */
