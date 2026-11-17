@@ -26,6 +26,7 @@ import {
 import { concat, hostOf, pathOf, scalarOf, text } from "@suss/values";
 
 import { numberLiteralValue, rangeOf, stringLiteralValue } from "./ast.js";
+import { declaredName, filesDeclaring } from "./baseClass.js";
 import { decodedIn, encodedIn } from "./encoded.js";
 import { copingAt, keysSuppliedAt } from "./envReads.js";
 import { CONSTRUCTOR } from "./facts/languageWords.js";
@@ -41,6 +42,7 @@ import {
 } from "./facts/resolve.js";
 import { writtenArgument } from "./facts/values.js";
 import { argOf } from "./paths/effects.js";
+import { noteClassesInRun } from "./reuse.js";
 import {
   constructionSitesOf,
   evaluatedValue,
@@ -240,6 +242,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
         spec.named.some((name) => path === `${module}::${name}`),
       );
     },
+    otherDeclarationsOf: (key) => otherDeclarationsOf(db, key),
     givesBack: (key) => {
       resolveValues(db, [key]);
       return givenBackFunction(db, key);
@@ -300,6 +303,27 @@ function blockVariableOf(
           (param) => paramNameOf(param)?.text === name,
         );
   return position < 0 ? null : { func: block, position };
+}
+
+/**
+ * The other bodies the run writes for the class at the key, by its full
+ * name. A cached run charges each one's file, and looks again once a
+ * file that reopens the class joins.
+ */
+function otherDeclarationsOf(db: Database, key: string): string[] {
+  const name = declaredName(db, key);
+  if (name === undefined) {
+    return [];
+  }
+  noteClassesInRun(db, name, filesDeclaring(db, name));
+  const others = db
+    .lookup("rbConstantName", 1, name)
+    .map((row) => String(row[0]))
+    .filter((other) => other !== key);
+  for (const other of others) {
+    noteKeyRead(db, other);
+  }
+  return others;
 }
 
 /** What an encoder or a decoder call at the key was handed, as the facts key it, and the encoding. */

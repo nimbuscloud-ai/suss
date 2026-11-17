@@ -288,6 +288,26 @@ describe("the class ops a class body is read through", () => {
     expect(classOf("Patched", spelled).inherits([])).toBe(false);
   });
 
+  it("reach a base through another body of the class, and through a project class whose own name spells it, though no class is its own base", () => {
+    const spec = [{ from: ["lib"], named: ["Model"] }];
+    const facts = source({
+      spellsBase: (written, asked) =>
+        asked.from.some((module) => written === `${module}::Model`),
+      otherDeclarationsOf: (key) => (key === "Reopened" ? ["Patched"] : []),
+      comesTo: (key) => (key === "Base#ref" ? ["ProjectModel"] : []),
+    });
+    const add = (relation: string, ...row: string[]) =>
+      facts.db.add(relation, row);
+    add("objectValue", "Reopened");
+    add("objectValue", "Short");
+    add("extends", "Short", "Base#ref");
+    add("objectValue", "ProjectModel");
+    add("rbConstantName", "ProjectModel", "lib::Model");
+    expect(classOf("Reopened", facts).inherits(spec)).toBe(true);
+    expect(classOf("Short", facts).inherits(spec)).toBe(true);
+    expect(classOf("ProjectModel", facts).inherits(spec)).toBe(false);
+  });
+
   it("say whether the declaration writes a base class", () => {
     const facts = source();
     expect(classOf("Account", facts).writesBase()).toBe(true);
