@@ -16,14 +16,20 @@
 import path from "node:path";
 
 import { testUnitName } from "@suss/behavioral-ir";
-import { caseRuns, collectsFile, discoverTestCases } from "@suss/recognize";
+import {
+  caseRuns,
+  collectsFile,
+  decoratorIsFrom,
+  discoverTestCases,
+  global,
+} from "@suss/recognize";
 import {
   fileOfKey,
   isObserved,
   noteFileMissing,
   noteKeyRead,
 } from "@suss/resolution";
-import { constantOf, literalOf } from "@suss/values";
+import { literalOf } from "@suss/values";
 
 import { children, field, isFunction, parameterNameAndType } from "./ast.js";
 import { pythonModuleOps } from "./declaredDiscovery.js";
@@ -39,7 +45,7 @@ import { originOf } from "./values/origin.js";
 
 import type { TestMetadata, TestMock } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawCodeStructure, ValueOps } from "@suss/extractor";
+import type { Decorator, RawCodeStructure, ValueOps } from "@suss/extractor";
 import type { FoundCase } from "@suss/recognize";
 import type { BoundPythonFile } from "./boundFiles.js";
 import type { PyTestCases, PythonPack } from "./pack.js";
@@ -59,6 +65,17 @@ interface CollectedTest {
   readonly node: PyNode;
   readonly titles: string[];
   readonly pattern: PyTestCases;
+  readonly skipped: boolean;
+  /** The fixtures a `usefixtures` marker on the test, a class around it or a marker variable lists, in the order written. */
+  readonly markedFixtures: readonly string[];
+}
+
+/** A fixture decorator on a function, as one pattern reads it. */
+interface FixtureMark {
+  readonly pattern: PyTestCases;
+  /** The name the decorator gives the fixture, or null for the function's own. */
+  readonly name: string | null;
+  readonly autouse: boolean;
 }
 
 /** A test the walk reached, with the setup pytest calls before it. */
@@ -89,6 +106,10 @@ export class PythonTestIndex {
   private readonly reached = new Map<
     string,
     ReadonlyMap<string, ReachedTest>
+  >();
+  private readonly fixtureMarks = new Map<
+    string,
+    ReadonlyMap<string, readonly FixtureMark[]>
   >();
   private readonly fixturesByScope = new Map<string, Map<string, Fixture>>();
   private readonly implied = new Map<string, readonly ImpliedCall[]>();
@@ -191,21 +212,7 @@ export class PythonTestIndex {
     source: ReachedFunction,
     test: CollectedTest,
   ): ImpliedCall[] {
-    const names = markersOn(source.file, test)
-      .filter(
-        (marker) =>
-          marker.type === "call" &&
-          test.pattern.usesFixtureMarkers.includes(
-            dottedOrigin(calleeOf(marker), source.file) ?? "",
-          ),
-      )
-      .flatMap((marker) =>
-        positionalArguments(marker).flatMap((arg) => {
-          const name = literalOf(evaluatedValue(arg, this.context.facts));
-          return name === null ? [] : [name];
-        }),
-      );
-    return [...new Set(names)].flatMap((name): ImpliedCall[] => {
+    return [...new Set(test.markedFixtures)].flatMap((name): ImpliedCall[] => {
       const fixture = this.fixtureFor(source, name, test.pattern);
       return fixture === null ? [] : [{ callee: name, target: fixture.target }];
     });
@@ -220,10 +227,9 @@ export class PythonTestIndex {
       ...options,
       tests: this,
     });
-    const skipped = this.isSkipped(file, test);
     const mocks = this.mocksOf(file, test);
     const metadata: TestMetadata = {
-      ...(skipped ? { skipped: true } : {}),
+      ...(test.skipped ? { skipped: true } : {}),
       ...(mocks.length > 0 ? { mocks } : {}),
     };
     return {
@@ -298,19 +304,43 @@ export class PythonTestIndex {
 
   /** The pattern whose fixture decorator is on this function, or null when it is not a fixture. */
   private fixturePatternOf(source: ReachedFunction): PyTestCases | null {
-    const decorators = decoratorsOf(source.node);
-    if (decorators.length === 0) {
-      return null;
+    const marks = this.fixtureMarksIn(source.file).get(functionKey(source));
+    return marks?.[0]?.pattern ?? null;
+  }
+
+  /**
+   * The fixture decorators in one file, by the key of the function each
+   * is written on, read once through the module ops and kept as names.
+   * The walk asks of every function it reaches.
+   */
+  private fixtureMarksIn(
+    file: BoundPythonFile,
+  ): ReadonlyMap<string, readonly FixtureMark[]> {
+    const known = this.fixtureMarks.get(file.file);
+    if (known !== undefined && !isObserved(this.context.facts)) {
+      return known;
     }
-    return (
-      this.patterns.find((pattern) =>
-        decorators.some((decorator) =>
-          pattern.fixtureDecorators.includes(
-            dottedOrigin(calleeOf(decorator), source.file) ?? "",
-          ),
-        ),
-      ) ?? null
+    const found = new Map<string, readonly FixtureMark[]>();
+    this.fixtureMarks.set(file.file, found);
+    const module = pythonModuleOps(file, this.context.facts);
+    // A file whose text never writes a decorator's last name declares no
+    // fixture with it, and listing its decorators walks the whole file.
+    const patterns = this.patterns.filter((pattern) =>
+      pattern.fixtureDecorators.some((dotted) =>
+        module.mentions(dotted.slice(dotted.lastIndexOf(".") + 1)),
+      ),
     );
+    if (patterns.length === 0) {
+      return found;
+    }
+    for (const { definition, decorators } of module.decorated()) {
+      const key = definition.site?.();
+      const marks = fixtureMarksOf(decorators, patterns);
+      if (key !== undefined && marks.length > 0) {
+        found.set(key, marks);
+      }
+    }
+    return found;
   }
 
   /**
@@ -451,17 +481,22 @@ export class PythonTestIndex {
       return known;
     }
     const found = new Map<string, Fixture>();
+    const marks = this.fixtureMarksIn(file);
     for (const definition of definitionsIn(container)) {
-      const declared = isFunction(definition)
-        ? fixtureDeclaration(definition, file, pattern, this.context.facts)
-        : null;
-      if (declared === null) {
+      const mark = isFunction(definition)
+        ? marks
+            .get(nodeId(file.file, definition))
+            ?.find((one) => one.pattern === pattern)
+        : undefined;
+      const defName = field(definition, "name")?.text;
+      if (mark === undefined || defName === undefined) {
         continue;
       }
-      found.set(declared.name, {
-        name: declared.name,
+      const name = mark.name ?? defName;
+      found.set(name, {
+        name,
         target: reachedFunctionOf(file, definition),
-        autouse: declared.autouse,
+        autouse: mark.autouse,
       });
     }
     this.fixturesByScope.set(scopeKey, found);
@@ -494,14 +529,6 @@ export class PythonTestIndex {
       }
     }
     return [...byName.values()];
-  }
-
-  private isSkipped(file: BoundPythonFile, test: CollectedTest): boolean {
-    return markersOn(file, test).some((marker) =>
-      test.pattern.skipDecorators.includes(
-        dottedOrigin(calleeOf(marker), file) ?? "",
-      ),
-    );
   }
 
   /** The mocks written on the test and its classes, in its body, and in each fixture and `setUp` it runs through. */
@@ -672,18 +699,6 @@ export class PythonTestIndex {
   }
 }
 
-/** The markers that apply to a test: its decorators, each class's around it, and every `pytestmark` in scope. */
-function markersOn(file: BoundPythonFile, test: CollectedTest): PyNode[] {
-  return [
-    ...decoratorsOf(test.node),
-    ...enclosingClasses(test.node).flatMap((classNode) => [
-      ...decoratorsOf(classNode),
-      ...markerVariable(file, classNode, test.pattern),
-    ]),
-    ...markerVariable(file, file.root, test.pattern),
-  ];
-}
-
 function functionKey(fn: ReachedFunction): string {
   return nodeId(fn.file.file, fn.node);
 }
@@ -698,7 +713,57 @@ function collectedTest(
   const node = nodeOfResolutionKey(found.at, facts);
   return node === null || node.tree !== file.root.tree
     ? null
-    : { node, titles: found.titles.map((title) => title.text), pattern };
+    : {
+        node,
+        titles: found.titles.map((title) => title.text),
+        pattern,
+        skipped: found.skipped,
+        markedFixtures: markedFixtures(found.markers, pattern),
+      };
+}
+
+/** The string arguments of each `usefixtures` marker, in order. */
+function markedFixtures(
+  markers: readonly Decorator[],
+  pattern: PyTestCases,
+): string[] {
+  const origins = [global(...pattern.usesFixtureMarkers)];
+  return markers.flatMap((marker) => {
+    if (marker.form !== "call" || !decoratorIsFrom(marker, origins)) {
+      return [];
+    }
+    const count =
+      marker.call.positionalCount?.() ?? marker.call.argumentCount();
+    return Array.from({ length: count }, (_, at) =>
+      marker.call.valueAt(at)?.evaluated?.(),
+    ).flatMap((name) => (typeof name === "string" ? [name] : []));
+  });
+}
+
+/** The fixture decorator of each pattern on a definition, with the name and autouse its keywords give. */
+function fixtureMarksOf(
+  decorators: readonly Decorator[],
+  patterns: readonly PyTestCases[],
+): FixtureMark[] {
+  return patterns.flatMap((pattern): FixtureMark[] => {
+    const origins = [global(...pattern.fixtureDecorators)];
+    const decorator = decorators.find((one) => decoratorIsFrom(one, origins));
+    if (decorator === undefined) {
+      return [];
+    }
+    const keyword = (name: string) =>
+      decorator.form === "call"
+        ? (decorator.call.keywordAt?.(name)?.evaluated?.() ?? null)
+        : null;
+    const renamed = keyword(pattern.fixtureNameKeyword);
+    return [
+      {
+        pattern,
+        name: typeof renamed === "string" ? renamed : null,
+        autouse: keyword(pattern.autouseKeyword) === true,
+      },
+    ];
+  });
 }
 
 /** The functions and classes written directly in a module or class body, with their decorators taken off. */
@@ -761,66 +826,6 @@ function parameterNames(definition: PyNode): string[] {
         const named = parameterNameAndType(param);
         return named === null ? [] : [named.name];
       });
-}
-
-/** The markers a `pytestmark` variable in a module or class body gives every test under it. */
-function markerVariable(
-  file: BoundPythonFile,
-  container: PyNode,
-  pattern: PyTestCases,
-): PyNode[] {
-  if (pattern.markerVariable === undefined) {
-    return [];
-  }
-  const scope =
-    file.module.scopeFor.get(container.id) ?? file.module.moduleScope;
-  const binding = scope.bindings.get(pattern.markerVariable);
-  if (binding?.kind !== "assignment" || binding.value === null) {
-    return [];
-  }
-  return binding.value.type === "list"
-    ? children(binding.value)
-    : [binding.value];
-}
-
-/** The fixture a decorated function declares, under the name a test asks for it by, or null when it is not one. */
-function fixtureDeclaration(
-  definition: PyNode,
-  file: BoundPythonFile,
-  pattern: PyTestCases,
-  facts: Database,
-): { name: string; autouse: boolean } | null {
-  const decorator = decoratorsOf(definition).find((one) =>
-    pattern.fixtureDecorators.includes(dottedOrigin(calleeOf(one), file) ?? ""),
-  );
-  const defName = field(definition, "name")?.text;
-  if (decorator === undefined || defName === undefined) {
-    return null;
-  }
-  const renamed = keywordArgument(decorator, pattern.fixtureNameKeyword);
-  const autouse = keywordArgument(decorator, pattern.autouseKeyword);
-  return {
-    name:
-      (renamed === null ? null : literalOf(evaluatedValue(renamed, facts))) ??
-      defName,
-    autouse:
-      autouse !== null && constantOf(evaluatedValue(autouse, facts)) === true,
-  };
-}
-
-function keywordArgument(call: PyNode, name: string): PyNode | null {
-  if (call.type !== "call") {
-    return null;
-  }
-  const args = field(call, "arguments");
-  if (args === null) {
-    return null;
-  }
-  const found = children(args).find(
-    (arg) =>
-      arg.type === "keyword_argument" && field(arg, "name")?.text === name,
-  );
-  return found === undefined ? null : field(found, "value");
 }
 
 function positionalArguments(call: PyNode): PyNode[] {

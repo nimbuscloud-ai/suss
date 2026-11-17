@@ -216,6 +216,7 @@ export type {
   ResponsePropertyMeaning,
   RouteTableMatch,
   RouteVersioning,
+  SkipRules,
   SubclassOfMatch,
   TerminalExtraction,
   TerminalMatch,

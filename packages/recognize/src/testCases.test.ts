@@ -3,9 +3,20 @@ import { describe, expect, it } from "vitest";
 import { Database } from "@suss/datalog";
 
 import { factModuleOps } from "./factOps.js";
-import { caseRuns, collectsFile, discoverTestCases } from "./testCases.js";
+import { imported } from "./ops.js";
+import {
+  caseRuns,
+  collectsFile,
+  decoratorIsFrom,
+  discoverTestCases,
+} from "./testCases.js";
 
-import type { ModuleOps, TestCasesMatch } from "@suss/extractor";
+import type {
+  CallOps,
+  ModuleOps,
+  TestCasesMatch,
+  ValueOps,
+} from "@suss/extractor";
 import type { FactSource } from "./factOps.js";
 
 const FILE = "/t/tests/test_orders.py";
@@ -69,6 +80,13 @@ function source(): FactSource {
 
   cls(at("800-850"));
 
+  add("decoratedWith", at("0-20"), "skip-mark");
+  add("objectValue", "class-marks");
+  add("holdsProperty", at("100-400"), "pytestmark", "class-marks");
+  add("holdsProperty", "class-marks", "0", "class-skip");
+  add("writtenEntryAt", "class-marks", "0", "class-skip", "value");
+  add("exportsAs", FILE, "pytestmark", "module-mark");
+
   const comesTo: Record<string, readonly string[]> = {
     [`${FILE}#test_imported`]: ["/t/tests/helpers.py:0-10"],
     [at("510-514")]: ["/t/tests/base.py:0-100"],
@@ -83,7 +101,10 @@ function source(): FactSource {
       key === "/t/tests/base.py:5-20" && module === "unittest"
         ? ["TestCase"]
         : [],
-    shapeOf: () => null,
+    shapeOf: (key) => (key === "class-marks" ? "list" : null),
+    spellsGlobal: (key, path) =>
+      (key === "skip-mark" || key === "class-skip") &&
+      path === "pytest.mark.skip",
     textOf: (key) => key,
     literalOf: () => null,
     nameOf: () => null,
@@ -102,8 +123,17 @@ function moduleAt(file = FILE): ModuleOps {
       at("500-700"),
       at("800-850"),
     ],
+    decorated: () => [{ key: at("0-20"), name: "test_one" }],
   });
 }
+
+/** pytest's skip markers, and the variable that lists markers for every case under it. */
+const SKIPS: TestCasesMatch["skips"] = {
+  decorators: {
+    origins: [{ origin: "global", paths: ["pytest.mark.skip"] }],
+    variable: "pytestmark",
+  },
+};
 
 function pytest(listed?: string[]): TestCasesMatch {
   return {
@@ -198,6 +228,48 @@ describe("the test cases a runner collects", () => {
     expect(
       caseRuns(methodsOnly, { module: moduleAt("/t/tests/helpers.py") }).size,
     ).toBe(0);
+  });
+
+  it("gives each case the markers written on it, its classes from the innermost out and its module, and skips it for one from a skip origin", () => {
+    const found = discoverTestCases({ ...pytest(), skips: SKIPS }, moduleAt());
+
+    expect(
+      found.map((one) => [
+        one.titles.map((title) => title.text).join(" > "),
+        one.markers.map((marker) =>
+          marker.form === "value" ? marker.value.site?.() : "call",
+        ),
+        one.skipped,
+      ]),
+    ).toEqual([
+      ["test_one", ["skip-mark", "module-mark"], true],
+      ["TestOrders > test_cancel", ["class-skip", "module-mark"], true],
+      [
+        "TestOrders > TestNested > test_inner",
+        ["class-skip", "module-mark"],
+        true,
+      ],
+      ["Cases > test_works", ["module-mark"], false],
+    ]);
+    const unruled = discoverTestCases(pytest(), moduleAt())[0];
+    expect(unruled?.markers).toHaveLength(1);
+    expect(unruled?.skipped).toBe(false);
+  });
+
+  it("reads a decorator written as a call by its callee, and a value by the call it is when the origin is no global", () => {
+    const origin = imported({ from: ["pytest"], named: ["fixture"] });
+    const call = { isFrom: (asked: unknown) => asked === origin } as CallOps;
+
+    expect(decoratorIsFrom({ form: "call", call }, [origin])).toBe(true);
+    expect(
+      decoratorIsFrom(
+        { form: "value", value: { asCall: () => call } as ValueOps },
+        [origin],
+      ),
+    ).toBe(true);
+    expect(
+      decoratorIsFrom({ form: "value", value: {} as ValueOps }, [origin]),
+    ).toBe(false);
   });
 
   it("finds the case whatever the PRDs list, since the walk asks about a function it reached", () => {
