@@ -712,6 +712,32 @@ describe("a base URL the client was built with", () => {
     ).toEqual([{ method: "GET", path: "{base}/orders", host: undefined }]);
   });
 
+  it("reads no base the library refuses for a path with no trailing slash", () => {
+    const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
+      .methods(verbs({ get: "GET" }, { at: 0 }))
+      .baseUrl({ at: 0, joins: "resolved", trailingSlash: "required" });
+    const under = (path: string) =>
+      claimsOf(chain, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("/orders")],
+        receiver: built({ path, host: "api.example.com" }),
+      });
+
+    expect(under("/v1")).toEqual([
+      { method: "GET", path: "/orders", host: undefined },
+    ]);
+    expect(under("/v1/{version}")).toEqual([
+      { method: "GET", path: "/orders", host: undefined },
+    ]);
+    expect(under("/v1/")).toEqual([
+      { method: "GET", path: "/orders", host: "api.example.com" },
+    ]);
+    expect(under("")).toEqual([
+      { method: "GET", path: "/orders", host: "api.example.com" },
+    ]);
+  });
+
   it("joins a path under a base the way the library does, for an adapter reading the call again", () => {
     expect(joinedPath("appended", "/v1/", "orders")).toBe("/v1/orders");
     expect(joinedPath("resolved", "/v1/", "../orders")).toBe("/orders");

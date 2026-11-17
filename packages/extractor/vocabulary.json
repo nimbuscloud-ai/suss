@@ -164,6 +164,7 @@
   "render": "suss: terminal kind",
   "replay": "suss: route table role tag, an entry that walks the fragments it lists again",
   "requestBody": "suss: input role",
+  "required": "suss: base URL reading tag, a library that refuses a base whose path does not end with a slash",
   "resolved": "suss: BaseJoin tag, a path resolved against a base URL the way RFC 3986 resolves a reference",
   "resolver": "suss: code-unit kind",
   "resolverMap": "suss: DiscoveryMatch variant tag",
