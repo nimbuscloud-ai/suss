@@ -125,14 +125,19 @@ function rubyFilesUnder(directory: string): string[] {
     .sort();
 }
 
-/** Each class in the file that extends `Rails::Engine`, by the name its namespaces give it. */
+/**
+ * Each class in the file that extends `Rails::Engine`, by the name its
+ * namespaces give it. Every body written for an engine class reaches
+ * `Rails::Engine`, so the engine is read once, from the body that
+ * writes the base.
+ */
 function engineClassesIn(
   module: ModuleOps,
   acronyms: readonly string[],
 ): Omit<RailsEngine, "routesFile">[] {
   return module.classes().flatMap((cls) => {
     const name = cls.name();
-    return name === null || !cls.inherits(RAILS_ENGINE)
+    return name === null || !cls.writesBase() || !cls.inherits(RAILS_ENGINE)
       ? []
       : [
           {

@@ -2101,13 +2101,8 @@ class FactClass implements ClassValueOps {
     return strings.size === 1 && one !== undefined ? one : null;
   }
 
-  /** `rbConstantName` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere. */
   name(): string | null {
-    const { db } = this.facts;
-    return (
-      only(db.lookup("rbConstantName", 0, this.key), 1) ??
-      only(db.lookup("exportsAs", 2, this.key), 1)
-    );
+    return classNameAt(this.key, this.facts);
   }
 
   /** `classBodyCall` through the adapter, which asks the rules, or the body's own statements without it. */
@@ -2148,9 +2143,12 @@ function memberAt(name: string, key: string, source: FactSource): ModuleMember {
 /**
  * Whether the class's ancestry reaches any one of the bases: a base
  * imported from one of a spec's modules under one of its names, or a
- * project class that reaches one. The ancestry is walked once for all
- * of them. The receiver origin that matches an instance of such a class
- * reads the same walk.
+ * project class that reaches one or whose own name one of the specs
+ * spells. Each class's ancestry includes what every other body written
+ * for it extends, since a class reopened with no base keeps the one an
+ * earlier body wrote. A class is not its own base. The ancestry is
+ * walked once for all of them. The receiver origin that matches an
+ * instance of such a class reads the same walk.
  */
 export function inheritsFrom(
   cls: string,
@@ -2161,23 +2159,50 @@ export function inheritsFrom(
     return false;
   }
   const seen = new Set<string>();
-  const reaches = (key: string): boolean => {
-    if (seen.has(key)) {
-      return false;
+  const extendsListedBase = (declared: string): boolean =>
+    writesListedBase(declared, bases, source) ||
+    source.db.lookup("extends", 0, declared).some((row) => {
+      const base = String(row[1]);
+      return (
+        isListedBase(base, bases, source) ||
+        (source.comesTo?.(base) ?? []).some(reachesAsBase)
+      );
+    });
+  const anyBodyReaches = (key: string): boolean => {
+    const declared = [key, ...(source.otherDeclarationsOf?.(key) ?? [])];
+    const unseen = declared.filter((one) => !seen.has(one));
+    for (const one of unseen) {
+      seen.add(one);
     }
-    seen.add(key);
-    return (
-      writesListedBase(key, bases, source) ||
-      source.db.lookup("extends", 0, key).some((row) => {
-        const base = String(row[1]);
-        return (
-          isListedBase(base, bases, source) ||
-          (source.comesTo?.(base) ?? []).some(reaches)
-        );
-      })
-    );
+    return unseen.some(extendsListedBase);
   };
-  return reaches(cls);
+  const reachesAsBase = (key: string): boolean =>
+    !seen.has(key) &&
+    (hasListedBaseName(key, bases, source) || anyBodyReaches(key));
+  return anyBodyReaches(cls);
+}
+
+/** Whether a project class the ancestry reaches has a name the adapter says one of the specs spells, as Ruby's `Types::BaseObject`. */
+function hasListedBaseName(
+  cls: string,
+  bases: readonly Inherits[],
+  source: FactSource,
+): boolean {
+  const spells = source.spellsBase;
+  if (spells === undefined) {
+    return false;
+  }
+  const name = classNameAt(cls, source);
+  return name !== null && bases.some((spec) => spells(name, spec));
+}
+
+/** `rbConstantName` in Ruby, which gives a nested class its full name, and `exportsAs` elsewhere. */
+function classNameAt(cls: string, source: FactSource): string | null {
+  const { db } = source;
+  return (
+    only(db.lookup("rbConstantName", 0, cls), 1) ??
+    only(db.lookup("exportsAs", 2, cls), 1)
+  );
 }
 
 /** The name a `holdsProperty` row states a member of this kind under, or null for a member of the other kind. */

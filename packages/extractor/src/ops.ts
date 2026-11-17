@@ -676,7 +676,7 @@ export interface Inherits {
 
 /** A class, as the facts answer the questions a discovery pattern asks it. */
 export interface ClassValueOps {
-  /** Whether the class's ancestry reaches any one of the bases, through any of the project's own classes between. */
+  /** Whether the class's ancestry reaches any one of the bases, through any of the project's own classes between and every body written for the class. */
   inherits(bases: readonly Inherits[]): boolean;
   /**
    * Whether the class's declaration writes a base class: `class Account
@@ -1574,9 +1574,19 @@ export interface FactSource {
    */
   classBodyCalls?(key: string): readonly string[];
   /**
-   * Whether a base a class writes by name spells the spec, as `ActiveRecord::Base`. A Ruby project that reopens the base class states no import of it.
+   * Whether a name spells the spec: a base a class writes by name, as
+   * `ActiveRecord::Base`, or the full name of a project class the
+   * ancestry reaches, as `Types::BaseObject`. Ruby states no import for
+   * either, when the project reopens the base class or wrote it itself.
    */
   spellsBase?(written: string, spec: Inherits): boolean;
+  /**
+   * The other keys the class at the key is declared under, in a language
+   * that reopens a class. Ruby runs every body written for one class
+   * against the same class, so a base one body writes is every body's.
+   * Unset where a class is declared once.
+   */
+  otherDeclarationsOf?(key: string): readonly string[];
   /**
    * Every function and object the value at the key comes to, through
    * names and through a call that returns its argument. The ops pick the
