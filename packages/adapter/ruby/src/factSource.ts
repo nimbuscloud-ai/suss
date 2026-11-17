@@ -138,6 +138,14 @@ export function rubyFactSource(db: Database): RubyFactSource {
     },
     writtenItemsOf: (key) => writtenItemsOf(nodeAt(key)),
     formOf: (key) => formOf(nodeAt(key)),
+    constantPathOf: (key, at) => {
+      const call = at === undefined ? null : nodeAt(at.call);
+      const node =
+        call === null || at === undefined
+          ? nodeAt(key)
+          : writtenArgument(call, at.at);
+      return node !== null && CONSTANT_TYPES.has(node.type) ? node.text : null;
+    },
     literalOf: (key) => literalOf(nodeAt(key)),
     writesNothing: (key) => nodeAt(key)?.type === "nil",
     nameOf: (key, unsettled) => {
@@ -334,6 +342,9 @@ function keyOfEncoded(
     .find((row) => String(row[1]) === String(at));
   return argument === undefined ? null : String(argument[2]);
 }
+
+/** How Ruby writes a constant, `Order`, and a constant path, `Billing::Order`. */
+const CONSTANT_TYPES = new Set(["constant", "scope_resolution"]);
 
 const FORMS: Record<string, ValueForm> = {
   block: "function",
