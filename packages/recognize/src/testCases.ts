@@ -18,10 +18,13 @@ import { bySourceOrder } from "@suss/resolution";
 
 import type {
   BeforeCase,
+  CallOps,
   ClassCases,
   ClassValueOps,
   Decorator,
+  MockRule,
   ModuleOps,
+  Patchers,
   ReceiverOrigin,
   SkipRules,
   TestCasesMatch,
@@ -61,6 +64,81 @@ export function decoratorIsFrom(
     return origins.some((origin) => decorator.call.isFrom(origin));
   }
   return origins.some((origin) => valueIsFrom(decorator.value, origin));
+}
+
+/** What a patcher replaces: the object at a dotted path, or a member of the argument at a position. */
+export type MockRead =
+  | { readonly replaces: "path"; readonly path: string }
+  | {
+      readonly replaces: "member";
+      readonly member: string;
+      readonly of: number;
+    };
+
+/**
+ * What the call replaces, by the first mock rule whose patchers it is
+ * one of and whose argument it writes as a string, or null. `takes` says
+ * whether the function the call is written in, or the case it patches,
+ * takes a parameter by that name, for a patcher a fixture hands it.
+ */
+export function mockRead(
+  rules: readonly MockRule[],
+  call: CallOps,
+  takes: (parameter: string) => boolean,
+): MockRead | null {
+  for (const rule of rules) {
+    const read = MOCK_READS[mockKind(rule)](rule as never, call, takes);
+    if (read !== null) {
+      return read;
+    }
+  }
+  return null;
+}
+
+type MockKind = "replacesModule" | "replacesMember";
+
+function mockKind(rule: MockRule): MockKind {
+  return "replacesModule" in rule ? "replacesModule" : "replacesMember";
+}
+
+const MOCK_READS: {
+  readonly [K in MockKind]: (
+    rule: Extract<MockRule, Record<K, unknown>>,
+    call: CallOps,
+    takes: (parameter: string) => boolean,
+  ) => MockRead | null;
+} = {
+  replacesModule: ({ replacesModule: { by, path } }, call, takes) => {
+    const text = patches(by, call, takes) ? stringAt(call, path.at) : null;
+    return text === null ? null : { replaces: "path", path: text };
+  },
+  replacesMember: ({ replacesMember: { by, member, of } }, call, takes) => {
+    const name = patches(by, call, takes) ? stringAt(call, member.at) : null;
+    return name === null
+      ? null
+      : { replaces: "member", member: name, of: of.at };
+  },
+};
+
+function patches(
+  by: Patchers,
+  call: CallOps,
+  takes: (parameter: string) => boolean,
+): boolean {
+  if ((by.from ?? []).some((origin) => call.isFrom(origin))) {
+    return true;
+  }
+  const [root, ...rest] = call.calleeText().split(".");
+  const method = rest.join(".");
+  return (by.handed ?? []).some(
+    (one) =>
+      one.parameter === root && one.methods.includes(method) && takes(root),
+  );
+}
+
+function stringAt(call: CallOps, at: number): string | null {
+  const value = call.valueAt(at)?.evaluated?.() ?? null;
+  return typeof value === "string" ? value : null;
 }
 
 /** A global is a path through the module's imports, `pytest.mark.skip`; any other origin is read off the call the value is. */

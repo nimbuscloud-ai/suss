@@ -845,6 +845,40 @@ export interface TestCasesMatch {
   /** What the runner calls before a case. Their calls count as the case's own. */
   before?: BeforeCase;
   skips?: SkipRules;
+  /** How a case replaces something before it runs, the first rule a call meets saying what it replaces. */
+  mocks?: readonly MockRule[];
+}
+
+/**
+ * A call that replaces something for the length of a case. A rule
+ * applies when the call is one of its patchers and writes the argument
+ * the rule reads as a string.
+ */
+export type MockRule =
+  /** The object at the dotted path the call passes: `patch("orders.service.cancel")`. */
+  | {
+      readonly replacesModule: {
+        readonly by: Patchers;
+        readonly path: { readonly at: number };
+      };
+    }
+  /** The member the call names on a value it passes: `patch.object(OrderService, "cancel")`. */
+  | {
+      readonly replacesMember: {
+        readonly by: Patchers;
+        readonly member: { readonly at: number };
+        readonly of: { readonly at: number };
+      };
+    };
+
+/** Which calls patch: calls from one of the origins, or a method called on a parameter a fixture hands the function. */
+export interface Patchers {
+  readonly from?: readonly ReceiverOrigin[];
+  /** `mocker.patch` on a function that takes `mocker`. */
+  readonly handed?: readonly {
+    readonly parameter: string;
+    readonly methods: readonly string[];
+  }[];
 }
 
 /** What marks a case as one the runner does not run, or runs expecting it to fail. */

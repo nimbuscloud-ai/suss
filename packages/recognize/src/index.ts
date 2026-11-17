@@ -58,6 +58,7 @@ export {
   collectsFile,
   decoratorIsFrom,
   discoverTestCases,
+  mockRead,
 } from "./testCases.js";
 export { unitInvokes } from "./unitInvokes.js";
 
@@ -313,5 +314,6 @@ export type {
   CaseRun,
   CaseTitle,
   FoundCase,
+  MockRead,
 } from "./testCases.js";
 export type { UnitInvokes, UnitInvokesSpec } from "./unitInvokes.js";
