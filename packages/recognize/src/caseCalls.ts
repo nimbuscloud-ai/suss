@@ -16,7 +16,7 @@ import { matchesTestFileName } from "@suss/extractor";
 import { bySourceOrder } from "@suss/resolution";
 
 import { isWrittenOnSelf } from "./classBody.js";
-import { mockRead, skipsAsItRuns } from "./testCases.js";
+import { mockRead, skipsAsItRuns, symbolAt } from "./testCases.js";
 
 import type {
   CallCases,
@@ -732,11 +732,9 @@ function givenSkipMetadata(call: CallOps, keys: readonly string[]): boolean {
   if (keys.length === 0) {
     return false;
   }
-  // Ruby writes a symbol as a name, which evaluates to its text.
   for (let at = 0; at < call.argumentCount(); at++) {
-    const value = call.valueAt(at);
-    const symbol = value?.form?.() === "name" ? value.evaluated?.() : null;
-    if (typeof symbol === "string" && keys.includes(symbol)) {
+    const symbol = symbolAt(call.valueAt(at));
+    if (symbol !== null && keys.includes(symbol)) {
       return true;
     }
   }

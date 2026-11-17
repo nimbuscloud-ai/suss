@@ -105,6 +105,10 @@ function mockOf(
   if (read.replaces === "path") {
     return { module: moduleFileOf(sourceFile, read.path), written };
   }
+  // vitest's rules read a path or a member, and nothing else.
+  if (read.replaces !== "member") {
+    return null;
+  }
   const object =
     read.of === "receiver"
       ? (call.receiverValue?.() ?? null)

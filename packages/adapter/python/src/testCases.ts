@@ -650,6 +650,10 @@ export class PythonTestIndex {
     if (read.replaces === "path") {
       return { ...this.dottedTarget(read.path), written };
     }
+    // pytest's rules read a path or a member, and nothing else.
+    if (read.replaces !== "member") {
+      return null;
+    }
     const object =
       read.of === "receiver" ? undefined : positionalArguments(call)[read.of];
     const owner = object === undefined ? null : this.objectModule(object, file);

@@ -560,8 +560,14 @@ A case is skipped when a call on self to one of `skips.statements` is
 one of its own `bodyCalls()`, with no block and not a `nestedBodyCall()`,
 so `skip "later" unless ready?` does not skip it. `isRunnerCall` says
 a call is the runner's own when it is written on self and its method
-is one of `runner.names` or starts with one of `runner.prefixes`. The
-adapter asks it of each call the walk meets in a case.
+is one of `runner.names` or starts with one of `runner.prefixes`. With
+`runner.chains`, the name checked is the one the chain starts from as
+written: a walk down `receiverValue()` through each call written in
+place, `asCall()`, to a call on self, whose callee it takes, or to a
+receiver whose `form()` is a name, whose `source()` it takes. So `to`
+and `eq` in `expect(x).to eq(y)` count by `expect`, and `order.cancel`
+counts by `order`, which is no runner name. The adapter asks it of each
+call the walk meets in a case.
 
 Each case also gets its `markers`: the `decorated()` decorators of its
 function, then for each class around it from the innermost out the
@@ -586,6 +592,20 @@ Minitest's `Order.stub(:cancel, 1)` replaces `cancel` on `Order`. The
 adapter lists the calls, since which functions a case runs through is
 its own, and turns a dotted path or a receiver into a file with its
 module resolution.
+
+RSpec's mocks take three more rules. `replacesMessages` reads a
+message expectation, `allow(Order).to receive(:cancel)`: a call of its
+patchers whose `receiverValue()` is a call of one of `targets`, and
+whose first argument is a chain that starts, down `receiverValue()`,
+with a call of one of `messages`. The message's symbols and its
+`keywordNames()` are the members it replaces, on the target's argument
+at `of.at`. A symbol is a value whose `form()` is a name and whose
+`evaluated()` is a string, which is how Ruby writes one.
+`replacesConstant` reads `stub_const("Order", fake)` as the constant
+its argument at `name.at` gives the name of. `standsIn` reads a double,
+`instance_double(Order)`, which replaces the constant at `of.at` only
+when the call `chainedOn()` gives is `becomes`, `.as_stubbed_const`,
+and is a mock that replaces nothing otherwise.
 
 A case written as a call is read off `calls` by `callCaseRuns`, as the
 vitest and rspec packs declare it. Each call in `module.calls("file")`

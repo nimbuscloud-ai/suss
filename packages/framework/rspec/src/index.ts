@@ -77,10 +77,19 @@ const RUNNER_METHODS = [
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 const EAGER_VALUES = ["let!"];
 const EAGER_SUBJECTS = ["subject!"];
+
+/** The matchers RSpec makes up from a predicate, `be_open` calling `open?`. A runner method among them stays the runner's. */
+const PREDICATE_MATCHERS = [
+  { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
+  { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
+];
+
+/** The calls that apply a matcher or a stub, `to` in `allow(x).to receive(:y)`. */
+const EXPECTATION_RUNS = ["to", "not_to", "to_not"];
 
 /**
  * A group is opened on self or on `RSpec`, and an example is declared in
@@ -136,6 +145,40 @@ function examples(files: readonly string[] | undefined): TestCasesMatch {
       ],
     },
     skips: { statements: ["skip", "pending"], metadata: ["skip"] },
+    // A chain counts, so `to` and `eq` in `expect(x).to eq(y)` are the runner's.
+    runner: {
+      names: RUNNER_METHODS,
+      prefixes: PREDICATE_MATCHERS.map((one) => one.prefix),
+      chains: true,
+    },
+    mocks: [
+      {
+        replacesMessages: {
+          by: { methods: EXPECTATION_RUNS },
+          targets: [
+            "allow",
+            "expect",
+            "allow_any_instance_of",
+            "expect_any_instance_of",
+          ],
+          messages: ["receive", "receive_messages"],
+          of: { at: 0 },
+        },
+      },
+      {
+        replacesConstant: {
+          by: { methods: ["stub_const"] },
+          name: { at: 0 },
+        },
+      },
+      {
+        standsIn: {
+          by: { methods: ["instance_double", "class_double"] },
+          of: { at: 0 },
+          becomes: "as_stubbed_const",
+        },
+      },
+    ],
   };
 }
 
@@ -154,28 +197,11 @@ export function rspecFramework(options: RspecPackOptions = {}): RubyPack {
         subjectReads: ["subject", "is_expected"],
         subjectValue: "subject",
         describedClass: "described_class",
-        runnerMethods: RUNNER_METHODS,
-        predicateMatchers: [
-          { prefix: "be_", methodPrefix: "", methodSuffix: "?" },
-          { prefix: "have_", methodPrefix: "has_", methodSuffix: "?" },
-        ],
+        predicateMatchers: PREDICATE_MATCHERS,
         expectations: {
           starts: ["expect"],
           onSubject: "is_expected",
-          runs: ["to", "not_to", "to_not"],
-        },
-        mocks: {
-          targets: [
-            "allow",
-            "expect",
-            "allow_any_instance_of",
-            "expect_any_instance_of",
-          ],
-          expectations: ["to", "not_to", "to_not"],
-          messages: ["receive", "receive_messages"],
-          constantStubs: ["stub_const"],
-          doubles: ["instance_double", "class_double"],
-          constantDoubleMethod: "as_stubbed_const",
+          runs: EXPECTATION_RUNS,
         },
       },
     ],
