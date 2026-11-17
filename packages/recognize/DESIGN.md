@@ -529,6 +529,18 @@ outermost class in, looked up with `method(name)` so a method on a
 project base class counts. A class the runner collects by its ancestry
 runs `before.methods.byAncestry`, and any other class `byName`.
 
+Each case also gets its `markers`: the `decorated()` decorators of its
+function, then for each class around it from the innermost out the
+class's decorators and the items its body assigns to
+`skips.decorators.variable`, then the items the module assigns to it.
+An item written as a call is a call marker, and anything else a value.
+A case is `skipped` when one marker comes from one of
+`skips.decorators.origins`, read by `decoratorIsFrom`: a call by its
+callee's `isFrom`, and a value by `globalPath` for a global origin, so
+`pytest.mark.skip` is matched through the module's imports. The
+adapter reads the other markers it needs, pytest's `usefixtures`, off
+the same list.
+
 Neither reader keeps anything. The reach walk asks about every test
 function until the run ends, so the adapter reads each file once and
 keeps nodes, as the Python adapter's test index does. Keeping the ops

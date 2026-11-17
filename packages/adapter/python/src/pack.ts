@@ -197,10 +197,6 @@ export interface PyTestCases {
   autouseKeyword: string;
   /** Files whose fixtures apply to every test under their directory: `conftest.py`. */
   sharedFixtureFiles: string[];
-  /** Decorators that mark a test so it does not run, or runs expecting to fail, as dotted names: `pytest.mark.skip`. */
-  skipDecorators: string[];
-  /** The module or class variable the runner reads markers from for every test under it: `pytestmark`. */
-  markerVariable?: string;
   /** Parameters the runner fills with something other than a fixture, which are never looked up: `self`, `request`. */
   reservedParameters: string[];
   /** How a test replaces something before it runs. */

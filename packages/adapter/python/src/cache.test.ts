@@ -798,7 +798,6 @@ describe("a test run replayed from the cache", () => {
         fixtureNameKeyword: "name",
         autouseKeyword: "autouse",
         sharedFixtureFiles: ["conftest.py"],
-        skipDecorators: [],
         reservedParameters: ["self"],
         mocks: { patchers: ["unittest.mock.patch"], fixturePatchers: [] },
       },

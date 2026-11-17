@@ -844,6 +844,20 @@ export interface TestCasesMatch {
   classes?: ClassCases;
   /** What the runner calls before a case. Their calls count as the case's own. */
   before?: BeforeCase;
+  skips?: SkipRules;
+}
+
+/** What marks a case as one the runner does not run, or runs expecting it to fail. */
+export interface SkipRules {
+  /**
+   * A decorator from one of the origins on the case or a class around it,
+   * or among the markers `variable` lists in the module or such a class:
+   * `@pytest.mark.skip`, `pytestmark = [pytest.mark.skip]`.
+   */
+  readonly decorators?: {
+    readonly origins: readonly ReceiverOrigin[];
+    readonly variable?: string;
+  };
 }
 
 export interface ClassCases {

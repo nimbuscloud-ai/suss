@@ -53,7 +53,12 @@ export { slotsDeclared } from "./slots.js";
 export { sqlStatements } from "./sqlStatements.js";
 export { storageCalls } from "./storage.js";
 export { streamWrites } from "./streamWrites.js";
-export { caseRuns, collectsFile, discoverTestCases } from "./testCases.js";
+export {
+  caseRuns,
+  collectsFile,
+  decoratorIsFrom,
+  discoverTestCases,
+} from "./testCases.js";
 export { unitInvokes } from "./unitInvokes.js";
 
 // A declared pack imports its whole surface from here, including the
