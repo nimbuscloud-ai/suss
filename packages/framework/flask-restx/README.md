@@ -28,7 +28,7 @@ The table follows a namespace however a file gets to it: imported from another m
 
 ## Where it fits in suss
 
-The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, and on `@suss/extractor` for the route table's types. It has no analysis logic of its own.
+The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, on `@suss/extractor` for the route table's types, and on `@suss/recognize` for the `Flask`, `Api` and `Namespace` constructions its request hooks and error handlers are registered on. It has no analysis logic of its own: `@suss/recognize` composes the table.
 
 ## A module that re-exports flask-restx
 

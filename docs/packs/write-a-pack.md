@@ -28,7 +28,7 @@ router.get("/users/:id", async ({ params }) => {
 
 ## Answer three questions
 
-Every pack starts with the same three, and the answers become the three required fields of a `PatternPack`.
+A pack for a framework, which finds the units your code is made of, starts with the same three questions, and the answers become the three required fields of a `PatternPack`. A pack for a library those units call, such as a database client or an HTTP client, is written differently, and [Declare the calls a library offers](#declare-the-calls-a-library-offers) below covers it.
 
 **How does the framework register a handler?** itty-router registers with `router.get(path, handler)`, on a router built by the imported `Router`. Express and Hono register the same way, and `@suss/extractor` ships `httpRouteDiscovery` for it, so the pack passes the module, the names it exports, and the verbs.
 
@@ -154,6 +154,37 @@ db.ts
 
 You get both branches, both status codes, the fields of each body, and the call into `db.ts` that each branch makes. That is enough for the checker to pair this route against a client, an OpenAPI spec, or an intent doc.
 
+## Declare the calls a library offers
+
+A library your handlers call, such as a key-value store, discovers nothing. Its pack declares which calls count and what each one reads or writes, with a builder from `@suss/recognize`, and `pack()` turns the declarations into a `PatternPack`:
+
+```js
+// index.mjs
+import { constructedFrom, pack, storageCalls } from "@suss/recognize";
+
+const CALLS = storageCalls({
+  system: "keyv",
+  client: constructedFrom({ from: ["keyv"], named: ["default", "Keyv"] }),
+})
+  .methods({
+    get: { kind: "read", selector: { at: 0 } },
+    set: { kind: "write", selector: { at: 0 } },
+    delete: { kind: "write", selector: { at: 0 } },
+  })
+  .example('keyv.get("session:42")');
+
+export default function keyvPack() {
+  return pack("keyv", [CALLS], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@acme/suss-pack-keyv",
+  });
+}
+```
+
+`client` says where the receiver of a call has to come from, here a `new Keyv()` from the `keyv` package, so a project's own object with a `get` method is left alone. The methods table says what each call does and which argument is the key. `.example` gives one call the declaration matches, which the pack's test runs and pack health asks for. `pack()` gates the pack on the modules the declaration starts from, so a file that never imports `keyv` is skipped. Run it beside a framework pack, `-f hono -f @acme/suss-pack-keyv`, and every handler that calls the store gets a storage effect for the key it reads or writes.
+
+An HTTP client is declared the same way with `httpRequests`, and its pack lists the compiled chains under `requestRecognizers`. [Pack patterns](/packs/patterns#declared-calls) lists every builder and the shipped pack that uses it.
+
 ## Only hardcode what the library defines
 
 Every identifier written into a pack has to be one the library itself declares. `Router`, `json` and `error` come from itty-router, so they belong in the pack. A wrapper your own team wrote does not: that goes in the pack's options, which the CLI fills from `-f <pack>=config.json` or from a [dependency stub](/guides/teach-a-dependency). In TypeScript, with the factory typed against the options interface, that looks like this:
@@ -222,6 +253,8 @@ const summaries = await adapter.extractAll();
 ```
 
 Assert on status codes, transition counts, input roles, and gaps if the pack reads a declared contract. Share the summaries through `beforeAll` so the ts-morph setup runs once per file. Where the setup is heavy the shipped tests raise the timeout to 30 seconds, since pack tests run concurrently under turbo. `packages/framework/hono/src/index.test.ts` is a short example of both layers.
+
+A pack built from declarations has one more test. `runExamples(pack, run)` from `@suss/recognize` hands each declaration's example to `run`, a function you write that compiles one line and returns the effects the pack recorded, and the test asserts the effect each example states. When the library changes and an example stops matching, that test fails. Inside the repository, the pack harness in `tools/pack-harness` writes the library's types into a test project and builds `run` for you, and `packages/framework/redis/src/index.test.ts` uses it.
 
 ## What you do not need to know
 

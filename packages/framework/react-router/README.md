@@ -40,7 +40,7 @@ The pack does not give a `loader` or an `action` a route based on its file name.
 
 ## Where it fits in suss
 
-The pack depends only on `@suss/extractor`, for the `PatternPack` type, the route table's types and the sentences an unread route is reported with. It has no analysis logic of its own.
+The pack depends only on `@suss/extractor`, for the `PatternPack` type and the route table's types. The sentences an unread route is reported with are the pack's own, `JSX_ROUTE_UNREAD`. `@suss/recognize` reads the route table through the module ops, so the pack has no analysis logic of its own.
 
 ## Coverage
 

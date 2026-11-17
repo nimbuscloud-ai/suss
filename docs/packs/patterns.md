@@ -7,6 +7,8 @@ description: Every pattern variant a pack can use, the code each one matches, an
 
 Each variant a `PatternPack` can use is listed below, with the code it matches and a pack that uses it. For what a pack is and how a run loads one, see [What a pack is](/packs/what-a-pack-is). For building one, see [Write a pack](/packs/write-a-pack).
 
+A TypeScript pack is a `PatternPack`. A Python pack is a `PythonPack` and a Ruby pack a `RubyPack`, each with route and job patterns of its own. All three take the same declarations from `@suss/recognize` for the calls a library offers, such as a store's queries, a client's requests or a callback the library runs later, and every adapter runs those declarations the same way. [Declared calls](#declared-calls) shows how they are written. The discovery patterns that say they are read through the module ops, `testCases` and `routeTable` are declared the same way in every language.
+
 ## The `PatternPack` interface
 
 ```typescript
@@ -21,12 +23,18 @@ interface PatternPack {
   // Everything below is optional.
   version?: string;
   contractReading?: ContractPattern;
+  requestSpelling?: RequestSpellingMetadata;
   responseSemantics?: ResponsePropertyMapping[];
   failureDelivery?: "response" | "exception";
+  redirectDelivery?: "followed" | "response";
+  requestRecognizers?: RequestRecognizer[];
   invocationRecognizers?: InvocationRecognizer[];
   accessRecognizers?: AccessRecognizer[];
   subUnits?: (parent, ctx) => DiscoveredSubUnit[];
+  classBodies?: ClassBodyDeclaration[];
+  words?: PackWords;
   requiresImport?: string[];
+  requiresText?: string[];
   generatedModules?: {
     of: string;
     markers?: string[];
@@ -36,11 +44,17 @@ interface PatternPack {
   transparentWrappers?: TransparentWrapper[];
   parameterSuppliers?: Array<{ module: string; name: string }>;
   environmentObjects?: string[];
+  streamObjects?: string[];
+  exitCodeWrites?: string[];
+  argumentParsers?: ArgumentParser[];
   libraryEnvVars?: Array<{ module: string; prefixes?: string[]; names?: string[] }>;
   discoveryInputs?: (files: readonly string[]) => string[];
   declarations?: PackDeclarations;
+  // The Apollo client pack also sets the graphqlClient* fields.
 }
 ```
+
+`pack()` from `@suss/recognize` builds the whole object for a pack that only declares calls, and a pack that also discovers units writes the object itself and fills the recognizer fields from its declarations.
 
 ### Protocol
 
@@ -157,10 +171,44 @@ A `UnitSpec` can say which of the unit's parameters the platform fills when it c
   type: "subclassOf";
   inherits: { from: string[]; named: string[] }[];
   members: { kind: "instance" | "singleton"; names?: string[]; pattern?: string };
+  calls?: Record<string, NamingCall>;
+  className?: { call?: string; suffixRemoved?: string };
+  skipClasses?: string[];
 }
 ```
 
-`subclassOf` takes the methods of an exported class whose ancestry reaches any one of the bases `inherits` lists, through any of the project's own classes in between. A class reaches a base when it extends one of `named` as one of the modules in `from` exports it. Each unit is named `Class.method`. Ruby has no imports, so `from` lists the library's constant: `ViewComponent` for `ViewComponent::Preview`. A Ruby class written inside a module, as `module Billing; class Nightly < Workers::WorkerEntrypoint` writes one, is read too, and its units are named under its full name, `Billing::Nightly.fetch`. A TypeScript or Python class the file does not export is not read.
+`subclassOf` takes the methods of an exported class whose ancestry reaches any one of the bases `inherits` lists, through any of the project's own classes in between. A class reaches a base when it extends one of `named` as one of the modules in `from` exports it. Each unit is named `Class.method`. Ruby has no imports, so `from` lists the library's constant: `ViewComponent` for `ViewComponent::Preview`. `rubyConstants("ViewComponent::Preview")` from `@suss/recognize` builds that entry from the constant as a project writes it. A Ruby class written inside a module, as `module Billing; class Nightly < Workers::WorkerEntrypoint` writes one, is read too, and its units are named under its full name, `Billing::Nightly.fetch`. A TypeScript or Python class the file does not export is not read. A project class between the class and the base counts only when the run reads the file that declares it.
+
+`calls` makes a unit of each call in the class body that it lists, for a library whose classes declare their members by calling a method:
+
+```ruby
+class CampaignType < Types::BaseObject
+  field :launch_date, String
+end
+```
+
+```typescript
+{
+  type: "subclassOf",
+  inherits: rubyConstants("Types::BaseObject"),
+  skipClasses: ["Types::BaseObject"],
+  members: { kind: "instance", names: [] },
+  className: { call: "graphql_name", suffixRemoved: "Type" },
+  calls: {
+    field: {
+      name: { at: 0 },
+      naming: { camel: { keyword: "camelize", default: true } },
+      runs: [
+        { classAt: { keyword: "mutation" }, method: "resolve" },
+        { method: { keyword: "resolver_method" } },
+        { method: "named" },
+      ],
+    },
+  },
+}
+```
+
+That declaration gives the class above one unit, `Campaign.launchDate`. Its name comes from two parts. `className` gives the class's part: the string a `graphql_name` call in the body writes, or else the class's own name with `suffixRemoved` taken off, so `CampaignType` becomes `Campaign`. `name` gives the unit's part from the call's first argument, and `naming` turns it to camel case unless the call writes `camelize: false`. `runs` says which method the unit runs, and the first pick whose keyword the call writes wins: `mutation: Mutations::Launch` runs that class's `resolve`, `resolver_method: :count_all` runs the class's `count_all`, and otherwise the unit runs the class's method under the argument's own name. `members` with an empty `names` list makes no unit of a plain method, and `skipClasses` keeps the base itself from being read as a type. The graphql-ruby pack declares its fields this way.
 
 ### `marked`
 
@@ -195,6 +243,27 @@ Every unit is bound as a call of its module under the unit's name, since the fra
 `registeredFunction` finds a function a call in the module body hands to a library, or with `in: "file"` a call anywhere in the file, when that call is the function's only mention: `addEventListener("fetch", handle)`, or `createRoot(el).render(<App />)` with `through: "element"`, which follows the element to the component its tag renders. With `method` the call is that method on a receiver the start accepts; without it the callee itself is the start. `nameAt` reads the unit's name from an argument, a literal or a name kept in a const, and keeps only the names it lists.
 
 When the start is a global and there is no `method`, as with `global("addEventListener")`, the call has to be written with the global's name, so a file whose text never writes it is skipped before its calls are read. When every member of the start is an import or a construction from a module, the file's text has to write one of the modules, so the React pack's boot patterns read only files that write `react-dom`.
+
+### `decorated`
+
+```typescript
+{
+  type: "decorated";
+  on: ReceiverOrigin;                           // constructedFrom({ from: ["fastapi"], named: ["FastAPI"] })
+  named: Record<string, DecoratedUnitSpec>;     // { middleware: { kind: "middleware" } }
+}
+```
+
+`decorated` finds a function written under a decorator that a library offers as a method of an object it made:
+
+```python
+app = FastAPI()
+
+@app.middleware("http")
+async def add_timing(request, call_next): ...
+```
+
+The keys of `named` are the decorator methods, and each one says what unit the function under it becomes. `on` is asked of the call the decorator's receiver was written as, `FastAPI()` for `app`, so an object a project function returns does not count. A decorator written with no call, `@app.before_request`, is read through the object it is read off. The unit takes the function's own name, and a function written inside another function or a class counts. A class under the decorator doesn't become a unit. Every adapter reads the pattern through the module ops, though only TypeScript and Python have decorators. The FastAPI and flask-restx packs declare their middleware and request hooks as `decoratedWrapper` forms, and the Python adapter reads each one through this pattern.
 
 ### `entryObject`
 
@@ -304,7 +373,7 @@ const client = initClient(contract, { baseUrl: "" });
 await client.getUser({ params: { id } });
 ```
 
-ts-rest uses it. A library whose calls state their own method and URL, such as fetch, axios, requests, httpx, aiohttp, Faraday and Net::HTTP, declares its requests with `@suss/recognize`'s `httpRequests`, and the pack lists the compiled chains under `requestRecognizers`.
+ts-rest uses it. A library whose calls state their own method and URL, such as fetch, axios, requests, httpx, aiohttp, Faraday and Net::HTTP, declares its requests with `@suss/recognize`'s `httpRequests` instead, as [Requests a client sends](#requests-a-client-sends) shows.
 
 ### `graphqlHookCall`
 
@@ -392,7 +461,9 @@ Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)
 </Routes>
 ```
 
-The table says which elements or objects are routes, which of their attributes or keys give the path, the handler and the index flag, and where the nested routes are. `@suss/recognize` composes the paths, so a child path joins its parent's and an index route takes its parent's. Each route becomes one unit on the function its handler settles to, and with `through: "element"` that is the component the handler's JSX renders. A route whose path cannot be read gets no path, and its unit says why in the sentence `unread` gives for that reason. React Router declares its routes this way, as `REACT_ROUTER_ROUTES`.
+The table says which elements or objects are routes, which of their attributes or keys give the path, the handler and the index flag, and where the nested routes are. `@suss/recognize` composes the paths, so a child path joins its parent's and an index route takes its parent's. Each route becomes one unit on the function its handler settles to, and with `through: "element"` that is the component the handler's JSX renders. A route whose path cannot be read gets no path, and its unit says why in the sentence `unread` gives for that reason. React Router declares its routes this way, as `REACT_ROUTER_ROUTES`, and every adapter reads the match through the module ops.
+
+The same `RouteTableDeclaration` describes routes that are written across files. The FastAPI and flask-restx packs give one to their decorated route patterns under `routes`, so a router's prefix and every mount above it compose over the whole run. The Rails pack declares its routes grammar as one, `RAILS_ROUTES`, and reads `config/routes.rb` with it through `composeRoutes` from `@suss/recognize`. Each Rails route goes on the controller action it points at, which the pack's own `controllerActions` pattern finds, so that table builds no unit itself.
 
 ### `packageExports`
 
@@ -427,21 +498,48 @@ Pass exact module specifiers, sub-path included. Several call sites inside one f
 ```typescript
 {
   type: "testCases";
-  files: { matching: ["*"], listed?: string[] };
-  calls: {
-    from: { origin: "imported", importedFrom: ["vitest"] };
-    globalsIn?: { matching: ["*.test.*", "*.spec.*"] };
-    groups: { names: ["describe", "suite"] };
-    cases: { names: ["it", "test"] };
-    modifiers: { skip: ["skip", "todo"], takingArguments: ["skipIf", "runIf"], perRow: ["each", "for"] };
+  files: { matching: string[]; listed?: string[] };
+  functions?: { pattern: string };                         // pytest: "^test"
+  classes?: {
+    inherits?: { from: string[]; named: string[] }[];
+    named?: string;                                        // pytest: "^Test"
+    nested?: boolean;
+    methods: { pattern: string };
   };
+  calls?: {
+    from: ReceiverOrigin;                                  // imported from vitest, or the RSpec global
+    body: "block" | "function";
+    groups: { names: string[]; skipped?: string[] };
+    cases: { names: string[]; skipped?: string[] };
+    globalsIn?: { matching: string[] };
+    topLevelCases?: boolean;
+    shared?: { names: string[]; includes: { method: string; nestedTitle?: string }[] };
+    modifiers?: { skip: string[]; takingArguments: string[]; perRow: string[] };
+  };
+  before?: BeforeCase;
+  skips?: {
+    decorators?: { origins: ReceiverOrigin[]; variable?: string };
+    statements?: string[];
+    metadata?: string[];
+  };
+  runner?: { prefixes?: string[]; names?: string[]; chains?: boolean };
   mocks?: MockRule[];
 }
 ```
 
-`testCases` finds test cases as a runner collects them, and `@suss/recognize` reads it through the module ops. Its `calls` form finds cases written as calls, the style vitest, jest and mocha share. Each call to a case function imported from `from` becomes one unit named by the titles of the group calls it is written inside and its own, joined with ` > `, and its body is the first function passed after the title. A case written in a callback or a loop inside a group is in that group. A case written with a skip modifier, or inside a group written with one, is recorded as skipped. A modifier that takes arguments, as in `it.skipIf(condition)("title", fn)`, is followed to the case it returns; a per-row modifier such as `each` declares the case once under the title as written, which is recorded as unresolved. In a file `globalsIn` matches, a runner function the file does not import or declare at its top level counts too.
+`testCases` finds test cases the way a runner collects them, and `@suss/recognize` reads it through the module ops, so the same member works in every language. A file is read when its name matches one of `files.matching`, and with `files.listed`, only when it also matches one of the listed paths on whole path segments from the end. `suss extract --intent` fills `listed` in from the tests the PRDs list.
 
-`mocks` says how the runner replaces something. A `replacesModule` rule reads the specifier a call passes, and a `replacesMember` rule reads the object and the member's name, each from the calls its patchers' origins accept, such as `vi.mock` on the `vi` vitest exports. A mock applies to every case in the group or case it is written in, and to every case in the file when it is written outside them. `files.listed` limits the read to files matching one of the entries on whole path segments from the end. The vitest pack uses it, and the pytest pack lists the same member for Python.
+A runner writes its cases in one of three ways, and a pack sets the form or forms its runner uses:
+
+- `functions` takes a function the module declares at its top level whose name matches the pattern, as pytest collects `def test_cancel():`.
+- `classes` takes a class that matches `named` or reaches one of the `inherits` bases, and each of its methods whose name matches `methods.pattern`. pytest collects `Test` classes and `unittest.TestCase` subclasses this way, and Minitest collects subclasses of `Minitest::Test` and the Rails test cases. With `nested`, a class written inside a collected class is read too, its name another title.
+- `calls` takes cases written as calls inside group calls, the style of vitest, jest, mocha and RSpec. `from` says where the runner's functions come from: an import, as `vitest` exports `describe` and `it`, or a global whose methods they are, as `RSpec.describe`. `body` says whether a case runs the block its call is written with, as in Ruby, or the first function passed after its title. A case is named by the titles of the groups it is written inside and its own, joined with ` > `, and a case written in a callback or a loop inside a group is in that group. `shared` reads RSpec's `shared_examples` and the calls that include them, each includer getting its own cases. `modifiers` covers `it.skip`, `it.skipIf(condition)(...)`, and a per-row modifier such as `it.each`, which declares the case once under the title as written and records that title as unresolved. In a file `globalsIn` matches, a runner function the file neither imports nor declares counts too.
+
+`before` lists what the runner calls before a case, and the case's unit calls each one, so a path through a setup counts as the case reaching what the setup calls. It covers module functions such as pytest's `setup_function`, methods such as `setUp`, and calls written in a class or group body such as Minitest's `setup do` and RSpec's `before`. `skips` says what marks a case as not run: a decorator such as `@pytest.mark.skip`, a `skip` statement in the body, or `skip: true` metadata on an RSpec example. `runner` lists the calls a case makes to the runner itself, such as `assert_equal` or `expect(x).to eq(y)`, which call no project code and are left off the case's effects.
+
+`mocks` says how the runner replaces something. A `replacesModule` rule reads the dotted path or specifier a call passes, as `vi.mock("./orders")` or `patch("orders.service.cancel")` does, and a `replacesMember` rule reads the object and the member's name, as `vi.spyOn(orders, "cancel")` or Minitest's `Order.stub(:cancel, 1)` does. `replacesMessages`, `replacesConstant` and `standsIn` read RSpec's `allow(Order).to receive(:cancel)`, `stub_const` and `instance_double`. A mock applies to every case in the group or case it is written in, and to every case in the file when it is written outside them.
+
+A TypeScript pack lists the match in `discovery`, as the vitest pack does. A Python pack lists it as the `cases` of an entry under `tests`, beside pytest's fixture rules. A Ruby pack lists it under `tests` for a runner written as calls, as RSpec is, with RSpec's `let` and `subject` rules beside it, and under `testClasses` for a runner written as classes, as Minitest is.
 
 ### `callbackArgument`
 
@@ -467,7 +565,7 @@ new Worker("emails", sendEmail);
 
 ## `BindingExtraction`
 
-`bindingExtraction` on a discovery pattern says where the HTTP method and path come from.
+`bindingExtraction` on a discovery pattern says where the HTTP method and path of the route it finds come from. A client declared with `httpRequests` says the same on its methods table, so only ts-rest's `clientCall` uses this on the client side.
 
 ### Method
 
@@ -715,14 +813,91 @@ export async function loader(args: LoaderFunctionArgs) { ... }
 
 `allPositional` gives one input per declared parameter, in source order, with the parameter's own name as its role. It is used where no framework declares a set of roles and the name a caller sees is the role: the reachable-closure pass, the package-exports pack, and Next.js server actions. Destructured parameters are captured the way `objectParam` captures them, so `(ctx, { userId })` gives two inputs.
 
+## Declared calls
+
+Most of what a library does inside a unit is a call: a query, a send, a request. A pack declares each kind of call it reads with a builder from `@suss/recognize`, and every adapter runs the declaration through the same ops over its facts:
+
+```ts
+import { declaredBy, pack, storageCalls } from "@suss/recognize";
+
+const COMMANDS = storageCalls({ system: "redis", client: declaredBy("ioredis") })
+  .methods({
+    get: { kind: "read", selector: { at: 0 } },
+    set: { kind: "write", selector: { at: 0 } },
+  })
+  .example('redis.get("user_online:42")');
+
+export function redisFramework() {
+  return pack("redis", [COMMANDS], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-redis",
+  });
+}
+```
+
+A declaration is a chain. It starts at the receiver a call is made on, here one whose method `ioredis` declared, and `constructedFrom`, `imported`, `typed`, `returnedBy`, `global` and the others in `@suss/recognize` say other ways a receiver can come from the library. The methods table says which calls count and what each one reads. `.example(...)` gives one call the declaration matches. A pack's test runs it with `runExamples`, and pack health lists a declaration that gives none.
+
+| Builder | What it records | Used by |
+|---|---|---|
+| `storageCalls` | a read or a write of a store, with its container and fields | Prisma, DynamoDB, Redis, SQLAlchemy |
+| `sqlStatements` | the tables a SQL statement reads and writes | pg, pg-ruby, BigQuery |
+| `messageSends`, `messageReceives` | a send to a queue or topic, and the fields a consumer reads | SQS, SNS, EventBridge, BullMQ |
+| `unitInvokes` | a call that runs a deployed function | AWS Lambda |
+| `httpRequests` | the request a client call sends | fetch, axios, requests, httpx, aiohttp, Faraday, Net::HTTP |
+| `callbacks`, `renderedProps` | a function the library runs later, scheduled or claimed as a unit of its own | Node's timers, React's effects and handlers, TanStack Query |
+| `runtimeReads`, `schemaReads` | a read of the environment, directly or through a schema | Node, Cloudflare Workers |
+| `streamWrites` | a write to stdout or stderr | Node |
+
+`pack(name, declarations, spec)` builds the whole `PatternPack` for a pack that only declares calls: the import gate from the modules the chains start at, the protocol from the wire they reach, and the recognizer fields below. A pack that discovers units as well writes its object by hand and fills the fields from the same declarations, with `requestRecognizersOf` for `requestRecognizers`, `subUnitsOf` for `subUnits`, and `declarationsIn` for the pack health report. A `PythonPack` or `RubyPack` takes the same recognizer fields.
+
+### Requests a client sends
+
+A client pack declares the requests a library's calls send with `httpRequests`, and lists the compiled chains under `requestRecognizers`. The adapter makes each function that makes one of those calls a `client` unit of the route in its URL, so a client pack's `discovery` is empty:
+
+```ts
+const AXIOS = imported({ from: ["axios"], named: ["default"] });
+
+requestRecognizers: requestRecognizersOf([
+  httpRequests({ client: anyOf(AXIOS, returnedBy("create", AXIOS)) })
+    .methods({ get: { sends: "GET", url: { at: 0 }, options: { at: 1 } } })
+    .calls({ sends: { from: { at: 0, property: ["method"] }, default: "GET" }, url: { at: 0, property: ["url"] } })
+    .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
+    .response({ ...clientResponseOf(RESPONSE), redirectOption: { name: "maxRedirects", handsBack: [0] } }),
+]),
+```
+
+- `.methods(table)` says what each method sends. `sends` is the verb as written, or where the call states one, with a `default` for a call that states none. `url` says where the URL is, and `options` where the options object is. `verbs({ get: "GET", post: "POST" }, { at: 0, keyword: "url" })` writes the common case of one entry per verb.
+- `.calls(meaning)` says what a call of the client itself sends, as `fetch(url)` or `api({ url })` on an instance.
+- `.baseUrl(pick)` reads the base URL off the construction the call's receiver was made by, as `axios.create({ baseURL })` or `httpx.Client(base_url=...)` states it. `joins` says how the library puts a path under it: `appended` after the base with one slash, or `resolved` the way a browser resolves a link, so a path that starts with `/` replaces the base's path.
+- `.response(response)` says what the caller reads off the response and how the library hands back a refusal or a redirect, as [`responseSemantics` and `failureDelivery`](#responsesemantics-and-failuredelivery) describe. `redirectOption` says which option makes one call hand a redirect back.
+
+For a library that takes the host apart from the path, as Ruby's `Net::HTTP.get(host, path)` does, the pack writes `hostFirst` on a method's URL, and reads a builder's host and port with `reads: "host"` on `.baseUrl`. A client built from a contract, as ts-rest's `initClient` builds one, is a [`clientCall`](#clientcall) pattern instead.
+
+### A message a handler reads
+
+A pack declares a consumer's receive with `messageReceives`. The receive is read at a call of the language's decoder for the codec, and each envelope is the path from what the platform hands the handler to the encoded payload, outermost first:
+
+```ts
+messageReceives({
+  wire: "aws_sqs",
+  codec: "json",
+  envelope: [
+    { path: [{ read: "Records" }, { each: true }, { read: "body" }] },
+    { from: typed({ from: ["aws-lambda"], named: ["SQSRecord"] }), path: [{ read: "body" }] },
+  ],
+});
+```
+
+It records a `message-receive` interaction with no channel, since the deployment says which queue the handler drains. The body's fields are the keys the handler reads off the decoded value, at the decode or through the one name it keeps it in. A `read` step is a property or an entry with its key written out, an `each` step is the element a loop or a `map` callback is given, and `from` asks whether the value the last step reads off is declared as one of the types. Ruby declares no types, so an envelope with `from` matches nothing there.
+
 ## Recognizers
 
-Recognizers fire on nodes inside a unit's body, whichever pack discovered the unit.
+Recognizers fire on nodes inside a unit's body, whichever pack discovered the unit. A declared pack's recognizers come from `@suss/recognize`, and a pack can also write one as a function for a call no builder describes.
 
 ```typescript
 type InvocationRecognizer<TCtx = unknown> = (
   call: unknown,   // CallExpression handle, opaque at this level
-  ctx: TCtx,       // adapter context, TsRecognizerContext for TypeScript
+  ctx: TCtx,       // adapter context, TsInvocationRecognizerContext for TypeScript
 ) => Effect[] | null;
 
 type AccessRecognizer<TCtx = unknown> = (
@@ -751,24 +926,7 @@ messageBusBinding({
 });
 ```
 
-`ctx` is the adapter's recognizer context, `TsRecognizerContext` for TypeScript, with the source file handle and an `extractArgs()` helper. A recognizer casts both arguments to the context it was written against, and that cast is where the pack declares which adapter it needs.
-
-### A message a handler reads
-
-A pack declares a consumer's receive with `messageReceives` from `@suss/recognize`, and the declaration runs on every adapter. The receive is read at a call of the language's decoder for the codec, and each envelope is the path from what the platform hands the handler to the encoded payload, outermost first:
-
-```ts
-messageReceives({
-  wire: "aws_sqs",
-  codec: "json",
-  envelope: [
-    { path: [{ read: "Records" }, { each: true }, { read: "body" }] },
-    { from: typed({ from: ["aws-lambda"], named: ["SQSRecord"] }), path: [{ read: "body" }] },
-  ],
-});
-```
-
-It records a `message-receive` interaction with no channel, since the deployment says which queue the handler drains. The body's fields are the keys the handler reads off the decoded value, at the decode or through the one name it keeps it in. A `read` step is a property or an entry with its key written out, an `each` step is the element a loop or a `map` callback is given, and `from` asks whether the value the last step reads off is declared as one of the types. Ruby declares no types, so an envelope with `from` matches nothing there.
+Every adapter puts `ops` on `ctx`, the `CallOps` a declaration asks its questions of, and a declared recognizer reads nothing else. TypeScript's context, `TsInvocationRecognizerContext`, also has the call node, its source file and an `extractArgs()` helper. A recognizer written against those casts both arguments to that context, so it runs only in TypeScript. The Python and Ruby adapters put only `ops` on the context.
 
 ## Sub-units
 
@@ -800,7 +958,7 @@ requiresImport?: string[]
 
 `requiresImport` gates the whole pack on its imports. The adapter's pre-filter only considers the pack applicable to files importing at least one of the listed modules, matched by prefix, so `"@aws-sdk/client-sqs"` matches that module and any sub-path of it.
 
-It is for recognizer-only packs that target one library: the SQS pack declares `["@aws-sdk/client-sqs"]` and the Prisma pack `["@prisma/client"]`. Without a gate the pack walks every file, which is correct and wasteful. A discovery pattern has its own `requiresImport` for the same purpose, and an empty array is the deliberate "every file" choice, which the fetch pack makes because `fetch` is a global.
+It is for recognizer-only packs that target one library: the SQS pack declares `["@aws-sdk/client-sqs"]` and the Prisma pack `["@prisma/client"]`. Without a gate the pack walks every file, which is correct and wasteful. A discovery pattern has its own `requiresImport` for the same purpose, and an empty array is the deliberate "every file" choice. `pack()` writes the gate from the modules its declarations start at. The fetch pack sets none, because `fetch` is a global.
 
 ### `generatedModules`
 
@@ -898,7 +1056,9 @@ failureDelivery?: "response" | "exception";
 
 `responseSemantics` describes what a property on the client's response object means, so the adapter turns `.ok` into a status range and `.json()` into a body. The fetch, axios and ts-rest packs declare it.
 
-`failureDelivery` records how the client hands back a refused request. `fetch` returns a response and the caller reads the status off it, which is the `"response"` default. axios, requests, httpx, Faraday and Net::HTTP reject or raise instead, so every non-2xx reaches the caller through a `catch` and there is no status for a guard to read.
+`failureDelivery` records how the client hands back a refused request. `fetch` returns a response and the caller reads the status off it, which is the `"response"` default, and requests, httpx, Faraday and Net::HTTP do the same. axios rejects instead, so every non-2xx reaches the caller through a `catch` and there is no status for a guard to read. `redirectDelivery` records the same for a redirect: fetch, axios, requests and aiohttp follow it, and httpx, Faraday and Net::HTTP hand the 3xx back.
+
+A client declared with `httpRequests` states the same things on its chain's `.response(...)`: which members give the status, the success flag, the body and the headers, and the two deliveries. A TypeScript pack builds that from its pack fields with `clientResponseOf`, and a Python or Ruby client pack writes it out, as the requests pack writes `{ statusCode: ["status_code"], success: ["ok"], body: ["json", "text", "content"] }`.
 
 ## Contract reading
 

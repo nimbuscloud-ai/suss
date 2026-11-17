@@ -33,9 +33,9 @@ description: One definition each for boundary, summary, code unit, terminal, pac
 
 **[Finding](/reference/ir#finding)**, a record that two paired summaries disagree. It has a `kind`, a `severity` (`error`, `warning` or `info`), the boundary, both sides, and a sentence saying what is wrong. The [findings catalog](/reference/findings) lists every kind. The behavioral checker emits `Finding`; the intent checker emits `IntentFinding`, which has a document on one side instead of a second piece of code.
 
-**Pack**, a set of declarative patterns (a `PatternPack`) that the adapter and the extractor use to recognize a framework, a runtime or a library. A pack is a data object. See [What a pack is](/packs/what-a-pack-is).
+**Pack**, a set of declarative patterns (a `PatternPack` in TypeScript, a `PythonPack` or `RubyPack` in the other two) that the adapter and the extractor use to recognize a framework, a runtime or a library. A pack is a data object. See [What a pack is](/packs/what-a-pack-is).
 
-**Recognizer**, a rule in a pack that fires when the extractor meets a particular call or property access, such as `setTimeout(...)` or `process.env.X`. It attaches an effect or some metadata to whichever unit it fired inside.
+**Recognizer**, a rule in a pack that fires when the extractor meets a particular call or property access, such as `setTimeout(...)` or `process.env.X`. It attaches an effect or some metadata to whichever unit it fired inside. A pack usually declares the call with `@suss/recognize`, which compiles the declaration into a recognizer every adapter runs.
 
 **Sub-unit**, a code unit a pack declares inside another, such as a callback passed to `setTimeout` or a React event handler inside a component. A sub-unit gets its own summary. Everywhere else the walker descends into nested functions and puts their behavior on the enclosing unit.
 

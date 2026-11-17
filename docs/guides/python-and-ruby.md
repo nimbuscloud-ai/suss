@@ -44,8 +44,8 @@ When `init` looked somewhere and could not read it, it prints that on its own li
 
 The [pack catalog](/packs/catalog) lists every pack and what it reads. In short:
 
-- **In Python**, suss reads routes with `fastapi` or `flask-restx`, database calls with `sqlalchemy` or `sqlmodel`, and outbound HTTP with `requests`, `httpx` or `aiohttp`.
-- **In Ruby**, suss reads GraphQL fields with `graphql-ruby`, Rails controller actions with `rails`, database calls with `activerecord`, and outbound HTTP with `faraday` or `net-http`.
+- **In Python**, suss reads routes with `fastapi` or `flask-restx`, database calls with `sqlalchemy`, `sqlmodel` or `bigquery-python`, outbound HTTP with `requests`, `httpx` or `aiohttp`, Celery tasks with `celery`, Lambda handlers with `aws-lambda-python`, and tests with `pytest`.
+- **In Ruby**, suss reads Rails controller actions with `rails`, GraphQL fields with `graphql-ruby`, database calls with `activerecord`, `pg-ruby` or `bigquery-ruby`, outbound HTTP with `faraday` or `net-http`, jobs with `activejob` or `sidekiq`, Lambda handlers with `aws-lambda-ruby`, and tests with `rspec` or `minitest`, alongside `factory-bot` or `fabrication`.
 
 A pack for one language cannot run alongside a pack for another in the same command. Within one language you can combine them freely: `-f rails -f activerecord=suss.activerecord.json` gives you the controller actions and the tables each one touches.
 
@@ -93,7 +93,7 @@ shop/routers/items.py
 
 Three things in that output need a word of explanation.
 
-suss prints `/api/items/{item_id}` as one path, even though no single file writes it out. The router declares `prefix="/items"`, and `app.include_router(items_router, prefix="/api")` mounts it under a second prefix. The pack joins the two when both are string literals, and it follows one mount hop.
+suss prints `/api/items/{item_id}` as one path, even though no single file writes it out. The router declares `prefix="/items"`, and `app.include_router(items_router, prefix="/api")` mounts it under a second prefix. The pack joins every prefix on the way from the app, through as many routers mounted onto one another as the project writes, whenever each one settles to a string.
 
 `read_stock` shows what the adapter does with a body. Each return becomes a branch with its status and the conditions that lead to it, and `raise HTTPException(status_code=404, ...)` becomes the 404. FastAPI resolves `Depends(current_user)` on `create_item` itself, and the caller never sends it, so suss leaves it out of the request.
 
@@ -214,7 +214,7 @@ npx @suss/cli extract --dir . -f graphql-ruby=suss.graphql-ruby.json -o summarie
 | `root` | required | The directory suss looks under for the class a `mutation:` or `resolver:` reference points at, when no file the run reads declares it. It follows Rails' constant-to-path convention, so `Mutations::CampaignUpdate` is read from `<root>/mutations/campaign_update.rb`. Your layout is your project's, so there is no default and the pack reads nothing without one. A relative path is read against the config file it was written in. |
 | `camelize` | `true` | graphql-ruby's schema-wide default for exposing a snake_case symbol camelCased. Set it to `false` when your schema does. A `field` or `argument` call's own `camelize:` still wins for that one name, as it does at runtime. |
 
-A class extending one of graphql-ruby's generated base classes has each `field` call in its body turned into a resolver, named `Campaign.id` from the class's short name with a trailing `Type` stripped. The binding is `graphql-resolver(typeName, fieldName)`, so it pairs against a client operation exactly as a NestJS or Apollo resolver summary does. The adapter follows a class's whole ancestry, so you do not have to declare an intermediate base class of your own.
+A class extending one of graphql-ruby's generated base classes has each `field` call in its body turned into a resolver, named `Campaign.id` from the class's short name with a trailing `Type` stripped. The binding is `graphql-resolver(typeName, fieldName)`, so it pairs against a client operation exactly as a NestJS or Apollo resolver summary does. The adapter follows a class's whole ancestry, so you do not have to declare an intermediate base class of your own, as long as the run reads the file that declares it. A run over part of a project, such as `--dir app/graphql/types` with the base kept elsewhere, doesn't find the fields of the types below that base.
 
 `field :campaign_update, mutation: Mutations::CampaignUpdate` is followed to the class it points at. suss finds that class the way it finds a call's receiver, in whichever file of the run declares it, so a mutation kept in an engine or a pack directory is read too. The class's own `field` and `argument` calls become the payload and the arguments, and the field's summary describes its `resolve` method. An `argument` counts as required unless it declares otherwise. A `ready?` or `authorized?` hook on the class gets a summary of its own, and a path through it that raises or returns `false` shows up on the field as an outcome where `resolve` never runs. `field :total, Integer, resolver_method: :count_all` is read from the type's `count_all` method.
 
@@ -330,11 +330,10 @@ app/controllers/health_controller.rb
 
 ## What you do not get yet
 
-- **Raw SQL is Python only.** A statement passed to SQLAlchemy's or SQLModel's `text("...")` is read for its kind and its table. A bare string passed to `session.execute` is not parsed, and suss does not read raw SQL in Ruby at all.
-- **Queue sends are not classified in either language.** suss records the calls as invocation effects. Nothing turns one into a channel the way the TypeScript packs do.
+- **Raw SQL goes through the libraries that have a pack.** A statement passed to SQLAlchemy's or SQLModel's `text("...")`, to a BigQuery client, to a `pg` connection or to an ActiveRecord connection is read for its kind and its tables. A bare string passed to `session.execute` is not parsed.
+- **Queue sends outside the job libraries are not classified.** Celery, ActiveJob and Sidekiq sends pair with the workers that run them. A send to SQS, SNS or another bus from Python or Ruby is recorded as an invocation effect, and nothing turns it into a channel the way the TypeScript packs do.
 - **Plain Flask** (`@app.route`) has no pack yet.
 - **graphql-ruby leaves some of the schema unread:** interfaces, unions and enums. A field's output reads its object type one level deep, so a type nested inside that one is named and not read.
-- **Ruby's predicates are plain source text** instead of structured ones, so a condition prints exactly as it was written.
 - **`suss corroborate` is TypeScript only.**
 
 For more detail, read the package READMEs under `packages/adapter/python` and `packages/adapter/ruby`, and the one next to each pack under `packages/framework` and `packages/client`.

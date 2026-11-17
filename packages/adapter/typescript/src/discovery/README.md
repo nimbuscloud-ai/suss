@@ -1,6 +1,6 @@
 # discovery/
 
-Discovery finds code units by matching patterns. Each `DiscoveryMatch` variant has its own handler file. `index.ts` is the dispatcher, and it also runs the dedup pass.
+Discovery finds code units by matching patterns. Each `DiscoveryMatch` variant that only TypeScript reads has its own handler file. A pattern every adapter reads the same way, such as `routeTable`, `subclassOf` or a `namedExport` with a `pattern`, goes through `declared.ts` to the reader in `@suss/recognize`. A client unit comes from the pack's `requestRecognizers`, which `requestCalls.ts` runs over every call in the file. `index.ts` is the dispatcher, and it also runs the dedup pass.
 
 ## Place in the pipeline
 
@@ -8,8 +8,12 @@ Discovery runs after the bootstrap pre-filter has decided which files each pack 
 
 ## Key files
 
-- `index.ts:discoverUnits` is the public API. It runs every pattern, then dedupes the results by `(func, kind, packageExportInfo, routeInfo)`.
-- `index.ts:runPattern` is a dispatch table from `match.type` to the per-handler module.
+- `index.ts:discoverUnits` is the public API. It runs every pattern, then the pack's request hooks, then dedupes the results by `(func, kind, packageExportInfo, routeInfo)`.
+- `index.ts:runPattern` is a dispatch table from `match.type` to the per-handler module. A match `declaredMatchOf` says every adapter reads goes to `declared.ts:discoverDeclaredIn` first.
+- `declared.ts:discoverDeclaredIn` hands `discoverDeclared` in `@suss/recognize` the module ops over this file's facts, and turns each function it finds back into a node.
+- `requestCalls.ts:requestUnitsIn` calls each of the pack's request hooks, which `httpRequests` compiles, on every call in the file, and makes the function a call is written in a client of each request a hook returns.
+- `clientCall.ts:discoverClientCalls` finds the method calls on a client built from a contract, as ts-rest's `initClient` builds one. It goes through the same walk over calls as `requestCalls.ts`.
+- `testCases.ts:discoverTestCasesIn` hands a `testCases` match to `discoverTestCases` in `@suss/recognize` and builds a `test` unit on each case.
 - `shared.ts:DiscoveredUnit` is the result type. It has `func`, `kind` and `name`, plus optional payloads that depend on the pattern (`callSite`, `operationInfo`, `resolverInfo`, `packageExportInfo`, `routeInfo`).
 - `decoratedMembers.ts:decoratedCallablesOf` returns the decorated callables a class declares, whether they are written as methods or as properties that contain a function. Both decorator-driven handlers read a class through this.
 - `shared.ts:findEnclosingFunction` and `toFunctionRoot` are AST helpers that most handlers need.
@@ -39,7 +43,7 @@ Discovery runs after the bootstrap pre-filter has decided which files each pack 
   A refused receiver used to be the end of it, and a project reading the summaries could not tell a helper whose routes were dropped from a helper that registers none. Now the registration comes out as a unit with no route on it. It has an `unfollowedCall` gap that records which call was refused and how many apps the walk reached. The handler is still summarized, so somebody who wants to know what the missing route does can read it. The count includes only apps built through the pack's own import. That keeps a parameter to which two callers pass two unrelated objects out of the report.
 
   The remaining limit is the gate in front of this. Running every receiver in the project through the store would ask the question about every method call in every file. So a file is walked only when it imports the library, and for a helper that import is where its parameter's type comes from. A helper that never mentions the library, such as an untyped JavaScript parameter with no import beside it, is not walked at all. Its routes come from the helper index below, which starts at the call site and not at the helper's own file.
-- **A client's receivers are asked about together.** `clientCall` collects every call in the file first. It keeps the calls whose method passes the pattern's filter, then asks the store about all of their receivers at once: which are the client import, what each one is written as, and which of those constructions build the client. A question per call site would run the rules several times for every call in the file, and most calls in a file are not on the client at all.
+- **A request's receivers are asked about together.** `requestCalls.ts` looks each call in the file up by its method name first, so a method no request table lists costs nothing. What the receivers of one method name were written as is settled once for the whole file, and so is every bare callee. A question per call site would run the rules several times for every call in the file, and most calls in a file are not requests at all. `clientCall.ts` reads a contract client's calls through the same walk.
 - **Mount composition asks the store, the same as a handler does.** A mount call's target argument goes through `resolveValue.ts:writtenNodeOf`, the same resolution store a handler argument goes through. A router mounted through an import from another file therefore resolves the same way as a handler imported from another file. A mount whose prefix is not a string literal, or whose target the store cannot follow, contributes nothing. `extractRouteInfoFromBinding` applies the same rule to a route's own path.
 - **A mount or a route on an app its function drops is not recorded.** When `const testApp = express()` is a local that a function writes once, `discoverMountEdges` and `discoverRegistrationCalls` ask the store what the function does with `testApp`. If nothing returns it, passes it, stores it or calls it, and every method called on it is one the pack registers routes, mounts or wrappers with, no request can reach what is registered on it, and the mount edge or the route is left out. A kept mount would also disagree with the served app's mount, and the router's routes would lose their prefix. `testApp.listen(3000)` keeps both, since the app may serve from inside the function, and so does passing on the result of a method called on it, as `return testApp.get(...)` does. A module-level app is never dropped. The `passedOn` rules in `@suss/resolution` decide what counts as handing the app on.
 
@@ -106,7 +110,7 @@ One token is a settled choice, and it goes on the summary as `metadata.graphql.c
 
 The project-wide pass then settles a chosen client. A `clients` binding or an operation scope gives it a service. Without either, it pairs like the app's client only when it is the app's client: the one client construction in the project, or a client whose endpoint every construction shares. Any other client gets `unresolvedClient` with a reason that says which binding to add, and the checker lists the operation as not checked rather than pairing it with whichever schema shares its field names. A choice that stayed open is cleared when the project builds at most one client, or every construction shares one endpoint, since suss knows of no second endpoint the call could reach. That operation then pairs like one using the app's client.
 
-Two things are left out. The client an `ApolloProvider` supplies is not read, because JSX attributes have no facts yet. So in a project that builds two clients, an operation that passes none keeps pairing with every schema, as it did before. And a client built by a function from its parameter gets one token for every client that function builds.
+Two things are left out. The client an `ApolloProvider` supplies is not read. The facts state JSX attributes, and nothing reads that one yet. So in a project that builds two clients, an operation that passes none pairs with every schema. And a client built by a function from its parameter gets one token for every client that function builds.
 
 ## Sibling modules
 
@@ -116,6 +120,8 @@ Two things are left out. The client an `ApolloProvider` supplies is not read, be
 - `resolve/reachableClosure.ts` extends discovered units transitively into callees.
 
 ## When adding a new match type
+
+A match that Python and Ruby packs need too belongs in `@suss/recognize`, read through the module ops, and joins `DeclaredDiscoveryMatch` so `declared.ts` hands it over. The steps below are for a match only TypeScript reads.
 
 1. Add the variant to `DiscoveryMatch` in `packages/extractor/src/framework.ts`.
 2. Write a handler module in this directory exporting `discover<Kind>(sourceFile, match, kind, resolution?): DiscoveredUnit[]`.

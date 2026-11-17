@@ -322,15 +322,15 @@ givesBackOne            SQLModel  first
 givesBackOneOfImport    sqlmodel  select  0
 ```
 
-The shared rules read those facts. In Python the class is passed as an argument, where a Rails finder is called on the class itself. So `entryMethods` and `entryFunctions` declare which argument has the class. That argument has to reach one of the base names, and this keeps `config.get("timeout")` from matching. A function called on its own is also keyed on the module it was imported from, because a project can define a `select` of its own.
+The shared rules read those facts. In Python the class is passed as an argument, where a Rails finder is called on the class itself. So `givesBackOneOfArgument` says which argument has the class. That argument has to reach one of the bases, and this keeps `config.get("timeout")` from matching. A function called on its own, `givesBackOneOfImport`, is also keyed on the module it was imported from, because a project can define a `select` of its own.
 
-Once the class is settled, the rest of the chain is method calls on that receiver, and `givesBack` covers it one method at a time. `session.query(Item)` is one `Item`, `.filter(...)` off that is one again, and `.first()` after that is one more.
+Once the class is settled, the rest of the chain is method calls on that receiver, and `givesBackOne` covers it one method at a time. `session.query(Item)` is one `Item`, `.filter(...)` off that is one again, and `.first()` after that is one more. The SQLAlchemy pack writes these words from a list of base names and methods with `modelWords`, so each method is stated once for every base.
 
-`baseNames` covers the three ways SQLAlchemy and SQLModel let a project declare a base. `class Base(DeclarativeBase)` and `class Item(SQLModel, table=True)` give the name written in the class list, which the adapter records as `extendsNamed`. `Base = declarative_base()` gives the name of the function that built it. The shared rules reach that name through the call that assigned `Base`.
+The bases cover the three ways SQLAlchemy and SQLModel let a project declare one. `class Base(DeclarativeBase)` and `class Item(SQLModel, table=True)` give the name written in the class list, which the adapter records as `extendsNamed`. `Base = declarative_base()` gives the name of the function that built it. The shared rules reach that name through the call that assigned `Base`.
 
 ## What a relationship reaches
 
-`relationships` lists the callables a library provides for a field that points at another model: SQLModel's `Relationship` and SQLAlchemy's `relationship`. Each becomes an `associationConstructor(module, name)` fact. Separately, the adapter records a fact for every class-body field assigned from a call, whichever call it is:
+A pack's class-body declaration lists the callables a library provides for a field that points at another model, under `fields.association.madeBy`: SQLModel's `Relationship` and SQLAlchemy's `relationship`, each as an `imported` origin. Each becomes an `associationConstructor(module, name)` fact. Separately, the adapter records a fact for every class-body field assigned from a call, whichever call it is:
 
 ```
 fieldCall  app/models.py:40-260  items  app/models.py#Relationship  app/models.py#Item

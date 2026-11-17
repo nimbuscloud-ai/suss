@@ -81,9 +81,7 @@ semantics with different transports.
 
 ### Recognition
 
-Recognition is how a particular library expresses a given semantics in
-source code. Today's `PatternPack` describes it, and `responseSemantics`
-covers part of it.
+Recognition is how a particular library expresses a given semantics in source code. A pack describes it. Its patterns and its `@suss/recognize` declarations say which calls are the library's, and `responseSemantics`, or the `.response(...)` of a request declaration, says what a caller reads off what comes back.
 
 - For REST semantics, axios recognises the response via `.data` and the
   status via `.status`; fetch via `.body` / `.json()` / `.status`; ts-rest

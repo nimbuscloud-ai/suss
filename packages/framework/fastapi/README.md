@@ -29,7 +29,7 @@ app.include_router(router, prefix="/v1")
 
 ## Where it fits in suss
 
-The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, and on `@suss/extractor` for the route table's types. It has no analysis logic of its own: `@suss/recognize` composes the table.
+The pack depends on `@suss/adapter-python`, for the `PythonPack` type and the Python extraction pipeline, on `@suss/extractor` for the route table's types, and on `@suss/recognize` for the origins and the dependency callbacks it declares. It has no analysis logic of its own: `@suss/recognize` composes the table.
 
 ## When a route has no path
 

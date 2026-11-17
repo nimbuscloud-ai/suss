@@ -4,7 +4,7 @@ This pack records which Google Cloud Storage buckets and objects a TypeScript se
 
 ## What this package is
 
-A pattern pack. It records the same `storage-access` effects the S3 pack does, so a bucket a service reads from or writes to is the same kind of boundary whichever cloud it is in.
+A pack declared with `@suss/recognize`. It records the same `storage-access` effects the S3 pack does, so a bucket a service reads from or writes to is the same kind of boundary whichever cloud it is in.
 
 ```ts
 import { gcsFramework } from "@suss/framework-gcs";
@@ -60,4 +60,4 @@ Nothing there shows which bucket, so the container comes out null and the access
 
 ## Where it fits in suss
 
-The pack depends on `@suss/behavioral-ir` for the binding it builds, and on `@suss/adapter-typescript` for the declaration check and for reading a name. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the bucket.
+The pack depends only on `@suss/recognize`, which compiles the declaration into the recognizer hooks the adapters call and asks the running adapter whether `@google-cloud/storage` declared a method and what a name was written as. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the bucket.

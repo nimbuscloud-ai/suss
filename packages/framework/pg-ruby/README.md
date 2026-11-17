@@ -44,7 +44,7 @@ Every access reports its scope as `default`. A project with more than one Postgr
 
 ## Where it fits in suss
 
-The pack depends on `@suss/adapter-ruby` for the `RubyPack` contract, and on `@suss/ir-core` for the binding it builds. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the database.
+The pack depends on `@suss/recognize`, where its statement calls are declared with `sqlStatements`, on `@suss/adapter-ruby` for the `RubyPack` contract, and on `@suss/ir-core` for the `PackDeclaration` it exports. The storage pass in `@suss/checker` pairs what this pack records with whatever declares the database.
 
 - [Documentation](https://nimbuscloud-ai.github.io/suss/)
 - [Source and issues](https://github.com/nimbuscloud-ai/suss)

@@ -338,7 +338,7 @@ The `RawBranch[]` then flows to `assembleSummary()` in `@suss/extractor`, which 
 
 ### Step 5b: Client field tracking
 
-For client code units (found by a pack's request chains, or by a `clientCall` pattern), the adapter runs an additional step after branch extraction: trace which properties the consumer reads from the response variable within each branch.
+For client code units, the adapter runs an additional step after branch extraction: trace which properties the consumer reads from the response variable within each branch. A client unit comes from a pack's `httpRequests` declaration, or from a `clientCall` pattern for a client built from a contract, as ts-rest builds one.
 
 ```
 collectClientFieldAccesses(callExpr, func, branchLocations):

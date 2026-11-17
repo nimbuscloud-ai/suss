@@ -119,7 +119,7 @@ A path whose test the change made impossible says so under its line, with the va
       now  responds 200 Order (src/orders.ts)  when  loadOrder()
 ```
 
-A path the change made possible again prints `can happen again`, and a new path that can never run prints `can never happen`. In the JSON, the outcome has `cannotHappen` with the same reason, or `canHappenAgain: true`. [A branch that can never run](/reference/summary-format#a-branch-that-can-never-run) says when suss decides a test is impossible.
+A path the change made possible again prints `can happen again`. A new path that can never run prints `can never happen`, and so does a changed path that could not run before the change either. In the JSON, the outcome has `cannotHappen` with the same reason, or `canHappenAgain: true`. [A branch that can never run](/reference/summary-format#a-branch-that-can-never-run) says when suss decides a test is impossible.
 
 When several boundaries got the same outcome from one wrapper, the report prints it once under a `From <wrapper>` heading, with how many of the boundaries that wrapper runs on have that outcome and which ones are missing it. The files whose units moved come last.
 

@@ -36,7 +36,7 @@ Code outside the facility never reads a node's text to find out what a value is.
 
 ## Where it fits
 
-It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog` and `web-tree-sitter`. The `rails` and `graphql-ruby` packs consume its `RubyPack` contract. Nothing in this package hardcodes what a particular library's classes or base classes are called. The packs declare those.
+It depends on `@suss/extractor`, `@suss/behavioral-ir`, `@suss/datalog`, `@suss/resolution`, `@suss/recognize` and `web-tree-sitter`. Every Ruby pack is a `RubyPack`, from rails and graphql-ruby to the clients, the job libraries and the test runners. A pack's `@suss/recognize` declarations run over the ops this adapter builds from its facts. Nothing in this package hardcodes what a particular library's classes or base classes are called. The packs declare those.
 
 `grammar/tree-sitter-ruby.wasm` is a checked-in binary, and the build does not produce it. [Where it comes from](./grammar/README.md).
 

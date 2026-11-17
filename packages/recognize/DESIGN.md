@@ -7,7 +7,7 @@ The [README](./README.md) says what `@suss/recognize` is for.
 A pack does four jobs: it discovers units, it recognizes calls inside
 them, it declares terminals, and it claims sub-units. The design writes
 all four as the same chain of links, differing only in what the last
-link yields. Today only recognition is written that way.
+link yields. Today recognition and sub-units are written that way.
 
 ```
 where the match starts -> which method -> read the arguments -> yield
@@ -17,17 +17,24 @@ where the match starts -> which method -> read the arguments -> yield
                                                                 a sub-unit
 ```
 
-Seven endings are built, and all seven are recognition endings that
-yield effects: `storageAccess` asks the call what it reached,
-`sqlAccess` reads the statement the call was given, `messageSend`
-and `unitInvoke` read the object the call sends, `messageReceive`
-reads the message a handler decodes, `schedule` reads the callback
-the call hands over, and `streamWrite` reads what the call writes to
-a stream. A schedule chain can also say what a
-callback written in place becomes, which is how a pack claims a
-sub-unit as data. Discovery and terminals still come from the pack's
-discovery patterns. Each would become a new member of `Ending`, with
-its own entry in the `YIELD` table in `compile.ts`.
+Ten endings are built. Eight yield effects: `storageAccess` asks the
+call what it reached, `sqlAccess` reads the statement the call was
+given, `messageSend` and `unitInvoke` read the object the call sends,
+`messageReceive` reads the message a handler decodes, `schedule` reads
+the callback the call hands over, `streamWrite` reads what the call
+writes to a stream, and `runtimeRead` reads a value off an object the
+runtime provides. `httpRequest` yields the requests a call sends,
+which the adapter's client walk turns into client units. `claims`
+records nothing on the call's unit. A `callbacks` or `renderedProps`
+chain that ends in it, like a schedule chain, says what a callback
+written in place becomes, which is how a pack claims a sub-unit as
+data.
+
+Discovery is declared as data too, as patterns every adapter reads
+through the module ops (see [A unit a pattern finds](#a-unit-a-pattern-finds)),
+and those patterns are not chains. Terminals still come from the pack's
+terminal patterns. A job written as a chain becomes a new member of
+`Ending`, with its own entry in the `YIELD` table in `compile.ts`.
 
 ### Where a match starts
 
@@ -203,9 +210,11 @@ example.
 ## The executor ops
 
 `CallOps` is the full set of questions a chain can ask about one call
-site. An adapter implements it once. Today the only implementation is
-`callOpsFor` in `@suss/adapter-typescript`, which puts the result on the
-recognizer context under `ops`.
+site. There are two implementations. `callOpsFor` in
+`@suss/adapter-typescript` reads TypeScript's syntax and checker, and
+the ops over the facts in the next section answer the same questions
+for every adapter. The adapter puts the result on the recognizer context
+under `ops`.
 
 | op | what it gives back |
 |---|---|
@@ -285,7 +294,8 @@ resolution rules read, so an adapter that states those facts runs every
 declared pack without writing `CallOps` itself. The adapter hands over a
 `FactSource`: its database, and the reads only it can make. The
 TypeScript, Python and Ruby adapters hand every declared pack these ops.
-No shipped pack lists Python or Ruby among its languages yet.
+The SQLAlchemy and BigQuery Python packs list `python` among their
+languages, and the pg and BigQuery Ruby packs list `ruby`.
 
 | op | read from |
 |---|---|
@@ -560,9 +570,9 @@ in `declaredDiscovery` beside their own route patterns.
 `discoverTestCases` reads a `testCases` match: the test cases a runner
 collects in one module, each with its titles, the function it runs,
 where its unit is recorded, whether it skips itself and what it mocks.
-The pytest and minitest packs declare one, and the Python and Ruby
-adapters build a `test` unit on each case and walk it the way they walk
-a reached function. A file is read when its name matches one of
+The pytest, Minitest, RSpec and vitest packs declare one. Each adapter
+builds a `test` unit on each case, and the Python and Ruby adapters walk
+it the way they walk a reached function. A file is read when its name matches one of
 `files.matching` and, when `files.listed` is set, it is one of the
 listed files. A case is recorded at its function's `site()`, or for a
 block at the site of the call `blockCall()` says it is written with,

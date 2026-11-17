@@ -23,15 +23,35 @@ const calls = storageCalls({
   .container(namespaceOf)
   .example('redis.get("user_online:42")');
 
-export default pack("redis", [calls], {
-  languages: ["typescript", "javascript"],
-  recognizedAs: "@suss/framework-redis",
-});
+export default function redisFramework() {
+  return pack("redis", [calls], {
+    languages: ["typescript", "javascript"],
+    recognizedAs: "@suss/framework-redis",
+  });
+}
 ```
 
-This package never imports a syntax tree. The same declaration runs on
-the TypeScript adapter today, and will run on the Python and Ruby
-adapters once they implement the ops.
+This package never imports a syntax tree. Each adapter states facts
+about the source, and the ops this package builds over those facts
+answer every question a declaration asks, so the same declaration runs
+on the TypeScript, Python and Ruby adapters. A pack says which of them
+it runs on in `languages`.
+
+Each builder declares one kind of call a library offers:
+
+- `storageCalls` and `sqlStatements` for a call that reads or writes a store
+- `messageSends` and `messageReceives` for a queue's producer and consumer
+- `unitInvokes` for a call that runs a deployed function
+- `httpRequests` for a request an HTTP client sends
+- `callbacks` and `renderedProps` for a function the library runs later
+- `runtimeReads` and `schemaReads` for a read of the environment
+- `streamWrites` for a write to the process's output
+
+`pack()` assembles a list of them into a pack. A pack whose other
+fields are written by hand uses `requestRecognizersOf`, `subUnitsOf`
+and `declarationsIn` instead. Route tables, test cases and discovery
+patterns are data in a pack's own fields, and this package reads them
+through the same ops.
 
 ## More
 
