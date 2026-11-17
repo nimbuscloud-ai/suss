@@ -7,6 +7,7 @@ import { type CallExpression, type NewExpression, Node } from "ts-morph";
 import { factElementOps } from "@suss/recognize/ops";
 
 import { nodeId } from "./facts/extract.js";
+import { fileMentions } from "./fileMentions.js";
 import { factSourceFor } from "./resolve/factSource.js";
 import { opsOverFacts } from "./resolve/opsOverFacts.js";
 
@@ -34,7 +35,7 @@ export function createTsSubUnitContext(
           writes: (parent, fn) => parentWrites(parent, fn),
         }),
     mentions: (parent, word) =>
-      (parent.func as Node).getSourceFile().getFullText().includes(word),
+      fileMentions((parent.func as Node).getSourceFile(), word),
   };
 }
 
