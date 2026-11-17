@@ -5,7 +5,6 @@ import {
   functionCallBindingOfDiscoveredUnit,
 } from "./discoveredUnitBinding.js";
 import { declaredMatchOf } from "./framework.js";
-import { JSX_ROUTE_UNREAD } from "./jsxElementRouteTable.js";
 
 const PACK = { name: "lambda", protocol: "http" };
 
@@ -105,77 +104,5 @@ describe("declaredMatchOf", () => {
         exportNames: ["GET"],
       }),
     ).toBeNull();
-  });
-
-  it("reads a jsxElementRoute as the route table its names describe, with no index or children list when it gives none", () => {
-    expect(
-      declaredMatchOf({
-        type: "jsxElementRoute",
-        importModule: "router-lib",
-        routeElement: "Screen",
-        pathAttribute: "to",
-        elementAttribute: "view",
-        method: "GET",
-      }),
-    ).toEqual({
-      type: "routeTable",
-      table: {
-        roots: {
-          kinds: {},
-          children: { in: "list", pick: { at: 0 } },
-          in: "file",
-          elements: true,
-        },
-        roles: {
-          Screen: {
-            role: "serves",
-            methods: ["GET"],
-            path: [{ key: "to" }],
-            handler: { value: [{ key: "view" }] },
-            children: [{ in: "elements" }],
-          },
-        },
-        objects: "Screen",
-        from: ["router-lib"],
-        absolutePaths: "standAlone",
-        elementLists: [],
-        loops: [],
-      },
-      through: "element",
-      unread: JSX_ROUTE_UNREAD,
-    });
-  });
-
-  it("reads a jsxElementRoute's index flag and children list onto the route's role", () => {
-    const declared = declaredMatchOf({
-      type: "jsxElementRoute",
-      importModule: ["router-lib"],
-      routeElement: "Screen",
-      pathAttribute: "to",
-      elementAttribute: "view",
-      indexAttribute: "home",
-      childrenAttribute: "nested",
-      routeObjectFactories: ["makeRouter"],
-      method: "GET",
-    });
-    expect(declared?.type === "routeTable" ? declared.table : null).toEqual(
-      expect.objectContaining({
-        roots: expect.objectContaining({ kinds: { makeRouter: 0 } }),
-        roles: {
-          Screen: {
-            role: "serves",
-            methods: ["GET"],
-            path: [{ key: "to" }],
-            index: { key: "home" },
-            handler: { value: [{ key: "view" }] },
-            children: [
-              { in: "elements" },
-              { in: "list", pick: { key: "nested" } },
-            ],
-          },
-        },
-        from: ["router-lib"],
-      }),
-    );
   });
 });

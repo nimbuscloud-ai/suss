@@ -8,12 +8,24 @@ import { parse as graphqlParse, Kind } from "graphql";
 import { Project } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
+import {
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  returnedBy,
+} from "@suss/recognize";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
+import { fetchRequests } from "./__fixtures__/fetchRequests.js";
 import { discoverUnits } from "./discovery/index.js";
 import { ResolutionStore } from "./facts/store.js";
 
-import type { ChannelSource, DiscoveryPattern } from "@suss/extractor";
+import type {
+  ChannelSource,
+  DiscoveryPattern,
+  RequestRecognizer,
+} from "@suss/extractor";
+import type { SourceFile } from "ts-morph";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -798,18 +810,18 @@ describe("namedExport — React Router style (loader, action, default)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// clientCall: global (fetch)
+// request hooks: global (fetch)
 // ---------------------------------------------------------------------------
 
-function makeFetchPattern(): DiscoveryPattern {
-  return {
-    kind: "client",
-    match: {
-      type: "clientCall",
-      importModule: "global",
-      importName: "fetch",
-    },
-  };
+/** The units the pack's request hooks find in the file, through the same entry point the adapter calls. */
+function requestUnitsIn(
+  file: SourceFile,
+  hooks: RequestRecognizer[] = fetchRequests(),
+  store = new ResolutionStore(),
+) {
+  return discoverUnits(file, [], store, undefined, undefined, {
+    requestRecognizers: hooks,
+  });
 }
 
 function makeClientCallPattern(): DiscoveryPattern {
@@ -823,7 +835,7 @@ function makeClientCallPattern(): DiscoveryPattern {
   };
 }
 
-describe("clientCall — global fetch", () => {
+describe("request hooks for a global fetch", () => {
   it("discovers function containing a bare fetch() call", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -839,7 +851,7 @@ describe("clientCall — global fetch", () => {
     `,
     );
 
-    const units = discoverUnits(file, [makeFetchPattern()]);
+    const units = requestUnitsIn(file);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("loadUser");
     expect(units[0].kind).toBe("client");
@@ -859,7 +871,7 @@ describe("clientCall — global fetch", () => {
     `,
     );
 
-    const units = discoverUnits(file, [makeFetchPattern()]);
+    const units = requestUnitsIn(file);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getUsers");
   });
@@ -873,7 +885,7 @@ describe("clientCall — global fetch", () => {
     `,
     );
 
-    const units = discoverUnits(file, [makeFetchPattern()]);
+    const units = requestUnitsIn(file);
     expect(units).toHaveLength(0);
   });
 
@@ -889,16 +901,16 @@ describe("clientCall — global fetch", () => {
     `,
     );
 
-    const units = discoverUnits(file, [makeFetchPattern()]);
+    const units = requestUnitsIn(file);
     expect(units).toHaveLength(0);
   });
 });
 
 // ---------------------------------------------------------------------------
-// clientCall: imported client (ts-rest style)
+// clientCall: a client built from a contract (ts-rest style)
 // ---------------------------------------------------------------------------
 
-describe("clientCall — imported client", () => {
+describe("clientCall, a client built from a contract", () => {
   it("discovers function containing client.method() call", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -967,39 +979,6 @@ describe("clientCall — imported client", () => {
     expect(units).toHaveLength(0);
   });
 
-  it("respects methodFilter when set", () => {
-    const project = createProject();
-    const file = project.createSourceFile(
-      "test.ts",
-      `
-      import { initClient } from "./api-client";
-      const client = initClient(contract);
-
-      export async function loadUser() {
-        return client.getUser({ params: { id: "1" } });
-      }
-
-      export async function createUser() {
-        return client.createUser({ body: {} });
-      }
-    `,
-    );
-
-    const pattern: DiscoveryPattern = {
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: "./api-client",
-        importName: "initClient",
-        methodFilter: ["getUser"],
-      },
-    };
-
-    const units = discoverUnits(file, [pattern]);
-    expect(units).toHaveLength(1);
-    expect(units[0].callSite?.methodName).toBe("getUser");
-  });
-
   it("handles aliased import", () => {
     const project = createProject();
     const file = project.createSourceFile(
@@ -1029,17 +1008,17 @@ describe("clientCall — imported client", () => {
     expect(units[0].name).toBe("loadUser");
   });
 
-  it("matches method calls directly on the imported binding (axios style)", () => {
-    // axios pattern: `import axios from "axios"; axios.get(...)`, the import
-    // itself is the client object, no construction call.
+  it("matches method calls on the imported binding itself", () => {
+    // `import api from "contract-api"; api.get(...)`: the import is the
+    // client, with no construction call.
     const project = createProject();
     const file = project.createSourceFile(
       "test.ts",
       `
-      import axios from "axios";
+      import api from "contract-api";
 
       export async function loadUser(id: string) {
-        return axios.get("/users/" + id);
+        return api.get("/users/" + id);
       }
     `,
     );
@@ -1048,9 +1027,8 @@ describe("clientCall — imported client", () => {
       kind: "client",
       match: {
         type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: ["get"],
+        importModule: "contract-api",
+        importName: "api",
       },
     };
 
@@ -1060,52 +1038,71 @@ describe("clientCall — imported client", () => {
     expect(units[0].callSite?.methodName).toBe("get");
   });
 
-  it("attaches the source pattern to each discovered unit", () => {
-    // Required so adapter.extractFromSourceFile picks the right
-    // bindingExtraction when several discovery patterns share the same kind
-    // (e.g. axios's per-verb patterns).
+  it("keeps the strict spelling for a call on the default import", () => {
     const project = createProject();
     const file = project.createSourceFile(
-      "test.ts",
+      "consumer.ts",
       `
-      import axios from "axios";
+      import other from "contract-api";
 
-      export async function getUser() {
-        return axios.get("/u");
-      }
-
-      export async function createUser() {
-        return axios.post("/u", {});
+      export async function getUser(id: string) {
+        return other.get("/users/" + id);
       }
     `,
     );
 
-    const getPattern: DiscoveryPattern = {
+    // The same-file convention: a call on the default import itself
+    // matches only when the import is spelled as the pattern's name.
+    const pattern: DiscoveryPattern = {
       kind: "client",
       match: {
         type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: ["get"],
+        importModule: "contract-api",
+        importName: "api",
       },
     };
-    const postPattern: DiscoveryPattern = {
+    expect(discoverUnits(file, [pattern], new ResolutionStore())).toEqual([]);
+  });
+
+  it("attaches the source pattern to each discovered unit", () => {
+    // Required so adapter.extractFromSourceFile picks the right
+    // bindingExtraction when several discovery patterns share the same kind.
+    const project = createProject();
+    const file = project.createSourceFile(
+      "test.ts",
+      `
+      import { initClient } from "./api-client";
+      import { initClient as initAdmin } from "./admin-client";
+      const client = initClient(contract);
+      const admin = initAdmin(contract);
+
+      export async function getUser() {
+        return client.getUser({});
+      }
+
+      export async function banUser() {
+        return admin.banUser({});
+      }
+    `,
+    );
+
+    const userPattern = makeClientCallPattern();
+    const adminPattern: DiscoveryPattern = {
       kind: "client",
       match: {
         type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: ["post"],
+        importModule: "./admin-client",
+        importName: "initClient",
       },
     };
 
-    const units = discoverUnits(file, [getPattern, postPattern]);
+    const units = discoverUnits(file, [userPattern, adminPattern]);
     expect(units).toHaveLength(2);
 
-    const get = units.find((u) => u.name === "getUser");
-    const post = units.find((u) => u.name === "createUser");
-    expect(get?.pattern).toBe(getPattern);
-    expect(post?.pattern).toBe(postPattern);
+    const user = units.find((u) => u.name === "getUser");
+    const admin = units.find((u) => u.name === "banUser");
+    expect(user?.pattern).toBe(userPattern);
+    expect(admin?.pattern).toBe(adminPattern);
   });
 
   it("deduplicates when two calls in the same function match", () => {
@@ -1132,22 +1129,20 @@ describe("clientCall — imported client", () => {
 });
 
 // ---------------------------------------------------------------------------
-// clientCall, an instance imported from another file
+// a client instance imported from another file
 // ---------------------------------------------------------------------------
 
-function makeAxiosLikePattern(): DiscoveryPattern {
-  return {
-    kind: "client",
-    match: {
-      type: "clientCall",
-      importModule: "axios",
-      importName: "axios",
-      factoryMethods: ["create"],
-    },
-  };
-}
+/** `get(url)` on an instance an axios-like factory's `create` made. */
+const INSTANCE_GETS = requestRecognizersOf([
+  httpRequests({
+    client: returnedBy(
+      "create",
+      imported({ from: ["axios"], named: ["axios", "default"] }),
+    ),
+  }).methods({ get: { sends: "GET", url: { at: 0 } } }),
+]);
 
-describe("clientCall, an instance imported from another file", () => {
+describe("a client instance imported from another file", () => {
   it("builds a client from a factory imported through a project barrel", () => {
     const project = createProject();
     project.createSourceFile(
@@ -1167,36 +1162,9 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getUser");
-  });
-
-  it("keeps the strict spelling for a bare call on the default import", () => {
-    const project = createProject();
-    const file = project.createSourceFile(
-      "consumer.ts",
-      `
-      import ax from "axios";
-
-      export async function getUser(id: string) {
-        return ax.get("/users/" + id);
-      }
-    `,
-    );
-
-    // The documented same-file convention: a bare call matches only
-    // \`import axios from "axios"\` spelled conventionally.
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
-    expect(units).toHaveLength(0);
   });
 
   it("resolves a subject brought in by a named import", () => {
@@ -1219,11 +1187,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getUser");
     expect(units[0].callSite?.methodName).toBe("get");
@@ -1249,11 +1213,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("listOrders");
   });
@@ -1278,11 +1238,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getUser");
   });
@@ -1313,11 +1269,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getReport");
   });
@@ -1342,11 +1294,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(1);
     expect(units[0].name).toBe("getUser");
   });
@@ -1373,11 +1321,7 @@ describe("clientCall, an instance imported from another file", () => {
     `,
     );
 
-    const units = discoverUnits(
-      file,
-      [makeAxiosLikePattern()],
-      new ResolutionStore(),
-    );
+    const units = requestUnitsIn(file, INSTANCE_GETS);
     expect(units).toHaveLength(0);
   });
 

@@ -8,7 +8,6 @@ import { ResolutionStore } from "../facts/store.js";
 import { discoverCallbackArguments } from "./callbackArgument.js";
 import { discoverClientCalls } from "./clientCall.js";
 import { discoverDeclaredIn } from "./declared.js";
-import { declaredRequestHooks, patternRequestHook } from "./declaredClients.js";
 import { discoverDecoratedMethods } from "./decoratedMethod.js";
 import { discoverDecoratedRoutes } from "./decoratedRoute.js";
 import { discoverFileConventions } from "./fileConvention.js";
@@ -30,9 +29,8 @@ import { requestUnitsIn } from "./requestCalls.js";
 import { discoverResolverMaps } from "./resolverMap.js";
 import { discoverTestCasesIn } from "./testCases.js";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
-import type { RequestsOfPack } from "./declaredClients.js";
 import type {
   ExpandedRegistrations,
   MountPrefixIndex,
@@ -57,7 +55,6 @@ function runPattern(
   expandedElsewhere?: ExpandedRegistrations,
   routeWrapperPattern?: DiscoveryPattern,
   packMethods?: ReadonlySet<string>,
-  requests?: RequestsOfPack,
 ): DiscoveredUnit[] {
   const declared = declaredMatchOf(pattern.match);
   if (declared !== null) {
@@ -104,15 +101,12 @@ function runPattern(
     );
   }
   if (pattern.match.type === "clientCall" && resolution !== undefined) {
-    const hook = patternRequestHook(pattern, requests);
-    return hook === null
-      ? discoverClientCalls(sourceFile, pattern.match, pattern.kind, resolution)
-      : requestUnitsIn(
-          sourceFile,
-          [{ hook, ranked: false }],
-          pattern.kind,
-          resolution,
-        );
+    return discoverClientCalls(
+      sourceFile,
+      pattern.match,
+      pattern.kind,
+      resolution,
+    );
   }
   if (pattern.match.type === "graphqlHookCall") {
     return discoverGraphqlHookCalls(
@@ -236,9 +230,7 @@ function routeWrapperPatternOf(
 /**
  * Discover code units in `sourceFile` by running all patterns, then the
  * request hooks the pack declared. `requests` is the pack the patterns
- * come from, whose redirect option a `clientCall` pattern read as a
- * request chain takes. Deduplicates entries with the same function node
- * and kind.
+ * come from. Deduplicates entries with the same function node and kind.
  */
 export function discoverUnits(
   sourceFile: SourceFile,
@@ -246,7 +238,7 @@ export function discoverUnits(
   resolution?: ResolutionStore,
   mountPrefixes?: MountPrefixIndex,
   expandedElsewhere?: ExpandedRegistrations,
-  requests?: RequestsOfPack,
+  requests?: Pick<PatternPack, "requestRecognizers">,
 ): DiscoveredUnit[] {
   // The adapter passes its run's store; a bare call gets its own,
   // since reading an export table needs one.
@@ -264,7 +256,6 @@ export function discoverUnits(
       expandedElsewhere,
       routeWrapperPattern,
       packMethods,
-      requests,
     );
     for (const unit of found) {
       // A handler that already says which pattern to read it with is a
@@ -277,7 +268,7 @@ export function discoverUnits(
   allResults.push(
     ...requestUnitsIn(
       sourceFile,
-      declaredRequestHooks(requests),
+      requests?.requestRecognizers ?? [],
       "client",
       store,
     ),

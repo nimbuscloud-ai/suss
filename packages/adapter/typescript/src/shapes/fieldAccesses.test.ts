@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createTestProject } from "@suss/test-project";
 
+import { fetchRequests } from "../__fixtures__/fetchRequests.js";
 import { createTypeScriptAdapter } from "../adapter.js";
 import { findResponseVariable } from "./fieldAccesses.js";
 
@@ -108,25 +109,8 @@ const fetchPack: PatternPack = {
   name: "fetch",
   protocol: "http",
   languages: ["typescript"],
-  discovery: [
-    {
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: "global",
-        importName: "fetch",
-      },
-      bindingExtraction: {
-        method: {
-          type: "fromArgumentProperty",
-          position: 1,
-          property: "method",
-          default: "GET",
-        },
-        path: { type: "fromArgument", position: 0 },
-      },
-    },
-  ],
+  discovery: [],
+  requestRecognizers: fetchRequests(),
   terminals: [
     { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     { kind: "throw", match: { type: "throwExpression" }, extraction: {} },

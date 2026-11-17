@@ -1,47 +1,51 @@
 import { describe, expect, it } from "vitest";
 
 import { readHttpMetadata } from "@suss/behavioral-ir";
-import { httpRequests, imported, requestRecognizersOf } from "@suss/recognize";
+import {
+  anyOf,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  returnedBy,
+} from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "../adapter.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { PatternPack } from "@suss/extractor";
+import type { ClientResponse, PatternPack } from "@suss/extractor";
 
-/** An axios-like client that follows redirects unless `maxRedirects` is 0. */
-const clientPack: PatternPack = {
-  name: "axios",
-  protocol: "http",
-  languages: ["typescript"],
-  discovery: [
-    {
-      kind: "client",
-      match: {
-        type: "clientCall",
-        importModule: "axios",
-        importName: "axios",
-        methodFilter: ["get"],
-        factoryMethods: ["create"],
-      },
-      bindingExtraction: {
-        method: { type: "literal", value: "GET" },
-        path: { type: "fromArgument", position: 0 },
-        options: { position: 1 },
-      },
-    },
-  ],
-  terminals: [
-    { kind: "return", match: { type: "returnStatement" }, extraction: {} },
-  ],
-  inputMapping: { type: "positionalParams", params: [] },
+const AXIOS = imported({ from: ["axios"], named: ["default"] });
+
+/** An axios-like client whose `get(url, config)` follows redirects unless the response says how. */
+function clientPack(response: ClientResponse): PatternPack {
+  return {
+    name: "axios",
+    protocol: "http",
+    languages: ["typescript"],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: anyOf(AXIOS, returnedBy("create", AXIOS)) })
+        .methods({ get: { sends: "GET", url: { at: 0 }, options: { at: 1 } } })
+        .response(response),
+    ]),
+    terminals: [
+      { kind: "return", match: { type: "returnStatement" }, extraction: {} },
+    ],
+    inputMapping: { type: "positionalParams", params: [] },
+    redirectDelivery: "followed",
+  };
+}
+
+/** One that hands the 3xx back when `maxRedirects` is 0. */
+const MAX_REDIRECTS = clientPack({
   redirectDelivery: "followed",
   redirectOption: { name: "maxRedirects", handsBack: [0] },
-};
+});
 
 async function deliveries(
   source: string,
-  pack: PatternPack = clientPack,
+  pack: PatternPack = MAX_REDIRECTS,
 ): Promise<Record<string, string | undefined>> {
   const project = createTestProject();
   project.createSourceFile("client.ts", source);
@@ -57,7 +61,7 @@ async function deliveries(
   );
 }
 
-describe("a clientCall pattern read as a request chain, and its redirect option", () => {
+describe("a request chain's redirect option", () => {
   it("reads the option off the call, and off the instance when the call says nothing", async () => {
     expect(
       await deliveries(`
@@ -107,8 +111,7 @@ describe("a clientCall pattern read as a request chain, and its redirect option"
     });
   });
 
-  it("does nothing for a pack that names no option", async () => {
-    const { redirectOption: _omit, ...withoutOption } = clientPack;
+  it("does nothing for a chain that declares no option", async () => {
     expect(
       await deliveries(
         `
@@ -118,7 +121,7 @@ describe("a clientCall pattern read as a request chain, and its redirect option"
           return axios.get("/a", { maxRedirects: 0 });
         }
       `,
-        withoutOption,
+        clientPack({ redirectDelivery: "followed" }),
       ),
     ).toEqual({ onTheCall: "followed" });
   });

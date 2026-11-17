@@ -1,33 +1,34 @@
 /**
- * clientCall.ts: the `clientCall` patterns a request chain cannot say,
- * and the check for which object is a client.
+ * clientCall.ts: the calls on a client built from a contract, and the
+ * check for which object is a client.
  *
- * A pattern whose binding reads the request off the call is read as a
- * request chain in declaredClients.ts. What is left here is a pattern
- * whose binding reads a contract, as ts-rest's does, or reads nothing,
- * or that takes any method on the client: each call it matches is a unit
- * named after the function it is written in, and the adapter reads the
- * binding from the pattern. `clientReceiverCheckFor` is the hand check
- * the GraphQL imperative client still asks.
+ * A `clientCall` pattern says which export builds the client, as
+ * ts-rest's `initClient` does. Each method call on what it built, or on
+ * the export itself, is a unit named after the function it is written
+ * in, and the adapter reads the call's method and path from the
+ * contract. `clientReceiverCheckFor` is the hand check the GraphQL
+ * imperative client still asks.
  */
 
 import { Node, type SourceFile, SyntaxKind } from "ts-morph";
 
-import { receiverFrom } from "@suss/recognize";
+import {
+  allOf,
+  anyOf,
+  constructedFrom,
+  imported,
+  receiverFrom,
+  spelled,
+} from "@suss/recognize";
 
 import { forEachDescendantOfKinds, skipsNothing } from "../walk/rawDescent.js";
-import { clientOriginOf } from "./declaredClients.js";
 import { resolvedModuleFile } from "./importScan.js";
 import { clientUnitName, forEachCallIn, methodNameOf } from "./requestCalls.js";
 import { resolveImportedLocalName } from "./resolveImport.js";
 import { writtenNodesOf } from "./resolveValue.js";
 import { findEnclosingFunction } from "./shared.js";
 
-import type {
-  CallOps,
-  DiscoveryPattern,
-  ReceiverOrigin,
-} from "@suss/extractor";
+import type { DiscoveryPattern, ReceiverOrigin } from "@suss/extractor";
 import type { CallExpression, NewExpression } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 import type { DiscoveredUnit } from "./shared.js";
@@ -43,11 +44,9 @@ type ClientCallMatch = Extract<
 >;
 
 /**
- * The calls on the pattern's client, each a unit of the function it is
- * written in: a method the pattern lists, or any method when it lists
- * none, and a call of the client itself when the pattern says it is
- * callable. A global is called by its own name, or read off the runtime's
- * global object.
+ * The method calls on the pattern's client, each a unit of the function
+ * it is written in. A client built from a contract sends nothing when it
+ * is called as a function, so a call with no receiver is never one.
  */
 export function discoverClientCalls(
   sourceFile: SourceFile,
@@ -56,59 +55,48 @@ export function discoverClientCalls(
   resolution: ResolutionStore,
 ): DiscoveredUnit[] {
   const client = clientOriginOf(match);
-  const listed =
-    match.importModule === "global"
-      ? new Set([match.importName])
-      : match.methodFilter === undefined
-        ? null
-        : new Set(match.methodFilter);
   const units: DiscoveredUnit[] = [];
-  const admits = (method: string | null): boolean =>
-    method === null || listed === null || listed.has(method);
-  forEachCallIn(sourceFile, resolution, admits, (call, ops) => {
-    const takes =
-      ops.method() === null
-        ? callsTheClient(ops, match, client)
-        : receiverFrom(client, ops);
-    const func = takes ? findEnclosingFunction(call) : null;
-    if (func === null) {
-      return;
-    }
-    const methodName = methodNameOf(call);
-    units.push({
-      func,
-      kind,
-      name: clientUnitName(func, methodName),
-      callSite: { callExpression: call, methodName },
-    });
-  });
+  forEachCallIn(
+    sourceFile,
+    resolution,
+    () => true,
+    (call, ops) => {
+      const takes = ops.method() !== null && receiverFrom(client, ops);
+      const func = takes ? findEnclosingFunction(call) : null;
+      if (func === null) {
+        return;
+      }
+      const methodName = methodNameOf(call);
+      units.push({
+        func,
+        kind,
+        name: clientUnitName(func, methodName),
+        callSite: { callExpression: call, methodName },
+      });
+    },
+  );
   return units;
 }
 
 /**
- * Whether a call with no receiver goes to the client: a global by its
- * own name, or the client called as a function when the pattern says it
- * is callable.
+ * Where the pattern's client comes from: the export itself, what it
+ * builds when called, and a default import under the export's own name.
+ * A call that builds the client can bind it to any name.
  */
-function callsTheClient(
-  ops: CallOps,
-  match: ClientCallMatch,
-  client: ReceiverOrigin,
-): boolean {
-  if (match.importModule === "global") {
-    return ops.calleeText() === match.importName;
-  }
-  return (
-    match.callable === true &&
-    (ops.isFrom(client) || ops.callee()?.isFrom(client) === true)
+function clientOriginOf(match: ClientCallMatch): ReceiverOrigin {
+  const from = [match.importModule];
+  return anyOf(
+    imported({ from, named: [match.importName] }),
+    allOf(spelled(match.importName), imported({ from, named: ["default"] })),
+    constructedFrom({ from, named: [match.importName, "default"] }),
   );
 }
 
-/** How a pack spells its client: the import, and the factories that build one. */
-type ClientSpelling = Pick<
-  ClientCallMatch,
-  "importModule" | "importName" | "factoryMethods"
->;
+/** How a pack spells its client: the module, and the export that is the client or builds one. */
+interface ClientSpelling {
+  readonly importModule: string;
+  readonly importName: string;
+}
 
 /**
  * A check for whether an expression is this pack's client.
@@ -216,11 +204,7 @@ function clientConstructionsOf(
   resolution: ResolutionStore | undefined,
 ): Map<Node, CallExpression | NewExpression> {
   const found = new Map<Node, CallExpression | NewExpression>();
-  if (
-    resolution === undefined ||
-    match.importModule === "global" ||
-    subjects.length === 0
-  ) {
+  if (resolution === undefined || subjects.length === 0) {
     return found;
   }
   const built = new Map<Node, CallExpression | NewExpression>();
@@ -247,8 +231,7 @@ function clientConstructionsOf(
 
 /**
  * The calls among these that build this pack's client: the imported
- * function itself (`initClient(...)`, `new Deck(...)`) or one of its
- * declared factory methods (`axios.create(...)`). Lenient on the
+ * function itself, `initClient(...)` or `new Deck(...)`. Lenient on the
  * default import's spelling, since a call can be in the file that
  * built the instance rather than the one asking, and that file can
  * call the import whatever it likes.
@@ -260,9 +243,9 @@ function creationCallsAmong(
 ): Set<CallExpression | NewExpression> {
   const deciding = new Map<CallExpression | NewExpression, Node>();
   for (const call of calls) {
-    const imported = creationImportOf(call, match);
-    if (imported !== null) {
-      deciding.set(call, imported);
+    const callee = call.getExpression();
+    if (Node.isIdentifier(callee)) {
+      deciding.set(call, callee);
     }
   }
   const imports = clientImportsAmong(
@@ -276,29 +259,6 @@ function creationCallsAmong(
       .filter(([, imported]) => imports.has(imported))
       .map(([call]) => call),
   );
-}
-
-/**
- * The identifier whose import decides whether a call builds the client:
- * the callee itself, or the object a declared factory method is called
- * on. Null for a call written any other way.
- */
-function creationImportOf(
-  call: CallExpression | NewExpression,
-  match: ClientSpelling,
-): Node | null {
-  const callee = call.getExpression();
-  if (Node.isIdentifier(callee)) {
-    return callee;
-  }
-  if (!Node.isPropertyAccessExpression(callee)) {
-    return null;
-  }
-  const base = callee.getExpression();
-  return Node.isIdentifier(base) &&
-    (match.factoryMethods?.includes(callee.getName()) ?? false)
-    ? base
-    : null;
 }
 
 function isPathShaped(specifier: string): boolean {

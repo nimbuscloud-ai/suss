@@ -5,8 +5,8 @@
 // matrix by existing, and a position a pack stops declaring leaves the
 // matrix with it.
 //
-// v0 covers the path positions of HTTP packs: registration calls, client
-// calls and `httpRequests` methods that read the URL off an argument.
+// v0 covers the path positions of HTTP packs: registration calls and
+// `httpRequests` methods that read the URL off an argument.
 // Positions inside other recognize chains wait for their own pass.
 
 import { byOrigin } from "@suss/extractor";
@@ -73,45 +73,6 @@ function registrationPosition(
   };
 }
 
-function clientPosition(
-  pack: PatternPack,
-  match: Extract<DiscoveryPattern["match"], { type: "clientCall" }>,
-): ValuePosition {
-  const method = match.methodFilter?.[0];
-  const isGlobal = match.importModule === "global";
-  const call =
-    method === undefined
-      ? `${match.importName}(EXPR)`
-      : `${match.importName}.${method}(EXPR)`;
-  const files: Record<string, string> = isGlobal
-    ? {}
-    : {
-        [`/node_modules/${match.importModule}/package.json`]: JSON.stringify({
-          name: match.importModule,
-          types: "index.d.ts",
-        }),
-        [`/node_modules/${match.importModule}/index.d.ts`]: `
-          declare const client: {
-            (url: string): Promise<unknown>;
-            ${method === undefined ? "" : `${method}(url: string): Promise<unknown>;`}
-          };
-          export default client;
-        `,
-      };
-  return {
-    name: `${pack.name} path from argument 0 of ${call.replace("EXPR", "...")}`,
-    pack,
-    files,
-    program: (spelled) => `
-      ${isGlobal ? "" : `import ${match.importName} from "${match.importModule}";`}
-      ${spelled.prelude}
-      export async function go(id: string) {
-        return ${call.replace("EXPR", spelled.expression)};
-      }
-    `,
-  };
-}
-
 /** Whether the pattern reads its path out of an argument. */
 function readsPathFromArgument(pattern: DiscoveryPattern): boolean {
   const path = pattern.bindingExtraction?.path;
@@ -131,10 +92,6 @@ export function valuePositionsOf(pack: PatternPack): ValuePosition[] {
     }
     if (pattern.match.type === "registrationCall") {
       const position = registrationPosition(pack, pattern.match);
-      found.set(position.name, position);
-    }
-    if (pattern.match.type === "clientCall") {
-      const position = clientPosition(pack, pattern.match);
       found.set(position.name, position);
     }
   }

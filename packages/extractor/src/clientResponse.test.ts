@@ -27,7 +27,6 @@ describe("clientResponseOf", () => {
         ],
         failureDelivery: "exception",
         redirectDelivery: "followed",
-        redirectOption: { name: "redirect", handsBack: ["manual"] },
       }),
     ).toEqual({
       success: ["ok"],
@@ -36,7 +35,6 @@ describe("clientResponseOf", () => {
       headers: ["headers"],
       failureDelivery: "exception",
       redirectDelivery: "followed",
-      redirectOption: { name: "redirect", handsBack: ["manual"] },
     });
   });
 

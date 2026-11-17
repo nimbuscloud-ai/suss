@@ -1401,7 +1401,6 @@ export {
   stampClaimMetadata,
 } from "./framework.js";
 export { makeIgnoredDirectory } from "./ignoredDirectory.js";
-export { JSX_ROUTE_UNREAD } from "./jsxElementRouteTable.js";
 export { KeptParses } from "./keptParses.js";
 export { byOrigin, lastValueWins } from "./ops.js";
 export {

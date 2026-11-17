@@ -1,11 +1,10 @@
 import { z } from "zod";
 
-import { JSX_ROUTE_UNREAD } from "@suss/extractor";
-
 import type {
   DiscoveryPattern,
   PatternPack,
   RouteTableDeclaration,
+  RouteUnread,
   ServesRole,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -99,6 +98,22 @@ export const REACT_ROUTER_ROUTES: RouteTableDeclaration = {
   absolutePaths: "standAlone",
   elementLists: ["createRoutesFromElements"],
   loops: [],
+};
+
+/** Why a route element or a route object claims no route, said to whoever reads the unit. */
+export const JSX_ROUTE_UNREAD: Readonly<Record<RouteUnread, string>> = {
+  pathUnread:
+    "The path this route declares is not written as a string literal, so no path is claimed and this route pairs with nothing",
+  prefixUnread:
+    "A route this one is nested under declares its path as something other than a string literal, so the full path is not claimed and this route pairs with nothing",
+  spread:
+    "A spread stands in for routes declared elsewhere in this array, and they are not read here, so no path is claimed for any of them",
+  notAnEntry:
+    "This route is built by a call rather than written out where the router is created, so nothing of it is read and no path is claimed",
+  rootListUnread:
+    "The routes this router is created from are not written as an array literal within reach, so none of them are read here",
+  listUnread:
+    "The routes nested under this one are not written as an array literal within reach, so none of them are read here",
 };
 
 /**

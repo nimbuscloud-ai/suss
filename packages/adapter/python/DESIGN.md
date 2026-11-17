@@ -194,7 +194,7 @@ tree-sitter hands back a fresh wrapper object every time a child is read, so two
 
 ## What a body calls out to
 
-A pack declares the requests its library sends with `@suss/recognize`'s `httpRequests`, which compiles to the pack's `requestRecognizers`. The recognize package's DESIGN.md, under "A request a library sends", says how a chain reads one call. A pack written against the older `clients` patterns still runs: `declaredClients.ts` reads each pattern as the chain that says the same thing, its module's functions and a receiver one of its constructors built as the client.
+A pack declares the requests its library sends with `@suss/recognize`'s `httpRequests`, which compiles to the pack's `requestRecognizers`. The recognize package's DESIGN.md, under "A request a library sends", says how a chain reads one call.
 
 The adapter hands every call in every function in a file to each pack's hooks, with the ops over the run's facts, so `requests.get`, a bare `get` imported from the package, and `session.get` on a value built by one of the library's constructors all match the same chain. The URL goes through the value evaluator and `pathOf` from `@suss/values`, the same reading a route's path gets, so an f-string and a name defined elsewhere in the project both resolve to the path they spell out. A name is keyed by its scope and has no node, so the fact source reads the URL at the argument the call writes, and a name assigned twice before two calls gives each call its own URL. Before discovery reads a file, it settles what every receiver in it was written as in one round, which the hooks then read without asking the rules again.
 

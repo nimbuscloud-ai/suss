@@ -292,25 +292,19 @@ Python decorators go through `decoratedFunctionRoute` and `decoratedClassRoute`,
 ```typescript
 {
   type: "clientCall";
-  importModule: string;        // or "global" for built-ins like fetch
-  importName: string;
-  methodFilter?: string[];
-  factoryMethods?: string[];   // ["create"] for axios.create(...)
-  callable?: boolean;          // the import itself sends, as axios(config) does
-  basePathOption?: string;     // "baseURL" for axios.create({ baseURL })
+  importModule: string;   // "@ts-rest/core"
+  importName: string;     // "initClient"
 }
 ```
 
-`clientCall` finds call sites, the consumer side of a boundary. The adapter finds imports of `importName` from `importModule`, resolves variables initialized from that import, and walks their method calls. For a global, every bare call to `importName` matches. The enclosing function becomes a `client`-kind unit. A new pack declares its requests with `@suss/recognize`'s `httpRequests` instead. The TypeScript adapter still reads a `clientCall` pattern whose method and path come from the call, by turning it into the request chain that says the same thing.
+`clientCall` finds the calls on a client built from a contract, the consumer side of a contract-first library. The adapter finds what `importName` from `importModule` built, wherever the project keeps it, and every method called on it makes the enclosing function a `client`-kind unit. With `bindingExtraction: { method: { type: "fromClientMethod" }, path: { type: "fromClientMethod" } }`, the method and path are the ones the contract lists for the method being called, and the pack's `contractReading` says how to find the contract.
 
 ```ts
-const api = axios.create({ baseURL: "https://shop.example.com/api" });
-await api.get(`/orders/${id}`);
+const client = initClient(contract, { baseUrl: "" });
+await client.getUser({ params: { id } });
 ```
 
-`basePathOption` is the property on the factory call's configuration that sets the base path for every request made through the instance. The adapter reads it from the factory call the receiver resolves to, and puts it in front of the call's own path, so a client with a base pairs with a spec whose `servers[0].url` states the same prefix. An absolute base keeps only its path, a base of `/` adds nothing, and a base the evaluator cannot resolve leaves the path as the call site wrote it.
-
-ts-rest uses `clientCall` with `initClient`, and reads each call's method and path from its contract. The fetch and axios packs, and the Python and Ruby client packs (requests, httpx, aiohttp, Faraday, Net::HTTP), declare their requests with `httpRequests`.
+ts-rest uses it. A library whose calls state their own method and URL, such as fetch, axios, requests, httpx, aiohttp, Faraday and Net::HTTP, declares its requests with `@suss/recognize`'s `httpRequests`, and the pack lists the compiled chains under `requestRecognizers`.
 
 ### `graphqlHookCall`
 
@@ -377,20 +371,18 @@ new ApolloServer({
 
 Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)` semantics. Both `new Ctor(cfg)` and `ctor(cfg)` match, since Apollo's standalone server uses `new` and yoga uses a bare call. The Apollo pack declares `mapProperty: "resolvers"`.
 
-### `jsxElementRoute`
+### `routeTable`
 
 ```typescript
 {
-  type: "jsxElementRoute";
-  importModule: string | string[];
-  routeElement: string;
-  pathAttribute: string;
-  elementAttribute: string;
-  indexAttribute?: string;
+  type: "routeTable";
+  table: RouteTableDeclaration;
+  through?: "element";
+  unread: Record<RouteUnread, string>;
 }
 ```
 
-`jsxElementRoute` reads routes declared as JSX elements, the way client-side routers write them.
+`routeTable` reads the routes a table in one file declares, such as the JSX elements a client-side router is written with.
 
 ```tsx
 <Routes>
@@ -400,7 +392,7 @@ Each inner function becomes one unit with `graphql-resolver(typeName, fieldName)
 </Routes>
 ```
 
-It covers the nested tree form, where a child path joins its parent's and an index route takes the parent's path, and the object-array form, where a factory call takes an array of route objects using the same property names. A route whose component cannot be read is still reported, as a boundary with nothing behind it. A route whose path cannot be read gets no path, and suss records a gap saying why. React Router uses it.
+The table says which elements or objects are routes, which of their attributes or keys give the path, the handler and the index flag, and where the nested routes are. `@suss/recognize` composes the paths, so a child path joins its parent's and an index route takes its parent's. Each route becomes one unit on the function its handler settles to, and with `through: "element"` that is the component the handler's JSX renders. A route whose path cannot be read gets no path, and its unit says why in the sentence `unread` gives for that reason. React Router declares its routes this way, as `REACT_ROUTER_ROUTES`.
 
 ### `packageExports`
 
@@ -485,14 +477,14 @@ new Worker("emails", sendEmail);
 | `{ type: "fromExportName" }` | The export name is the method, which is the Next.js App Router convention. |
 | `{ type: "fromContract" }` | A separate contract definition, as ts-rest has. |
 | `{ type: "fromClientMethod" }` | The client call's method name, resolved back through the contract. `client.getUser(...)` finds `GET`. |
-| `{ type: "fromArgumentProperty"; position; property; default? }` | A property on an options argument. The fetch pack reads `method` off argument 1 and falls back to `"GET"`. |
+| `{ type: "fromArgumentProperty"; position; property; default? }` | A property on an argument, falling back to `default` when the argument does not state it. The Hono pack reads `method` off the route object `createRoute` builds. |
 | `{ type: "literal"; value }` | Fixed. A React Router loader is always `GET`. |
 
 ### Path
 
 | Variant | What it reads |
 |---|---|
-| `{ type: "fromArgument"; position }` | The argument at that position, on either side of the boundary. `app.get("/users", h)` and `fetch("/users")` both give `/users`. A name bound to a string is followed to what it was written as, so `app.get(USERS, h)` gives `/users`, and a template is read hole by hole, so `` `${BASE}/items/:id` `` with `BASE = "/api"` gives `/api/items/:id`. A hole suss cannot follow becomes `{name}`, which the path normalizer treats the same way as `:name`. |
+| `{ type: "fromArgument"; position }` | The argument at that position. `app.get("/users", h)` gives `/users`. A name bound to a string is followed to what it was written as, so `app.get(USERS, h)` gives `/users`, and a template is read hole by hole, so `` `${BASE}/items/:id` `` with `BASE = "/api"` gives `/api/items/:id`. A hole suss cannot follow becomes `{name}`, which the path normalizer treats the same way as `:name`. |
 | `{ type: "fromArgumentProperty"; position; property }` | A property on the argument, the way a route object built by Hono's `createRoute` stores its path. |
 | `{ type: "fromFilename"; root; dropBasenames?; dynamic?; dropParenthesized?; flat? }` | Where the file is on disk. `root` says where a route path starts, `dropBasenames` lists filenames that only say what kind of file it is and contribute no path segment, and `dynamic` says how the framework writes a parameter (`"brackets"` for Next.js's `[id]`, `"dollarPrefix"` for `$id`). `app/api/orders/[id]/route.ts` under `{ root: "app", dropBasenames: ["route"], dynamic: "brackets" }` gives `/api/orders/{id}`, which pairs with an Express provider writing `/api/orders/:id`. Next.js uses it. |
 | `{ type: "fromContract" }` / `{ type: "fromClientMethod" }` | As above. |

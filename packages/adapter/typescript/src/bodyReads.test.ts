@@ -9,7 +9,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { constructedFrom, messageSends, pack } from "@suss/recognize";
+import {
+  constructedFrom,
+  httpRequests,
+  imported,
+  messageSends,
+  pack,
+  requestRecognizersOf,
+  returnedBy,
+} from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "./adapter.js";
@@ -117,22 +125,15 @@ describe("a caller of a request wrapper", () => {
       name: "axios",
       protocol: "http",
       languages: ["typescript"],
-      discovery: [
-        {
-          kind: "client",
-          match: {
-            type: "clientCall",
-            importModule: "axios",
-            importName: "axios",
-            methodFilter: ["get"],
-            factoryMethods: ["create"],
-          },
-          bindingExtraction: {
-            method: { type: "literal", value: "GET" },
-            path: { type: "fromArgument", position: 0 },
-          },
-        },
-      ],
+      discovery: [],
+      requestRecognizers: requestRecognizersOf([
+        httpRequests({
+          client: returnedBy(
+            "create",
+            imported({ from: ["axios"], named: ["default"] }),
+          ),
+        }).methods({ get: { sends: "GET", url: { at: 0 } } }),
+      ]),
       terminals: [
         { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       ],

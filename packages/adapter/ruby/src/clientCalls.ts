@@ -18,7 +18,6 @@ import { factCallOps } from "@suss/recognize/ops";
 
 import { children, field, rangeOf, spanOf } from "./ast.js";
 import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
-import { packRequestHooks } from "./declaredClients.js";
 import { factSourceOf } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
 import { invocationSites } from "./paths/effects.js";
@@ -56,7 +55,7 @@ export interface ClientCallOptions {
   tallies?: ReadonlyMap<string, PackTally> | undefined;
 }
 
-/** One group of a pack's request hooks, with the units its hooks found so far. */
+/** One pack's request hooks, with the units its hooks found so far. */
 interface Requesting {
   readonly pack: RubyPack;
   readonly hooks: readonly RequestRecognizer[];
@@ -66,7 +65,7 @@ interface Requesting {
 /**
  * One unit per request a method in this file makes. A request in a
  * block a pack claims is made by that block, so the block is the
- * client, under the name its own unit has. Each group's units come
+ * client, under the name its own unit has. Each pack's units come
  * together, in pack order, with each in the order the file writes it.
  */
 export function clientCallUnits(
@@ -75,9 +74,10 @@ export function clientCallUnits(
   options: ClientCallOptions,
 ): RawCodeStructure[] {
   const { facts } = options;
-  const requesting: Requesting[] = packs.flatMap((pack) =>
-    packRequestHooks(pack).map((hooks) => ({ pack, hooks, units: [] })),
-  );
+  const requesting: Requesting[] = packs.flatMap((pack) => {
+    const hooks = pack.requestRecognizers ?? [];
+    return hooks.length === 0 ? [] : [{ pack, hooks, units: [] }];
+  });
   if (facts === undefined || requesting.length === 0) {
     return [];
   }

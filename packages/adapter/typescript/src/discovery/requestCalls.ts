@@ -37,18 +37,6 @@ const RUNTIME_GLOBAL_OBJECTS: ReadonlySet<string> = new Set([
   "global",
 ]);
 
-/** One request hook a pack gives the walk. */
-export interface PackRequestHook {
-  readonly hook: RequestRecognizer;
-  /**
-   * Whether the hook's units go in the order its methods table lists the
-   * methods. A pack declared with `httpRequests` says so. A hook read off
-   * one `clientCall` pattern gives its units in the order the file writes
-   * them, as the pattern did.
-   */
-  readonly ranked: boolean;
-}
-
 /** A unit, and where it goes among the others the pack's hooks found. */
 interface Placed {
   readonly rank: number;
@@ -60,7 +48,7 @@ interface Placed {
 /** The client units the hooks find in one file, in the pack's order. */
 export function requestUnitsIn(
   sourceFile: SourceFile,
-  hooks: readonly PackRequestHook[],
+  hooks: readonly RequestRecognizer[],
   kind: string,
   resolution: ResolutionStore,
 ): DiscoveredUnit[] {
@@ -70,12 +58,12 @@ export function requestUnitsIn(
   const placed: Placed[] = [];
   // A method call is looked up by its method before anything else, so a
   // method no table lists needs no ops at all.
-  const listed = new Set(hooks.flatMap(({ hook }) => hook.entries));
+  const listed = new Set(hooks.flatMap((hook) => hook.entries));
   const admits = (method: string | null): boolean =>
     method === null || listed.has(method);
   forEachCallIn(sourceFile, resolution, admits, (call, ops, order) => {
     const ctx = { ops };
-    hooks.forEach(({ hook, ranked }, index) => {
+    hooks.forEach((hook, index) => {
       const claims = hook(call, ctx) ?? [];
       const func = claims.length === 0 ? null : findEnclosingFunction(call);
       if (func === null) {
@@ -84,7 +72,7 @@ export function requestUnitsIn(
       const methodName = methodNameOf(call);
       for (const request of claims) {
         placed.push({
-          rank: ranked ? rankOf(hook, request.read.entry) : 0,
+          rank: rankOf(hook, request.read.entry),
           hook: index,
           order,
           unit: {

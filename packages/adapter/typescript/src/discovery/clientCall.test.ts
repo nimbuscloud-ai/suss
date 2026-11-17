@@ -2,13 +2,21 @@ import { Node } from "ts-morph";
 import { describe, expect, it } from "vitest";
 
 import { profileEvaluation } from "@suss/datalog";
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+} from "@suss/recognize";
 import { createTestProject } from "@suss/test-project";
 
+import { fetchRequests } from "../__fixtures__/fetchRequests.js";
 import { ResolutionStore } from "../facts/store.js";
 import { clientReceiverCheckFor } from "./clientCall.js";
 import { discoverUnits } from "./index.js";
 
-import type { DiscoveryPattern } from "@suss/extractor";
+import type { DiscoveryPattern, RequestRecognizer } from "@suss/extractor";
 import type { SourceFile } from "ts-morph";
 
 type ClientCallMatch = Extract<
@@ -50,23 +58,23 @@ function subjectNamed(
 }
 
 /** The client units one `clientCall` pattern finds in the file. */
-function unitsOf(
-  file: SourceFile,
-  match: ClientCallMatch,
-  binding?: DiscoveryPattern["bindingExtraction"],
-  store = new ResolutionStore(),
-) {
+function unitsOf(file: SourceFile, match: ClientCallMatch) {
   return discoverUnits(
     file,
-    [
-      {
-        kind: "client",
-        match,
-        ...(binding === undefined ? {} : { bindingExtraction: binding }),
-      },
-    ],
-    store,
+    [{ kind: "client", match }],
+    new ResolutionStore(),
   );
+}
+
+/** The client units a pack's request hooks find in the file. */
+function requestUnitsOf(
+  file: SourceFile,
+  hooks: RequestRecognizer[],
+  store = new ResolutionStore(),
+) {
+  return discoverUnits(file, [], store, undefined, undefined, {
+    requestRecognizers: hooks,
+  });
 }
 
 describe("clientReceiverCheckFor without a store", () => {
@@ -131,16 +139,8 @@ describe("clientReceiverCheckFor with a store", () => {
   });
 });
 
-const FETCH: ClientCallMatch = {
-  type: "clientCall",
-  importModule: "global",
-  importName: "fetch",
-};
-
-const GET_AT_FIRST = {
-  method: { type: "literal", value: "GET" },
-  path: { type: "fromArgument", position: 0 },
-} as NonNullable<DiscoveryPattern["bindingExtraction"]>;
+/** `fetch(url)` sending a GET, whatever the call's options say. */
+const FETCH = fetchRequests({ sends: "GET", url: { at: 0 } });
 
 describe("naming a unit by its enclosing shape", () => {
   it("uses the method name and the property name the call is written under", () => {
@@ -158,7 +158,7 @@ describe("naming a unit by its enclosing shape", () => {
       };
       `,
     );
-    const names = unitsOf(file, FETCH).map((unit) => unit.name);
+    const names = requestUnitsOf(file, FETCH).map((unit) => unit.name);
     expect(names.sort()).toEqual(["getUser", "listOrders"]);
   });
 
@@ -177,7 +177,7 @@ describe("naming a unit by its enclosing shape", () => {
       };
       `,
     );
-    const names = unitsOf(file, FETCH).map((unit) => unit.name);
+    const names = requestUnitsOf(file, FETCH).map((unit) => unit.name);
     expect(names.sort()).toEqual(["get-user", "list-orders"]);
   });
 
@@ -191,18 +191,16 @@ describe("naming a unit by its enclosing shape", () => {
       export const notAGlobal = (api: { fetch: (p: string) => unknown }) => api.fetch("/x");
       `,
     );
-    for (const binding of [undefined, GET_AT_FIRST]) {
-      const units = unitsOf(file, FETCH, binding);
-      expect(units.map((unit) => unit.name).sort()).toEqual([
-        "fromWindow",
-        "proxied",
-      ]);
-      // A function read off the global object is called as itself.
-      expect(units.map((unit) => unit.callSite?.methodName)).toEqual([
-        null,
-        null,
-      ]);
-    }
+    const units = requestUnitsOf(file, FETCH);
+    expect(units.map((unit) => unit.name).sort()).toEqual([
+      "fromWindow",
+      "proxied",
+    ]);
+    // A function read off the global object is called as itself.
+    expect(units.map((unit) => unit.callSite?.methodName)).toEqual([
+      null,
+      null,
+    ]);
   });
 });
 
@@ -219,7 +217,7 @@ describe("a path a constructor argument states", () => {
   function pathsUnder(source: string, name = "list"): string[] {
     const project = createTestProject();
     const file = project.createSourceFile("/consumer.ts", source);
-    return unitsOf(file, FETCH, GET_AT_FIRST)
+    return requestUnitsOf(file, FETCH)
       .filter((unit) => unit.name === name)
       .map((unit) => unit.callSite?.request?.path ?? "unresolved")
       .sort();
@@ -318,7 +316,7 @@ describe("a path a constructor argument states", () => {
         return Reflect.get(target, name, receiver) as unknown;
       },
     });
-    const units = unitsOf(file, FETCH, GET_AT_FIRST, watched);
+    const units = requestUnitsOf(file, FETCH, watched);
 
     expect(units).toHaveLength(1);
     expect(units[0]?.callSite?.under).toBeUndefined();
@@ -340,18 +338,21 @@ describe("a URL fetch reads without a request", () => {
       export const any = (url: string) => fetch(url);
       `,
     );
-    const names = unitsOf(file, FETCH, GET_AT_FIRST).map((unit) => unit.name);
+    const names = requestUnitsOf(file, FETCH).map((unit) => unit.name);
     expect(names.sort()).toEqual(["any", "orders"]);
   });
 });
 
 describe("a file's receivers, asked about together", () => {
-  const match: ClientCallMatch = {
-    type: "clientCall",
-    importModule: "tapedeck",
-    importName: "Deck",
-    methodFilter: ["play"],
-  };
+  /** `play(track)` on the default import, or on what constructing it builds, sends a GET. */
+  const PLAYS = requestRecognizersOf([
+    httpRequests({
+      client: anyOf(
+        imported({ from: ["tapedeck"], named: ["default"] }),
+        constructedFrom({ from: ["tapedeck"], named: ["default"] }),
+      ),
+    }).methods({ play: { sends: "GET", url: { at: 0 } } }),
+  ]);
 
   /** A consumer beside a module that builds the client two ways. */
   function consumerOf(source: string) {
@@ -377,10 +378,8 @@ describe("a file's receivers, asked about together", () => {
       export function onOther() { return other.play("d"); }
       export function notPlayed() { return deck.side("a"); }
     `);
-    for (const binding of [undefined, GET_AT_FIRST]) {
-      const names = unitsOf(file, match, binding).map((unit) => unit.name);
-      expect(names.sort()).toEqual(["onImport", "onInstance", "onReturned"]);
-    }
+    const names = requestUnitsOf(file, PLAYS).map((unit) => unit.name);
+    expect(names.sort()).toEqual(["onImport", "onInstance", "onReturned"]);
   });
 
   it("asks no more questions of a file with ten other receivers than of one with two", () => {
@@ -395,10 +394,40 @@ describe("a file's receivers, asked about together", () => {
         ${others.join("\n")}
         export function played() { return deck.play("y"); }
       `);
-      return profileEvaluation(() => unitsOf(file, match, GET_AT_FIRST)).profile
+      return profileEvaluation(() => requestUnitsOf(file, PLAYS)).profile
         .evaluations;
     };
 
     expect(costWith(10)).toBe(costWith(2));
+  });
+});
+
+describe("a client built from a contract", () => {
+  const DECK: ClientCallMatch = {
+    type: "clientCall",
+    importModule: "tapedeck",
+    importName: "makeDeck",
+  };
+
+  it("takes every method called on what the builder made, and on nothing else", () => {
+    const project = projectWithDeck();
+    const file = project.createSourceFile(
+      "/consumer.ts",
+      `
+      import { makeDeck } from "tapedeck";
+      const deck = makeDeck();
+      const other = { play: (track: string) => track };
+      export function played() { return deck.play("a"); }
+      export function turned() { return deck.side("b"); }
+      export function elsewhere() { return other.play("c"); }
+      export function called() { return makeDeck(); }
+      `,
+    );
+    const units = unitsOf(file, DECK);
+    expect(units.map((unit) => unit.name).sort()).toEqual(["played", "turned"]);
+    expect(units.map((unit) => unit.callSite?.methodName).sort()).toEqual([
+      "play",
+      "side",
+    ]);
   });
 });
