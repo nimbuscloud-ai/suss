@@ -4,15 +4,22 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { graphqlRubyTestPack } from "./__fixtures__/graphqlRubyPattern.js";
+import { Database } from "@suss/datalog";
+
+import {
+  graphqlFields,
+  graphqlRubyTestPack,
+} from "./__fixtures__/graphqlRubyPattern.js";
 import {
   controllerActionsPattern,
   railsTestPack,
 } from "./__fixtures__/railsControllerPattern.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
 import { parseRuby } from "./parser.js";
+import { RunFacts } from "./project.js";
 
 import type { ControllerActions, ControllerRoute, RubyPack } from "./pack.js";
+import type { RbNode } from "./parser.js";
 
 /** For tests that never resolve a `mutation:` or `resolver:` reference, and so never read a file. */
 function inMemoryCache(files: Record<string, string> = {}) {
@@ -33,12 +40,36 @@ function diskCache() {
 
 const OBJECT_PACK: RubyPack = graphqlRubyTestPack();
 
+/** The pack's camelize option set to false, which reaches the fields and the arguments alike. */
+const CAMELIZE_OFF = {
+  camelizeDefault: false,
+  fields: graphqlFields(["Types::BaseObject"], false),
+};
+
+/** The facts a run states for these files, which the declared field reader reads. */
+function factsOfFile(
+  file: string,
+  root: RbNode,
+  pack: RubyPack,
+  others: Record<string, RbNode> = {},
+): Database {
+  const run = new RunFacts(new Database(), [pack]);
+  for (const [other, otherRoot] of Object.entries(others)) {
+    run.addFile(other, otherRoot);
+  }
+  run.addFile(file, root);
+  run.finish();
+  return run.db;
+}
+
 async function discover(source: string, pack: RubyPack = OBJECT_PACK) {
   const tree = await parseRuby(source);
+  const file = "types/campaign_type.rb";
   return discoverUnits(tree.rootNode, {
     packs: [pack],
-    filePath: "types/campaign_type.rb",
+    filePath: file,
     cache: inMemoryCache(),
+    facts: factsOfFile(file, tree.rootNode, pack),
   });
 }
 
@@ -107,7 +138,7 @@ describe("discoverUnits: object type fields", () => {
         "  field :id, ID, null: false\n" +
         "end\n",
       graphqlRubyTestPack({
-        baseClassNames: ["Types::BaseObject", "Types::BaseInterface"],
+        fields: graphqlFields(["Types::BaseObject", "Types::BaseInterface"]),
       }),
     );
     expect(units.map((u) => u.identity.name)).toEqual(["UserInterface.id"]);
@@ -348,10 +379,8 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
   }
 
   it("crosses a project base defined in its own file", async () => {
-    write(
-      "types/admin_object.rb",
-      "class Types::AdminObject < Types::BaseObject\nend\n",
-    );
+    const base = "class Types::AdminObject < Types::BaseObject\nend\n";
+    write("types/admin_object.rb", base);
     const tree = await parseRuby(
       "class Types::UserType < Types::AdminObject\n" +
         "  field :id, ID, null: false\n" +
@@ -361,6 +390,9 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/user_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/user_type.rb", tree.rootNode, pack, {
+        "types/admin_object.rb": (await parseRuby(base)).rootNode,
+      }),
     });
     expect(units.map((u) => u.identity.name)).toEqual(["User.id"]);
   });
@@ -383,6 +415,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.identity.name).toBe("Mutation.campaignUpdate");
@@ -425,6 +458,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.graphqlDeclaredContract?.args).toEqual([
@@ -476,6 +510,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.graphqlDeclaredContract?.args).toEqual([
@@ -500,6 +535,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/query_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/query_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.identity.name).toBe("Query.campaign");
@@ -527,6 +563,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/query_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/query_type.rb", tree.rootNode, pack),
     });
     expect(units[0]?.graphqlDeclaredContract?.returnType).toEqual({
       type: "ref",
@@ -551,6 +588,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/query_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/query_type.rb", tree.rootNode, pack),
     });
     expect(units[0]?.graphqlDeclaredContract?.args).toEqual([
       { name: "campaignId", type: { type: "text" }, required: true },
@@ -567,6 +605,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
     expect(units[0]?.identity.name).toBe("Mutation.campaignUpdate");
     expect(units[0]?.graphqlDeclaredContract).toBeUndefined();
@@ -583,6 +622,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
     expect(units[0]?.graphqlDeclaredContract).toBeUndefined();
   });
@@ -610,6 +650,7 @@ describe("discoverUnits: mutation: / resolver: one-hop wiring", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.graphqlDeclaredContract?.returnType).toEqual({
@@ -645,7 +686,7 @@ describe("discoverUnits: camelize", () => {
   });
 
   it("leaves every field's name as written when the pack's own camelize option is false", async () => {
-    const pack: RubyPack = graphqlRubyTestPack({ camelizeDefault: false });
+    const pack: RubyPack = graphqlRubyTestPack(CAMELIZE_OFF);
     const units = await discover(
       "class Types::MutationType < Types::BaseObject\n" +
         "  field :campaign_update, String, null: true\n" +
@@ -656,7 +697,7 @@ describe("discoverUnits: camelize", () => {
   });
 
   it("a field's own camelize: true overrides the pack's false default for that one name", async () => {
-    const pack: RubyPack = graphqlRubyTestPack({ camelizeDefault: false });
+    const pack: RubyPack = graphqlRubyTestPack(CAMELIZE_OFF);
     const units = await discover(
       "class Types::MutationType < Types::BaseObject\n" +
         "  field :campaign_update, String, null: true, camelize: true\n" +
@@ -690,6 +731,7 @@ describe("discoverUnits: camelize", () => {
       packs: [pack],
       filePath: "types/mutation_type.rb",
       cache: diskCache(),
+      facts: factsOfFile("types/mutation_type.rb", tree.rootNode, pack),
     });
 
     expect(units[0]?.graphqlDeclaredContract?.args).toEqual([

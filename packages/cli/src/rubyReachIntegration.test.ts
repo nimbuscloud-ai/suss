@@ -31,13 +31,25 @@ const graphqlWithActiveRecord: RubyPack = {
   discovery: [
     {
       type: "graphqlObjectFields",
-      baseClassNames: ["Types::BaseObject"],
+      fields: {
+        type: "subclassOf",
+        inherits: [{ from: ["Types"], named: ["BaseObject"] }],
+        skipClasses: ["Types::BaseObject"],
+        members: { kind: "instance", names: [] },
+        calls: {
+          field: {
+            name: { at: 0 },
+            naming: { camel: { keyword: "camelize", default: true } },
+            runs: [{ method: "named" }],
+          },
+        },
+        className: { suffixRemoved: "Type" },
+      },
       root: "/app/graphql",
       pathConvention: "railsUnderscore",
       fieldCallName: "field",
       typeCallName: "type",
       argumentCallName: "argument",
-      wiringKeywords: ["mutation", "resolver"],
       resolverMethodName: "resolve",
       ancestryRootClassNames: [
         "GraphQL::Schema::Object",

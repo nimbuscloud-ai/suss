@@ -9,6 +9,7 @@ import { Database } from "@suss/datalog";
 import { addPackWords } from "@suss/resolution";
 
 import {
+  graphqlFields,
   graphqlObjectFieldsPattern,
   graphqlRubyTestPack,
 } from "./__fixtures__/graphqlRubyPattern.js";
@@ -615,7 +616,7 @@ describe("the method behind a field", () => {
       packs: [
         graphqlRubyTestPack({
           root: path.join(tmpDir, "app", "graphql"),
-          baseClassNames: ["Types::BaseObject", "Types::BasePersonType"],
+          fields: graphqlFields(["Types::BaseObject", "Types::BasePersonType"]),
         }),
       ],
     });
