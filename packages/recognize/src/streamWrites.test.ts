@@ -15,6 +15,7 @@ import {
   inherits,
   readOff,
   returnedBy,
+  spelled,
   typed,
 } from "./ops.js";
 import { pack } from "./pack.js";
@@ -97,6 +98,7 @@ function writeCall(over: {
     inherits: () => false,
     handedBy: () => false,
     imported: () => false,
+    spelled: () => false,
   };
   return {
     method: () => over.method,
@@ -107,9 +109,10 @@ function writeCall(over: {
         ? undefined
         : over.receiverGlobal,
     isFrom: (origin: ReceiverOrigin) =>
-      origin.origin === "global" &&
-      over.bareGlobal !== undefined &&
-      origin.paths.includes(over.bareGlobal),
+      (origin.origin === "global" &&
+        over.bareGlobal !== undefined &&
+        origin.paths.includes(over.bareGlobal)) ||
+      (origin.origin === "spelled" && origin.names.includes(over.callee)),
     argumentCount: () => args.length,
     nameAt: () => null,
     calleeText: () => over.callee,
@@ -352,6 +355,7 @@ describe("a stream-write chain", () => {
         inherits({ from: ["tape"], named: ["Deck"] }),
         handedBy("record", declaredBy("tape"), { parameter: 0 }),
         readOff(handedIn("env")),
+        spelled("tape"),
         allOf(global("process.stdout")),
       ),
     }).methods({ write: { to: "receiver" } });
@@ -382,6 +386,22 @@ describe("a stream-write chain", () => {
       callee: "track",
       interaction: { class: "storage-access", operation: "track" },
     });
+  });
+
+  it("matches a bare call written with a name the client spells, whatever binds the name", () => {
+    const tracked = storageCalls({
+      system: "tally",
+      client: spelled("track"),
+    }).calls({ kind: "write" });
+    const [effect] =
+      writes(tracked, writeCall({ method: null, callee: "track" })) ?? [];
+    expect(effect).toMatchObject({
+      callee: "track",
+      interaction: { class: "storage-access", operation: "track" },
+    });
+    expect(
+      writes(tracked, writeCall({ method: null, callee: "count" })),
+    ).toBeNull();
   });
 
   it("never reads a method every object inherits as one the table lists", () => {

@@ -32,6 +32,7 @@ export type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Spelled,
   SuppliedKey,
   Typed,
   UnsettledName,
@@ -62,6 +63,7 @@ import type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Spelled,
   Typed,
 } from "@suss/extractor";
 
@@ -186,6 +188,15 @@ export function global(...paths: readonly string[]): Global {
 }
 
 /**
+ * A receiver, or a call with no receiver, written with one of these
+ * names, whatever the program binds the name to: `spelled("fetch")` takes
+ * a `fetch` a caller hands in as well as the runtime's own.
+ */
+export function spelled(...names: readonly string[]): Spelled {
+  return { origin: "spelled", names };
+}
+
+/**
  * The parameter the platform fills when it calls a unit, under the name
  * the pack's unit spec gives it in `handedIn`: `handedIn("env")` for the
  * bindings a Worker's trigger is handed.
@@ -205,6 +216,7 @@ const MODULES: ByOrigin<readonly string[]> = {
   handedBy: (origin) => modulesOf(origin.on),
   imported: (origin) => origin.importedFrom,
   global: () => [],
+  spelled: () => [],
   readOff: () => [],
 };
 

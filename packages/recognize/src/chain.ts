@@ -1244,17 +1244,25 @@ export interface SentAsNamed {
   readonly url: UrlArgument;
   /** What this method does with a redirect, when it differs from the client's. */
   readonly redirects?: RedirectDelivery;
+  /**
+   * The object the call passes its options in, which the client's
+   * redirect option is read off: `axios.get(url, { maxRedirects: 0 })`.
+   * A language with keywords reads the option as a keyword instead.
+   */
+  readonly options?: OneArgument;
 }
 
 /**
  * `requests.request("GET", url)` and `fetch(url, { method: "POST" })`:
  * an argument states the method, read the way a value is evaluated and
- * upper-cased, and `default` is what a call that states none sends.
+ * upper-cased, and `default` is what a call sends when it states none
+ * or states one suss cannot settle.
  */
 export interface SentFromArgument {
   readonly sends: { readonly from: OneArgument; readonly default?: string };
   readonly url: UrlArgument;
   readonly redirects?: RedirectDelivery;
+  readonly options?: OneArgument;
 }
 
 /**

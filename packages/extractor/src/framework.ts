@@ -30,6 +30,7 @@ import type {
   ModuleMemberName,
   ReceiverOrigin,
   SubUnitOpsCarrier,
+  UrlTarget,
   ValueOps,
 } from "./ops.js";
 import type { ProjectHelpers } from "./projectHelpers.js";
@@ -2058,6 +2059,42 @@ export interface RequestClaim {
   readonly host: string | undefined;
   /** What the call does with a redirect, when it says so itself. */
   readonly redirectDelivery?: RedirectDelivery;
+  /** The construction of the call's class this request was read under, when the URL differs between them. */
+  readonly site?: string;
+  /** Where the call states the request, for an adapter that reads the call again under other values. */
+  readonly read: RequestRead;
+}
+
+/**
+ * Where a call states the parts of one request, and the base its client's
+ * construction puts in front. TypeScript reads a wrapper's library call
+ * again under each caller's arguments, so it needs to know which argument
+ * says what, and the base apart from the call's own URL.
+ */
+export interface RequestRead {
+  /** The methods table entry the call matched, or null for a call of the client itself that no entry shares. */
+  readonly entry: string | null;
+  /** Where the call states its URL. */
+  readonly url: ArgumentPlace;
+  /** The method the table writes, or where the call states it and what it sends when it states none. */
+  readonly method:
+    | string
+    | { readonly at: ArgumentPlace; readonly default?: string };
+  /** Where the call passes its options object, when the table says. */
+  readonly options?: ArgumentPlace;
+  /**
+   * The base the client's construction states, when it states one, and
+   * how the library puts a path under it. A base appended to that has a
+   * hole has no path.
+   */
+  readonly base?: UrlTarget & { readonly joins: "appended" | "resolved" };
+}
+
+/** One argument of a call, by position or by keyword, and the properties read inside it. */
+export interface ArgumentPlace {
+  readonly at: number;
+  readonly keyword?: string;
+  readonly property?: readonly string[];
 }
 
 /** What the library's response object gives a caller, by what each member means. */
@@ -2091,6 +2128,8 @@ export type RequestRecognizer<TCtx = unknown> = ((
 ) => readonly RequestClaim[] | null) & {
   /** What a caller can read off the response, which every claim's unit says. */
   readonly response: ClientResponse;
+  /** The methods table's entries in the order the pack wrote them, which a claim's `read.entry` is one of. */
+  readonly entries: readonly string[];
 };
 
 /**

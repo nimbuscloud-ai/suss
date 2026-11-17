@@ -149,6 +149,13 @@ says which path that was. A chain that starts at a global also matches
 a call of the global with no receiver, `print(x)` or `puts x`, looking
 its callee up in the methods table.
 
+`spelled(...names)` takes a receiver, or a call with no receiver,
+written as one of the names, whatever the program binds the name to.
+It reads the source text and asks no rules. fetch needs it, because
+a `fetch` a caller hands in, or one a fetch library exports, is nearly
+always an implementation of fetch, and `global("fetch")` leaves out
+every name the program binds itself.
+
 A read has no receiver, so a read chain starts at the object its reads
 are off, with an `off` link rather than a `start` one. The object is a
 `RuntimeObject`: a `global`, spelled the way a receiver is, or a
@@ -327,8 +334,9 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `namedCallee` | the callee is a name: stated as none of a call, a read, an object or a written value |
 | `calleeImportedAs` | the adapter's `importedAs` on the callee, kept when it gives one export other than the whole module. It is asked only when `imports` is stated for the callee or for what it `binds` to, so a parameter is never followed through its callers |
 | `calleeImport` | the `imports` rows of the callee, or of what it `binds` to, under one of the modules, kept when they give one export other than the whole module. TypeScript reads the import statement itself through `importedUnder`, which states nothing |
-| `receiverSettledFrom` with `imported` | the `imports` rows of the receiver, or of what it `binds` to, read the way `calleeImport` reads them, with `*` for a whole module. A member read off a name an import binds is the member of that module. A name no import binds is from no import, unless `writtenAs` settles it to a name one does, and a parameter is never followed through its callers, the way `calleeImportedAs` never follows one. An import of a file in the run, which `importsFile` states, leaves the answer open, since the rules follow a project module's own names |
+| `receiverSettledFrom` with `imported` | the `imports` rows of the receiver, or of what it `binds` to, read the way `calleeImport` reads them, with `*` for a whole module. A member read off a name an import binds is the member of that module. A name no import binds is from no import, unless `writtenAs` settles it to a name one does, and a parameter is never followed through its callers, the way `calleeImportedAs` never follows one. An import of a file in the run, which `importsFile` states or the fact source's `importsProjectFile` says, leaves the answer open, since the rules follow a project module's own names |
 | `receiverSettledFrom` with `constructed` | the construction the receiver was written as, as `constructed` reads it, with the `imports` rows of the name the construction's callee starts from in place of `importedFrom`. A callee written with a name the origin does not ask for is from no construction, and a name no import binds leaves the answer open |
+| `calleeSettledFrom` | the callee of a call with no receiver, read the way `receiverSettledFrom` with `imported` reads a receiver |
 | `url(site)` | the adapter's `urlOf`, handed the call and argument the value was read off by `valueAt` or `keywordAt`, since a name in Python or Ruby has a key and no node, and two assignments to one name share it |
 | `constructionSites()` | the adapter's `constructionSitesOf` on the call |
 | `callsInCallee` | `makesCall` closed over `containsFn` from the function `functionBehind` settles the callee to, in source order, the way `callInBody` reads a body. TypeScript keeps the checker's callee, `helperCalleeOf`, and the calls under it, and hands each one out as ops that read `method()` and `calleeText()` off the node and state the call only when a chain asks it something more |
@@ -1956,10 +1964,11 @@ httpRequests({
 
 A method sends the verb the table writes, the method an argument
 states (evaluated and upper-cased, with `default` for a call that
-states none), or the method of a request object built from one of the
-classes it lists. `.calls(meaning)` says what a call of the client
-itself sends, as `fetch(url)` or `api(config)` after `api =
-axios.create()`. `.baseUrl(pick)` reads the base URL off the
+states none or states one suss cannot settle), or the method of a
+request object built from one of the classes it lists.
+`.calls(meaning)` says what a call of the client itself sends, as
+`fetch(url)` or `api(config)` after `api = axios.create()`.
+`.baseUrl(pick)` reads the base URL off the
 construction the call's receiver was made by, and `joins` says how the
 library puts a path under it: `appended` writes it after the base with
 one slash, and `resolved` resolves it the way RFC 3986 does, so a path
@@ -1992,19 +2001,43 @@ up in the table first, and a bare call by the name it is written with
 or the export its own import statement binds (`calleeImport`). Only a
 listed call asks where its receiver or callee came from. A receiver's
 `imported` and `constructed` origins are asked of `receiverSettledFrom`
-first, for every origin of an `anyOf`, and of the rules only for the
-ones it leaves open. Most receivers of a `get` are a dictionary or a
-project object, which their own statements settle.
+first, for every origin of an `anyOf` and of an `anyOf` inside it, and
+of the rules only for the ones it leaves open. Most receivers of a
+`get` are a dictionary or a project object, which their own statements
+settle. A bare call's callee goes the same way through
+`calleeSettledFrom`. A chain that says what a call of the client itself
+sends asks this of every bare call in a file, and nearly all of them
+are a project function or another library's.
 
 A URL is read through `ValueOps.url`. When the call's own reading
 leaves a hole, each construction of the enclosing class gives a request
 of its own, read under that construction's site, and two constructions
 with the same method, host and path give one. A URL that reads as no
 path, or as only holes and slashes under a host suss did not read,
-gives a request with no path (`statedRequestPath`). The adapter keeps
-it as a client unit, which pairs with nothing. The call's redirect
-option is read with `keywordAt` and `evaluated()`, and a method's own
-`redirects` applies when the call passes none.
+gives a request with no path (`statedRequestPath`). So does a URL
+property of an options object suss cannot read, as `api({
+...config })`. The adapter keeps it as a client unit, which pairs with
+nothing. A URL the client reads without a request, a `data:` URL
+(`UrlTarget.local`), makes no request at all. A base a library appends
+to that has a hole was worked out at runtime, so its path is left out
+and its host kept.
+
+The call's redirect option is read with `keywordAt`, or, for a method
+that says where the call passes its options object (`options`), as a
+property of that object. An option the call leaves out of an object
+suss reads in full is read off the client's construction, in the object
+it states its base in, or else its first argument, as
+`axios.create({ maxRedirects: 0 })`. A method's own `redirects` applies
+when neither sets it.
+
+Each claim says what it read so that an adapter can read the call
+again: the table entry it matched (`read.entry`, which the hook's
+`entries` lists in the pack's order), where the call states its URL
+and its method, where it passes its options, the base apart from the
+call's own path, and the construction it was read under (`site`).
+TypeScript reads a wrapper's library call again under each caller's
+values, and keeps one client unit per function, the first in the
+table's order.
 
 ## A read of a runtime object
 

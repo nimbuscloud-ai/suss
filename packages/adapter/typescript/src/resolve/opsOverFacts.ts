@@ -70,6 +70,7 @@ function withNodeMembers(
     receiverSettledFrom: (origin) => ops.receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => ops.receiverGlobal?.(paths),
     isFrom: (origin) => ops.isFrom(origin),
+    calleeSettledFrom: (origin) => ops.calleeSettledFrom?.(origin),
     argumentCount: () => ops.argumentCount(),
     decodes: () => ops.decodes?.() ?? null,
     nameAt: (index, unsettled) => ops.nameAt(index, unsettled),

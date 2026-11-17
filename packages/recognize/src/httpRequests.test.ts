@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { compile } from "./compile.js";
+import { joinedPath } from "./compileRequests.js";
 import { httpRequests, verbs } from "./httpRequests.js";
-import { anyOf, constructedFrom, imported, modulesOf } from "./ops.js";
+import { anyOf, constructedFrom, imported, modulesOf, spelled } from "./ops.js";
 import { declarationsIn, pack, requestRecognizersOf } from "./pack.js";
 
 import type {
@@ -27,6 +28,8 @@ interface Stated {
   /** The call it was made by, everywhere or under one construction. */
   readonly madeBy?: CallOps;
   readonly madeBySite?: Readonly<Record<string, CallOps>>;
+  /** Whether suss reads it as an object it knows every key of. */
+  readonly object?: boolean;
 }
 
 function valueOps(stated: Stated): ValueOps {
@@ -41,11 +44,12 @@ function valueOps(stated: Stated): ValueOps {
             stated.madeBy ??
             null,
         };
-  return {
+  const ops: Record<string, unknown> = {
     url: (site?: string) =>
       (site === undefined ? undefined : stated.bySite?.[site]) ??
       stated.url ??
       null,
+    object: () => (stated.object === true ? ops : null),
     evaluated: () => stated.evaluated ?? null,
     property: (name: string) => {
       const inside = stated.properties?.[name];
@@ -60,7 +64,8 @@ function valueOps(stated: Stated): ValueOps {
         ? stated.host
         : `${stated.host}:${String(port.evaluated?.())}`,
     ...made,
-  } as unknown as ValueOps;
+  };
+  return ops as unknown as ValueOps;
 }
 
 /** A call as a test writes it, and the questions it was asked. */
@@ -73,7 +78,7 @@ interface Call {
   readonly keywords?: Readonly<Record<string, Stated>>;
   /** The modules the receiver, or a bare call's callee, came from. */
   readonly from?: readonly string[];
-  /** What the receiver's import statement and written value say, when the adapter can say. */
+  /** What the import statement and written value of the receiver, or of a bare call's callee, say, when the adapter can say. */
   readonly settled?: boolean;
   readonly sites?: readonly string[];
   readonly receiver?: CallOps;
@@ -105,6 +110,12 @@ function callOps(call: Call, asked: string[] = []): CallOps {
     isFrom: (origin: ReceiverOrigin) => {
       asked.push(`isFrom ${origin.origin}`);
       return comesFrom(origin);
+    },
+    calleeSettledFrom: (origin: ReceiverOrigin) => {
+      asked.push(`calleeSettledFrom ${origin.origin}`);
+      return call.settled === undefined
+        ? undefined
+        : call.settled && comesFrom(origin);
     },
     valueAt: (index: number) => {
       const stated = call.args?.[index];
@@ -151,8 +162,8 @@ const REQUESTS = httpRequests({ client: CLIENT })
   })
   .example('httplib.get("/orders")');
 
-/** What the chain's hook reads at the call. */
-function claimsOf(
+/** What the chain's hook reads at the call, every claim whole. */
+function readClaimsOf(
   chain: HttpRequests,
   call: Call,
   asked: string[] = [],
@@ -166,6 +177,19 @@ function claimsOf(
     throw new Error("the pack compiled no request hook");
   }
   return hook(null, { ops: callOps(call, asked) });
+}
+
+/** The requests the chain's hook reads at the call, without where it read each or which construction it read it under. */
+function claimsOf(
+  chain: HttpRequests,
+  call: Call,
+  asked: string[] = [],
+): readonly Omit<RequestClaim, "read" | "site">[] | null {
+  return (
+    readClaimsOf(chain, call, asked)?.map(
+      ({ read: _read, site: _site, ...claim }) => claim,
+    ) ?? null
+  );
 }
 
 describe("a request chain", () => {
@@ -423,6 +447,19 @@ describe("a request chain", () => {
     });
   });
 
+  it("gates on no import for a client read by the name it is written with", () => {
+    const fetched = httpRequests({ client: spelled("fetch") })
+      .methods({ fetch: { sends: "GET", url: { at: 0 } } })
+      .example('fetch("/orders")');
+    expect(modulesOf(spelled("fetch"))).toEqual([]);
+    expect(
+      pack("fetching", [fetched], {
+        languages: ["typescript"],
+        recognizedAs: "fetching",
+      }).requiresImport,
+    ).toEqual([]);
+  });
+
   it("is reported to the pack health report as data, with its example", () => {
     expect(declarationsIn([REQUESTS]).declarations).toEqual([
       {
@@ -476,6 +513,38 @@ describe("a client called as a function", () => {
         writtenAs: callOps({ method: "create", from: ["httplib"] }),
       }),
     ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+  });
+
+  it("asks the rules nothing about a callee its own import statement settles", () => {
+    const asked: string[] = [];
+    expect(
+      claimsOf(
+        FETCH,
+        { callee: "helper", settled: false, args: [at("/orders")] },
+        asked,
+      ),
+    ).toBeNull();
+    expect(asked).toEqual(["calleeSettledFrom imported"]);
+  });
+
+  it("settles each origin of a client inside another before asking the rules about an open one", () => {
+    const nested = httpRequests({
+      client: anyOf(
+        anyOf(
+          imported({ from: ["httplib"] }),
+          constructedFrom({ from: ["httplib"], named: ["Session"] }),
+        ),
+      ),
+    }).calls(FETCH_CALL);
+    const asked: string[] = [];
+    expect(
+      claimsOf(
+        nested,
+        { callee: "helper", settled: false, args: [at("/orders")] },
+        asked,
+      ),
+    ).toBeNull();
+    expect(asked).toEqual(["calleeSettledFrom imported", "isFrom constructed"]);
   });
 });
 
@@ -643,6 +712,11 @@ describe("a base URL the client was built with", () => {
     ).toEqual([{ method: "GET", path: "{base}/orders", host: undefined }]);
   });
 
+  it("joins a path under a base the way the library does, for an adapter reading the call again", () => {
+    expect(joinedPath("appended", "/v1/", "orders")).toBe("/v1/orders");
+    expect(joinedPath("resolved", "/v1/", "../orders")).toBe("/orders");
+  });
+
   it("reads the base off the construction the receiver was made by", () => {
     const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
       .methods(verbs({ get: "GET" }, { at: 0 }))
@@ -742,5 +816,191 @@ describe("a host passed apart from the path", () => {
         receiver: callOps({ method: "new", args: [{}] }),
       }),
     ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+  });
+});
+
+// A client whose verbs take an options object after the URL, and whose
+// config call takes the URL, the method and the options in one object,
+// as axios and fetch do.
+const CONFIG_CALL = {
+  sends: { from: { at: 0, property: ["method"] }, default: "GET" },
+  url: { at: 0, property: ["url"] },
+  options: { at: 0 },
+} as const;
+
+const CONFIGURED = httpRequests({
+  client: anyOf(
+    imported({ from: ["confhttp"], named: ["default"] }),
+    constructedFrom("confhttp"),
+  ),
+})
+  .methods({
+    get: { sends: "GET", url: { at: 0 }, options: { at: 1 } },
+    request: CONFIG_CALL,
+  })
+  .calls(CONFIG_CALL)
+  .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
+  .response({
+    redirectDelivery: "followed",
+    redirectOption: { name: "maxRedirects", handsBack: [0] },
+  });
+
+/** A construction of the client with this config object. */
+function builtWith(config: Readonly<Record<string, Stated>>): Stated {
+  return {
+    madeBy: callOps({
+      method: "create",
+      args: [{ properties: config, object: true }],
+    }),
+  };
+}
+
+describe("a request chain over options objects", () => {
+  it("sends the default when the method the call states does not settle", () => {
+    expect(
+      claimsOf(CONFIGURED, {
+        method: "request",
+        from: ["confhttp"],
+        args: [{ properties: { url: at("/orders"), method: {} } }],
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+  });
+
+  it("keeps a call whose object suss cannot read the URL off as a request with no path", () => {
+    expect(
+      claimsOf(CONFIGURED, {
+        callee: "api",
+        from: ["confhttp"],
+        args: [{}],
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+    expect(
+      claimsOf(CONFIGURED, { callee: "api", from: ["confhttp"], args: [] }),
+    ).toEqual([]);
+  });
+
+  it("reads the redirect option off the options the call passes", () => {
+    expect(
+      claimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [
+          at("/orders"),
+          { properties: { maxRedirects: { evaluated: 0 } }, object: true },
+        ],
+      }),
+    ).toEqual([
+      {
+        method: "GET",
+        path: "/orders",
+        host: undefined,
+        redirectDelivery: "response",
+      },
+    ]);
+  });
+
+  it("reads the option off the client's construction when the call leaves it out", () => {
+    const call = {
+      method: "get",
+      from: ["confhttp"],
+      receiverValue: builtWith({ maxRedirects: { evaluated: 0 } }),
+    };
+    expect(
+      claimsOf(CONFIGURED, {
+        ...call,
+        args: [at("/orders"), { properties: {}, object: true }],
+      })?.[0]?.redirectDelivery,
+    ).toBe("response");
+    // Options suss cannot read could set the option themselves.
+    expect(
+      claimsOf(CONFIGURED, { ...call, args: [at("/orders"), {}] })?.[0]
+        ?.redirectDelivery,
+    ).toBeUndefined();
+  });
+
+  it("says where the call states its URL, its method and its options, and the base apart", () => {
+    const [claim] =
+      readClaimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [at("/orders")],
+        receiverValue: builtWith({ baseURL: at("/api") }),
+      }) ?? [];
+
+    expect(claim?.path).toBe("/api/orders");
+    expect(claim?.read).toEqual({
+      entry: "get",
+      url: { at: 0 },
+      method: "GET",
+      options: { at: 1 },
+      base: { path: "/api", host: undefined, joins: "appended" },
+    });
+  });
+
+  it("reads a call of the client itself as the entry with the same meaning", () => {
+    const [claim] =
+      readClaimsOf(CONFIGURED, {
+        callee: "api",
+        from: ["confhttp"],
+        args: [{ properties: { url: at("/orders") } }],
+      }) ?? [];
+
+    expect(claim?.read).toMatchObject({
+      entry: "request",
+      url: { at: 0, property: ["url"] },
+      method: { at: { at: 0, property: ["method"] }, default: "GET" },
+    });
+  });
+
+  it("says which construction a request was read under", () => {
+    expect(
+      readClaimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        sites: ["users", "orders"],
+        args: [
+          {
+            url: { path: "{base}", host: undefined },
+            bySite: {
+              users: { path: "/users", host: undefined },
+              orders: { path: "/orders", host: undefined },
+            },
+          },
+        ],
+      })?.map((claim) => [claim.site, claim.path]),
+    ).toEqual([
+      ["users", "/users"],
+      ["orders", "/orders"],
+    ]);
+  });
+
+  it("lists the table's entries in the order the pack wrote them", () => {
+    expect(requestRecognizersOf([CONFIGURED])[0]?.entries).toEqual([
+      "get",
+      "request",
+    ]);
+  });
+
+  it("makes no request for a URL the client reads without one", () => {
+    expect(
+      claimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [{ url: { path: undefined, host: undefined, local: true } }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("leaves out the path of a base with a hole, and keeps its host", () => {
+    expect(
+      claimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [at("/orders")],
+        receiverValue: builtWith({
+          baseURL: at("{env}/v1", "api.example.com"),
+        }),
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: "api.example.com" }]);
   });
 });
