@@ -56,13 +56,13 @@ describe("filesReachingFile", () => {
     for (const [path, contents] of Object.entries(files)) {
       project.createSourceFile(path, contents);
     }
-    const sourceFiles = Object.keys(files).map((path) =>
-      project.getSourceFileOrThrow(path),
+    const sourceFiles = new Set(
+      Object.keys(files).map((path) => project.getSourceFileOrThrow(path)),
     );
     const [answer] = new ModuleGraph().filesReachingFile([
       { sourceFiles, target: project.getSourceFileOrThrow(target) },
     ]);
-    return [...(answer ?? [])].map((one) => one.getFilePath()).sort();
+    return (answer ?? []).map((one) => one.getFilePath()).sort();
   }
 
   it("finds a file that imports the target itself", () => {
@@ -108,17 +108,69 @@ describe("filesReachingFile", () => {
       "/reader.ts",
       `import { a } from "./a"; export const r = a;`,
     );
-    const sourceFiles = ["/a.ts", "/b.ts", "/reader.ts"].map((path) =>
-      project.getSourceFileOrThrow(path),
+    const sourceFiles = new Set(
+      ["/a.ts", "/b.ts", "/reader.ts"].map((path) =>
+        project.getSourceFileOrThrow(path),
+      ),
     );
     const answers = new ModuleGraph().filesReachingFile([
       { sourceFiles, target: project.getSourceFileOrThrow("/a.ts") },
       { sourceFiles, target: project.getSourceFileOrThrow("/b.ts") },
     ]);
 
-    expect(answers.map((one) => [...one].map((f) => f.getFilePath()))).toEqual([
+    expect(answers.map((one) => one.map((f) => f.getFilePath()))).toEqual([
       ["/reader.ts"],
       [],
     ]);
+  });
+
+  it("lists the reaching files in the order the set gives them", () => {
+    const project = createTestProject();
+    project.createSourceFile("/hooks.ts", "export const h = 1;");
+    for (const name of ["/z.ts", "/a.ts", "/m.ts"]) {
+      project.createSourceFile(
+        name,
+        `import { h } from "./hooks"; export { h };`,
+      );
+    }
+    const sourceFiles = new Set(
+      ["/z.ts", "/hooks.ts", "/a.ts", "/m.ts"].map((path) =>
+        project.getSourceFileOrThrow(path),
+      ),
+    );
+    const [answer] = new ModuleGraph().filesReachingFile([
+      { sourceFiles, target: project.getSourceFileOrThrow("/hooks.ts") },
+    ]);
+
+    expect((answer ?? []).map((f) => f.getFilePath())).toEqual([
+      "/z.ts",
+      "/a.ts",
+      "/m.ts",
+    ]);
+  });
+
+  it("walks a file added to the set after an earlier question", () => {
+    const project = createTestProject();
+    project.createSourceFile("/a.ts", "export const a = 1;");
+    project.createSourceFile("/b.ts", "export const b = 2;");
+    project.createSourceFile(
+      "/early.ts",
+      `import { a } from "./a"; export const e = a;`,
+    );
+    project.createSourceFile(
+      "/late.ts",
+      `import { b } from "./b"; export const l = b;`,
+    );
+    const graph = new ModuleGraph();
+    const sourceFiles = new Set([project.getSourceFileOrThrow("/early.ts")]);
+    graph.filesReachingFile([
+      { sourceFiles, target: project.getSourceFileOrThrow("/a.ts") },
+    ]);
+    sourceFiles.add(project.getSourceFileOrThrow("/late.ts"));
+    const [answer] = graph.filesReachingFile([
+      { sourceFiles, target: project.getSourceFileOrThrow("/b.ts") },
+    ]);
+
+    expect((answer ?? []).map((f) => f.getFilePath())).toEqual(["/late.ts"]);
   });
 });
