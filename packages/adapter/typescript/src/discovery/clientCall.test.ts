@@ -5,10 +5,16 @@ import { profileEvaluation } from "@suss/datalog";
 import { createTestProject } from "@suss/test-project";
 
 import { ResolutionStore } from "../facts/store.js";
-import { pathFromArgument } from "../resolve/routePath.js";
-import { clientReceiverCheckFor, discoverClientCalls } from "./clientCall.js";
+import { clientReceiverCheckFor } from "./clientCall.js";
+import { discoverUnits } from "./index.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
+import type { SourceFile } from "ts-morph";
+
+type ClientCallMatch = Extract<
+  DiscoveryPattern["match"],
+  { type: "clientCall" }
+>;
 
 const DECK_TYPES = `
   export default class Deck {
@@ -41,6 +47,26 @@ function subjectNamed(
     throw new Error(`no identifier ${name} in the fixture`);
   }
   return { file, subject: last };
+}
+
+/** The client units one `clientCall` pattern finds in the file. */
+function unitsOf(
+  file: SourceFile,
+  match: ClientCallMatch,
+  binding?: DiscoveryPattern["bindingExtraction"],
+  store = new ResolutionStore(),
+) {
+  return discoverUnits(
+    file,
+    [
+      {
+        kind: "client",
+        match,
+        ...(binding === undefined ? {} : { bindingExtraction: binding }),
+      },
+    ],
+    store,
+  );
 }
 
 describe("clientReceiverCheckFor without a store", () => {
@@ -105,13 +131,18 @@ describe("clientReceiverCheckFor with a store", () => {
   });
 });
 
-describe("naming a unit by its enclosing shape", () => {
-  const match = {
-    type: "clientCall",
-    importModule: "global",
-    importName: "fetch",
-  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
+const FETCH: ClientCallMatch = {
+  type: "clientCall",
+  importModule: "global",
+  importName: "fetch",
+};
 
+const GET_AT_FIRST = {
+  method: { type: "literal", value: "GET" },
+  path: { type: "fromArgument", position: 0 },
+} as NonNullable<DiscoveryPattern["bindingExtraction"]>;
+
+describe("naming a unit by its enclosing shape", () => {
   it("uses the method name and the property name the call is written under", () => {
     const project = createTestProject();
     const file = project.createSourceFile(
@@ -127,9 +158,7 @@ describe("naming a unit by its enclosing shape", () => {
       };
       `,
     );
-    const names = discoverClientCalls(file, match, "client").map(
-      (unit) => unit.name,
-    );
+    const names = unitsOf(file, FETCH).map((unit) => unit.name);
     expect(names.sort()).toEqual(["getUser", "listOrders"]);
   });
 
@@ -148,9 +177,7 @@ describe("naming a unit by its enclosing shape", () => {
       };
       `,
     );
-    const names = discoverClientCalls(file, match, "client").map(
-      (unit) => unit.name,
-    );
+    const names = unitsOf(file, FETCH).map((unit) => unit.name);
     expect(names.sort()).toEqual(["get-user", "list-orders"]);
   });
 
@@ -164,25 +191,22 @@ describe("naming a unit by its enclosing shape", () => {
       export const notAGlobal = (api: { fetch: (p: string) => unknown }) => api.fetch("/x");
       `,
     );
-    const names = discoverClientCalls(file, match, "client").map(
-      (unit) => unit.name,
-    );
-    expect(names.sort()).toEqual(["fromWindow", "proxied"]);
+    for (const binding of [undefined, GET_AT_FIRST]) {
+      const units = unitsOf(file, FETCH, binding);
+      expect(units.map((unit) => unit.name).sort()).toEqual([
+        "fromWindow",
+        "proxied",
+      ]);
+      // A function read off the global object is called as itself.
+      expect(units.map((unit) => unit.callSite?.methodName)).toEqual([
+        null,
+        null,
+      ]);
+    }
   });
 });
 
 describe("a path a constructor argument states", () => {
-  const match = {
-    type: "clientCall",
-    importModule: "global",
-    importName: "fetch",
-  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
-
-  const binding = {
-    method: { type: "literal", value: "GET" },
-    path: { type: "fromArgument", position: 0 },
-  } as NonNullable<DiscoveryPattern["bindingExtraction"]>;
-
   const RESOURCE = `
       export class Resource {
         constructor(private base: string) {}
@@ -191,20 +215,13 @@ describe("a path a constructor argument states", () => {
       }
   `;
 
+  /** The path of each request the function makes, as its unit's request says, with "unresolved" for none. */
   function pathsUnder(source: string, name = "list"): string[] {
     const project = createTestProject();
     const file = project.createSourceFile("/consumer.ts", source);
-    const store = new ResolutionStore();
-    return discoverClientCalls(file, match, "client", store, binding)
+    return unitsOf(file, FETCH, GET_AT_FIRST)
       .filter((unit) => unit.name === name)
-      .map((unit) =>
-        pathFromArgument(
-          unit.callSite?.callExpression.getArguments()[0] as Node,
-          store,
-          unit.callSite?.under,
-        ),
-      )
-      .map((path) => path ?? "unresolved")
+      .map((unit) => unit.callSite?.request?.path ?? "unresolved")
       .sort();
   }
 
@@ -225,8 +242,8 @@ describe("a path a constructor argument states", () => {
     ).toEqual(["/users"]);
   });
 
-  it("leaves the hole in place when nothing constructs the class", () => {
-    expect(pathsUnder(RESOURCE)).toEqual(["{base}"]);
+  it("gives a call with no path when nothing constructs the class", () => {
+    expect(pathsUnder(RESOURCE)).toEqual(["unresolved"]);
   });
 
   it("gives one call when two constructions state the same path", () => {
@@ -301,7 +318,7 @@ describe("a path a constructor argument states", () => {
         return Reflect.get(target, name, receiver) as unknown;
       },
     });
-    const units = discoverClientCalls(file, match, "client", watched, binding);
+    const units = unitsOf(file, FETCH, GET_AT_FIRST, watched);
 
     expect(units).toHaveLength(1);
     expect(units[0]?.callSite?.under).toBeUndefined();
@@ -310,17 +327,6 @@ describe("a path a constructor argument states", () => {
 });
 
 describe("a URL fetch reads without a request", () => {
-  const match = {
-    type: "clientCall",
-    importModule: "global",
-    importName: "fetch",
-  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
-
-  const binding = {
-    method: { type: "literal", value: "GET" },
-    path: { type: "fromArgument", position: 0 },
-  } as NonNullable<DiscoveryPattern["bindingExtraction"]>;
-
   it("is no client call, written out, named or built from a template", () => {
     const project = createTestProject();
     const file = project.createSourceFile(
@@ -334,24 +340,18 @@ describe("a URL fetch reads without a request", () => {
       export const any = (url: string) => fetch(url);
       `,
     );
-    const names = discoverClientCalls(
-      file,
-      match,
-      "client",
-      new ResolutionStore(),
-      binding,
-    ).map((unit) => unit.name);
+    const names = unitsOf(file, FETCH, GET_AT_FIRST).map((unit) => unit.name);
     expect(names.sort()).toEqual(["any", "orders"]);
   });
 });
 
 describe("a file's receivers, asked about together", () => {
-  const match = {
+  const match: ClientCallMatch = {
     type: "clientCall",
     importModule: "tapedeck",
     importName: "Deck",
     methodFilter: ["play"],
-  } as Extract<DiscoveryPattern["match"], { type: "clientCall" }>;
+  };
 
   /** A consumer beside a module that builds the client two ways. */
   function consumerOf(source: string) {
@@ -377,14 +377,10 @@ describe("a file's receivers, asked about together", () => {
       export function onOther() { return other.play("d"); }
       export function notPlayed() { return deck.side("a"); }
     `);
-    const names = discoverClientCalls(
-      file,
-      match,
-      "client",
-      new ResolutionStore(),
-    ).map((unit) => unit.name);
-
-    expect(names.sort()).toEqual(["onImport", "onInstance", "onReturned"]);
+    for (const binding of [undefined, GET_AT_FIRST]) {
+      const names = unitsOf(file, match, binding).map((unit) => unit.name);
+      expect(names.sort()).toEqual(["onImport", "onInstance", "onReturned"]);
+    }
   });
 
   it("asks no more questions of a file with ten other receivers than of one with two", () => {
@@ -399,9 +395,8 @@ describe("a file's receivers, asked about together", () => {
         ${others.join("\n")}
         export function played() { return deck.play("y"); }
       `);
-      return profileEvaluation(() =>
-        discoverClientCalls(file, match, "client", new ResolutionStore()),
-      ).profile.evaluations;
+      return profileEvaluation(() => unitsOf(file, match, GET_AT_FIRST)).profile
+        .evaluations;
     };
 
     expect(costWith(10)).toBe(costWith(2));

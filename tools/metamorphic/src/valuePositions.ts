@@ -5,12 +5,19 @@
 // matrix by existing, and a position a pack stops declaring leaves the
 // matrix with it.
 //
-// v0 covers the path positions of HTTP discovery packs: registration
-// calls reading an argument, and client calls reading an argument.
-// Positions declared inside recognize chains are a different reader
-// and wait for their own pass.
+// v0 covers the path positions of HTTP packs: registration calls, client
+// calls and `httpRequests` methods that read the URL off an argument.
+// Positions inside other recognize chains wait for their own pass.
 
-import type { DiscoveryPattern, PatternPack } from "@suss/extractor";
+import { byOrigin } from "@suss/extractor";
+
+import type {
+  ByOrigin,
+  DiscoveryPattern,
+  Imported,
+  PatternPack,
+} from "@suss/extractor";
+import type { HttpRequests } from "@suss/recognize";
 
 /** One place a pack reads a path, and how to write a program that puts
  * a value there. */
@@ -132,4 +139,138 @@ export function valuePositionsOf(pack: PatternPack): ValuePosition[] {
     }
   }
   return [...found.values()];
+}
+
+/** A pack declared with `httpRequests`, and the chain it declares. */
+export interface DeclaredRequests {
+  readonly pack: PatternPack;
+  readonly chain: HttpRequests;
+}
+
+/** How a program writes the client a request chain's calls are made on. */
+interface WrittenClient {
+  /** The name the program calls the client by. */
+  readonly name: string;
+  /** The module and export it is imported as, or null for a name the runtime provides. */
+  readonly from: { readonly module: string; readonly export: string } | null;
+}
+
+const NOT_WRITTEN = (): WrittenClient | null => null;
+
+function importedClient({
+  importedFrom,
+  named,
+}: Imported): WrittenClient | null {
+  const [module] = importedFrom;
+  const [exported = "default"] = named ?? [];
+  if (module === undefined || exported === "*") {
+    return null;
+  }
+  const name = exported === "default" ? "client" : exported;
+  return { name, from: { module, export: exported } };
+}
+
+/** The first way of writing the client that the origin accepts, or null for one no name or import says. */
+const WRITTEN: ByOrigin<WrittenClient | null> = {
+  spelled: ({ names }) =>
+    names[0] === undefined ? null : { name: names[0], from: null },
+  imported: importedClient,
+  anyOf: ({ of }) =>
+    of.map((one) => byOrigin(WRITTEN, one)).find((one) => one !== null) ?? null,
+  global: NOT_WRITTEN,
+  allOf: NOT_WRITTEN,
+  declaredBy: NOT_WRITTEN,
+  constructed: NOT_WRITTEN,
+  returnedBy: NOT_WRITTEN,
+  typed: NOT_WRITTEN,
+  inherits: NOT_WRITTEN,
+  handedBy: NOT_WRITTEN,
+  readOff: NOT_WRITTEN,
+};
+
+/** The methods of the chain that read the URL off the first argument whole. */
+function methodsReadingFirstArgument(chain: HttpRequests): string[] {
+  return chain.declared.links.flatMap((link) =>
+    link.asks === "methods"
+      ? Object.entries(link.table)
+          .filter(
+            ([, meaning]) =>
+              "url" in meaning &&
+              meaning.url.at === 0 &&
+              meaning.url.property === undefined &&
+              meaning.url.hostFirst === undefined,
+          )
+          .map(([method]) => method)
+      : [],
+  );
+}
+
+/** A module whose default export, and its named export when the client is one, is a client with these methods. */
+function clientLibrary(
+  from: NonNullable<WrittenClient["from"]>,
+  methods: readonly string[],
+): Readonly<Record<string, string>> {
+  const named =
+    from.export === "default" ? "" : `export { client as ${from.export} };`;
+  return {
+    [`/node_modules/${from.module}/package.json`]: JSON.stringify({
+      name: from.module,
+      types: "index.d.ts",
+    }),
+    [`/node_modules/${from.module}/index.d.ts`]: `
+      declare const client: {
+        (url: string): Promise<unknown>;
+        ${methods.map((method) => `${method}(url: string): Promise<unknown>;`).join("\n")}
+      };
+      export default client;
+      ${named}
+    `,
+  };
+}
+
+function importOf(client: WrittenClient): string {
+  if (client.from === null) {
+    return "";
+  }
+  const { module, export: exported } = client.from;
+  return exported === "default"
+    ? `import ${client.name} from "${module}";`
+    : `import { ${exported} } from "${module}";`;
+}
+
+/**
+ * The path positions one request chain declares, one per method that
+ * reads the URL off the first argument. A method named as the client
+ * itself, `fetch`, is called bare.
+ */
+export function requestPositionsOf({
+  pack,
+  chain,
+}: DeclaredRequests): ValuePosition[] {
+  const start = chain.declared.links.find((link) => link.asks === "start");
+  const client =
+    start?.asks === "start" ? byOrigin(WRITTEN, start.at.origin) : null;
+  if (client === null) {
+    return [];
+  }
+  const methods = methodsReadingFirstArgument(chain);
+  const files = client.from === null ? {} : clientLibrary(client.from, methods);
+  return methods.map((method) => {
+    const call =
+      method === client.name && client.from === null
+        ? `${method}(EXPR)`
+        : `${client.name}.${method}(EXPR)`;
+    return {
+      name: `${pack.name} path from argument 0 of ${call.replace("EXPR", "...")}`,
+      pack,
+      files,
+      program: (spelled) => `
+        ${importOf(client)}
+        ${spelled.prelude}
+        export async function go(id: string) {
+          return ${call.replace("EXPR", spelled.expression)};
+        }
+      `,
+    };
+  });
 }

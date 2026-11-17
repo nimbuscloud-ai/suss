@@ -70,6 +70,8 @@ import {
   type RawCodeStructure,
   type RawDependencyCall,
   type RawParameter,
+  type RequestClaim,
+  type RequestRead,
   type ResponsePropertyMapping,
   type RootRecord,
   runDigest,
@@ -84,12 +86,14 @@ import {
   storedPathsOfRun,
   type TerminalPattern,
 } from "@suss/extractor";
+import { joinedPath } from "@suss/recognize";
 import {
   force,
   hostOf,
   literalOf,
   pathIsOnlyHoles,
   pathOf,
+  statedRequestPath,
   type Value,
 } from "@suss/values";
 
@@ -148,6 +152,7 @@ import {
   type ProjectHelperIndex,
 } from "./discovery/helperIndex.js";
 import {
+  type ClientCallSite,
   type DiscoveredUnit,
   discoverUnits,
   unitDedupKey,
@@ -194,12 +199,6 @@ import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
 import { reportReadFailure } from "./readFailure.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import {
-  clientBaseHost,
-  clientBasePath,
-  requestTargetAt,
-  underBasePath,
-} from "./resolve/clientBasePath.js";
-import {
   closureUnitRecords,
   type RecordedScan,
   type ScanRecord,
@@ -210,7 +209,6 @@ import {
   expandReachableClosure,
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
-import { redirectDeliveryAtCall } from "./resolve/redirectDelivery.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
 import {
   hostFromArgument,
@@ -1096,6 +1094,63 @@ function readCodeStructure(
   };
 }
 
+/**
+ * A client unit's binding, and the call that crosses it on the path that
+ * runs off the end. The summary already records the crossing, so a call
+ * whose method nobody declared gets no effect at all.
+ */
+function stampClientBinding(
+  raw: RawCodeStructure,
+  callSite: ClientCallSite,
+  binding: BoundaryBinding,
+): void {
+  raw.boundaryBinding = binding;
+  if (binding.semantics.name !== "rest" || binding.semantics.method === null) {
+    return;
+  }
+  const defaultBranch = raw.branches.find((b) => b.isDefault);
+  if (defaultBranch === undefined) {
+    return;
+  }
+  const call = callSite.callExpression;
+  defaultBranch.extraEffects = [
+    ...(defaultBranch.extraEffects ?? []),
+    {
+      type: "interaction",
+      binding,
+      callee: call.getExpression().getText(),
+      interaction: {
+        class: "service-call",
+        method: binding.semantics.method,
+      },
+      location: lineRangeOf(call),
+    },
+  ];
+}
+
+/**
+ * The binding of a client unit whose request a pack's request hook read.
+ * Wrapper expansion looks for a null `path` to spot a forwarding
+ * wrapper, so a request whose URL says nothing keeps its unit.
+ */
+function requestBinding(
+  request: RequestClaim,
+  pack: PatternPack,
+): BoundaryBinding {
+  return restBinding({
+    transport: pack.protocol,
+    method: request.method,
+    path: request.path,
+    host: request.host,
+    recognition: pack.name,
+  });
+}
+
+/**
+ * The binding of a client unit a `clientCall` pattern found without a
+ * request chain, as ts-rest's, whose method and path come from the
+ * contract the client was built from.
+ */
 function extractConsumerBinding(
   unit: DiscoveredUnit,
   pattern: DiscoveryPattern,
@@ -1114,21 +1169,15 @@ function extractConsumerBinding(
 
   const method = extractBindingMethod(binding, callSite, pack, resolution);
   const host = extractBindingHost(binding, callSite, resolution);
-  const target = requestTargetAt(
-    callSite.callExpression,
-    pattern.match,
-    { path: extractBindingPath(binding, callSite, pack, resolution), host },
-    resolution,
-    callSite.under,
+  const path = statedRequestPath(
+    extractBindingPath(binding, callSite, pack, resolution),
+    host,
   );
-
-  // Wrapper expansion looks for a null `path` to spot a forwarding
-  // wrapper, so return a partial binding rather than nothing.
   return restBinding({
     transport: pack.protocol,
     method: method ?? null,
-    path: target.path ?? null,
-    host: target.host,
+    path: path ?? null,
+    host,
     recognition: pack.name,
   });
 }
@@ -1415,6 +1464,7 @@ function discoverUnitsOrReport(
         resolution,
         mountPrefixes,
         projectHelpers,
+        pack,
       ),
     [],
   );
@@ -1620,6 +1670,12 @@ function extractFromSourceFile(
         if (binding !== null) {
           raw.boundaryBinding = binding;
         }
+      } else if (unit.callSite?.request !== undefined) {
+        const { request } = unit.callSite;
+        if (request.redirectDelivery !== undefined) {
+          raw.redirectDelivery = request.redirectDelivery;
+        }
+        stampClientBinding(raw, unit.callSite, requestBinding(request, pack));
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
         const binding = extractConsumerBinding(
           unit,
@@ -1627,41 +1683,8 @@ function extractFromSourceFile(
           pack,
           resolution,
         );
-        const redirect = redirectDeliveryAtCall(
-          unit.callSite,
-          matchedPattern,
-          pack,
-          resolution,
-        );
-        if (redirect !== undefined) {
-          raw.redirectDelivery = redirect;
-        }
         if (binding !== null) {
-          raw.boundaryBinding = binding;
-          // The summary already records the crossing, so a call whose
-          // method nobody declared gets no effect at all.
-          if (
-            binding.semantics.name === "rest" &&
-            binding.semantics.method !== null
-          ) {
-            const defaultBranch = raw.branches.find((b) => b.isDefault);
-            if (defaultBranch !== undefined) {
-              const call = unit.callSite.callExpression;
-              defaultBranch.extraEffects = [
-                ...(defaultBranch.extraEffects ?? []),
-                {
-                  type: "interaction",
-                  binding,
-                  callee: call.getExpression().getText(),
-                  interaction: {
-                    class: "service-call",
-                    method: binding.semantics.method,
-                  },
-                  location: lineRangeOf(call),
-                },
-              ];
-            }
-          }
+          stampClientBinding(raw, unit.callSite, binding);
         }
       } else if (pack.contractReading !== undefined) {
         const contract = readContract(
@@ -2012,14 +2035,12 @@ interface WrapperSink {
   /** What the wrapper's own binding says, for a pack that reads a contract. */
   statedMethod: string | null;
   /**
-   * The base the instance this call is made on sends under. Kept out of
-   * the sink reading, which is what tells a wrapper apart from a caller
-   * that settles the path: a base in front of a hole would settle every
-   * wrapper on the first round.
+   * The base the instance this call is made on sends under, and how the
+   * library joins a path to it. Kept out of the sink reading, which is
+   * what tells a wrapper apart from a caller that settles the path: a
+   * base in front of a hole would settle every wrapper on the first round.
    */
-  basePath: string | undefined;
-  /** The host in that base, for a caller whose own URL is relative. */
-  baseHost: string | undefined;
+  base: RequestRead["base"];
 }
 
 function expandWrapperCallers(
@@ -2152,13 +2173,24 @@ function sinkIn(
   const key = `${pack.name}:${file.getFilePath()}`;
   let units = discovered.get(key);
   if (units === undefined) {
-    units = discoverUnits(file, pack.discovery, resolution);
+    units = discoverUnits(
+      file,
+      pack.discovery,
+      resolution,
+      undefined,
+      undefined,
+      pack,
+    );
     discovered.set(key, units);
   }
   for (const unit of units) {
     const pattern =
       unit.pattern ?? pack.discovery.find((d) => d.kind === unit.kind);
-    const extraction = pattern?.bindingExtraction;
+    const read = unit.callSite?.request?.read;
+    const extraction =
+      read === undefined
+        ? pattern?.bindingExtraction
+        : (extractionOfRead(read) ?? undefined);
     if (
       unit.func !== func ||
       unit.callSite === undefined ||
@@ -2171,21 +2203,46 @@ function sinkIn(
       call: unit.callSite.callExpression,
       extraction,
       statedMethod: semantics?.name === "rest" ? semantics.method : null,
-      basePath: clientBasePath(
-        unit.callSite.callExpression,
-        pattern?.match,
-        resolution,
-        unit.callSite.under,
-      ),
-      baseHost: clientBaseHost(
-        unit.callSite.callExpression,
-        pattern?.match,
-        resolution,
-        unit.callSite.under,
-      ),
+      base: read?.base,
     };
   }
   return null;
+}
+
+/**
+ * Where a request hook read the call's URL and method, as the binding
+ * the sink reads the call again with under each caller's values. Null
+ * for a method read off a whole argument, which no TypeScript client
+ * states.
+ */
+function extractionOfRead(read: RequestRead): BindingExtraction | null {
+  const [urlProperty] = read.url.property ?? [];
+  const path: BindingExtraction["path"] =
+    urlProperty === undefined
+      ? { type: "fromArgument", position: read.url.at }
+      : {
+          type: "fromArgumentProperty",
+          position: read.url.at,
+          property: urlProperty,
+        };
+  if (typeof read.method === "string") {
+    return { method: { type: "literal", value: read.method }, path };
+  }
+  const [methodProperty] = read.method.at.property ?? [];
+  if (methodProperty === undefined) {
+    return null;
+  }
+  return {
+    method: {
+      type: "fromArgumentProperty",
+      position: read.method.at.at,
+      property: methodProperty,
+      ...(read.method.default === undefined
+        ? {}
+        : { default: read.method.default }),
+    },
+    path,
+  };
 }
 
 /** The request the sink states under these bindings, or null when it states none. */
@@ -2374,14 +2431,15 @@ function buildCallerSummary(
       splitAtHandOffs(branch, [site]),
     );
   }
+  const { base } = wrapper.sink;
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: reading.method,
-    path: underBasePath(
-      reading.host === undefined ? wrapper.sink.basePath : undefined,
-      reading.path,
-    ),
-    host: reading.host ?? wrapper.sink.baseHost,
+    path:
+      reading.host === undefined && base?.path !== undefined
+        ? joinedPath(base.joins, base.path, reading.path)
+        : reading.path,
+    host: reading.host ?? base?.host,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
   Object.assign(raw, clientResponseFieldsThroughWrapper(wrapper.summary));

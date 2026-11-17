@@ -9,18 +9,18 @@
 import { describe, expect, it } from "vitest";
 
 import { createTypeScriptAdapter } from "@suss/adapter-typescript";
-import { axiosPack } from "@suss/client-axios";
-import { webFetchPack } from "@suss/client-web";
+import { AXIOS, axiosPack } from "@suss/client-axios";
+import { FETCH, webFetchPack } from "@suss/client-web";
 import { expressFramework } from "@suss/framework-express";
 import { fastifyFramework } from "@suss/framework-fastify";
 import { honoFramework } from "@suss/framework-hono";
 import { createTestProject } from "@suss/test-project";
 
 import { SPELLINGS } from "./spellings.js";
-import { valuePositionsOf } from "./valuePositions.js";
+import { requestPositionsOf, valuePositionsOf } from "./valuePositions.js";
 
 import type { PatternPack } from "@suss/extractor";
-import type { ValuePosition } from "./valuePositions.js";
+import type { DeclaredRequests, ValuePosition } from "./valuePositions.js";
 
 const VALUE = "/users/:id";
 
@@ -28,8 +28,11 @@ const PACKS: readonly PatternPack[] = [
   expressFramework(),
   fastifyFramework(),
   honoFramework(),
-  webFetchPack(),
-  axiosPack(),
+];
+
+const REQUESTS: readonly DeclaredRequests[] = [
+  { pack: webFetchPack(), chain: FETCH },
+  { pack: axiosPack(), chain: AXIOS },
 ];
 
 /** Every rest path the run claims, hole spellings and all. */
@@ -56,13 +59,18 @@ async function pathsClaimed(
     .filter((one): one is string => one !== null && one !== "");
 }
 
-const positions = PACKS.flatMap(valuePositionsOf);
+const positions = [
+  ...PACKS.flatMap(valuePositionsOf),
+  ...REQUESTS.flatMap(requestPositionsOf),
+];
 
 describe("every declared path position, across the spellings of one value", () => {
   it("derives a position from every pack under test", () => {
     // A pack that stops declaring a path position leaves the matrix
     // silently, and this is what says so.
-    expect(positions.length).toBeGreaterThanOrEqual(PACKS.length);
+    expect(positions.length).toBeGreaterThanOrEqual(
+      PACKS.length + REQUESTS.length,
+    );
   });
 
   for (const position of positions) {

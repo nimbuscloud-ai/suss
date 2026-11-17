@@ -5,13 +5,7 @@
  * as one in any other language.
  */
 
-import {
-  force,
-  hostOf,
-  isLocalUrl,
-  pathOf,
-  routePatternOf,
-} from "@suss/values";
+import { force, hostOf, pathOf, routePatternOf } from "@suss/values";
 
 import { evaluatedValue } from "../values/evaluator.js";
 
@@ -77,22 +71,6 @@ export function hostFromArgument(
       ? evaluatedValue(arg, resolution, site)
       : propertyValueAt(arg, property, resolution, site);
   return value === undefined ? undefined : hostOf(value);
-}
-
-/**
- * Whether the URL at the argument, or at one of its properties, is one
- * fetch reads without a request, such as a `data:` URI.
- */
-export function statesLocalUrl(
-  arg: Node,
-  property: string | undefined,
-  resolution?: ResolutionStore,
-): boolean {
-  const value =
-    property === undefined
-      ? evaluatedValue(arg, resolution)
-      : propertyValueAt(arg, property, resolution);
-  return value !== undefined && isLocalUrl(value);
 }
 
 function propertyValueAt(

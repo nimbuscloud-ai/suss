@@ -6,8 +6,8 @@ Client pack for the [axios](https://axios-http.com/) HTTP client. It finds `axio
 
 `@suss/client-axios` exports a `PatternPack`, which is data the adapter reads. It covers:
 
-- **Discovery**: calls to `get`, `post`, `put`, `delete`, `patch`, `head` and `options` with a URL, where `axios` is the default import from `"axios"`. The call can be on the `axios` import itself, on a variable built by `axios.create(...)`, or on a name imported from wherever that variable was declared. A request written as one config object is read the same way, whether as `axios({ url, method })`, as `api({ url })` on an instance, or as `axios.request(config)`.
-- **Binding extraction**: the HTTP method comes from the method called, or from the `method` property of a config object (GET when there is none). The URL path comes from the first argument, or from the `url` property of a config object, under the `baseURL` of the instance the call is made on. The argument is evaluated, so a name, a concatenation, or a spread from an object the evaluator can follow all come out with a path.
+- **Requests**: calls to `get`, `post`, `put`, `delete`, `patch`, `head` and `options` with a URL, where `axios` is the default import from `"axios"`, declared with `@suss/recognize`'s `httpRequests`. The call can be on the `axios` import itself, on a variable built by `axios.create(...)`, or on a name imported from wherever that variable was declared. A request written as one config object is read the same way, whether as `axios({ url, method })`, as `api({ url })` on an instance, or as `axios.request(config)`.
+- **Binding**: the HTTP method comes from the method called, or from the `method` property of a config object (GET when there is none, or when suss cannot settle it). `maxRedirects` on the call's config, or else on the instance's, says whether the call follows a redirect. The URL path comes from the first argument, or from the `url` property of a config object, under the `baseURL` of the instance the call is made on. The argument is evaluated, so a name, a concatenation, or a spread from an object the evaluator can follow all come out with a path.
 - **Terminals**: `returnStatement` and `throwExpression`.
 - **Response semantics**: `response.data` → body, `response.status` → status code, `response.headers` → headers.
 
@@ -68,7 +68,7 @@ The `factories` pack option did the same job until 0.21.0 removed it. A config f
 
 ## Where it fits in suss
 
-This package depends only on `@suss/extractor`, for the `PatternPack` type. It has no analysis logic of its own.
+The pack declares its calls with `@suss/recognize`'s `httpRequests`, and depends on `@suss/extractor` for the `PatternPack` type. It has no analysis of its own. The adapter's discovery hands each call in a file to the declaration.
 
 ## Coverage
 

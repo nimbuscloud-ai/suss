@@ -75,7 +75,6 @@
   "followed": "suss: RedirectDelivery tag",
   "expands": "suss: route table role tag, an entry read as a fixed list of rows under a base",
   "fragment": "suss: route table role tag, a named block of entries a replay walks again",
-  "fromArgument": "suss: BindingExtraction source tag",
   "fromArgumentProperty": "suss: BindingExtraction source tag",
   "fromClientMethod": "suss: BindingExtraction source tag",
   "fromContract": "suss: BindingExtraction source tag",
