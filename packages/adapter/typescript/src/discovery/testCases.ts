@@ -105,7 +105,10 @@ function mockOf(
   if (read.replaces === "path") {
     return { module: moduleFileOf(sourceFile, read.path), written };
   }
-  const object = call.valueAt(read.of);
+  const object =
+    read.of === "receiver"
+      ? (call.receiverValue?.() ?? null)
+      : call.valueAt(read.of);
   const local = object?.form?.() === "name" ? object.source?.() : undefined;
   const module =
     local === undefined ? null : moduleImportedWholeAs(sourceFile, local);

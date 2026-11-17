@@ -42,10 +42,12 @@ export interface DeclaredAssociation {
   readonly written: string;
 }
 
-/** A class method a class body call defines, and the lambda that runs as it. */
+/** A method a class body call defines, and the lambda or block that runs as it. */
 export interface DefinedMethod {
   readonly name: string;
   readonly lambda: RbNode;
+  /** Whether the method is the class's own, as a scope is, or its instances', as a Minitest `test` is. */
+  readonly defines: "singleton" | "instance";
 }
 
 /**
@@ -139,7 +141,7 @@ export function associationsOf(
   return found;
 }
 
-/** Each class's methods defined from a lambda, with the lambda's node. */
+/** Each class's methods defined from a lambda or a block, with its node. */
 export function definedMethodsOf(
   bodies: ClassBodiesOfFile,
 ): Map<string, DefinedMethod[]> {
@@ -147,9 +149,9 @@ export function definedMethodsOf(
   for (const [classKey, declared] of bodies) {
     found.set(
       classKey,
-      ofKind(declared, "method").flatMap(({ name, body }) => {
+      ofKind(declared, "method").flatMap(({ name, body, defines }) => {
         const lambda = (body as AstCapableValueOps).ast() as RbNode | null;
-        return lambda === null ? [] : [{ name, lambda }];
+        return lambda === null ? [] : [{ name, lambda, defines }];
       }),
     );
   }

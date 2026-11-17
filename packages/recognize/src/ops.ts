@@ -150,6 +150,18 @@ export function inherits(spec: Inherits): Inheriting {
 }
 
 /**
+ * Ruby library classes as bases a declaration lists, each written as the
+ * constant a project writes: `ActiveSupport::TestCase` is the class
+ * `TestCase` from the library's constant `ActiveSupport`.
+ */
+export function rubyConstants(...names: readonly string[]): Inherits[] {
+  return names.map((name) => {
+    const at = name.lastIndexOf("::");
+    return { from: [name.slice(0, at)], named: [name.slice(at + 2)] };
+  });
+}
+
+/**
  * A receiver `method`, called on a receiver from `on`, hands its
  * callback as the parameter at `parameter`, as `$transaction` hands its
  * callback a client.

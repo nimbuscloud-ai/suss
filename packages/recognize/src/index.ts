@@ -32,6 +32,7 @@ export {
   readIn,
   readOff,
   returnedBy,
+  rubyConstants,
   spelled,
   typed,
 } from "./ops.js";
@@ -60,6 +61,7 @@ export {
   collectsFile,
   decoratorIsFrom,
   discoverTestCases,
+  isRunnerCall,
   mockRead,
 } from "./testCases.js";
 export { unitInvokes } from "./unitInvokes.js";

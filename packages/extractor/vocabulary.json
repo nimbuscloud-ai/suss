@@ -107,6 +107,7 @@
   "inTheInput": "suss: message location, the call's input is a list with one message per item",
   "input": "suss: ValueRef variant tag for a path off one of the unit's inputs, which graphql-ruby also happens to call the argument RelayClassicMutation wraps",
   "independent": "suss: resolution confidence",
+  "instance": "suss: DefinesMethodMeaning kind, a method of the class's instances",
   "interaction": "suss: effect class",
   "exit": "suss: terminal kind and output type for a call that ends the process",
   "javascript": "language the adapter reads",

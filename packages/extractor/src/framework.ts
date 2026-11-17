@@ -763,7 +763,7 @@ export interface CallbackArgumentMatch {
 
 /** The files a runner collects. */
 export interface FileSelection {
-  /** Globs the file's name has to match, `*` being any run of characters: `test_*.py`. */
+  /** Globs the file's name has to match, `*` being any run of characters: `test_*.py`, `*_test.rb`. */
   readonly matching: readonly string[];
   /** The files `suss extract --intent` hands the pack from the PRDs, matched on whole path segments from the end. */
   readonly listed?: readonly string[];
@@ -779,13 +779,15 @@ export interface TestCasesMatch {
   files: FileSelection;
   /** Cases written as functions of the module: pytest's `def test_x`. */
   functions?: { readonly pattern: string };
-  /** Cases written as methods of a class: pytest's `Test` classes and unittest's. */
+  /** Cases written as methods of a class: Minitest's, pytest's `Test` classes and unittest's. */
   classes?: ClassCases;
   /** Cases and the groups around them written as calls: vitest's `describe` and `it`. */
   calls?: CallCases;
   /** What the runner calls before a case. Their calls count as the case's own. */
   before?: BeforeCase;
   skips?: SkipRules;
+  /** Calls a case makes to the runner itself, which call no project code. */
+  runner?: RunnerCalls;
   /** How a case replaces something before it runs, the first rule a call meets saying what it replaces. */
   mocks?: readonly MockRule[];
 }
@@ -803,12 +805,18 @@ export type MockRule =
         readonly path: { readonly at: number };
       };
     }
-  /** The member the call names on a value it passes: `patch.object(OrderService, "cancel")`. */
+  /**
+   * The member the call names on a value it passes,
+   * `patch.object(OrderService, "cancel")`, or on what it is made on,
+   * `Order.stub(:cancel, 1)`, where the value is the first one the
+   * receiver chain starts at, so `Order.any_instance.stubs(:cancel)`
+   * replaces `cancel` on `Order`.
+   */
   | {
       readonly replacesMember: {
         readonly by: Patchers;
         readonly member: { readonly at: number };
-        readonly of: { readonly at: number };
+        readonly of: { readonly at: number } | "receiver";
       };
     };
 
@@ -862,6 +870,8 @@ export interface Patchers {
     readonly parameter: string;
     readonly methods: readonly string[];
   }[];
+  /** A call of one of these methods, whatever it is made on: Minitest's `stub`, mocha's `stubs`. */
+  readonly methods?: readonly string[];
 }
 
 /** What marks a case as one the runner does not run, or runs expecting it to fail. */
@@ -875,6 +885,12 @@ export interface SkipRules {
     readonly origins: readonly ReceiverOrigin[];
     readonly variable?: string;
   };
+  /**
+   * Calls on self that stop a case where they run: Minitest's `skip`. One
+   * counts when the case writes it as one of its own statements, with no
+   * block, and not inside another statement such as an `if`.
+   */
+  readonly statements?: readonly string[];
 }
 
 export interface ClassCases {
@@ -894,20 +910,38 @@ export interface ClassCases {
 /** What a runner calls before each case, in the order it calls them. */
 export interface BeforeCase {
   /**
-   * Methods of each class around the case, from the outermost in. A class
-   * collected by its ancestry runs the `byAncestry` ones, and any other
-   * the `byName` ones. A method the class does not write is looked for
-   * on the project classes it extends.
+   * Calls written on self in the body of the case's class whose block
+   * runs before every case of the class: Minitest's `setup do`.
    */
-  readonly methods?: {
-    readonly byName: readonly string[];
-    readonly byAncestry: readonly string[];
-  };
+  readonly calls?: readonly string[];
+  /**
+   * Methods the runner calls before a case. A list names methods the
+   * case's own class writes, which run with the `calls` blocks in the
+   * order the class writes them all, as Minitest runs `setup`. Otherwise
+   * they are methods of each class around the case, from the outermost
+   * in: a class collected by its ancestry runs the `byAncestry` ones, and
+   * any other the `byName` ones, and a method the class does not write is
+   * looked for on the project classes it extends.
+   */
+  readonly methods?:
+    | readonly string[]
+    | {
+        readonly byName: readonly string[];
+        readonly byAncestry: readonly string[];
+      };
   /** Functions of the case's module: before every case, and before a case written as a function. */
   readonly module?: {
     readonly always: readonly string[];
     readonly forFunctions: readonly string[];
   };
+}
+
+/** Calls on self that go to the runner: assertions, and the runner's own `skip`. */
+export interface RunnerCalls {
+  /** What the method's name starts with: `assert`, `refute`. */
+  readonly prefixes?: readonly string[];
+  /** Whole method names: `skip`. */
+  readonly names?: readonly string[];
 }
 
 export type BindingExtraction = {
@@ -1657,7 +1691,18 @@ export interface CallbackMeaning {
 export interface DefinesMethodMeaning {
   readonly declares: "method";
   readonly name: ClassBodyArgument;
-  readonly body: ClassBodyArgument;
+  /** Where the method's body is: an argument, as `scope :recent, -> { ... }` passes it, or the call's block. */
+  readonly body: ClassBodyArgument | { readonly block: true };
+  /** Which methods it defines: the class's own, as `scope` does (the default), or its instances', as ActiveSupport's `test` does. */
+  readonly kind?: "singleton" | "instance";
+  /**
+   * How the library turns what the call writes into the method's name:
+   * `prefix` in front and each run of spaces as `spacesAs`, as
+   * `test "cancels twice"` defines `test_cancels_twice`. The name is then
+   * the string the argument settles to, and without `naming` it is the
+   * name written there.
+   */
+  readonly naming?: { readonly prefix: string; readonly spacesAs: string };
 }
 
 /** What a field assigned from a call declares, by what made the call. */

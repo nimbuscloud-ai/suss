@@ -92,6 +92,8 @@ export type ClassDeclaration =
       readonly cls: ClassValueOps;
       readonly name: string;
       readonly body: ValueOps;
+      /** Whether the method is the class's own or its instances'. */
+      readonly defines: "singleton" | "instance";
     };
 
 /** What every class and module a file writes declares in its body, in source order. */
@@ -129,6 +131,12 @@ function readsBodyOf(
   );
 }
 
+/** Whether the call is written with no receiver, so its callee is the method's own name. */
+export function isWrittenOnSelf(call: CallOps): boolean {
+  const written = call.calleeText();
+  return (call.method() ?? written) === written;
+}
+
 /**
  * What the declaration says a call means, by the name it is written
  * under. A call written on a receiver, `self.has_many`, is the
@@ -138,10 +146,10 @@ function meaningOf(
   declaration: ClassBodyDeclaration,
   call: CallOps,
 ): ClassBodyMeaning | null {
-  const written = call.calleeText();
-  if ((call.method() ?? written) !== written) {
+  if (!isWrittenOnSelf(call)) {
     return null;
   }
+  const written = call.calleeText();
   return Object.hasOwn(declaration.calls, written)
     ? (declaration.calls[written] ?? null)
     : null;
@@ -257,11 +265,37 @@ function readDefinedMethod(
   call: CallOps,
   cls: ClassValueOps,
 ): ClassDeclaration[] {
-  const name = argumentOf(call, meaning.name)?.name("nothing") ?? null;
-  const body = argumentOf(call, meaning.body);
+  const name = definedMethodName(meaning, argumentOf(call, meaning.name));
+  const body =
+    "block" in meaning.body
+      ? (call.block?.() ?? null)
+      : argumentOf(call, meaning.body);
   return name === null || body === null || body.form?.() !== "function"
     ? []
-    : [{ kind: "method", cls, name, body }];
+    : [
+        {
+          kind: "method",
+          cls,
+          name,
+          body,
+          defines: meaning.kind ?? "singleton",
+        },
+      ];
+}
+
+/** The name written at the argument, or with `naming` the method name the library makes of the string it settles to. */
+function definedMethodName(
+  meaning: DefinesMethodMeaning,
+  written: ValueOps | null,
+): string | null {
+  const naming = meaning.naming;
+  if (naming === undefined) {
+    return written?.name("nothing") ?? null;
+  }
+  const settled = written?.evaluated?.() ?? null;
+  return typeof settled === "string"
+    ? `${naming.prefix}${settled.trim().split(/\s+/).join(naming.spacesAs)}`
+    : null;
 }
 
 /** A field assigned from a call the declaration's origin made declares an association under the field's name. */

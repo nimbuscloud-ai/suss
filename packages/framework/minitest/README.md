@@ -46,15 +46,19 @@ not suggest the pack. A config file can list the files instead:
   `ActiveSupport::TestCase` or one of the Rails test cases built on it,
   directly or through a project class.
 - Each test in it: a `test_*` method, or a `test "..." do` block named
-  `test_` and its description with each run of spaces as `_`.
+  `test_` and its description with each run of spaces as `_`. The pack
+  says that `test` defines that method, so a block the class body writes
+  inside a loop, such as `[1, 2].each do |n| test "works" do`, is a test
+  too, when its description is a string suss can settle.
 - What the test runs: its own body, then its class's `setup` blocks and
   `setup` method. Their calls count as the test's own, and assertions
-  such as `assert_equal` are left out.
+  such as `assert_equal`, and `skip` itself, are left out.
 - Which class each call was sent to, as `receiverClass` on the call,
   when the receiver is a class the project defines or an instance of
   one, including a finder such as `Order.find(1)` and a column read.
 - Whether it runs: a `skip` statement in the test marks it
-  `metadata.test.skipped`.
+  `metadata.test.skipped`. A `skip` inside an `if`, a modifier or a
+  `begin` does not, since the test may run past it.
 - What it stubs, under `metadata.test.mocks`: `Order.stub(:cancel, 1)`,
   and mocha's `Order.expects(:cancel)` and `Order.stubs(:cancel)`,
   record the file that defines `Order` and the method `cancel`.

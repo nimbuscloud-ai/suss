@@ -2817,17 +2817,20 @@ function emitClassFacts(emitter: Emitter, cls: RbNode): string {
 }
 
 /**
- * The class method a pack says a class body call defines from a lambda,
- * `scope :recent, -> { ... }`, held on the class under the name a class
- * method is held under.
+ * The method a pack says a class body call defines from a lambda or a
+ * block, stated on the class under the name a method of its kind is
+ * stated under: `scope :recent, -> { ... }` defines a class method, and
+ * Minitest's `test "x" do` an instance method.
  */
 export function emitDefinedMethod(
   db: Database,
   classKey: string,
-  name: string,
-  lambdaKey: string,
+  method: { readonly name: string; readonly defines: "singleton" | "instance" },
+  bodyKey: string,
 ): void {
-  db.add("holdsProperty", [classKey, classSpelling(name), lambdaKey]);
+  const stated =
+    method.defines === "singleton" ? classSpelling(method.name) : method.name;
+  db.add("holdsProperty", [classKey, stated, bodyKey]);
 }
 
 /**

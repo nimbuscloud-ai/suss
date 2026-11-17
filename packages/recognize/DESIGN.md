@@ -321,6 +321,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `receiverIsFrom`, `receiverGlobal` with `global` | the adapter's `spellsGlobal` on the receiver, or else `globalsReaching`: the paths `wantedStreamValue` says reach the receiver, from every `streamObject` |
 | `isFrom` with `global` | the adapter's `callsGlobal` on the call, for a call with no receiver, or in Python one whose callee the file's imports spell as the path: `os.getenv(...)`, and `getenv(...)` after `from os import getenv` |
 | `block()` | `callBlock(r, b)`, which only Ruby states |
+| `nestedBodyCall()` | a `nestedBodyCall(r)` row on the call |
 | `isFrom`, `receiverIsFrom` with `constructed` | the construction a receiver was written as, checked through `importedFrom` |
 | `isFrom`, `receiverIsFrom` with `declaredBy` | the adapter's `declares`, since only a type checker can say who declared a method |
 | `isFrom`, `receiverIsFrom` with `typed` | the adapter's `typedAs`, or the construction a receiver was written as where the adapter has none |
@@ -367,6 +368,7 @@ No shipped pack lists Python or Ruby among its languages yet.
 | `classes()` on a class | the `holdsProperty(c, n, v)` rows whose `v` is itself a class as `asClass()` reads one, without following `comesTo`, in source order, each under `n`. Python and Ruby state one for each class or module written as a statement of the body, so a name the body sets to another class is not one. A nested Python class has no `exportsAs` row, so `n` is the only name the facts give it |
 | `method(name, kind)` | the first function among the class's `holdsProperty` rows of that kind under the name, else the same on each class an `extends(c, b)` row's `b` `comesTo`, in the order of the rows and through each base's own bases before the next, each class once |
 | `site()` on a value | the value's own key, the one its facts are stated under |
+| `blockCall()` | `callBlock(r, b)` read by its second column, the value's own key |
 | `asCall()` | the `call(r, c)` row on the value's own key, so a list item written as a call is that call; a name is not followed. With `{ follow: "namesAndFields" }`, the value is read the way `receiver()` reads a receiver, so `include_router(users.router)` and `@router.get` on the same router give one call |
 | `nothing()` | the adapter's `writesNothing` on the value's own key: `None`, `nil`, or `null` and `undefined` |
 | `pairArgs()` | `callPairArg(r, k, v)` in the order the adapter states them, which only Ruby does |
@@ -508,12 +510,15 @@ in `declaredDiscovery` beside their own route patterns.
 ### A test case a runner collects
 
 `discoverTestCases` reads a `testCases` match: the test cases a runner
-collects in one module, each with its titles, the function it runs and
-that function's `site()`, which the adapter records the unit at. The
-pytest pack declares one, and the Python adapter builds a `test` unit
-on each case and walks it the way it walks a reached function. A file
-is read when its name matches one of `files.matching` and, when
-`files.listed` is set, it is one of the listed files.
+collects in one module, each with its titles, the function it runs,
+where its unit is recorded, whether it skips itself and what it mocks.
+The pytest and minitest packs declare one, and the Python and Ruby
+adapters build a `test` unit on each case and walk it the way they walk
+a reached function. A file is read when its name matches one of
+`files.matching` and, when `files.listed` is set, it is one of the
+listed files. A case is recorded at its function's `site()`, or for a
+block at the site of the call `blockCall()` says it is written with,
+since that call is where Minitest's `test "x" do` declares it.
 
 A case written as a function is an export whose name matches
 `functions.pattern` and whose `function()` is the export's own value,
@@ -528,17 +533,35 @@ class's body writes, through `classes()` on the class, is collected the
 same way under its own name as another title. Python declares a nested
 class under no `name()` of its own, so the module's classes are then
 the ones it declares at its top level. The cases come out in
-`bySourceOrder` of their sites, so a class's methods and the classes
-nested in it keep the order they are written in.
+`bySourceOrder` of where they are recorded, so a class's methods and
+the classes nested in it keep the order they are written in.
+
+Minitest's `test "cancels twice" do` is a method too. The minitest pack
+lists a class-body declaration in which `test` defines the instance
+method `test_cancels_twice` from its block, the Ruby adapter states it
+as `holdsProperty`, and `members("instance")` lists it beside each
+`def test_*`. A test a loop in the class body declares is found the same
+way, since `classBodyCall` follows a loop's block.
 
 `caseRuns` gives every case in the module by its function's site, the
 listed files or not, each with `before`: the functions the runner calls
 before the case, in the order it calls them. They are the module's
 `before.module.always` functions, then its `forFunctions` ones for a
-case with no class around it, then each class's methods from the
-outermost class in, looked up with `method(name)` so a method on a
-project base class counts. A class the runner collects by its ancestry
-runs `before.methods.byAncestry`, and any other class `byName`.
+case with no class around it, then the classes' own. A list of
+`before.methods` names methods the case's own class writes, which run
+with the blocks of its `before.calls` in the order the class writes
+them all, as Minitest runs `setup do` and `def setup`. Otherwise each
+class's methods run from the outermost class in, looked up with
+`method(name)` so a method on a project base class counts, and a class
+the runner collects by its ancestry runs `before.methods.byAncestry`
+and any other class `byName`.
+
+A case is skipped when a call on self to one of `skips.statements` is
+one of its own `bodyCalls()`, with no block and not a `nestedBodyCall()`,
+so `skip "later" unless ready?` does not skip it. `isRunnerCall` says
+a call is the runner's own when it is written on self and its method
+is one of `runner.names` or starts with one of `runner.prefixes`. The
+adapter asks it of each call the walk meets in a case.
 
 Each case also gets its `markers`: the `decorated()` decorators of its
 function, then for each class around it from the innermost out the
@@ -553,12 +576,15 @@ adapter reads the other markers it needs, pytest's `usefixtures`, off
 the same list.
 
 `mockRead` reads one call against `mocks`, in order. A rule applies
-when the call is one of its patchers, by its callee's `isFrom` or as a
-listed method on a parameter the caller says the function takes, and
-writes the argument the rule reads as a string: `replacesModule` gives
-the dotted path, and `replacesMember` the member's name and where the
-object is. The adapter lists the calls, since which functions a case
-runs through is its own, and turns a dotted path into a file with its
+when the call is one of its patchers, by its callee's `isFrom`, as a
+listed method on a parameter the caller says the function takes, or
+as one of `by.methods` whatever it is called on, and writes the
+argument the rule reads as a string: `replacesModule` gives the dotted
+path, and `replacesMember` the member's name and where the object is,
+an argument's position or `receiver` for what the call is made on, as
+Minitest's `Order.stub(:cancel, 1)` replaces `cancel` on `Order`. The
+adapter lists the calls, since which functions a case runs through is
+its own, and turns a dotted path or a receiver into a file with its
 module resolution.
 
 A case written as a call is read off `calls` by `callCases`, as the
