@@ -11,8 +11,18 @@ import {
   summaryIdentifier,
 } from "@suss/behavioral-ir";
 import { assembleSummary, httpRouteDiscovery } from "@suss/extractor";
+import {
+  allOf,
+  anyOf,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+  returnedBy,
+  spelled,
+} from "@suss/recognize";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
+import { fetchRequests } from "./__fixtures__/fetchRequests.js";
 import { createTypeScriptAdapter, extractCodeStructure } from "./adapter.js";
 import { readContract } from "./contract.js";
 import { discoverUnits } from "./discovery/index.js";
@@ -25,9 +35,24 @@ import type {
   PatternPack,
   SubUnitOpsCarrier,
 } from "@suss/extractor";
-import type { CallOps } from "@suss/recognize";
+import type { CallOps, RequestMethod } from "@suss/recognize";
 import type { FunctionRoot } from "./conditions.js";
 import type { DiscoveredUnit } from "./discovery/index.js";
+
+/** An axios-like client: the default import spelled `axios`, and what its `create` returns. */
+const AXIOS_LIKE = anyOf(
+  allOf(spelled("axios"), imported({ from: ["axios"], named: ["default"] })),
+  returnedBy(
+    "create",
+    imported({ from: ["axios"], named: ["axios", "default"] }),
+  ),
+);
+
+/** A request written as one config object, whose `method` defaults to GET. */
+const CONFIG_CALL: RequestMethod = {
+  sends: { from: { at: 0, property: ["method"] }, default: "GET" },
+  url: { at: 0, property: ["url"] },
+};
 
 function restMethodOf(
   target:
@@ -3646,25 +3671,8 @@ describe("consumer extraction", () => {
     name: "fetch",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "global",
-          importName: "fetch",
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 1,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgument", position: 0 },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: fetchRequests(),
     terminals: [
       {
         kind: "return",
@@ -4683,25 +4691,8 @@ describe("response property semantics", () => {
     name: "fetch",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "global",
-          importName: "fetch",
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 1,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgument", position: 0 },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: fetchRequests(),
     terminals: [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -4921,32 +4912,17 @@ describe("response property semantics", () => {
 });
 
 describe("a client called as a function with one config object", () => {
+  const CLIENT = imported({ from: ["config-client"], named: ["default"] });
   const configCallPack: PatternPack = {
     name: "config-client",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "config-client",
-          importName: "client",
-          methodFilter: ["request"],
-          factoryMethods: ["create"],
-          callable: true,
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 0,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgumentProperty", position: 0, property: "url" },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: anyOf(CLIENT, returnedBy("create", CLIENT)) })
+        .methods({ request: CONFIG_CALL })
+        .calls(CONFIG_CALL),
+    ]),
     terminals: [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
     ],
@@ -4985,10 +4961,11 @@ describe("a client called as a function with one config object", () => {
   });
 });
 
-describe("a clientCall pattern that takes any method on the client", () => {
-  // A request chain lists the methods it reads, so a pattern with no
-  // method filter reads its binding off the call where the adapter does.
-  const anyMethodPack: PatternPack = {
+describe("a clientCall pattern whose binding reads no contract", () => {
+  // A clientCall unit's method and path come from the contract, so a
+  // binding that says otherwise claims neither, and no binding claims
+  // no route at all.
+  const contractless: PatternPack = {
     name: "sendkit",
     protocol: "http",
     languages: ["typescript"],
@@ -4998,28 +4975,11 @@ describe("a clientCall pattern that takes any method on the client", () => {
         match: {
           type: "clientCall",
           importModule: "sendkit",
-          importName: "sender",
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 1,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgument", position: 0 },
-        },
-      },
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "sendkit",
           importName: "poster",
         },
         bindingExtraction: {
           method: { type: "literal", value: "POST" },
-          path: { type: "fromArgumentProperty", position: 0, property: "url" },
+          path: { type: "fromArgument", position: 0 },
         },
       },
       {
@@ -5037,27 +4997,15 @@ describe("a clientCall pattern that takes any method on the client", () => {
     inputMapping: { type: "positionalParams", params: [] },
   };
 
-  it("reads the method, the path and the host off the call, and gives a pattern that reads nothing no binding", async () => {
+  it("claims no method or path off the call, and gives a pattern with no binding none", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
       `
-      import sender, { pinger, poster } from "sendkit";
-
-      export function remove() {
-        return sender.send("https://api.example.com/orders/1", { method: "DELETE" });
-      }
-
-      export function list() {
-        return sender.send("/orders");
-      }
-
-      export function unstated() {
-        return sender.send();
-      }
+      import { pinger, poster } from "sendkit";
 
       export function save() {
-        return poster.go({ url: "/orders" });
+        return poster.go("/orders");
       }
 
       export function ping() {
@@ -5068,7 +5016,7 @@ describe("a clientCall pattern that takes any method on the client", () => {
 
     const adapter = createTypeScriptAdapter({
       project,
-      frameworks: [anyMethodPack],
+      frameworks: [contractless],
     });
     const summaries = await adapter.extractAll();
     const bindings = summaries
@@ -5076,17 +5024,11 @@ describe("a clientCall pattern that takes any method on the client", () => {
       .map((s) => {
         const semantics = s.identity.boundaryBinding?.semantics;
         return semantics?.name === "rest"
-          ? `${s.identity.name} ${semantics.method} ${semantics.path} ${semantics.host ?? "-"}`
+          ? `${s.identity.name} ${semantics.method} ${semantics.path}`
           : `${s.identity.name} no binding`;
       })
       .sort();
-    expect(bindings).toEqual([
-      "list GET /orders -",
-      "ping no binding",
-      "remove DELETE /orders/1 api.example.com",
-      "save POST /orders -",
-      "unstated GET null -",
-    ]);
+    expect(bindings).toEqual(["ping no binding", "save null null"]);
   });
 });
 
@@ -5248,43 +5190,15 @@ describe("the base an instance sends every request under", () => {
     name: "axios",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "axios",
-          importName: "axios",
-          methodFilter: ["get"],
-          factoryMethods: ["create"],
-          basePathOption: "baseURL",
-        },
-        bindingExtraction: {
-          method: { type: "literal", value: "GET" },
-          path: { type: "fromArgument", position: 0 },
-        },
-      },
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "axios",
-          importName: "axios",
-          methodFilter: ["request"],
-          factoryMethods: ["create"],
-          basePathOption: "baseURL",
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 0,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgumentProperty", position: 0, property: "url" },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: AXIOS_LIKE })
+        .methods({
+          get: { sends: "GET", url: { at: 0 } },
+          request: CONFIG_CALL,
+        })
+        .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" }),
+    ]),
     terminals: [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -5639,22 +5553,12 @@ describe("wrapper expansion", () => {
     name: "axios",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "axios",
-          importName: "axios",
-          methodFilter: ["get"],
-          factoryMethods: ["create"],
-        },
-        bindingExtraction: {
-          method: { type: "literal", value: "GET" },
-          path: { type: "fromArgument", position: 0 },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: AXIOS_LIKE }).methods({
+        get: { sends: "GET", url: { at: 0 } },
+      }),
+    ]),
     terminals: [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -6177,28 +6081,12 @@ describe("wrapper expansion over a config object", () => {
     name: "axios",
     protocol: "http",
     languages: ["typescript"],
-    discovery: [
-      {
-        kind: "client",
-        match: {
-          type: "clientCall",
-          importModule: "axios",
-          importName: "axios",
-          methodFilter: ["request"],
-          factoryMethods: ["create"],
-          callable: true,
-        },
-        bindingExtraction: {
-          method: {
-            type: "fromArgumentProperty",
-            position: 0,
-            property: "method",
-            default: "GET",
-          },
-          path: { type: "fromArgumentProperty", position: 0, property: "url" },
-        },
-      },
-    ],
+    discovery: [],
+    requestRecognizers: requestRecognizersOf([
+      httpRequests({ client: AXIOS_LIKE })
+        .methods({ request: CONFIG_CALL })
+        .calls(CONFIG_CALL),
+    ]),
     terminals: [
       { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
@@ -6417,20 +6305,8 @@ describe("subUnits plumbing", () => {
       name: "fetch",
       protocol: "http",
       languages: ["typescript"],
-      discovery: [
-        {
-          kind: "client",
-          match: {
-            type: "clientCall",
-            importModule: "global",
-            importName: "fetch",
-          },
-          bindingExtraction: {
-            method: { type: "literal", value: "POST" },
-            path: { type: "fromArgument", position: 0 },
-          },
-        },
-      ],
+      discovery: [],
+      requestRecognizers: fetchRequests({ sends: "POST", url: { at: 0 } }),
       terminals: [
         { kind: "return", match: { type: "returnStatement" }, extraction: {} },
       ],
@@ -7370,20 +7246,8 @@ describe("a client that ends the process", () => {
       name: "fetch",
       protocol: "http",
       languages: ["typescript"],
-      discovery: [
-        {
-          kind: "client",
-          match: {
-            type: "clientCall",
-            importModule: "global",
-            importName: "fetch",
-          },
-          bindingExtraction: {
-            method: { type: "literal", value: "GET" },
-            path: { type: "fromArgument", position: 0 },
-          },
-        },
-      ],
+      discovery: [],
+      requestRecognizers: fetchRequests({ sends: "GET", url: { at: 0 } }),
       terminals: [
         { kind: "return", match: { type: "returnStatement" }, extraction: {} },
         {

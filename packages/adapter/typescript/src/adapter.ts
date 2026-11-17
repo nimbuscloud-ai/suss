@@ -162,7 +162,6 @@ import {
   type MountPrefixIndex,
 } from "./discovery/mountPrefix.js";
 import { readRegisteringFiles } from "./discovery/registrationCall.js";
-import { stringPropertyOf } from "./discovery/resolveValue.js";
 import {
   expandRestWrapperCallers,
   parametersAsHoles,
@@ -210,11 +209,6 @@ import {
   recognizerOnlyRoots,
 } from "./resolve/reachableClosure.js";
 import { enrichRethrows } from "./resolve/rethrowEnrichment.js";
-import {
-  hostFromArgument,
-  pathFromArgument,
-  pathFromProperty,
-} from "./resolve/routePath.js";
 import { sourceDeclarationsBehind } from "./resolve/sourceDeclaration.js";
 import { unfollowedCallGap } from "./resolve/unfollowedCall.js";
 import {
@@ -1147,60 +1141,32 @@ function requestBinding(
 }
 
 /**
- * The binding of a client unit a `clientCall` pattern found without a
- * request chain, as ts-rest's, whose method and path come from the
- * contract the client was built from.
+ * The binding of a client unit a `clientCall` pattern found, as
+ * ts-rest's: the method and path that the client's contract lists for
+ * the method being called, where the pattern's binding says
+ * `fromClientMethod`.
  */
-function extractConsumerBinding(
+function contractClientBinding(
   unit: DiscoveredUnit,
   pattern: DiscoveryPattern,
   pack: PatternPack,
   resolution?: ResolutionStore,
 ): BoundaryBinding | null {
   const callSite = unit.callSite;
-  if (callSite === undefined) {
-    return null;
-  }
-
   const binding = pattern.bindingExtraction;
-  if (binding === undefined) {
+  if (callSite === undefined || binding === undefined) {
     return null;
   }
-
-  const method = extractBindingMethod(binding, callSite, pack, resolution);
-  const host = extractBindingHost(binding, callSite, resolution);
-  const path = statedRequestPath(
-    extractBindingPath(binding, callSite, pack, resolution),
-    host,
-  );
+  const fromContract = (field: "method" | "path"): string | undefined =>
+    binding[field].type === "fromClientMethod"
+      ? resolveContractField(callSite, pack, field, resolution)
+      : undefined;
   return restBinding({
     transport: pack.protocol,
-    method: method ?? null,
-    path: path ?? null,
-    host,
+    method: fromContract("method") ?? null,
+    path: statedRequestPath(fromContract("path"), undefined) ?? null,
     recognition: pack.name,
   });
-}
-
-/** The host the call's own URL is written with, read where the pack reads the path. */
-function extractBindingHost(
-  binding: BindingExtraction,
-  callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  resolution?: ResolutionStore,
-): string | undefined {
-  const p = binding.path;
-  if (p.type !== "fromArgument" && p.type !== "fromArgumentProperty") {
-    return undefined;
-  }
-  const arg = callSite.callExpression.getArguments()[p.position];
-  return arg === undefined
-    ? undefined
-    : hostFromArgument(
-        arg,
-        p.type === "fromArgumentProperty" ? p.property : undefined,
-        resolution,
-        callSite.under,
-      );
 }
 
 function fileRouteBinding(
@@ -1237,55 +1203,6 @@ function fileRouteMethod(
   }
   if (binding.method.type === "fromExportName") {
     return unit.name.toUpperCase();
-  }
-  return undefined;
-}
-
-function extractBindingMethod(
-  binding: BindingExtraction,
-  callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  pack: PatternPack,
-  resolution?: ResolutionStore,
-): string | undefined {
-  const m = binding.method;
-  if (m.type === "fromClientMethod") {
-    return resolveContractField(callSite, pack, "method", resolution);
-  }
-  if (m.type === "fromArgumentProperty") {
-    const arg = callSite.callExpression.getArguments()[m.position];
-    const value =
-      arg === undefined
-        ? null
-        : stringPropertyOf(arg, m.property, resolution, callSite.under);
-    return value ?? m.default;
-  }
-  if (m.type === "literal") {
-    return m.value;
-  }
-  return undefined;
-}
-
-function extractBindingPath(
-  binding: BindingExtraction,
-  callSite: NonNullable<DiscoveredUnit["callSite"]>,
-  pack: PatternPack,
-  resolution?: ResolutionStore,
-): string | undefined {
-  const p = binding.path;
-  if (p.type === "fromClientMethod") {
-    return resolveContractField(callSite, pack, "path", resolution);
-  }
-  if (p.type === "fromArgument") {
-    const arg = callSite.callExpression.getArguments()[p.position];
-    return arg === undefined
-      ? undefined
-      : pathFromArgument(arg, resolution, callSite.under);
-  }
-  if (p.type === "fromArgumentProperty") {
-    const arg = callSite.callExpression.getArguments()[p.position];
-    return arg === undefined
-      ? undefined
-      : pathFromProperty(arg, p.property, resolution, callSite.under);
   }
   return undefined;
 }
@@ -1677,7 +1594,7 @@ function extractFromSourceFile(
         }
         stampClientBinding(raw, unit.callSite, requestBinding(request, pack));
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
-        const binding = extractConsumerBinding(
+        const binding = contractClientBinding(
           unit,
           matchedPattern,
           pack,

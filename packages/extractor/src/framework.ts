@@ -64,35 +64,21 @@ export type DiscoveryMatch =
       exportNames: string[];
     }
   | {
+      /**
+       * A method call on a client built from a contract, as ts-rest's
+       * `initClient(contract)` builds one. Each such call makes the
+       * function it is written in a `client` unit. The call's method and
+       * path are the ones the contract lists for the method being
+       * called, which the TypeScript adapter reads through the pack's
+       * `contractReading` when the binding says `fromClientMethod`. A
+       * library whose calls state their own method and URL declares
+       * them with `httpRequests` from `@suss/recognize` instead.
+       */
       type: "clientCall";
-      /** Module the client is imported from, or "global" for built-ins like fetch */
+      /** The module the client's builder comes from: `@ts-rest/core`. */
       importModule: string;
-      /** Named export or identifier, for example "initClient" or "fetch" */
+      /** The builder's export: `initClient`. A call on the export itself counts too. */
       importName: string;
-      /** If set, only match calls to these methods on the client (e.g. ["getUser"]).
-       *  Unset means any method call (or bare call for globals). */
-      methodFilter?: string[];
-      /**
-       * Methods on the import that build a client instance. A variable
-       * initialized from one of these calls is a client too, so with
-       * `factoryMethods: ["create"]`, `api.get(...)` after
-       * `api = axios.create(...)` matches the same as `axios.get(...)`.
-       */
-      factoryMethods?: string[];
-      /**
-       * The option on the factory call's config that sets a base path for
-       * every request through the instance, `baseURL` for axios. The
-       * adapter puts it in front of each call's path, so the consumer's
-       * route lines up with a spec whose `servers[0].url` adds the same
-       * prefix to the provider's paths.
-       */
-      basePathOption?: string;
-      /**
-       * The import and every instance built from it can be called as a
-       * function, so `axios(config)` and `api(config)` are requests the
-       * same as a call through a method in `methodFilter`.
-       */
-      callable?: boolean;
     }
   | {
       /**
@@ -949,11 +935,8 @@ export type BindingExtraction = {
       }
     | { type: "literal"; value: string };
   path: /**
-   * The path is the argument at this position. A name bound to a
-   * string is followed one hop to what it was written as, and a
-   * template's substitutions are read the same way, so
-   * `app.get(USERS, h)` and `` fetch(`${BASE}/items/${id}`) `` both
-   * come out with a path on them.
+   * The path is the argument at this position, so `app.get(USERS, h)`
+   * gives the string `USERS` was written as.
    */
     | { type: "fromArgument"; position: number }
     | {
@@ -1004,12 +987,6 @@ export type BindingExtraction = {
       }
     | { type: "fromContract" }
     | { type: "fromClientMethod" };
-  /**
-   * Which argument is the request's options object, for a call that
-   * takes one: fetch's second argument, the config axios takes after the
-   * URL or after the body. The pack's `redirectOption` is read off it.
-   */
-  options?: { position: number };
 };
 
 /**
