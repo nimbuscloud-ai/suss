@@ -98,7 +98,7 @@ src/server.ts
 
 The first line counts what moved. Then comes a block per boundary, with up to two groups under it: `outcomes` for what the boundary returns and under what test, and `effects` for what a request now reaches, or stopped reaching, through the calls it makes.
 
-A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. A path whose line reads the same before and after, because what moved is deep inside it, prints the line once, and under it where the path differs, with the old and new values there:
+A path whose body moved under the same status and the same test prints as one line with a marker on each field: `{ id, ~total: string -> number, +currency: string, -email }`. When the change is inside a field, the marker goes on the field inside it, written with its whole path: `{ ~meta.metric: any -> string, payload }`. A field in the records of a list prints as `~data[].metric`. After three changes inside one field, the line counts the rest, as in `and 2 more in meta`. A path whose line reads the same before and after, because what moved is deep inside it, prints the line once, and under it where the path differs, with the old and new values there:
 
 ```
 ~ render <article />  otherwise
