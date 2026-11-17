@@ -25,6 +25,7 @@ import {
 } from "./value.js";
 
 import type { Row } from "./language.js";
+import type { Truthiness } from "./truthiness.js";
 
 /** The sequence with `values` added at the end. */
 export function appended(sequence: Value, values: readonly Value[]): Value {
@@ -189,6 +190,54 @@ export function negated(value: Value): Value {
   }
   const literal = literalOf(value);
   return literal === null ? hole("value") : constant(literal === "");
+}
+
+/** `!a` or `not a`, by the language's rule for what counts as true. */
+export function negatedBy(truthiness: Truthiness, value: Value): Value {
+  const truth = truthiness(value);
+  return truth === null ? hole("value") : constant(!truth);
+}
+
+/**
+ * Whether `a && b` takes its left side, by the language's rule. `a || b`
+ * takes it when the rule says the left side is true, so its row is
+ * given the rule itself.
+ */
+export function takesLeftWhenFalse(
+  truthiness: Truthiness,
+): (left: Value) => boolean | null {
+  return (left) => {
+    const truth = truthiness(left);
+    return truth === null ? null : !truth;
+  };
+}
+
+/** A language's `!` or `not`. */
+export function negationRow(operator: string, truthiness: Truthiness): Row {
+  return {
+    kind: "operator",
+    operator,
+    arity: 1,
+    apply: ([a], contentOf) => negatedBy(truthiness, contentOf(operand(a))),
+  };
+}
+
+/**
+ * A language's `&&`, `||` or `??`, which takes the left side when
+ * `takesLeft` says so and the right side when it says not. A row that
+ * cannot tell joins the two.
+ */
+export function fallbackRow(
+  operator: string,
+  takesLeft: (left: Value) => boolean | null,
+): Row {
+  return {
+    kind: "operator",
+    operator,
+    arity: 2,
+    apply: ([a, b], contentOf) =>
+      fallback(operand(a), operand(b), (left) => takesLeft(contentOf(left))),
+  };
 }
 
 /** `a ?? b`, `a || b` and `a && b`, with the choice folded when the left side settles it. */

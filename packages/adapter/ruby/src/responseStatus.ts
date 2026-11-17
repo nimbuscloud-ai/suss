@@ -17,6 +17,7 @@ import {
   effectsFiringOn,
   enumerateOrDegrade,
   unreadableReading,
+  withSettledCondition,
   writtenReading,
 } from "@suss/extractor";
 import { constantOf, literalOf, takenOverUnread } from "@suss/values";
@@ -39,6 +40,7 @@ import {
   operandsOf,
   predicateOf,
 } from "./paths/predicates.js";
+import { settledConditionOf } from "./paths/settledConditions.js";
 import { guardInputs } from "./provenance.js";
 import { raisedTerminal } from "./raisedStatuses.js";
 import { escapingRaises } from "./raises.js";
@@ -56,6 +58,7 @@ import type {
   RawEffect,
   RawTerminal,
   Reading,
+  SettledCondition,
 } from "@suss/extractor";
 import type { Range } from "./ast.js";
 import type { ControllerActions, RbStatusCall } from "./pack.js";
@@ -286,20 +289,35 @@ interface PathCondition {
   expression: RbNode | null;
 }
 
+/** What one method's conditions are read with: the inputs their subjects come from, and what each one always comes to. */
+interface ConditionReading {
+  readonly inputs: GuardInputs | undefined;
+  readonly facts: Database | undefined;
+  readonly settled: Map<number, SettledCondition | null>;
+}
+
 /** One of the engine's conditions as a raw condition, with the predicate read out of its Ruby expression when it has one. */
 function conditionOf(
   condition: PathCondition,
-  inputs: GuardInputs | undefined,
+  reading: ConditionReading,
 ): RawCondition {
-  return {
+  const expression = condition.expression;
+  const raw: RawCondition = {
     sourceText: condition.sourceText,
     structured:
-      condition.expression === null
-        ? null
-        : predicateOf(condition.expression, inputs),
+      expression === null ? null : predicateOf(expression, reading.inputs),
     polarity: condition.polarity,
     source: condition.source,
   };
+  return withSettledCondition(
+    raw,
+    expression?.id ?? null,
+    reading.settled,
+    () =>
+      expression === null
+        ? null
+        : settledConditionOf(expression, reading.facts),
+  );
 }
 
 /**
@@ -577,11 +595,15 @@ export function returnPathBranches(
   );
 
   // A claimed block reads the locals of the method it is written in.
-  const inputs = conditionInputs(
-    claimingMethodOf(method, facts) ?? method,
-    [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
+  const reading: ConditionReading = {
+    inputs: conditionInputs(
+      claimingMethodOf(method, facts) ?? method,
+      [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
+      facts,
+    ),
     facts,
-  );
+    settled: new Map(),
+  };
   const branches: RawBranch[] = [];
   const push = (
     paths: readonly ConditionInfo<RbNode>[][],
@@ -591,7 +613,7 @@ export function returnPathBranches(
     const placement = at === null ? undefined : enumerated.placement.get(at);
     for (const path of paths) {
       const conditions = path.map((condition) =>
-        conditionOf(condition, inputs),
+        conditionOf(condition, reading),
       );
       branches.push(
         withEffectsThatRun(
@@ -712,13 +734,17 @@ export function responseBranches(
   );
 
   const statusNames = pattern.statusCodeNames ?? {};
-  const inputs = conditionInputs(
-    method,
-    [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
-    options.facts,
-  );
+  const reading: ConditionReading = {
+    inputs: conditionInputs(
+      method,
+      [...enumerated.byTerminal.values(), enumerated.fallthrough].flat(),
+      options.facts,
+    ),
+    facts: options.facts,
+    settled: new Map(),
+  };
   const conditionsOf = (path: readonly PathCondition[]): RawCondition[] =>
-    path.map((condition) => conditionOf(condition, inputs));
+    path.map((condition) => conditionOf(condition, reading));
   const outcomes: Outcome[] = [];
   for (const terminal of terminals) {
     const responder = responderOf(terminal, responders);

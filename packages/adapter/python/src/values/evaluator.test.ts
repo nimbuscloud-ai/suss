@@ -5,13 +5,21 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { Database } from "@suss/datalog";
-import { literalOf, literalsOf, pathOf } from "@suss/values";
+import {
+  hole,
+  literalOf,
+  literalsOf,
+  pathOf,
+  sequence,
+  unbounded,
+} from "@suss/values";
 
 import { children, field, isFunction } from "../ast.js";
 import { emitValueFacts, nodeId } from "../facts/values.js";
 import { emitModuleImportFacts } from "../facts.js";
 import { findPythonFiles } from "../index.js";
 import { parsePython } from "../parser.js";
+import { settledConditionOf } from "../paths/settledConditions.js";
 import { bindModule } from "../scope.js";
 import {
   bindEvaluator,
@@ -19,6 +27,7 @@ import {
   forgetEvaluations,
   stringValueOf,
 } from "./evaluator.js";
+import { pythonTruthiness } from "./truthiness.js";
 
 import type { Value } from "@suss/values";
 import type { PyNode } from "../parser.js";
@@ -756,6 +765,352 @@ describe("forgetEvaluations", () => {
     forgetEvaluations(new Database());
 
     expect(literalOf(subject("routes.py"))).toBe("/api/items");
+  });
+});
+
+/** The condition of the first `if` in `def check`, and what it comes to on every run. */
+async function settledCheck(source: string) {
+  const { db, parsed } = await projectValues({ "app/main.py": source });
+  const root = parsed[0]?.root;
+  const check = root
+    ?.descendantsOfType("function_definition")
+    .find((fn) => field(fn, "name")?.text === "check");
+  const test = check?.descendantsOfType("if_statement")[0];
+  const condition = test === undefined ? null : field(test, "condition");
+  if (condition === null) {
+    throw new Error("check has no if");
+  }
+  return settledConditionOf(condition, db);
+}
+
+describe("a condition read with the sound evaluator", () => {
+  it("reads a dict every path of a helper returns as true", async () => {
+    expect(
+      await settledCheck(`
+def load_order(order_id):
+    row = db.get(order_id)
+    if row is None:
+        return {"id": order_id, "missing": True}
+    return {"id": row.id}
+
+def check(order_id):
+    order = load_order(order_id)
+    if not order:
+        pass
+`),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("reads an awaited async helper", async () => {
+    expect(
+      await settledCheck(`
+async def load_order():
+    return {"id": 1}
+
+async def check():
+    order = await load_order()
+    if not order:
+        pass
+`),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("counts an empty string and zero as false", async () => {
+    expect(
+      await settledCheck(`
+def check():
+    name = ""
+    if name:
+        pass
+`),
+    ).toMatchObject({ truth: false, every: "falsy" });
+    expect(
+      await settledCheck(`
+def check():
+    count = 0
+    if count:
+        pass
+`),
+    ).toMatchObject({ truth: false, every: "falsy" });
+  });
+
+  it("reads a name bound inside a with", async () => {
+    expect(
+      await settledCheck(`
+def check():
+    with lock():
+        order = {"id": 1}
+        if not order:
+            pass
+`),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  const unsettled = async (source: string) =>
+    expect(await settledCheck(source)).toBeNull();
+
+  it("leaves a dict that may be empty alone", async () => {
+    await unsettled(`
+def to_order(row):
+    return {"id": row.id}
+
+def load_order(order_id):
+    row = db.get(order_id)
+    return to_order(row) if row else {}
+
+def check(order_id):
+    order = load_order(order_id)
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a dict alone once a call it cannot see may have emptied it", async () => {
+    await unsettled(`
+def check():
+    order = {"id": 1}
+    order.pop("id")
+    if not order:
+        pass
+`);
+    await unsettled(`
+def check():
+    order = {"id": 1}
+    clear_all(order)
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a dict alone after a del", async () => {
+    await unsettled(`
+def check():
+    order = {"id": 1}
+    del order["id"]
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a name a loop, a walrus or a second assignment writes alone", async () => {
+    await unsettled(`
+def check(rows):
+    order = {"id": 1}
+    for order in rows:
+        pass
+    if not order:
+        pass
+`);
+    await unsettled(`
+def check(rows):
+    order = {"id": 1}
+    if (order := rows):
+        pass
+`);
+    await unsettled(`
+def check(flag):
+    order = {"id": 1}
+    if flag:
+        order = None
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a name bound inside a with alone after the with", async () => {
+    await unsettled(`
+def check():
+    with lock():
+        order = {"id": 1}
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a helper behind a try with an except alone", async () => {
+    await unsettled(`
+def load_order():
+    try:
+        return {"id": 1}
+    except KeyError:
+        return None
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves calls it cannot be sure of alone", async () => {
+    await unsettled(`
+async def load_order():
+    return {"id": 1}
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+    await unsettled(`
+def load_order():
+    yield None
+    return {"id": 1}
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+    await unsettled(`
+@cached
+def load_order():
+    return {"id": 1}
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+    await unsettled(`
+class Order:
+    def __init__(self):
+        self.id = 1
+
+def check():
+    order = Order()
+    if not order:
+        pass
+`);
+    await unsettled(`
+def load_order(*args):
+    return {"id": 1}
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+    await unsettled(`
+def load_order(*found: int):
+    return found
+
+def check():
+    order = load_order(0)
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a helper whose finally returns alone", async () => {
+    await unsettled(`
+def load_order():
+    try:
+        return {"id": 1}
+    finally:
+        return None
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a default that every call shares alone", async () => {
+    await unsettled(`
+def load_order(found=[]):
+    return found
+
+def check():
+    order = load_order()
+    if not order:
+        pass
+`);
+  });
+
+  it("leaves a parameter alone", async () => {
+    await unsettled(`
+def check(order):
+    if not order:
+        pass
+`);
+  });
+
+  it("reads a parenthesized test and a parenthesized await", async () => {
+    expect(
+      await settledCheck(`
+async def load_order():
+    return {"id": 1}
+
+async def check():
+    order = (await load_order())
+    if (not order):
+        pass
+`),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("reads a file on its own, without the project's facts", async () => {
+    const tree = await parsePython(`
+def check():
+    order = {"id": 1}
+    if not order:
+        pass
+`);
+    const test = tree.rootNode.descendantsOfType("if_statement")[0];
+    const condition = test === undefined ? null : field(test, "condition");
+    expect(
+      condition === null ? null : settledConditionOf(condition, undefined),
+    ).toMatchObject({ truth: false, every: "truthy" });
+  });
+
+  it("leaves a name every other way of binding it writes alone", async () => {
+    const bound = [
+      "for order in rows:\n        pass",
+      "order, other = {}, 1",
+      "with lock() as order:\n        pass",
+      "from app import order",
+      "match rows:\n        case [order]:\n            pass",
+    ];
+    for (const binding of bound) {
+      await unsettled(`
+def check(rows):
+    ${binding}
+    if not order:
+        pass
+`);
+    }
+  });
+
+  it("leaves an object alone once a nested function or a loop's else may change it", async () => {
+    await unsettled(`
+def check():
+    order = {"id": 1}
+    def clear():
+        order.clear()
+    if not order:
+        pass
+`);
+    await unsettled(`
+def check(rows):
+    order = {"id": 1}
+    for row in rows:
+        pass
+    else:
+        order.clear()
+    if not order:
+        pass
+`);
+  });
+});
+
+describe("Python's rule for what counts as true", () => {
+  it("counts an empty list as false and cannot tell for a reference", () => {
+    expect(pythonTruthiness(sequence([]))).toBe(false);
+    expect(pythonTruthiness(unbounded(hole("x")))).toBeNull();
+    expect(pythonTruthiness({ kind: "ref", id: 0 })).toBeNull();
+    expect(pythonTruthiness(hole("x"))).toBeNull();
   });
 });
 

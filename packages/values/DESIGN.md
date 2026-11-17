@@ -19,9 +19,19 @@ interface Lowering<N> {
   freeNamesOf(fn: N): readonly string[];
   holeNameOf(node: N): string;
   declaredValueOf?(node: N): Value | null;
+  writtenOnce?(root: N, name: string): boolean;
+  readonly truthiness: Truthiness;
   readonly rows: readonly Row[];
 }
 ```
+
+`truthiness` is the language's rule for what counts as true in a
+condition. The engine settles an `if` or a `?:` with it, and the rows
+for `!`, `&&` and `||` take it, so the engine never decides truth itself.
+Languages disagree here: an empty dict is false in Python, `0` and `""`
+are true in Ruby. A lowering writes its rule as a `TruthTable`, one
+entry for each kind of value, and `truthinessFrom` turns it into the
+rule.
 
 `siteOf` returns the root and the path of statements from the root's
 body down to the one that contains the node. When the node's parent is
@@ -88,6 +98,39 @@ followed by `?`, `+` or `*` when it covers some other number of
 segments. A piece that is one of a few texts is written `(v1|v2)`. An
 absolute URL loses its origin, and a query string or fragment ends the
 path where it starts.
+
+## Sound evaluation
+
+A plain evaluator gives the value a reader of the source wants. It reads
+`process.env.X ?? "/v1"` as `/v1`, reads a name at the place its
+function is written, and reads a parameter through the one caller that
+passes it. That is right for a route path and wrong for a claim that a
+condition can never be true, since some run may take the other value.
+
+`new Evaluator(lowering, { sound: true })` gives a hole wherever its
+value would not cover every run. A sound run:
+
+- reads only names bound in the function it runs and the functions it
+  inlines, and only names `writtenOnce` vouches for. A name from outside,
+  a parameter nobody passed, a member and a declared type are holes.
+- makes every call when it reaches it, and inlines only what `callable`
+  returns. A sound lowering returns a function there only when the call
+  runs that function and nothing else.
+- widens an object passed to code it cannot see, and every object inside
+  it, and keeps it widened. A member read widens what it reads out, since
+  that value is out of the engine's sight from then on.
+- treats a statement the lowering leaves opaque as one that may have
+  returned anything and changed any object, and widens every name and
+  object a loop changed.
+- joins two objects nothing else refers to into one, and widens two that
+  something else refers to, since a write through that other name would
+  not reach the join.
+- keeps what a branch arm that returned left in the objects it returns.
+- gives a hole for a run that used up its statement budget.
+
+Each adapter has a sound lowering beside its plain one, with its own
+rows: the logic operators, and nothing whose result kind depends on a
+hole, such as `+`.
 
 ## Bounds
 

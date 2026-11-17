@@ -14,23 +14,27 @@ import {
   equals,
   extended,
   fallback,
+  fallbackRow,
   formatArguments,
   hole,
   joined,
   joinedPath,
   negated,
+  negationRow,
   operand,
   percentFormatted,
   plus,
   type Row,
   readableFallback,
   stripped,
+  takesLeftWhenFalse,
   truthOf,
   type Value,
 } from "@suss/values";
 
 import { RECEIVER_RETURNS } from "../facts/languageWords.js";
 import { ENVIRONMENT } from "../stdlib/environment.js";
+import { rubyTruthiness } from "./truthiness.js";
 
 function orRow(operator: string): Row {
   return {
@@ -265,4 +269,18 @@ export const rubyRows: readonly Row[] = [
   ...stringRows,
   ...sequenceRows,
   ...calleeRows,
+];
+
+/**
+ * The rows a sound evaluator uses: `!`, `not`, `&&`, `and`, `||` and
+ * `or`, with an unknown left side joining the two sides instead of being
+ * read as the right one.
+ */
+export const rubySoundRows: readonly Row[] = [
+  negationRow("!", rubyTruthiness),
+  negationRow("not", rubyTruthiness),
+  ...["&&", "and"].map((operator) =>
+    fallbackRow(operator, takesLeftWhenFalse(rubyTruthiness)),
+  ),
+  ...["||", "or"].map((operator) => fallbackRow(operator, rubyTruthiness)),
 ];

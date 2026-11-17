@@ -3,11 +3,34 @@ import { Evaluator, force, type Value } from "@suss/values";
 import { createProgramMemo } from "../programMemo.js";
 import { typescriptLowering } from "./lowering.js";
 import { typescriptRows } from "./rows.js";
+import { typescriptSoundLowering } from "./soundLowering.js";
 
 import type { Node, Project } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 const evaluators = createProgramMemo<object, Evaluator<Node>>();
+const soundEvaluators = createProgramMemo<object, Evaluator<Node>>();
+
+/**
+ * Every value an expression can have when the program runs, or a hole
+ * where the sound evaluator cannot cover every run. One evaluator per
+ * resolution store, so the conditions of one function share its memo.
+ */
+export function soundValueOf(
+  node: Node,
+  resolution: ResolutionStore | undefined,
+): Value {
+  const project: Project = node.getProject();
+  const key: object = resolution ?? project;
+  let evaluator = soundEvaluators.get(project, key);
+  if (evaluator === undefined) {
+    evaluator = new Evaluator(typescriptSoundLowering(resolution), {
+      sound: true,
+    });
+    soundEvaluators.set(project, key, evaluator);
+  }
+  return evaluator.evaluate(node);
+}
 
 /**
  * One evaluator per resolution store, or per project when a caller has

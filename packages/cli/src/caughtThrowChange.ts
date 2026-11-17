@@ -8,7 +8,8 @@
  * status and body the caller gets stay the same. The diff lists such a
  * change under the unit in its file and leaves it out of the boundary's
  * block and the headline. A change to the response, its conditions, its
- * effects or whether the handler surely catches it still counts.
+ * effects, whether it can run, or whether the handler surely catches it
+ * still counts.
  */
 
 import { readWrapperMetadata, withWrapperMetadata } from "@suss/behavioral-ir";
@@ -34,6 +35,7 @@ function clientView(transition: Transition): unknown {
     conditions: transition.conditions,
     isDefault: transition.isDefault,
     effects: transition.effects,
+    unreachable: transition.unreachable,
     metadata: withoutCatchList(transition),
   };
 }

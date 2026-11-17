@@ -156,6 +156,20 @@ export function polarityOf(condition: Predicate): Polarity | null {
   return null;
 }
 
+/**
+ * The value a test of truth is about, `x` in `x`, `!x` or `not x`, or
+ * null for any other condition.
+ */
+export function truthTestSubject(condition: Predicate | null): ValueRef | null {
+  if (condition === null) {
+    return null;
+  }
+  if (condition.type === "negation") {
+    return truthTestSubject(condition.operand);
+  }
+  return condition.type === "truthinessCheck" ? condition.subject : null;
+}
+
 /** The value a guard is about, or null when it is about several. */
 export function guardSubject(condition: Predicate): GuardSubject | null {
   const ref = subjectRef(condition);
