@@ -31,7 +31,20 @@ export type ReceiverOrigin =
   | HandedBy
   | Imported
   | Global
+  | Spelled
   | ReadOff;
+
+/**
+ * A receiver, or the callee of a call with no receiver, written with one
+ * of these names, whatever the program binds the name to. `global` takes
+ * only a name the program leaves to the runtime. `spelled("fetch")` also
+ * takes a `fetch` a caller hands in or a module exports, which is almost
+ * always a fetch implementation.
+ */
+export interface Spelled {
+  readonly origin: "spelled";
+  readonly names: readonly string[];
+}
 
 /**
  * A receiver, or the callee of a call with no receiver, spelled as one of
@@ -230,6 +243,8 @@ export type UnsettledName = "nothing" | "reference";
 export interface UrlTarget {
   readonly path: string | undefined;
   readonly host: string | undefined;
+  /** True for a URL the client reads without a request, such as a `data:` URL. */
+  readonly local?: boolean;
 }
 
 /**
@@ -907,6 +922,12 @@ export interface CallOps {
    * first, so it never reads a command from some other library.
    */
   isFrom(origin: ReceiverOrigin): boolean;
+  /**
+   * Whether the callee's import statement and written value say it was
+   * imported as the origin asks, or undefined when they leave it open.
+   * Asks no rules, as `receiverSettledFrom` asks none of a receiver.
+   */
+  calleeSettledFrom?(origin: Imported): boolean | undefined;
   /** How many arguments the call passes. */
   argumentCount(): number;
   /**
@@ -1596,6 +1617,12 @@ export interface FactSource {
    * statement. Unset reads the `imports` rows.
    */
   importedUnder?(key: string, modules: readonly string[]): readonly string[];
+  /**
+   * Whether the module in an `imports` row is a file of the project, whose
+   * own exports the rules follow, for an adapter that states no
+   * `importsFile` rows. Unset reads the `importsFile` rows.
+   */
+  importsProjectFile?(module: string): boolean;
 }
 
 /**

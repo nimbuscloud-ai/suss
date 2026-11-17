@@ -181,6 +181,9 @@ const ORIGIN: ByOrigin<boolean, [Receiver]> = {
       origin.paths,
       receiver.resolution,
     ) !== undefined,
+  spelled: (origin, receiver) =>
+    receiver.callee !== null &&
+    origin.names.includes(receiver.callee.getExpression().getText()),
 };
 
 /**
@@ -435,6 +438,8 @@ const CALL_ORIGIN: ByOrigin<boolean, [Receiver]> = {
     importedAsAsked(origin, receiver.expression, receiver.resolution),
   global: (origin, receiver) =>
     origin.paths.includes(globalCalleeName(receiver.expression) ?? ""),
+  spelled: (origin, receiver) =>
+    origin.names.includes(receiver.expression.getText()),
 };
 
 /**

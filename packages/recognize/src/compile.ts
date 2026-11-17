@@ -505,6 +505,7 @@ const BARE_CALL_FROM: ByOrigin<boolean, [CallOps]> = {
   allOf: (origin, ops) =>
     origin.of.every((one) => byOrigin(BARE_CALL_FROM, one, ops)),
   global: (origin, ops) => ops.isFrom(origin),
+  spelled: (origin, ops) => ops.isFrom(origin),
   readOff: (origin, ops) => writtenFrom(origin, ops),
 };
 
@@ -1105,6 +1106,7 @@ const GLOBAL_PATHS: ByOrigin<readonly string[]> = {
   inherits: () => [],
   handedBy: () => [],
   imported: () => [],
+  spelled: () => [],
 };
 
 /**

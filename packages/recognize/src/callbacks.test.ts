@@ -553,7 +553,7 @@ describe("the callback one call hands over, for a reader that found the call", (
 
 describe("the position each method of a callbacks chain takes its callback at", () => {
   it("gives the first place a method lists, across every methods link, and leaves out a method that takes a block", () => {
-    const chain = callbacks({})
+    const chain = callbacks({ client: constructedFrom("fastapi") })
       .methods({
         Depends: { callback: { written: "callback", at: 0 } },
         later: {

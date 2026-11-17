@@ -11,6 +11,7 @@ export {
 } from "./classBody.js";
 export { callbackHandedOver, compile } from "./compile.js";
 export { readSpellingsOf, siteReadOf } from "./compileReads.js";
+export { joinedPath, receiverFrom } from "./compileRequests.js";
 export { configuredSends } from "./configuredSends.js";
 export { discoverDeclared, discoverEntryObject } from "./discovery.js";
 export { examplesMissing, runExamples } from "./example.js";
@@ -31,6 +32,7 @@ export {
   readIn,
   readOff,
   returnedBy,
+  spelled,
   typed,
 } from "./ops.js";
 export {
@@ -257,6 +259,7 @@ export type {
   ReceiverOrigin,
   ReturnedBy,
   RuntimeObject,
+  Spelled,
   SuppliedKey,
   Typed,
   UnsettledName,

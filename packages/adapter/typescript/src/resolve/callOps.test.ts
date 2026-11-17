@@ -310,6 +310,33 @@ describe("pinning down the receiver", () => {
 
     expect(ops.argument(0)?.isFrom(constructed)).toBe(false);
   });
+
+  it("matches a receiver, or a call with no receiver, written with one of the names, whatever binds it", () => {
+    const offWindow = opsForLastCall(`
+      export function load() {
+        return window.fetch("/orders");
+      }
+    `);
+    expect(
+      offWindow.receiverIsFrom({
+        origin: "spelled",
+        names: ["self", "window"],
+      }),
+    ).toBe(true);
+    expect(
+      offWindow.receiverIsFrom({ origin: "spelled", names: ["fetch"] }),
+    ).toBe(false);
+
+    const handedIn = opsForLastCall(`
+      export function load(fetch: (url: string) => unknown) {
+        return fetch("/orders");
+      }
+    `);
+    expect(handedIn.isFrom({ origin: "spelled", names: ["fetch"] })).toBe(true);
+    expect(handedIn.isFrom({ origin: "spelled", names: ["window"] })).toBe(
+      false,
+    );
+  });
 });
 
 describe("a client the module's generator wrote into the project", () => {

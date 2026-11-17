@@ -5,11 +5,14 @@
  * facts say what the nodes do.
  */
 
+import path from "node:path";
+
 import { Node, SyntaxKind } from "ts-morph";
 
 import { factReadOps, factValueOps } from "@suss/recognize/ops";
-import { hostOf, pathOf } from "@suss/values";
+import { hostOf, isLocalUrl, pathOf } from "@suss/values";
 
+import { resolvedModuleFile } from "../discovery/importScan.js";
 import {
   scalarValueOf,
   stringValuesOf,
@@ -148,9 +151,13 @@ export function factSourceFor(
           .map(nodeId),
       ),
     importedFrom: (key, module) =>
-      at(key, false, (node) => isImportedFrom(node, module, originatesFrom)),
+      at(key, false, (node) =>
+        isImportedFrom(node, moduleKeyOf(node, module, store), originatesFrom),
+      ),
     importedAs: (key, module) =>
-      at(key, [], (node) => store.importedAsOf(node, [module])),
+      at(key, [], (node) =>
+        store.importedAsOf(node, [moduleKeyOf(node, module, store)]),
+      ),
     shapeOf: (key) => at(key, null, shapeOf),
     textOf: (key) => at(key, "", (node) => node.getText()),
     lineOf: (key) => at(key, null, (node) => node.getStartLineNumber()),
@@ -208,7 +215,11 @@ export function factSourceFor(
     urlOf: (key, site) =>
       at(key, null, (node) => {
         const value = evaluatedValue(node, store, site);
-        return { path: pathOf(value), host: hostOf(value) };
+        return {
+          path: pathOf(value),
+          host: hostOf(value),
+          ...(isLocalUrl(value) ? { local: true } : {}),
+        };
       }),
     constructionSitesOf: (call) =>
       at(call, [], (node) => {
@@ -305,8 +316,47 @@ export function factSourceFor(
     runtimePathOf: (key, object) =>
       at(key, undefined, (node) => environmentPathOf(node, object, store)),
     importedUnder: (key, modules) =>
-      at(key, [], (node) => store.importNamesUnder(node, modules)),
+      at(key, [], (node) =>
+        store.importNamesUnder(
+          node,
+          modules.map((module) => moduleKeyOf(node, module, store)),
+        ),
+      ),
+    importsProjectFile: isProjectFile,
   };
+}
+
+/**
+ * Whether a module the `imports` rows key is one of the project's own
+ * files. The rows key a project file by its path, and a package by its
+ * specifier or by a declaration file under node_modules.
+ */
+function isProjectFile(module: string): boolean {
+  return (
+    path.isAbsolute(module) &&
+    !module.includes("/node_modules/") &&
+    !module.endsWith(".d.ts")
+  );
+}
+
+/**
+ * The key the import questions take for a module. A pack's options can
+ * say a project module by its path from the project root, which each
+ * importing file writes its own way, so that path is asked as the file
+ * it resolves to.
+ */
+function moduleKeyOf(
+  node: Node,
+  module: string,
+  store: ResolutionStore,
+): string {
+  if (!module.startsWith(".") && !module.startsWith("/")) {
+    return module;
+  }
+  return (
+    resolvedModuleFile(node.getProject(), module, store)?.getFilePath() ??
+    module
+  );
 }
 
 /** An encoding or a decoding, with the value it was handed keyed as the facts key it. */
