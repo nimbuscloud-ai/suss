@@ -67,6 +67,7 @@ function withNodeMembers(
   const added: AstCapableOps = {
     method: () => ops.method(),
     receiverIsFrom: (origin) => ops.receiverIsFrom(origin),
+    receiverSettledFrom: (origin) => ops.receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => ops.receiverGlobal?.(paths),
     isFrom: (origin) => ops.isFrom(origin),
     argumentCount: () => ops.argumentCount(),
@@ -81,6 +82,7 @@ function withNodeMembers(
     file: () => ops.file?.() ?? null,
     argument: (index) => ops.argument(index),
     callee: () => ops.callee(),
+    constructionSites: () => ops.constructionSites?.() ?? [],
     propertyAt: (index, property, unsettled) =>
       ops.propertyAt(index, property, unsettled),
     valueAt: (index) => ops.valueAt(index),

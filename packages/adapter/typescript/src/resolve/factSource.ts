@@ -8,6 +8,7 @@
 import { Node, SyntaxKind } from "ts-morph";
 
 import { factReadOps, factValueOps } from "@suss/recognize/ops";
+import { hostOf, pathOf } from "@suss/values";
 
 import {
   scalarValueOf,
@@ -16,6 +17,7 @@ import {
 } from "../discovery/resolveValue.js";
 import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { decodedIn, encodedIn } from "../values/encoded.js";
+import { evaluatedValue } from "../values/evaluator.js";
 import { readSitesOf } from "../values/readSites.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
@@ -203,6 +205,16 @@ export function factSourceFor(
     handedReaching: (key) =>
       at(key, [], (node) => [...store.handedReaching(node)]),
     evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
+    urlOf: (key, site) =>
+      at(key, null, (node) => {
+        const value = evaluatedValue(node, store, site);
+        return { path: pathOf(value), host: hostOf(value) };
+      }),
+    constructionSitesOf: (call) =>
+      at(call, [], (node) => {
+        const cls = node.getFirstAncestorByKind(SyntaxKind.ClassDeclaration);
+        return cls === undefined ? [] : store.constructionSitesOf(cls);
+      }),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),
     classBodyCalls: (key) =>
@@ -293,7 +305,7 @@ export function factSourceFor(
     runtimePathOf: (key, object) =>
       at(key, undefined, (node) => environmentPathOf(node, object, store)),
     importedUnder: (key, modules) =>
-      at(key, [], (node) => store.importedUnder(node, modules)),
+      at(key, [], (node) => store.importNamesUnder(node, modules)),
   };
 }
 

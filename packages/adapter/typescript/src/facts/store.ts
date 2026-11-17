@@ -1979,6 +1979,32 @@ export class ResolutionStore {
     );
   }
 
+  /**
+   * What `importedUnder` gives, with a default import as `default` and a
+   * namespace import as `*`, the way the `imports` rows name them. A
+   * question about whether a receiver is a module's default export reads
+   * these, and one about which export a callee is reads `importedUnder`.
+   */
+  importNamesUnder(value: Node, modules: readonly string[]): string[] {
+    const name = factKeyOf(value);
+    if (!Node.isIdentifier(name)) {
+      return [];
+    }
+    return (name.getSymbol()?.getDeclarations() ?? []).flatMap(
+      (declaration) => {
+        const statement = declaration.getFirstAncestor((ancestor) =>
+          Node.isImportDeclaration(ancestor),
+        );
+        const imported = importedNameOf(declaration);
+        return statement !== undefined &&
+          imported !== null &&
+          modules.includes(statement.getModuleSpecifierValue())
+          ? [imported]
+          : [];
+      },
+    );
+  }
+
   private namesReached(
     value: Node,
     modules: string[],
@@ -2745,6 +2771,17 @@ function exportNamesOf(
     }
   }
   return [...names].sort();
+}
+
+/** The export an import declaration binds, `default` for a default import and `*` for a namespace, or null for no import. */
+function importedNameOf(declaration: Node): string | null {
+  if (Node.isImportSpecifier(declaration)) {
+    return declaration.getName();
+  }
+  if (Node.isImportClause(declaration)) {
+    return "default";
+  }
+  return Node.isNamespaceImport(declaration) ? "*" : null;
 }
 
 function namesFrom(pairs: string[], packages: string[]): string[] {
