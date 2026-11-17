@@ -18,7 +18,6 @@ import { runPackHook } from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
 
 import { children, field, isFunction, rangeOf, spanOf } from "./ast.js";
-import { packRequestHooks } from "./declaredClients.js";
 import { factSourceOf } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
 import { claimsNamedAfter } from "./lambdaClaims.js";
@@ -85,7 +84,7 @@ export function clientCallUnits(
 ): RawCodeStructure[] {
   const { facts } = options;
   const requesting: Requesting[] = packs.flatMap((pack) => {
-    const hooks = packRequestHooks(pack);
+    const hooks = pack.requestRecognizers ?? [];
     return hooks.length === 0
       ? []
       : [{ pack, hooks: hooks.map((hook) => ({ hook, units: [] })) }];

@@ -4,7 +4,14 @@ import path from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { callbacks, constructedFrom, pack } from "@suss/recognize";
+import {
+  callbacks,
+  constructedFrom,
+  httpRequests,
+  imported,
+  pack,
+  requestRecognizersOf,
+} from "@suss/recognize";
 
 import { fastapiTestPack } from "./__fixtures__/fastapiPattern.js";
 
@@ -60,6 +67,13 @@ const LATER_PACK: PythonPack = {
 };
 
 const HEADER = ["from jobs import Jobs", "", "jobs = Jobs()", "", ""];
+
+/** A library like requests, whose module's `get` sends a GET to its first argument. */
+const HTTP_GET = requestRecognizersOf([
+  httpRequests({
+    client: imported({ from: ["httpclient"], named: ["*", "get"] }),
+  }).methods({ get: { sends: "GET", url: { at: 0, keyword: "url" } } }),
+]);
 
 /** What a claim is when it is internal code of the function it is written in. */
 const REACHABLE = {
@@ -203,14 +217,7 @@ const BESIDE_JOBS_AND_REQUESTS: PythonPack = {
       apps: ["Celery"],
     },
   ],
-  clients: [
-    {
-      type: "clientCall",
-      importModule: ["httpclient"],
-      verbAttributeNames: { get: "GET" },
-      url: { position: 0, keyword: "url" },
-    },
-  ],
+  requestRecognizers: HTTP_GET,
 };
 
 /** A callback that reads the environment, prints, enqueues a task and makes a request. */
@@ -302,14 +309,7 @@ describe("a lambda a declared pack claims", () => {
   it("is internal code under a parent that calls out", async () => {
     const caller: PythonPack = {
       ...LATER_PACK,
-      clients: [
-        {
-          type: "clientCall",
-          importModule: ["httpclient"],
-          verbAttributeNames: { get: "GET" },
-          url: { position: 0, keyword: "url" },
-        },
-      ],
+      requestRecognizers: HTTP_GET,
     };
     const {
       dir,

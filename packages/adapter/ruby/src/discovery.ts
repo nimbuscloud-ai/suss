@@ -47,7 +47,6 @@ import {
 import { claimedIn } from "./claims.js";
 import { askClientCallReads, clientCallUnits } from "./clientCalls.js";
 import { createConstantFileCache } from "./constantPath.js";
-import { packRequestHooks } from "./declaredClients.js";
 import { ExceptionReader } from "./exceptionClasses.js";
 import { nodeId, readKey } from "./facts/values.js";
 import {
@@ -378,7 +377,9 @@ export async function discoverUnits(
   }));
 
   const units: RawCodeStructure[] = [];
-  if (options.packs.some((pack) => packRequestHooks(pack).length > 0)) {
+  if (
+    options.packs.some((pack) => (pack.requestRecognizers ?? []).length > 0)
+  ) {
     askClientCallReads(root, options.facts);
     units.push(
       ...clientCallUnits(root, options.packs, {

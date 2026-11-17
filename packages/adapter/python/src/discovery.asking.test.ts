@@ -10,6 +10,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Database } from "@suss/datalog";
+import {
+  anyOf,
+  constructedFrom,
+  httpRequests,
+  imported,
+  requestRecognizersOf,
+} from "@suss/recognize";
 
 import { discoverUnits } from "./discovery.js";
 import { emitValueFacts } from "./facts/values.js";
@@ -18,7 +25,7 @@ import { parsePython } from "./parser.js";
 import { bindModule } from "./scope.js";
 import { bindEvaluator } from "./values/evaluator.js";
 
-import type { PyClientCall, PythonPack } from "./pack.js";
+import type { PythonPack } from "./pack.js";
 
 const asked: string[][] = [];
 
@@ -42,19 +49,18 @@ vi.mock("@suss/resolution", async (importOriginal) => {
   };
 });
 
-const REQUEST_CALLS: PyClientCall = {
-  type: "clientCall",
-  importModule: ["httpclient"],
-  verbAttributeNames: { get: "GET" },
-  url: { position: 0, keyword: "url" },
-  receiverConstructors: ["Session"],
-};
+const REQUEST_CALLS = httpRequests({
+  client: anyOf(
+    imported({ from: ["httpclient"], named: ["*", "get"] }),
+    constructedFrom({ from: ["httpclient"], named: ["Session"] }),
+  ),
+}).methods({ get: { sends: "GET", url: { at: 0, keyword: "url" } } });
 
 const PACK: PythonPack = {
   name: "httpclient",
   protocol: "http",
   discovery: [],
-  clients: [REQUEST_CALLS],
+  requestRecognizers: requestRecognizersOf([REQUEST_CALLS]),
 };
 
 const FILE = "app/orders.py";

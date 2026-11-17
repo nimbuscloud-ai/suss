@@ -18,7 +18,14 @@ vi.mock("./version.js", async (importOriginal) => {
 });
 
 import { Database } from "@suss/datalog";
-import { callbacks, constructedFrom, pack } from "@suss/recognize";
+import {
+  callbacks,
+  constructedFrom,
+  httpRequests,
+  imported,
+  pack,
+  requestRecognizersOf,
+} from "@suss/recognize";
 
 import { activeJobTestPack } from "./__fixtures__/jobPatterns.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
@@ -424,13 +431,11 @@ function besideJobsAndRequests(): RubyPack[] {
     activeJobTestPack(),
     {
       ...laterPack(true),
-      clients: [
-        {
-          constantName: "Http",
-          verbMethodNames: { get: "GET" },
-          url: { position: 0 },
-        },
-      ],
+      requestRecognizers: requestRecognizersOf([
+        httpRequests({
+          client: imported({ from: ["Http"], named: ["*"] }),
+        }).methods({ get: { sends: "GET", url: { at: 0 } } }),
+      ]),
     },
   ];
 }

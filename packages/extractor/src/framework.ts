@@ -13,8 +13,6 @@
  * code it matches.
  */
 
-import { jsxElementRouteTable } from "./jsxElementRouteTable.js";
-
 import type {
   BehavioralSummary,
   CodeUnitKind,
@@ -66,35 +64,21 @@ export type DiscoveryMatch =
       exportNames: string[];
     }
   | {
+      /**
+       * A method call on a client built from a contract, as ts-rest's
+       * `initClient(contract)` builds one. Each such call makes the
+       * function it is written in a `client` unit. The call's method and
+       * path are the ones the contract lists for the method being
+       * called, which the TypeScript adapter reads through the pack's
+       * `contractReading` when the binding says `fromClientMethod`. A
+       * library whose calls state their own method and URL declares
+       * them with `httpRequests` from `@suss/recognize` instead.
+       */
       type: "clientCall";
-      /** Module the client is imported from, or "global" for built-ins like fetch */
+      /** The module the client's builder comes from: `@ts-rest/core`. */
       importModule: string;
-      /** Named export or identifier, for example "initClient" or "fetch" */
+      /** The builder's export: `initClient`. A call on the export itself counts too. */
       importName: string;
-      /** If set, only match calls to these methods on the client (e.g. ["getUser"]).
-       *  Unset means any method call (or bare call for globals). */
-      methodFilter?: string[];
-      /**
-       * Methods on the import that build a client instance. A variable
-       * initialized from one of these calls is a client too, so with
-       * `factoryMethods: ["create"]`, `api.get(...)` after
-       * `api = axios.create(...)` matches the same as `axios.get(...)`.
-       */
-      factoryMethods?: string[];
-      /**
-       * The option on the factory call's config that sets a base path for
-       * every request through the instance, `baseURL` for axios. The
-       * adapter puts it in front of each call's path, so the consumer's
-       * route lines up with a spec whose `servers[0].url` adds the same
-       * prefix to the provider's paths.
-       */
-      basePathOption?: string;
-      /**
-       * The import and every instance built from it can be called as a
-       * function, so `axios(config)` and `api(config)` are requests the
-       * same as a call through a method in `methodFilter`.
-       */
-      callable?: boolean;
     }
   | {
       /**
@@ -406,67 +390,6 @@ export type DiscoveryMatch =
     }
   | {
       /**
-       * Routes declared as JSX elements, the way client-side routers write
-       * them. It reads the tree form, where a child path joins its parent's
-       * and an index route takes its parent's path, and the object form,
-       * where a factory call takes an array of route objects with the same
-       * property names. The pack supplies every name, and every adapter
-       * reads the match as the route table those names describe.
-       *
-       * Each route with a readable path becomes one unit whose target is the
-       * component its element attribute references, when that reference is
-       * a single identifier. A route whose component cannot be read is still
-       * reported, as a boundary with nothing behind it. A route whose path
-       * cannot be read gets no path and a gap saying why.
-       */
-      type: "jsxElementRoute";
-      /**
-       * Modules the route element and factories must be imported from,
-       * matched exactly. An aliased import still matches.
-       */
-      importModule: string | string[];
-      /** The route element's exported name. */
-      routeElement: string;
-      /** The attribute with the route's path pattern on it. */
-      pathAttribute: string;
-      /** The attribute with the JSX the route renders on it. */
-      elementAttribute: string;
-      /**
-       * The attribute that marks an index route, which renders at its
-       * parent's path. Leave it unset if the library has no index routes.
-       */
-      indexAttribute?: string;
-      /**
-       * The property with the routes nested under a route object on it,
-       * which is how the object form expresses what the JSX form expresses
-       * by nesting. Paths compose the same way in both. Leave it unset if
-       * the library's route objects do not nest.
-       */
-      childrenAttribute?: string;
-      /**
-       * Factory functions whose first argument is an array of route
-       * objects keyed by the same three attribute names. The array is read
-       * where it is written, or through the same value resolution the rest
-       * of discovery uses, so a `const` binding one hop away works the
-       * same as an inline literal.
-       */
-      routeObjectFactories?: string[];
-      /**
-       * Factory functions that turn JSX route elements into route objects.
-       * The JSX walk already reads those elements wherever they appear.
-       * Listing the factory keeps a route-object factory that is handed one
-       * of these calls from being reported as an unreadable route array.
-       */
-      elementsFactories?: string[];
-      /**
-       * The HTTP method recorded on each route binding this produces. A page
-       * route serves navigations, and the pack has to say which method those
-       * use rather than the adapter assuming one.
-       */
-      method: string;
-    }
-  | {
-      /**
        * The consumer side of the package-export boundary. The adapter finds
        * imports of the listed packages, records every call site, and emits
        * one `caller` unit per enclosing function, bound as
@@ -719,8 +642,7 @@ const DECLARED_TYPES: ReadonlySet<DiscoveryMatch["type"]> = new Set([
 /**
  * The match, when every adapter reads it through the module ops, or
  * null. A `namedExport` with only `names` stays with the TypeScript
- * adapter's own handler, and a `jsxElementRoute` is read as the route
- * table it describes.
+ * adapter's own handler.
  */
 export function declaredMatchOf(
   match: DiscoveryMatch,
@@ -733,9 +655,6 @@ export function declaredMatchOf(
       match.bodyEndsIn !== undefined ||
       match.members !== undefined;
     return declared ? match : null;
-  }
-  if (match.type === "jsxElementRoute") {
-    return jsxElementRouteTable(match);
   }
   return DECLARED_TYPES.has(match.type)
     ? (match as DeclaredDiscoveryMatch)
@@ -1016,11 +935,8 @@ export type BindingExtraction = {
       }
     | { type: "literal"; value: string };
   path: /**
-   * The path is the argument at this position. A name bound to a
-   * string is followed one hop to what it was written as, and a
-   * template's substitutions are read the same way, so
-   * `app.get(USERS, h)` and `` fetch(`${BASE}/items/${id}`) `` both
-   * come out with a path on them.
+   * The path is the argument at this position, so `app.get(USERS, h)`
+   * gives the string `USERS` was written as.
    */
     | { type: "fromArgument"; position: number }
     | {
@@ -1071,12 +987,6 @@ export type BindingExtraction = {
       }
     | { type: "fromContract" }
     | { type: "fromClientMethod" };
-  /**
-   * Which argument is the request's options object, for a call that
-   * takes one: fetch's second argument, the config axios takes after the
-   * URL or after the body. The pack's `redirectOption` is read off it.
-   */
-  options?: { position: number };
 };
 
 /**
@@ -1879,8 +1789,6 @@ export interface PatternPack {
    * `"response"`.
    */
   redirectDelivery?: RedirectDelivery;
-  /** The option one call sets to change `redirectDelivery` for itself. */
-  redirectOption?: RedirectOption;
   /**
    * Build extra code units from a parent unit's body, for callbacks the
    * runtime schedules that are not top-level declarations: React event

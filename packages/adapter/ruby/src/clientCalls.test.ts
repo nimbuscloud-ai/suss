@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { Database, profileEvaluationAsync } from "@suss/datalog";
 import {
+  constructedFrom,
   httpRequests,
   imported,
   requestRecognizersOf,
@@ -9,11 +10,11 @@ import {
 } from "@suss/recognize";
 
 import {
-  hostArgumentsPattern,
+  hostArguments,
   httpClientTestPack,
-  requestCallsPattern,
-  wrappedUrlsPattern,
-} from "./__fixtures__/httpClientPattern.js";
+  requestCalls,
+  wrappedUrls,
+} from "./__fixtures__/httpClientRequests.js";
 import { clientCallUnits } from "./clientCalls.js";
 import { createFileCache, discoverUnits } from "./discovery.js";
 import {
@@ -25,12 +26,11 @@ import { parseRuby } from "./parser.js";
 import { bindEvaluator, methodDefinitionsIn } from "./values/evaluator.js";
 
 import type { RawCodeStructure } from "@suss/extractor";
-import type { RbClientCall, RubyPack } from "./pack.js";
+import type { HttpRequests } from "@suss/recognize";
+import type { RubyPack } from "./pack.js";
 import type { RbNode } from "./parser.js";
 
-const REQUEST_CALLS: RbClientCall = requestCallsPattern();
-
-const PACK = httpClientTestPack(REQUEST_CALLS);
+const PACK = httpClientTestPack();
 
 const FILE = "app/clients/order_client.rb";
 
@@ -51,9 +51,9 @@ async function factsFor(
 
 async function unitsIn(
   source: string,
-  pattern: RbClientCall = REQUEST_CALLS,
+  requests: readonly HttpRequests[] = requestCalls(),
 ): Promise<RawCodeStructure[]> {
-  return unitsOf(source, httpClientTestPack(pattern));
+  return unitsOf(source, httpClientTestPack(requests));
 }
 
 async function unitsOf(
@@ -322,8 +322,7 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      {
-        ...REQUEST_CALLS,
+      requestCalls({
         response: {
           statusCode: ["status"],
           success: ["success?"],
@@ -331,7 +330,7 @@ describe("a method that calls a request method", () => {
           failureDelivery: "response",
           redirectDelivery: "response",
         },
-      },
+      }),
     );
 
     expect(units[0]).toMatchObject({
@@ -380,7 +379,7 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      { ...REQUEST_CALLS, response: { success: ["success?"] } },
+      requestCalls({ response: { success: ["success?"] } }),
     );
 
     const conditions = (units[0]?.branches ?? []).map((branch) =>
@@ -475,7 +474,7 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      { ...REQUEST_CALLS, response: { body: ["body"] } },
+      requestCalls({ response: { body: ["body"] } }),
     );
 
     expect(outline(units[0])).toEqual([
@@ -586,7 +585,7 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      { ...REQUEST_CALLS, constantName: "Net::HTTP" },
+      requestCalls({ constant: "Net::HTTP" }),
     );
 
     expect(boundary(units).method).toBe("GET");
@@ -617,7 +616,7 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      { ...REQUEST_CALLS, receiverBuilders: [] },
+      requestCalls({ built: false }),
     );
 
     expect(units).toEqual([]);
@@ -633,12 +632,13 @@ describe("a method that calls a request method", () => {
         "  end",
         "end",
       ].join("\n"),
-      {
-        constantName: "HttpClient",
-        verbMethodNames: { get: "GET" },
-        url: { position: 0 },
-        receiverBuilders: ["build"],
-      },
+      [
+        httpRequests({
+          client: constructedFrom({ from: ["HttpClient"], named: ["build"] }),
+        })
+          .methods({ get: { sends: "GET", url: { at: 0 } } })
+          .baseUrl({ at: 0, joins: "resolved" }),
+      ],
     );
 
     expect(boundary(units).path).toBe("/orders");
@@ -713,7 +713,7 @@ describe("a method that calls a request method", () => {
   });
 });
 
-const WRAPPED_URLS: RbClientCall = wrappedUrlsPattern();
+const WRAPPED_URLS = wrappedUrls();
 
 describe("a library that sends a request object", () => {
   it("reads a URL the standard library wrapped in a URI", async () => {
@@ -923,7 +923,7 @@ describe("a path under the base its connection was built with", () => {
 });
 
 describe("a host given as an argument of its own", () => {
-  const HOST_ARGUMENTS = hostArgumentsPattern();
+  const HOST_ARGUMENTS = hostArguments();
 
   /** The method, host and path of the one request `load` makes. */
   async function requestIn(lines: string[]): Promise<string> {
@@ -1219,7 +1219,7 @@ describe("a pack declared with @suss/recognize", () => {
         "end",
       ].join("\n"),
       DECLARED,
-      httpClientTestPack(requestCallsPattern({ constantName: "OtherClient" })),
+      httpClientTestPack(requestCalls({ constant: "OtherClient" })),
     );
 
     expect(requests(units)).toEqual([
@@ -1229,7 +1229,7 @@ describe("a pack declared with @suss/recognize", () => {
     ]);
   });
 
-  it("reads a pattern's calls on the constant and on a built value in the order the file writes them", async () => {
+  it("reads a pack's calls on the constant and on a built value in the order the file writes them", async () => {
     const units = await unitsOf(
       [
         "class OrderClient",
@@ -1242,7 +1242,7 @@ describe("a pack declared with @suss/recognize", () => {
         "  end",
         "end",
       ].join("\n"),
-      httpClientTestPack(hostArgumentsPattern()),
+      httpClientTestPack(hostArguments()),
     );
 
     expect(requests(units)).toEqual(["first GET /a", "second GET /b"]);

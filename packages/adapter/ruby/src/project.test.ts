@@ -14,8 +14,8 @@ import {
 } from "./__fixtures__/graphqlRubyPattern.js";
 import {
   httpClientTestPack,
-  wrappedUrlsPattern,
-} from "./__fixtures__/httpClientPattern.js";
+  wrappedUrls,
+} from "./__fixtures__/httpClientRequests.js";
 import { railsTestPack } from "./__fixtures__/railsControllerPattern.js";
 import { writtenValueOf } from "./facts/resolve.js";
 import { parseRuby } from "./parser.js";
@@ -205,7 +205,7 @@ describe("a client method whose class is constructed more than once", () => {
 
     const { summaries } = await extractRubyProject({
       files: [client, wiring],
-      packs: [httpClientTestPack(wrappedUrlsPattern())],
+      packs: [httpClientTestPack(wrappedUrls())],
       workspaceRoot: tmpDir,
     });
 

@@ -10,10 +10,13 @@ import {
 } from "@suss/adapter-typescript";
 import { restBinding } from "@suss/behavioral-ir";
 import { pairSummaries } from "@suss/checker";
-import { declaredMatchOf, JSX_ROUTE_UNREAD } from "@suss/extractor";
 import { createFixtureProject, createTestProject } from "@suss/test-project";
 
-import { REACT_ROUTER_ROUTES, reactRouterFramework } from "./index.js";
+import {
+  JSX_ROUTE_UNREAD,
+  REACT_ROUTER_ROUTES,
+  reactRouterFramework,
+} from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { Project, SourceFile } from "ts-morph";
@@ -89,7 +92,7 @@ describe("reactRouterFramework: pack shape", () => {
     expect(pack.contractReading).toBeUndefined();
   });
 
-  it("declares the route table a jsxElementRoute match with the router's names is read as", () => {
+  it("declares its routes as a route table read through each element, under the router import", () => {
     const routes = ROUTE_PATTERNS[0];
     expect(routes?.match).toEqual({
       type: "routeTable",
@@ -101,20 +104,6 @@ describe("reactRouterFramework: pack shape", () => {
       "react-router",
       "react-router-dom",
     ]);
-    expect(
-      declaredMatchOf({
-        type: "jsxElementRoute",
-        importModule: ["react-router", "react-router-dom"],
-        routeElement: "Route",
-        pathAttribute: "path",
-        elementAttribute: "element",
-        indexAttribute: "index",
-        childrenAttribute: "children",
-        routeObjectFactories: ["createBrowserRouter"],
-        elementsFactories: ["createRoutesFromElements"],
-        method: "GET",
-      }),
-    ).toEqual(routes?.match);
   });
 
   it("declares a render terminal, so a routed component's JSX is read", () => {
