@@ -6,33 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { discoverDeclared } from "@suss/recognize";
 
+import { graphqlFields } from "./__fixtures__/graphqlRubyPattern.js";
 import { preloadRubyGrammar } from "./parser.js";
 import { moduleOpsForFile } from "./project.js";
 
-import type { SubclassOfMatch } from "@suss/extractor";
-
 let dir: string;
-
-/** graphql-ruby's object type fields, as its pack declares them. */
-const FIELDS: SubclassOfMatch = {
-  type: "subclassOf",
-  inherits: [{ from: ["Types"], named: ["BaseObject"] }],
-  skipClasses: ["Types::BaseObject"],
-  members: { kind: "instance", names: [] },
-  className: { call: "graphql_name", suffixRemoved: "Type" },
-  calls: {
-    field: {
-      name: { at: 0 },
-      naming: { camel: { keyword: "camelize", default: true } },
-      runs: [
-        { classAt: { keyword: "mutation" }, method: "resolve" },
-        { classAt: { keyword: "resolver" }, method: "resolve" },
-        { method: { keyword: "resolver_method" } },
-        { method: "named" },
-      ],
-    },
-  },
-};
 
 beforeAll(async () => {
   await preloadRubyGrammar();
@@ -166,7 +144,7 @@ describe("one Ruby file read on its own as module ops", () => {
         "  field :value, String\n" +
         "end\n",
     );
-    const units = discoverDeclared(FIELDS, "resolver", module);
+    const units = discoverDeclared(graphqlFields(), "resolver", module);
     expect(
       units.map((unit) => {
         const runs = unit.namedBy?.runs ?? null;

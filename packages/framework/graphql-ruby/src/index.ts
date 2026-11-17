@@ -14,6 +14,7 @@ import path from "node:path";
 import { z } from "zod";
 
 import { SCALAR_SHAPES } from "@suss/contract-graphql";
+import { rubyConstants } from "@suss/recognize";
 
 import type {
   GraphqlObjectFields,
@@ -87,6 +88,40 @@ const DEFAULT_BASE_CLASS_NAMES = [
   "Types::BaseUnion",
   "Types::BaseScalar",
 ];
+
+/**
+ * An object type is a class that reaches one of the bases, other than
+ * the bases themselves, and each `field` call in its body is a field.
+ * The library names the type by `graphql_name`, else by the class less
+ * `Type`, and camel cases the field's symbol unless `camelize: false`.
+ * A `mutation:` or `resolver:` class resolves the field with `resolve`,
+ * and otherwise the type's own method does, under `resolver_method:` or
+ * the field's symbol.
+ */
+function objectTypeFields(
+  bases: readonly string[],
+  camelize: boolean,
+): GraphqlObjectFields["fields"] {
+  return {
+    type: "subclassOf",
+    inherits: rubyConstants(...bases),
+    skipClasses: bases,
+    members: { kind: "instance", names: [] },
+    className: { call: "graphql_name", suffixRemoved: "Type" },
+    calls: {
+      field: {
+        name: { at: 0 },
+        naming: { camel: { keyword: "camelize", default: camelize } },
+        runs: [
+          { classAt: { keyword: "mutation" }, method: "resolve" },
+          { classAt: { keyword: "resolver" }, method: "resolve" },
+          { method: { keyword: "resolver_method" } },
+          { method: "named" },
+        ],
+      },
+    },
+  };
+}
 
 function orNull(shape: TypeShape): TypeShape {
   return { type: "union", variants: [shape, { type: "null" }] };
@@ -181,18 +216,16 @@ export function graphqlRubyFramework(
 
   const pattern: GraphqlObjectFields = {
     type: "graphqlObjectFields",
-    baseClassNames: [
-      ...DEFAULT_BASE_CLASS_NAMES,
-      ...(options.baseClassNames ?? []),
-    ],
+    fields: objectTypeFields(
+      [...DEFAULT_BASE_CLASS_NAMES, ...(options.baseClassNames ?? [])],
+      options.camelize ?? true,
+    ),
     root: rootDirectory(options),
     pathConvention: "railsUnderscore",
     fieldCallName: "field",
     typeCallName: "type",
     argumentCallName: "argument",
-    wiringKeywords: ["mutation", "resolver"],
     resolverMethodName: "resolve",
-    resolverMethodKeyword: "resolver_method",
     // A Mutation or Resolver runs ready?, then authorized?, then resolve.
     // A hook that returns false, or [false, payload], stops the field,
     // and the payload comes back in its place.
