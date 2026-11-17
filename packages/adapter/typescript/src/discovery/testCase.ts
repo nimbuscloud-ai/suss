@@ -16,7 +16,7 @@ import { testUnitName } from "@suss/behavioral-ir";
 import { isListedTestFile, matchesTestFileName } from "@suss/extractor";
 
 import {
-  importBindsName,
+  bindsAtTopLevel,
   moduleImportedWholeAs,
   namedImportsOf,
 } from "./importScan.js";
@@ -182,16 +182,6 @@ function runnerNames(match: TestCaseMatch): string[] {
     ...match.caseNames,
     ...(match.mocks === undefined ? [] : [match.mocks.object]),
   ];
-}
-
-/** Whether the file imports `name` or declares it outside any function. */
-function bindsAtTopLevel(sourceFile: SourceFile, name: string): boolean {
-  return (
-    importBindsName(sourceFile, name) ||
-    sourceFile.getVariableDeclaration(name) !== undefined ||
-    sourceFile.getFunction(name) !== undefined ||
-    sourceFile.getClass(name) !== undefined
-  );
 }
 
 /**

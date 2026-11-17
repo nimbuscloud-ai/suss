@@ -597,6 +597,21 @@ export interface ValueOps {
    * runs later, so nothing inside it does.
    */
   mentions?(words: CallsAndOptions): boolean;
+  /**
+   * The call this value is passed to as an argument, where the source
+   * writes the value in place, and where it is passed: a function written
+   * into `it("cancels", () => ...)` gives the `it` call at 1. Null when the
+   * value is written anywhere else. A Ruby block is no argument. Unset in
+   * an adapter that cannot say.
+   */
+  passedTo?(): PassedTo | null;
+  /**
+   * The innermost function, block or class body this function or block is
+   * written in, or null for one written at the top of a file. A block, or
+   * a function passed in place, is in the body its call is written in.
+   * Unset in an adapter that cannot say.
+   */
+  enclosingBody?(): ValueOps | null;
 }
 
 /** The method names and option keys `ValueOps.mentions` looks for. */
@@ -752,6 +767,13 @@ export interface ModuleOps {
    * `fa`. Empty where the adapter does not say.
    */
   importedWhole?(modules: readonly string[]): ReadonlySet<string>;
+  /**
+   * Whether the file binds the name at its top level: imports it, or
+   * declares a variable, a function or a class under it there. A test
+   * file that does is not using the runner's global of that name. Unset
+   * where the adapter does not say.
+   */
+  bindsAtTopLevel?(name: string): boolean;
   /** Whether the file opens with the directive. */
   marked(word: string): boolean;
   /** The functions the file writes whose body opens with the directive, in source order. */
@@ -1078,6 +1100,12 @@ export interface CallOps {
    * that cannot say.
    */
   callerSite?(): string | null;
+  /**
+   * The innermost function, block or class body the call is written in,
+   * however deep inside an expression, or null for a call at the top of
+   * a file. Unset in an adapter that cannot say.
+   */
+  enclosingBody?(): ValueOps | null;
   /**
    * Whether the text of the file the call is in contains the word, which
    * asks nothing of the store. Undefined means the adapter cannot say.

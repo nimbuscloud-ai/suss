@@ -401,25 +401,8 @@ class FactCall implements CallOps {
     ];
   }
 
-  /** The one `callArg` or `callKeywordArg` row whose value is this call. */
   passedTo(): PassedTo | null {
-    const { db } = this.source;
-    const rows = [
-      ...db.lookup("callArg", 2, this.key).map((row) => ({
-        call: String(row[0]),
-        at: Number(row[1]) as PassedTo["at"],
-      })),
-      ...db.lookup("callKeywordArg", 2, this.key).map((row) => ({
-        call: String(row[0]),
-        at: { keyword: String(row[1]) },
-      })),
-    ];
-    const [one, ...more] = rows;
-    if (one === undefined || more.length > 0) {
-      return null;
-    }
-    const call = factCallOps(one.call, this.source);
-    return call === null ? null : { call, at: one.at };
+    return passedToAt(this.key, this.source);
   }
 
   block(): ValueOps | null {
@@ -725,6 +708,10 @@ class FactCall implements CallOps {
     return only(this.source.db.lookup("makesCall", 1, this.key), 0);
   }
 
+  enclosingBody(): ValueOps | null {
+    return innermostAt("makesCall", this.key, this.source);
+  }
+
   private madeExpression(reading: "asWritten" | "throughProjectCalls"): string {
     if (this.calleeRead === null) {
       return this.calleeKey;
@@ -865,6 +852,44 @@ function variableName(variable: string, source: FactSource): string {
     only(source.db.lookup("paramNamed", 2, variable), 1) ??
     source.textOf(variable)
   );
+}
+
+/** The one `callArg` or `callKeywordArg` row whose value is the one at `key`. */
+function passedToAt(key: string, source: FactSource): PassedTo | null {
+  const { db } = source;
+  const rows = [
+    ...db.lookup("callArg", 2, key).map((row) => ({
+      call: String(row[0]),
+      at: Number(row[1]) as PassedTo["at"],
+    })),
+    ...db.lookup("callKeywordArg", 2, key).map((row) => ({
+      call: String(row[0]),
+      at: { keyword: String(row[1]) },
+    })),
+  ];
+  const [one, ...more] = rows;
+  if (one === undefined || more.length > 0) {
+    return null;
+  }
+  const call = factCallOps(one.call, source);
+  return call === null ? null : { call, at: one.at };
+}
+
+/**
+ * The innermost of the bodies `relation` places the key in, read by its
+ * second column. Ruby states `makesCall` for every block around a call
+ * as well as its method, and the innermost of those starts last.
+ */
+function innermostAt(
+  relation: "makesCall" | "containsFn",
+  key: string,
+  source: FactSource,
+): ValueOps | null {
+  const bodies = inSourceOrder(
+    source.db.lookup(relation, 1, key).map((row) => String(row[0])),
+  );
+  const innermost = bodies[bodies.length - 1];
+  return innermost === undefined ? null : factValueOps(innermost, source);
 }
 
 /** The calls `bodyCallAt` places as the statements of the body at `key`, in order. */
@@ -1414,6 +1439,28 @@ class FactValue implements ValueOps {
 
   declaration(): Declaration | null {
     return declarationAt(this.key, this.facts, new Set());
+  }
+
+  passedTo(): PassedTo | null {
+    return passedToAt(this.key, this.facts);
+  }
+
+  /**
+   * The body of the call a block is written with, through `callBlock`, or
+   * of the call a function is passed to, else the innermost `containsFn`
+   * row. Ruby states `containsFn` from the method around a lambda, past
+   * the blocks between, so the call comes first.
+   */
+  enclosingBody(): ValueOps | null {
+    const block = only(this.facts.db.lookup("callBlock", 1, this.key), 0);
+    const call =
+      (block === null ? null : factCallOps(block, this.facts)) ??
+      this.passedTo()?.call ??
+      null;
+    if (call !== null) {
+      return call.enclosingBody?.() ?? null;
+    }
+    return innermostAt("containsFn", this.key, this.facts);
   }
 
   private holeKeys(): string[] {
@@ -2193,6 +2240,8 @@ export interface ModuleWritten {
   importedNames?(modules: readonly string[]): ReadonlyMap<string, string>;
   /** The names the file binds to one of the modules imported whole. Unset lists none. */
   importedWhole?(modules: readonly string[]): ReadonlySet<string>;
+  /** Whether the file binds the name at its top level, as `ModuleOps.bindsAtTopLevel` says. Unset leaves the module ops' unset. */
+  bindsAtTopLevel?(name: string): boolean;
   /** Every function the file writes, with the variable or property it is assigned to. Unset where the language writes no directive. */
   functions?(): readonly {
     readonly key: string;
@@ -2236,12 +2285,18 @@ export function factModuleOps(
 class FactModule implements ModuleOps {
   private stated = false;
   private exported: readonly ModuleMember[] | null = null;
+  readonly bindsAtTopLevel?: (name: string) => boolean;
 
   constructor(
     private readonly file: string,
     private readonly facts: FactSource,
     private readonly written: ModuleWritten,
-  ) {}
+  ) {
+    const binds = written.bindsAtTopLevel;
+    if (binds !== undefined) {
+      this.bindsAtTopLevel = (name) => binds.call(written, name);
+    }
+  }
 
   path(): string {
     return this.file;
