@@ -135,6 +135,15 @@ describe("a client built with a base URL", () => {
     );
   });
 
+  it("puts a relative path under a base with no path after a slash", async () => {
+    expect(await pathUnder("https://api.example.com", "orders")).toBe(
+      "/orders",
+    );
+    expect(await pathUnder("https://api.example.com/", "orders")).toBe(
+      "/orders",
+    );
+  });
+
   it("goes to an absolute URL the call states, and not under the base", async () => {
     expect(
       await pathUnder(
