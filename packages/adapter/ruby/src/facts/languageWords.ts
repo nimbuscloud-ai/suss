@@ -8,7 +8,13 @@
  * value followed across files and one settled inside a file agree.
  */
 
-export const RECEIVER_RETURNS: readonly string[] = ["freeze", "dup"];
+export const RECEIVER_RETURNS: readonly string[] = ["freeze", "dup", "tap"];
+
+/**
+ * `tap` runs its block on the receiver before it hands the receiver back,
+ * so `report.tap(&:read!)` calls `read!` on `report`.
+ */
+export const TAP_METHOD = "tap";
 
 /** The methods that convert the value they are called on to another type. */
 export const CONVERTING_METHODS: ReadonlySet<string> = new Set([
