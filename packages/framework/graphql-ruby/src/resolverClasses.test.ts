@@ -237,6 +237,36 @@ describe("the hooks a wired class runs before resolve", () => {
     ).toEqual(["Reviews are closed", "Sign in first", "return"]);
   });
 
+  it("files a wired field under the resolve method of its class, wherever the class is declared", async () => {
+    const summaries = await extractFixture();
+    const at = (name: string) => {
+      const { file, range } = named(summaries, name).location;
+      return `${file}:${range.start}-${range.end}`;
+    };
+    expect(at("Mutation.approveTalk")).toBe(
+      "app/graphql/mutations/approve_talk.rb:16-20",
+    );
+    expect(at("Query.events")).toBe(
+      "app/graphql/resolvers/events_resolver.rb:7-9",
+    );
+    expect(at("Talk.reviews")).toBe(
+      "app/graphql/resolvers/reviews_resolver.rb:5-7",
+    );
+    expect(at("Mutation.requestReview")).toBe(
+      "engines/reviews/app/graphql/mutations/request_review.rb:13-15",
+    );
+  });
+
+  it("keeps a field that the type resolves itself under the field call", async () => {
+    const summaries = await extractFixture();
+    const at = (name: string) => {
+      const { file, range } = named(summaries, name).location;
+      return `${file}:${range.start}-${range.end}`;
+    };
+    expect(at("Query.eventCount")).toBe("app/graphql/types/query_type.rb:4-4");
+    expect(at("Talk.id")).toBe("app/graphql/types/talk_type.rb:3-3");
+  });
+
   it("gives each hook definition one summary of its own, however many fields share it", async () => {
     const summaries = await extractFixture();
     const hooks = summaries.filter((s) => s.kind === "middleware");
