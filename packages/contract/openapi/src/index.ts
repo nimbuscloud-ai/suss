@@ -7,7 +7,7 @@ import path from "node:path";
 import { documentSourceLabel } from "@suss/behavioral-ir/files";
 
 import { operationLines } from "./operationLines.js";
-import { readSpecFiles } from "./specFiles.js";
+import { parsedFile, readSpecFiles } from "./specFiles.js";
 import { specToSummaries } from "./summaryBuilder.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
@@ -85,6 +85,23 @@ export function openApiFileToSummaries(
     process.stderr.write(`[suss] openapi: ${message}\n`);
   }
   return summaries;
+}
+
+/**
+ * The title the document's `info` gives, which a client generated from
+ * the document repeats at the top of its files. Null when the file
+ * cannot be parsed or gives no title.
+ */
+export function openApiDocumentTitle(specPath: string): string | null {
+  try {
+    const title = (parsedFile(path.resolve(specPath)) as OpenApiSpec | null)
+      ?.info?.title;
+    return typeof title === "string" && title.trim() !== ""
+      ? title.trim()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

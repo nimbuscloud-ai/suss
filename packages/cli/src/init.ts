@@ -17,6 +17,7 @@ import path from "node:path";
 
 import { findNearestTsconfig, TSCONFIG_NAMES } from "@suss/adapter-typescript";
 import { describesOperations, describesTypes } from "@suss/contract-graphql";
+import { openApiDocumentTitle } from "@suss/contract-openapi";
 import { isConfigurationFile } from "@suss/contract-wrangler";
 import { commonDirectoryOf } from "@suss/extractor";
 
@@ -30,6 +31,10 @@ import {
   readRubyDependencies,
 } from "./dependencyManifests.js";
 import { builtinDeclarations } from "./extract.js";
+import {
+  clientGeneratedFrom,
+  generatedClientsUnder,
+} from "./generatedClients.js";
 import { readSubmodules } from "./gitSubmodules.js";
 import {
   detectLanguages,
@@ -40,6 +45,7 @@ import {
 import {
   extractReadsAnything,
   firstSourceMatching,
+  headOf,
   PROJECT_WALK_DEPTH,
   TEST_DIRECTORIES,
 } from "./projectSource.js";
@@ -68,6 +74,8 @@ export interface PackSuggestion {
   kind: "framework" | "client" | "contract" | "effects";
   /** For a contract source, the file to read. */
   file?: string;
+  /** For an OpenAPI document, the folder of a client generated from it, through which the code calls the service it describes. */
+  calledThrough?: string;
   /** Which language's code this pack reads. Contract sources have none. */
   language?: Language;
   /**
@@ -283,22 +291,6 @@ function declaresOpenApiVersion(file: string): boolean {
   );
 }
 
-function headOf(file: string, bytes: number): string {
-  let handle: number | undefined;
-  try {
-    handle = fs.openSync(file, "r");
-    const buffer = Buffer.alloc(bytes);
-    const read = fs.readSync(handle, buffer, 0, bytes, 0);
-    return buffer.subarray(0, read).toString("utf8");
-  } catch {
-    return "";
-  } finally {
-    if (handle !== undefined) {
-      fs.closeSync(handle);
-    }
-  }
-}
-
 function declaresAppSync(file: string): boolean {
   return /AWS::AppSync::|AWS::Serverless::GraphQLApi/.test(textOf(file));
 }
@@ -472,11 +464,51 @@ export async function inspectProject(root: string): Promise<InitReport> {
   return {
     root: resolved,
     tsconfig: tsconfig ?? null,
-    suggestions: withoutIdleShippedPacks(suggestions),
+    suggestions: withoutIdleShippedPacks(
+      withGeneratedClients(resolved, suggestions),
+    ),
     languages,
     unread: declared.unread,
     recognizedWithoutPack,
   };
+}
+
+/**
+ * The suggestions with each OpenAPI document that has a client generated
+ * from it in the project marked with where that client is. The code
+ * calls the service such a document describes.
+ */
+function withGeneratedClients(
+  root: string,
+  suggestions: PackSuggestion[],
+): PackSuggestion[] {
+  const documentOf = (suggestion: PackSuggestion): string | null =>
+    suggestion.kind === "contract" && suggestion.name === "openapi"
+      ? (suggestion.file ?? null)
+      : null;
+  if (suggestions.every((suggestion) => documentOf(suggestion) === null)) {
+    return suggestions;
+  }
+
+  const clients = generatedClientsUnder(root);
+  if (clients.length === 0) {
+    return suggestions;
+  }
+  return suggestions.map((suggestion) => {
+    const file = documentOf(suggestion);
+    const title =
+      file === null ? null : openApiDocumentTitle(path.join(root, file));
+    const client =
+      title === null ? undefined : clientGeneratedFrom(clients, title);
+    if (client === undefined) {
+      return suggestion;
+    }
+    return {
+      ...suggestion,
+      because: `${suggestion.because}, with a client generated from it in ${client.directory}`,
+      calledThrough: client.directory,
+    };
+  });
 }
 
 /** The pack that finds Lambda handlers in each language. */
@@ -1158,7 +1190,14 @@ export function formatInitReport(report: InitReport, directory = "."): string {
   for (const group of [
     { label: "Your code", items: [...frameworks, ...clients] },
     { label: "What your code reaches", items: effects },
-    { label: "Declared contracts", items: contracts },
+    {
+      label: "Declared contracts",
+      items: contracts.filter((s) => s.calledThrough === undefined),
+    },
+    {
+      label: "Contracts for services your code may call",
+      items: contracts.filter((s) => s.calledThrough !== undefined),
+    },
   ]) {
     if (group.items.length === 0) {
       continue;
