@@ -738,6 +738,43 @@ describe("a base URL the client was built with", () => {
     ]);
   });
 
+  it("sends an empty path to the base, with the slash a library adds", () => {
+    const sent = (base: string | undefined, trailingSlash?: "added") => {
+      const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
+        .methods(verbs({ get: "GET" }, { at: 0 }))
+        .baseUrl({
+          at: 0,
+          joins: "appended",
+          ...(trailingSlash === undefined ? {} : { trailingSlash }),
+        });
+      return claimsOf(chain, {
+        method: "get",
+        from: ["httplib"],
+        args: [{ url: { path: "", host: undefined }, evaluated: "" }],
+        receiver: built({ path: base, host: "api.example.com" }),
+      });
+    };
+
+    expect(sent("/v1")).toEqual([
+      { method: "GET", path: "/v1", host: "api.example.com" },
+    ]);
+    expect(sent("/v1", "added")).toEqual([
+      { method: "GET", path: "/v1/", host: "api.example.com" },
+    ]);
+    expect(sent("")).toEqual([
+      { method: "GET", path: "/", host: "api.example.com" },
+    ]);
+    expect(sent(undefined)).toEqual([
+      { method: "GET", path: null, host: "api.example.com" },
+    ]);
+  });
+
+  it("keeps a hole at the front of a path appended under a base with no path", () => {
+    expect(joined("appended", "{base}/orders", "")).toEqual([
+      { method: "GET", path: "{base}/orders", host: "api.example.com" },
+    ]);
+  });
+
   it("joins a path under a base the way the library does, for an adapter reading the call again", () => {
     expect(joinedPath("appended", "/v1/", "orders")).toBe("/v1/orders");
     expect(joinedPath("resolved", "/v1/", "../orders")).toBe("/orders");

@@ -2154,6 +2154,10 @@ that starts with `/` replaces the base's path. An absolute URL on the
 call goes where it says. `trailingSlash: "required"` is for a library
 that refuses a base whose path does not end with `/`, as aiohttp does
 since 3.10: that client is never built, so the call keeps its own path.
+A call that passes an empty path goes to the base, and
+`trailingSlash: "added"` is for a library that ends the base's path
+with `/` itself, as httpx does, so that call goes to the base with a
+`/` at the end.
 A base path that ends in a hole is refused too, since it may or may not
 end with `/` when it runs.
 

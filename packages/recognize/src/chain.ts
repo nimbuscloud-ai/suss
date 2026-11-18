@@ -1328,9 +1328,11 @@ export interface BaseUrlLink {
   /**
    * `required` for a library that refuses a base whose path does not end
    * with `/`, as aiohttp does since 3.10. Such a client is never built,
-   * so a call on it keeps its own path and no base.
+   * so a call on it keeps its own path and no base. `added` for a library
+   * that ends the base's path with `/` itself, as httpx does, which shows
+   * when a call passes an empty path and goes to the base.
    */
-  readonly trailingSlash?: "required";
+  readonly trailingSlash?: "required" | "added";
 }
 
 /**

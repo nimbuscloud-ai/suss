@@ -144,6 +144,11 @@ describe("a client built with a base URL", () => {
     );
   });
 
+  it("sends an empty path to the base, ended with a slash", async () => {
+    expect(await pathUnder("https://api.example.com/v1", "")).toBe("/v1/");
+    expect(await pathUnder("https://api.example.com", "")).toBe("/");
+  });
+
   it("goes to an absolute URL the call states, and not under the base", async () => {
     expect(
       await pathUnder(
