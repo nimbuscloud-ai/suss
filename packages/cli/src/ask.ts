@@ -748,7 +748,20 @@ function unresolvedCallCount(summaries: BehavioralSummary[]): number {
 /** The boundaries a function serves, one per summary of it that serves one. */
 function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
   return touchesOfUnits(facts.units.get(fn) ?? []).filter(
-    (touch) => servesItself(touch) && !reachedOnTheWay(touch.summary),
+    (touch) =>
+      (servesItself(touch) || consumesItsChannel(touch)) &&
+      !reachedOnTheWay(touch.summary),
+  );
+}
+
+/**
+ * A job or queue consumer runs on each message that arrives on its own
+ * channel, so the channel behaves differently when what it calls changes.
+ */
+function consumesItsChannel(touch: TargetTouch): boolean {
+  return (
+    touch.summary.kind === "consumer" &&
+    touch.touched.binding === touch.summary.identity.boundaryBinding
   );
 }
 
