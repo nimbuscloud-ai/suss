@@ -1722,6 +1722,61 @@ describe("railsFramework", () => {
     });
   });
 
+  describe("a root that is the Rails application's own directory", () => {
+    let dir: string;
+
+    afterEach(() => {
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    function project(relatives: readonly string[]): void {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-rails-root-"));
+      for (const relative of relatives) {
+        const file = path.join(dir, relative);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(
+          file,
+          relative.endsWith("inflections.rb")
+            ? "ActiveSupport::Inflector.inflections(:en) do |inflect|\n  inflect.acronym 'ActivityPub'\nend\n"
+            : "",
+        );
+      }
+    }
+
+    const SCAFFOLD = [
+      "app/controllers/application_controller.rb",
+      "config/routes.rb",
+      "config/cable.yml",
+      "config/initializers/inflections.rb",
+    ];
+
+    it("looks controllers up under its app directory", () => {
+      project(SCAFFOLD);
+      const p = pattern(railsFramework({ configDirectory: dir, root: "." }));
+      expect(p.root).toBe(path.join(dir, "app"));
+    });
+
+    it("reads config from the same place as a root set to app", () => {
+      project(SCAFFOLD);
+      const fromProject = railsFramework({ configDirectory: dir, root: "." });
+      const fromApp = railsFramework({ configDirectory: dir, root: "app" });
+      expect(fromProject.bootTemplates?.()).toEqual([
+        path.join(dir, "config", "cable.yml"),
+      ]);
+      expect(fromProject.bootTemplates?.()).toEqual(fromApp.bootTemplates?.());
+      expect(pattern(fromProject).acronyms).toEqual(["ActivityPub"]);
+      expect(fromProject.discoveryInputs?.([])).toEqual(
+        fromApp.discoveryInputs?.([]),
+      );
+    });
+
+    it("keeps a root with an app directory and no config beside it as given", () => {
+      project(["app/controllers/application_controller.rb"]);
+      const p = pattern(railsFramework({ configDirectory: dir, root: "." }));
+      expect(p.root).toBe(dir);
+    });
+  });
+
   describe("the YAML files Rails renders through ERB as it boots", () => {
     let dir: string;
 

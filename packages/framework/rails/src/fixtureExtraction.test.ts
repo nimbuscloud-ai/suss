@@ -20,11 +20,11 @@ const repoRoot = path.resolve(
 const fixtureRoot = path.join(repoRoot, "fixtures", "ruby-rails");
 const appRoot = path.join(fixtureRoot, "app");
 
-async function extractFixture() {
+async function extractFixture(root = appRoot) {
   const files = findRubyFiles(appRoot);
   const pack = withActiveRecord(
     railsFramework({
-      root: appRoot,
+      root,
       routesFile: path.join(fixtureRoot, "config/routes.rb"),
     }),
     { storageSystem: "postgresql" },
@@ -158,6 +158,12 @@ describe("extraction over fixtures/ruby-rails", () => {
         "preview",
       ].sort(),
     );
+  });
+
+  it("reads the same controllers when root is the application's own directory, with app and config in it", async () => {
+    const fromApp = await extractFixture(appRoot);
+    const fromProject = await extractFixture(fixtureRoot);
+    expect(fromProject.summaries).toEqual(fromApp.summaries);
   });
 
   it("binds a conventional resources action at its method and path", async () => {

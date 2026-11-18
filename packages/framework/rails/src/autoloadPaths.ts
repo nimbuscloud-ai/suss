@@ -29,6 +29,21 @@ const AUTOLOAD_LIB = /config\.autoload_lib(?:_once)?\b/;
 /** Every string literal in a fragment. */
 const EVERY_LITERAL = /(["'])([^"']*)\1/g;
 
+/**
+ * The `app` directory a configured root points at. The pack expects
+ * `root` to be the app directory and reads `config/` from the folder
+ * above it. A root that is the application's own folder, with `app` and
+ * `config` side by side in it, would put every controller lookup and
+ * every config read one level too high, so its `app` is used instead.
+ */
+export function appDirectoryOf(root: string): string {
+  const app = path.join(root, "app");
+  if (isDirectory(app) && isDirectory(path.join(root, "config"))) {
+    return app;
+  }
+  return root;
+}
+
 /** `config/application.rb` under `configDirectory`, when there is one, for the cache key. */
 export function applicationFile(configDirectory: string): string[] {
   const file = applicationPath(configDirectory);
