@@ -1,0 +1,8 @@
+{
+  "name": "suss-client-url-oracle",
+  "private": true,
+  "description": "The JavaScript clients whose URL building the client URL check compares with suss's packs. Installed on its own, outside the workspace, and never shipped with any package.",
+  "dependencies": {
+    "axios": "1.21.0"
+  }
+}
