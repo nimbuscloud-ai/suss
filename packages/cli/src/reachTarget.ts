@@ -31,6 +31,12 @@ export type SpelledFunctions =
       matched: TargetKind | "name";
       /** The units the spelling picked out, empty for a boundary. */
       units: ReadonlyArray<BehavioralSummary>;
+      /**
+       * Summaries read from a spec that declare the boundary the picked
+       * code serves, as a schema file declares a resolver's field. The
+       * name matched them too, and they were left out of the target.
+       */
+      alsoDeclaredBy?: ReadonlyArray<BehavioralSummary>;
     }
   | { found: false; headline: string };
 
@@ -70,7 +76,10 @@ export function functionsSpelled(
     };
   }
 
-  const written = writtenFunctions(units);
+  const byName = !resolution.matched || resolution.target.kind === "summary";
+  const declared = byName ? codeBehindSpecs(units) : null;
+  const picked = declared?.code ?? units;
+  const written = writtenFunctions(picked);
   const writtenSet = new Set(written);
   // A call into a copy of one of these is a call into it too.
   const copies = summaries.filter(
@@ -78,8 +87,7 @@ export function functionsSpelled(
       summary.receiverConstruction !== undefined &&
       writtenSet.has(writtenFunctionOf(summary)),
   );
-  const target = reachTargetOfUnits([...new Set([...units, ...copies])]);
-  const byName = !resolution.matched || resolution.target.kind === "summary";
+  const target = reachTargetOfUnits([...new Set([...picked, ...copies])]);
   if (byName && written.length > 1) {
     const candidates = written.map((fn) =>
       summaryIdentifier(representativeUnit(facts, fn)),
@@ -98,8 +106,44 @@ export function functionsSpelled(
         ? summaryIdentifier(representativeUnit(facts, written[0]))
         : spec,
     matched: resolution.matched ? resolution.target.kind : "name",
-    units,
+    units: picked,
+    ...(declared === null ? {} : { alsoDeclaredBy: declared.specs }),
   };
+}
+
+/**
+ * The code among units a name matched, when the rest were read from a
+ * spec that declares the boundary the code serves, as a schema file
+ * declares the field a resolver serves. Null unless the code is one
+ * function and every unit provides the same boundary.
+ */
+function codeBehindSpecs(units: ReadonlyArray<BehavioralSummary>): {
+  code: BehavioralSummary[];
+  specs: BehavioralSummary[];
+} | null {
+  const specs = units.filter(readFromSpec);
+  const code = units.filter((unit) => !readFromSpec(unit));
+  if (
+    specs.length === 0 ||
+    code.length === 0 ||
+    writtenFunctions(code).length !== 1
+  ) {
+    return null;
+  }
+  const keys = new Set(units.map(providedKey));
+  return keys.size === 1 && !keys.has(null) ? { code, specs } : null;
+}
+
+/** Contract readers mark what they read from a spec as derived, and no adapter does. */
+function readFromSpec(unit: BehavioralSummary): boolean {
+  return unit.confidence.source === "derived";
+}
+
+function providedKey(unit: BehavioralSummary): string | null {
+  const binding = unit.identity.boundaryBinding;
+  return binding === null || BOUNDARY_ROLE[unit.kind] !== "provider"
+    ? null
+    : boundaryKey(binding);
 }
 
 /**

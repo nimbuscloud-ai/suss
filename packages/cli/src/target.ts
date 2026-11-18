@@ -33,6 +33,7 @@ import {
   type TouchedBoundary,
   touchLabel,
 } from "./boundaryReach.js";
+import { operationTouchesAt } from "./graphqlFieldCallers.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -282,9 +283,10 @@ function boundaryMatches(
   spec: string,
   summaries: ReadonlyArray<BehavioralSummary>,
 ): TargetTouch[] {
-  return touchesOf(summaries).filter((touch) =>
+  const named = touchesOf(summaries).filter((touch) =>
     namesBoundary(spec, touch.touched.binding),
   );
+  return [...named, ...operationTouchesAt(named, summaries)];
 }
 
 function labelsOf(touches: readonly TargetTouch[]): string[] {
