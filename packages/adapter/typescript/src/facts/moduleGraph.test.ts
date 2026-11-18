@@ -100,6 +100,18 @@ describe("filesReachingFile", () => {
     ).toEqual([]);
   });
 
+  it("counts the target among the files reaching it when an import cycle leads back", () => {
+    expect(
+      reaching(
+        {
+          "/hooks.ts": `import { p } from "./profile"; export const useAppQuery = () => p;`,
+          "/profile.ts": `import { useAppQuery } from "./hooks"; export const p = useAppQuery;`,
+        },
+        "/hooks.ts",
+      ),
+    ).toEqual(["/hooks.ts", "/profile.ts"]);
+  });
+
   it("answers two targets from one pass over the edges", () => {
     const project = createTestProject();
     project.createSourceFile("/a.ts", "export const a = 1;");
