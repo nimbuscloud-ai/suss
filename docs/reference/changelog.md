@@ -7,6 +7,585 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.40.0 (2026-11-17)
+
+0.40.0 rewrites most of suss's packs as declarations that the TypeScript, Python and Ruby adapters all run, and fixes several dozen readings the rewrite turned up on the way.
+
+### Background
+
+A pack is how suss knows a library: which calls register a route, which calls send a request, which calls read a table or an environment variable. Until recently a pack was code that walked one language's syntax tree, so a pack for a Python HTTP client and a pack for a Ruby one shared nothing, and a fix in one never reached the other. `@suss/recognize` lets a pack declare what to look for instead, and every adapter runs the same declaration against the facts it states about the code.
+
+This release moves the HTTP clients (fetch, axios, requests, httpx, aiohttp, Faraday and Net::HTTP), the test runners (pytest, vitest, Minitest and RSpec), the route tables of Rails, FastAPI, Flask-RESTX and React Router, SQLAlchemy, React, Storybook, Cloudflare Workers, SQS, ActiveRecord and the Node runtime onto declarations. A move by itself changes no output. Where the declaration read the code more accurately than the old pack, the fix went in first as its own change, and those fixes are listed below. Not every pack has moved. Express, Fastify, Hono, NestJS, ts-rest and Apollo still describe their routes in a format only the TypeScript adapter reads. Celery, ActiveJob, Sidekiq, factory_bot and Fabrication still list settings, such as the decorator that marks a task or the method a job runs, that the Python or Ruby adapter reads with code written for that pack. These packs read code the same way they did in 0.39.0.
+
+### Breaking changes
+
+#### Summary ids that contained `#null`
+
+When two summaries in a run share an id, suss adds each one's boundary key after a `#`. A helper that a route calls has no boundary key, so its id came out as `list#null`, `list#null@2` and so on. Those ids are now `list`, `list@2` ([#1502](https://github.com/nimbuscloud-ai/suss/pull/1502)). A script that passes one of them to `suss ask` or `suss inspect` needs the new spelling, and a run directory saved for `check --since` shows those units as changed once. `.sussignore` rules and `inspect --diff` keep working, since neither reads the part of an id after the name.
+
+#### For pack authors
+
+Extracting a project does not change because of these.
+
+**The `subUnits` context has a type, and the TypeScript syntax walks are gone** ([#1577](https://github.com/nimbuscloud-ai/suss/pull/1577)). The React pack was the last thing calling the walks, and it now declares its handlers, effects and components.
+
+- `PatternPack.subUnits` takes `ctx` as a `SubUnitOpsCarrier` from `@suss/extractor` instead of `unknown`. `ctx.calls(parent)` lists the calls the parent runs in TypeScript, Python and Ruby, and `ctx.elements(parent)` lists the JSX elements it renders in TypeScript.
+- `@suss/adapter-typescript` no longer exports `TsSubUnitContext`, `TsJsxAttributeLocation`, `TsDiscoveryContext` or `createTsDiscoveryContext`, or the walks they offered: `findJsxAttributes`, `findCallExpressionsByName`, `resolveAttributeValueFunction`, `getCallArgumentFunction`, `getCallArgument`, `readArrayLiteralText`, `exportedFunctions` and `hasJsxReturn`. It also no longer exports `rootIdentifier`, `dottedPathOf`, `callOpsFor`, `factSourceFor`, `statedFactKey`, `exportedValuesOf` or `ExportedValue`.
+- `PatternPack.discoverUnits` is gone. A pack that found units with it declares a discovery pattern instead: `namedExport` with `pattern`, `skipFiles` and `bodyEndsIn: "element"` for components, `registeredFunction` for a function handed to a call, or `manifest` for units a deployment file lists.
+
+Declare a callback handed to a call with `callbacks(...)`, and a function handed to a JSX attribute with `renderedProps(...)`. Both come from `@suss/recognize` and compile to a `subUnits` hook.
+
+```ts
+// Before: walk the parent's syntax through the TypeScript context.
+subUnits: (parent, ctx) => {
+  const c = ctx as TsSubUnitContext;
+  return c.findCallExpressionsByName(parent.func, "enqueue").flatMap((call) => {
+    const job = c.getCallArgumentFunction(call, 0);
+    return job === null ? [] : [{ func: job, kind: "handler", name: `${parent.name}.job` }];
+  });
+},
+
+// After: declare the call and where its callback is.
+const JOBS = callbacks({ client: constructedFrom("job-kit") })
+  .methods({ enqueue: { callback: { written: "callback", at: 0 } } })
+  .unitWhenInPlace({ kind: "handler", name: ["parent", "callee", "countPerCallee"] });
+
+subUnits: subUnitsOf([JOBS]),
+```
+
+**The pack fields `@suss/recognize` replaced are gone** ([#1617](https://github.com/nimbuscloud-ai/suss/pull/1617)). A pack written before `@suss/recognize` could still list its client-side routes and its HTTP requests in the old pattern fields, and suss read each pattern as the declaration that says the same thing. Every pack in the repository now writes the declaration itself.
+
+`jsxElementRoute`: a pack for a client-side router declares its route table as a `routeTable` match with one `serves` role, the way React Router's `REACT_ROUTER_ROUTES` does. `JSX_ROUTE_UNREAD` moved from `@suss/extractor` to `@suss/framework-react-router`.
+
+```ts
+// Before
+match: {
+  type: "jsxElementRoute",
+  importModule: ["react-router"],
+  routeElement: "Route",
+  pathAttribute: "path",
+  elementAttribute: "element",
+  indexAttribute: "index",
+  childrenAttribute: "children",
+  routeObjectFactories: ["createBrowserRouter"],
+  method: "GET",
+},
+
+// After
+match: {
+  type: "routeTable",
+  table: {
+    roots: { kinds: { createBrowserRouter: 0 }, children: { in: "list", pick: { at: 0 } }, in: "file", elements: true },
+    roles: {
+      Route: {
+        role: "serves",
+        methods: ["GET"],
+        path: [{ key: "path" }],
+        index: { key: "index" },
+        handler: { value: [{ key: "element" }] },
+        children: [{ in: "elements" }, { in: "list", pick: { key: "children" } }],
+      },
+    },
+    objects: "Route",
+    from: ["react-router"],
+    absolutePaths: "standAlone",
+    elementLists: [],
+    loops: [],
+  },
+  through: "element",
+  unread: JSX_ROUTE_UNREAD,
+},
+```
+
+`PythonPack.clients`: a Python client pack declares the library's requests with `httpRequests` from `@suss/recognize` and lists the compiled chains under `requestRecognizers`, as the requests, httpx and aiohttp packs do. `PyClientCall` and `PyClientResponse` are gone with the field.
+
+```ts
+// Before
+clients: [{
+  type: "clientCall",
+  importModule: ["httpclient"],
+  verbAttributeNames: { get: "GET", post: "POST" },
+  url: { position: 0, keyword: "url" },
+  receiverConstructors: ["Session"],
+  response: { statusCode: ["status_code"] },
+}],
+
+// After
+requestRecognizers: requestRecognizersOf([
+  httpRequests({
+    client: anyOf(
+      imported({ from: ["httpclient"], named: ["*", "get", "post"] }),
+      constructedFrom({ from: ["httpclient"], named: ["Session"] }),
+    ),
+  })
+    .methods(verbs({ get: "GET", post: "POST" }, { at: 0, keyword: "url" }))
+    .response({ statusCode: ["status_code"] }),
+]),
+```
+
+`RubyPack.clients`: a Ruby client pack writes two request chains, the calls on the constant and the same calls on a value a builder made, as the faraday and net-http packs do. A host taken apart from the path becomes `hostFirst` on a method's URL, a builder's host and port become `reads: "host"` on `.baseUrl`, and a request object becomes `sends: { object, classes, url }` on a method. `RbClientCall`, `RbClientResponse` and `RbHostArguments` are gone with the field.
+
+```ts
+// Before
+clients: [{
+  constantName: "HttpClient",
+  verbMethodNames: { get: "GET" },
+  url: { position: 0 },
+  receiverBuilders: ["build"],
+  builderUrlKeyword: "base",
+}],
+
+// After
+const VERBS = verbs({ get: "GET" }, { at: 0 });
+
+requestRecognizers: requestRecognizersOf([
+  httpRequests({ client: imported({ from: ["HttpClient"], named: ["*"] }) }).methods(VERBS),
+  httpRequests({ client: constructedFrom({ from: ["HttpClient"], named: ["build"] }) })
+    .methods(VERBS)
+    .baseUrl({ at: 0, keyword: "base", joins: "resolved" }),
+]),
+```
+
+`clientCall`: a TypeScript client pack declares the library's requests with `httpRequests`, as the fetch and axios packs do. The methods table replaces `methodFilter`, `returnedBy("create", ...)` replaces `factoryMethods`, `.baseUrl(...)` replaces `basePathOption`, and `.calls(...)` replaces `callable`. `BindingExtraction.options` is gone too, since a method's `options` says where its options object is. `clientCall` stays for a client built from a contract, as ts-rest's `initClient` builds one: it takes `importModule` and `importName`, and a binding of `fromClientMethod` reads the method and path from the contract.
+
+```ts
+// Before
+discovery: [{
+  kind: "client",
+  match: { type: "clientCall", importModule: "axios", importName: "axios", methodFilter: ["get"], factoryMethods: ["create"], basePathOption: "baseURL" },
+  bindingExtraction: { method: { type: "literal", value: "GET" }, path: { type: "fromArgument", position: 0 }, options: { position: 1 } },
+}],
+
+// After
+const AXIOS = imported({ from: ["axios"], named: ["default"] });
+
+discovery: [],
+requestRecognizers: requestRecognizersOf([
+  httpRequests({ client: anyOf(AXIOS, returnedBy("create", AXIOS)) })
+    .methods({ get: { sends: "GET", url: { at: 0 }, options: { at: 1 } } })
+    .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" }),
+]),
+```
+
+`PatternPack.redirectOption`: the option a call uses to hand a redirect back goes on the chain's response, and `clientResponseOf` no longer copies it from the pack.
+
+```ts
+// Before
+return { ...RESPONSE, redirectOption: { name: "maxRedirects", handsBack: [0] } };   // the PatternPack
+
+// After
+httpRequests({ client })
+  .methods(METHODS)
+  .response({ ...clientResponseOf(RESPONSE), redirectOption: { name: "maxRedirects", handsBack: [0] } });
+```
+
+**Test runners, storage and the environment.**
+
+- `TestCaseMatch` is gone from `@suss/extractor`. A test runner pack writes a `testCases` match with a `calls` form, as vitest does ([#1612](https://github.com/nimbuscloud-ai/suss/pull/1612)):
+
+  ```ts
+  match: {
+    type: "testCases",
+    files: { matching: ["*"], listed: options.files },
+    calls: {
+      from: { origin: "imported", importedFrom: ["vitest"] },
+      groups: { names: ["describe", "suite"] },
+      cases: { names: ["it", "test"] },
+      modifiers: { skip: ["skip", "todo"], takingArguments: ["skipIf", "runIf"], perRow: ["each", "for"] },
+    },
+  }
+  ```
+
+- `@suss/adapter-python` no longer exports `StoragePattern`, `PyModelQueries`, `PyModelEntryMethod`, `PyModelEntryFunction`, `RawSqlPattern`, `PyTestMocks`, `PyTestSetUp`, or the router index types (`buildRouterIndex`, `RouterIndex`, `RouterComposition`, `RoutePrefixResolution`, `BoundPythonFile` and the `Mount*` and prefix types). Storage, pytest and router prefixes are declared through `@suss/recognize` now. `@suss/framework-sqlalchemy` no longer exports `sqlalchemyStorage`, `sqlmodelStorage`, `queryCalls`, `sqlalchemyModels` or `sqlmodelModels` ([#1585](https://github.com/nimbuscloud-ai/suss/pull/1585), [#1586](https://github.com/nimbuscloud-ai/suss/pull/1586)).
+- `@suss/adapter-ruby` no longer exports `RbSharedInclude` or `RbTestMocks`.
+- `libraryEnvReadMarker` in `@suss/extractor` is now `libraryEnvReadMarkers`, one function for every adapter ([#1574](https://github.com/nimbuscloud-ai/suss/pull/1574)).
+
+### `inspect --diff` says when a change makes a branch impossible
+
+A rename can leave a condition looking the same while it stops being able to fire. Here a lookup that returned `null` now returns an empty object, and the route that checks for a missing order only picked up the new name:
+
+```ts
+// before
+export async function fetchOrder(id: string): Promise<Order | null> {
+  const row = await db.order.findUnique({ where: { id } });
+  return row ? toOrder(row) : null;
+}
+
+// after
+export async function loadOrder(id: string): Promise<Order> {
+  const row = await db.order.findUnique({ where: { id } });
+  return row ? toOrder(row) : ({} as Order);
+}
+
+app.get("/orders/:id", async (req, res) => {
+  const order = await loadOrder(req.params.id);
+  if (!order) {
+    return res.status(404).json({ error: "order not found" });
+  }
+  return res.json(order);
+});
+```
+
+0.39.0 reported the renamed condition and nothing else. 0.40.0 says the 404 can no longer happen, and why ([#1607](https://github.com/nimbuscloud-ai/suss/pull/1607)):
+
+```
+$ suss inspect --diff before.json after.json
+1 boundary changed: 2 outcomes. 2 units inside the project also changed.
+
+~ serves GET /orders/{id}  src/orders.ts::get  (2 outcomes)
+  outcomes
+    ~ was  responds 404 { error }  when  !fetchOrder()
+      now  responds 404 { error }  when  !loadOrder()
+           can no longer happen: loadOrder() is always an object, which is truthy
+    ~ was  responds 200 Order (src/orders.ts)  when  fetchOrder()
+      now  responds 200 Order (src/orders.ts)  when  loadOrder()
+```
+
+suss only says a branch can no longer happen when every value the condition reads settles, so a condition it cannot work out is reported as a change, the way it was before. A field whose type changed now shows what changed in it, too ([#1603](https://github.com/nimbuscloud-ai/suss/pull/1603)).
+
+### Base URLs joined the way each HTTP library joins them
+
+A client built with a base URL sends its requests under that base, and each library joins the two its own way. suss used to drop the base for httpx and aiohttp, and glued Faraday's base and path together as text:
+
+```python
+client = httpx.Client(base_url="https://billing.example.com/v1")
+
+def get_invoice(invoice_id):
+    return client.get(f"/invoices/{invoice_id}").json()
+
+async def list_refunds():
+    async with aiohttp.ClientSession(base_url="https://billing.example.com/v1/") as session:
+        async with session.get("refunds") as response:
+            return await response.json()
+```
+
+```
+0.39.0  GET /invoices/{invoice_id}      (httpx client)
+        GET refunds                     (aiohttp client)
+0.40.0  GET /v1/invoices/{invoice_id}   (httpx client)
+        GET /v1/refunds                 (aiohttp client)
+```
+
+httpx appends the path to the base. aiohttp resolves it against the base and refuses a base with a path that does not end in `/`, so suss leaves such a base out ([#1615](https://github.com/nimbuscloud-ai/suss/pull/1615)).
+
+```ruby
+@conn = Faraday.new(url: "https://billing.example.com/v1/")
+@conn.get("invoices")
+@conn.get("/health")
+```
+
+```
+0.39.0  GET /v1invoices   GET /v1/health
+0.40.0  GET /v1/invoices  GET /health
+```
+
+Faraday resolves a path the way a browser resolves a link, so a path that starts with `/` replaces the base's path ([#1559](https://github.com/nimbuscloud-ai/suss/pull/1559)). `Net::HTTP.get(host, path)` and `Net::HTTP.new(host)` are read as a host and a path too ([#1560](https://github.com/nimbuscloud-ai/suss/pull/1560)). In all three languages, a request whose URL says nothing about where it goes, such as `requests.get(api_url)`, is now a client with no path, where Python used to keep `{api_url}` as its path and Ruby dropped the call ([#1561](https://github.com/nimbuscloud-ai/suss/pull/1561)). A client's path pairs with the route that serves it, so these are pairs the checker can now make.
+
+### Rails routes drawn the way Rails draws them
+
+```ruby
+resources :people, param: :slug, only: [:show] do
+  resources :stories, only: [:index]
+end
+resources :statuses, only: [] do
+  resources :cards, shallow: true, only: [:index, :show]
+end
+```
+
+```
+0.39.0  GET /people/{id}
+        GET /people/{people_id}/stories
+        GET /statuses/{status_id}/cards
+        GET /statuses/{status_id}/cards/{id}
+0.40.0  GET /people/{slug}
+        GET /people/{person_slug}/stories
+        GET /statuses/{status_id}/cards
+        GET /cards/{id}
+```
+
+The routes reader now reads `param:` and `shallow:` ([#1524](https://github.com/nimbuscloud-ai/suss/pull/1524)), and builds a nested resource's parameter from its parent's singular, the way ActiveSupport spells it ([#1523](https://github.com/nimbuscloud-ai/suss/pull/1523)). It also stopped making up actions from paths, reads Ruby 3.1's `action:` shorthand, reads a name or a list however it is written, and walks a gem's routing block wherever the routing call is ([#1473](https://github.com/nimbuscloud-ai/suss/pull/1473)). A `concerning` block is read as the module it makes, so its `included do` and `class_methods do` count ([#1564](https://github.com/nimbuscloud-ai/suss/pull/1564)).
+
+### Performance
+
+0.40.0 is slower than 0.39.0 on most projects, by up to about 1.35 times on a large TypeScript server. These are CPU times (user plus sys), the mean of two or three runs on each version, on one machine with nothing else measuring:
+
+| Project | 0.39.0 | 0.40.0 | Peak memory |
+|---|---:|---:|---|
+| A large public NestJS server with TypeORM, 8 GB heap | 315 s | 424 s | 8.1 to 8.6 GB |
+| The same server, 16 GB heap | 165 s | 192 s | 12.1 to 12.6 GB |
+| A public Next.js app with Prisma | 95 s | 122 s | 5.4 to 5.9 GB |
+| A public Next.js app | 81 s | 100 s | 5.5 to 6.4 GB |
+| A public NestJS server with TypeORM | 38.3 s | 45.5 s | unchanged |
+| A public Rails app | 21.5 s | 24.6 s | 2.3 to 2.6 GB |
+| A public FastAPI app | 13.4 s | 14.6 s | unchanged |
+| A public NestJS server with Prisma | 9.7 s | 10.3 s | unchanged |
+
+The large server's time varies by about 50 s from run to run with an 8 GB heap. Most of the added time comes from changes that read more:
+
+- When a question reaches a function's parameter, suss now reads every caller of that function, so the parameter takes the values its callers pass ([#1487](https://github.com/nimbuscloud-ai/suss/pull/1487)). On the large NestJS server this adds about 1.3 GB of live memory, and that run now comes close to the 8 GB heap the CLI picks by default, so garbage collection takes much of the added time.
+- Extraction now works out whether each branch condition can still be true, which is what lets `inspect --diff` say a branch can no longer happen ([#1607](https://github.com/nimbuscloud-ai/suss/pull/1607)).
+- The Node runtime's environment, argument and timer reads are declarations now ([#1466](https://github.com/nimbuscloud-ai/suss/pull/1466), [#1500](https://github.com/nimbuscloud-ai/suss/pull/1500)). The timer move searched a file's whole text once per call in it, which cost 8 s on a server with two test files of thousands of calls each. suss now searches once per file and word ([#1623](https://github.com/nimbuscloud-ai/suss/pull/1623)).
+
+The rest is spread over smaller changes, such as following `forwardRef` and `memo` on the Next.js apps ([#1581](https://github.com/nimbuscloud-ai/suss/pull/1581)), and a patch release will work through them. If a large project runs close to the heap limit, setting `NODE_OPTIONS=--max-old-space-size=16384` on a machine with the memory for it roughly halves the CPU time of the large NestJS server, on both versions.
+
+### Fixes and improvements
+
+#### TypeScript and JavaScript
+
+- A call in test code no longer fills a production function's parameter; a test calling its own helper still does ([#1526](https://github.com/nimbuscloud-ai/suss/pull/1526)).
+- A destructure is read the way the language reads it ([#1505](https://github.com/nimbuscloud-ai/suss/pull/1505)), and a property key by its value instead of its source text ([#1537](https://github.com/nimbuscloud-ai/suss/pull/1537)).
+- A barrel's re-export is followed when suss asks where a name was imported from ([#1514](https://github.com/nimbuscloud-ai/suss/pull/1514)).
+- A typed origin matches through the package that declares the type, including types DefinitelyTyped publishes ([#1507](https://github.com/nimbuscloud-ai/suss/pull/1507)), and on a member read as well as a parameter ([#1484](https://github.com/nimbuscloud-ai/suss/pull/1484)).
+- A fetch or axios call in a class keeps its own path when no construction of the class gives it one ([#1594](https://github.com/nimbuscloud-ai/suss/pull/1594)), and a request reads a URL, a class's constructions and a default import ([#1608](https://github.com/nimbuscloud-ai/suss/pull/1608)).
+- A call reads as a value only when every return of its function does, in all three languages ([#1575](https://github.com/nimbuscloud-ai/suss/pull/1575)).
+
+#### React, Next.js and Storybook
+
+- Next.js reads every server action a `"use server"` module exports, through an export list, a re-export, a wrapper or an anonymous default, and every marked function ([#1471](https://github.com/nimbuscloud-ai/suss/pull/1471)).
+- React finds the root an app boots with in every spelling: a root kept in a variable, `hydrateRoot`, React 17's `hydrate`, and `render` imported by name ([#1542](https://github.com/nimbuscloud-ai/suss/pull/1542)).
+- A handler named through `useCallback` gets a unit of its own ([#1545](https://github.com/nimbuscloud-ai/suss/pull/1545)).
+- A rendered tag is followed to its component through `forwardRef`, `memo` and a factory ([#1581](https://github.com/nimbuscloud-ai/suss/pull/1581)).
+- Storybook follows a compound component's part, such as `Card.Root`, to the module that declares it ([#1532](https://github.com/nimbuscloud-ai/suss/pull/1532)), and a component written as a member of a namespace import ([#1530](https://github.com/nimbuscloud-ai/suss/pull/1530)). A story directory skips dependency and hidden folders ([#1525](https://github.com/nimbuscloud-ai/suss/pull/1525)).
+
+#### Node, Cloudflare Workers and SQS
+
+- An assignment to `process.env` is no longer recorded as a read ([#1467](https://github.com/nimbuscloud-ai/suss/pull/1467)), and `process.argv[2]` is read as `argv[2]` beside `argv` ([#1468](https://github.com/nimbuscloud-ai/suss/pull/1468)).
+- The environment is read off a parameter that defaults to `process.env` or that a caller hands it ([#1469](https://github.com/nimbuscloud-ai/suss/pull/1469)).
+- A Worker that passes its `env` to a helper, or keeps it in a local, keeps those reads ([#1480](https://github.com/nimbuscloud-ai/suss/pull/1480)). A trigger imported into the entrypoint from another file keeps its env reads ([#1478](https://github.com/nimbuscloud-ai/suss/pull/1478)).
+- An SQS handler records every key it reads off the parsed body, through the name the body is kept in and in a destructure of it ([#1509](https://github.com/nimbuscloud-ai/suss/pull/1509)), including a handler that types its event in place ([#1513](https://github.com/nimbuscloud-ai/suss/pull/1513)). `suss init` suggests the SQS pack for a handler a queue triggers ([#1512](https://github.com/nimbuscloud-ai/suss/pull/1512)).
+
+#### Python
+
+- FastAPI reads an `api_route` decorator as one route for each method it lists, or GET when it lists none ([#1600](https://github.com/nimbuscloud-ai/suss/pull/1600)).
+- SQLAlchemy takes a model's table from its `__tablename__` ([#1587](https://github.com/nimbuscloud-ai/suss/pull/1587)) and reads `text()` queries ([#1567](https://github.com/nimbuscloud-ai/suss/pull/1567)).
+- A query a project function returns is no longer a storage read with no table, and a call's keywords count as columns only in a `values` call ([#1584](https://github.com/nimbuscloud-ai/suss/pull/1584)). A chain picks rows only by its own calls and its own model's columns, so a constructor's keywords or a joined table's column no longer show up as its selector ([#1568](https://github.com/nimbuscloud-ai/suss/pull/1568), [#1490](https://github.com/nimbuscloud-ai/suss/pull/1490)).
+- `from shop.routes import orders` counts as an import of `shop/routes/orders.py` ([#1576](https://github.com/nimbuscloud-ai/suss/pull/1576)), and a member of a whole-module import, such as `users.router`, reads as what the module binds ([#1590](https://github.com/nimbuscloud-ai/suss/pull/1590)).
+- `print(line, file=out)` writes to the stream a caller passes as `out` ([#1578](https://github.com/nimbuscloud-ai/suss/pull/1578)).
+- A string literal's value is read instead of a slice of its text ([#1520](https://github.com/nimbuscloud-ai/suss/pull/1520)).
+
+#### Ruby
+
+- ActiveRecord reads `has_many`, callbacks and `scope` only in classes that reach `ActiveRecord::Base`, so a serializer's `has_many` is no longer an association ([#1534](https://github.com/nimbuscloud-ai/suss/pull/1534)).
+- A project that reopens a library's module, such as `module ActiveRecord`, keeps the library's constants imported ([#1540](https://github.com/nimbuscloud-ai/suss/pull/1540)). A class reaches its base through every body written for it, and through a base that is the project's own class ([#1619](https://github.com/nimbuscloud-ai/suss/pull/1619)).
+- `after_commit :m, on: %i[create update]` runs `m` only for those events ([#1477](https://github.com/nimbuscloud-ai/suss/pull/1477)).
+- A helper that responds with a status taken as a keyword or optional parameter settles it, with its default ([#1482](https://github.com/nimbuscloud-ai/suss/pull/1482)).
+- Ruby 3.1's `f(a:)` and `{ id: }` read as the name they spell ([#1493](https://github.com/nimbuscloud-ai/suss/pull/1493)). A class declared as `::Name` is looked up from the top level ([#1495](https://github.com/nimbuscloud-ai/suss/pull/1495)), and an endless method's body is read ([#1596](https://github.com/nimbuscloud-ai/suss/pull/1596)).
+- `$stdout << line` is a write ([#1579](https://github.com/nimbuscloud-ai/suss/pull/1579)). `ENV["Q"].presence || "q"` read through a helper has its fallback ([#1554](https://github.com/nimbuscloud-ai/suss/pull/1554)).
+- BigQuery reads the chain's table before a row call's first argument ([#1474](https://github.com/nimbuscloud-ai/suss/pull/1474)).
+
+#### Across languages
+
+- A file under a `test`, `tests`, `spec` or `e2e` folder at the top of the project counts as test code. The adapters were handing the rule absolute paths, so it never applied ([#1549](https://github.com/nimbuscloud-ai/suss/pull/1549)).
+- An environment read through a helper, or in a Ruby parameter default, records the value it falls back to in Python and Ruby, as it already did in TypeScript ([#1553](https://github.com/nimbuscloud-ai/suss/pull/1553)).
+- A status written `x || 500` is claimed only when `x` can be absent ([#1491](https://github.com/nimbuscloud-ai/suss/pull/1491)).
+
+Upgrade with `npm install -D @suss/cli@0.40.0`, or run `npx @suss/cli@0.40.0`.
+
+## 0.39.0 (2026-11-10)
+
+0.39.0 reads Prisma and Drizzle queries the way you write them, so a summary says which columns a query picks rows by and which fields it touches, including when the client is generated into the project, handed to a transaction callback, or read before anyone installs the project's dependencies.
+
+### Background
+
+When suss reads a call into a database client, it writes a storage access into the summary: which table, whether it reads or writes, the fields it touches, and the selector, meaning the columns it picks rows by. The checker compares those accesses with the schema and with every other unit that touches the same table. An access suss could not read was left out, so a query it didn't understand looked the same as no query at all.
+
+This release widens what suss reads in both TypeScript ORMs. It also moves the Prisma and Drizzle packs onto `@suss/recognize`, where a pack is a declaration that the TypeScript, Python and Ruby adapters all run, instead of code that walks the TypeScript syntax tree.
+
+### Breaking changes
+
+These affect pack authors only. Extracting a project does not change because of them.
+
+- The AWS Lambda pack no longer exports `awsLambdaDiscovery` or `lambdaEntryPoints`, and `@suss/extractor` no longer exports `DeclaredEntryPoint` or `DeclaredEntryUnit`. A Python or Ruby pack that listed `entryPoints` now declares a `manifest` pattern under `declaredDiscovery`, the way the Lambda packs do:
+
+  ```ts
+  declaredDiscovery: [{ kind: "handler", match: { type: "manifest", entries: (file) => [...] } }]
+  ```
+
+### Prisma queries, read the way you write them
+
+suss read the top level of a Prisma filter, so a key such as `OR` came out as a column, and a filter on a related model came out as nothing:
+
+```ts
+await this.prisma.payout.findMany({
+  where: {
+    OR: [
+      { method: "stablecoin" },
+      { status: "pending", partner: { stripeRecipientId: { not: null } } },
+    ],
+  },
+});
+```
+
+```
+0.38.2  read Payout  selector ["OR"]
+0.39.0  read Payout  selector ["method", "status"]
+        read Payout  relationPath ["partner"]  fields ["stripeRecipientId"]
+```
+
+It also missed a client the project generates into its own source and imports by a bare path through `baseUrl` or `paths`, before anyone runs `prisma generate`. That is how a NestJS app usually wires Prisma, so every query in such an app went unread:
+
+```ts
+// tsconfig.json:          "baseUrl": "./"
+// prisma/schema.prisma:   generator client { output = "../src/generated/prisma" }
+import { PrismaClient } from "src/generated/prisma/client";
+export class PrismaService extends PrismaClient {}
+```
+
+suss now reads:
+
+- a generated client imported through `baseUrl` or `paths` ([#1447](https://github.com/nimbuscloud-ai/suss/pull/1447));
+- the `tx` a `$transaction` callback is handed ([#1443](https://github.com/nimbuscloud-ai/suss/pull/1443));
+- `AND`, `OR` and `NOT` as the filters they combine ([#1440](https://github.com/nimbuscloud-ai/suss/pull/1440));
+- a relation filter as a read of the related rows ([#1441](https://github.com/nimbuscloud-ai/suss/pull/1441));
+- a compound unique key such as `domain_key: { domain, key }` as the columns it picks by ([#1446](https://github.com/nimbuscloud-ai/suss/pull/1446));
+- the `where` of a nested operation such as `connectOrCreate` ([#1437](https://github.com/nimbuscloud-ai/suss/pull/1437));
+- a nested `create` as a write of the parent's key on the new row ([#1442](https://github.com/nimbuscloud-ai/suss/pull/1442));
+- `findUniqueOrThrow` and `findFirstOrThrow` ([#1448](https://github.com/nimbuscloud-ai/suss/pull/1448)).
+
+The checker also counts an `include` or a relation filter as a read of the key the join uses ([#1439](https://github.com/nimbuscloud-ai/suss/pull/1439)).
+
+| Project | 0.38.2 | 0.39.0 |
+|---|---:|---:|
+| A public NestJS server with Prisma: storage accesses | 0 | 744 |
+| A public Next.js app with Prisma: storage accesses | 7,826 | 11,655 |
+| The same app: columns that pick rows | 6,894 | 10,032 |
+| The same app: accesses that name their fields | 3,740 | 6,623 |
+
+The NestJS server imports its generated client through `baseUrl`, so 0.38.2 read none of its queries. Reading them costs time, and the numbers are under Performance. The Prisma pack is also a `@suss/recognize` declaration now, with the same output ([#1452](https://github.com/nimbuscloud-ai/suss/pull/1452)).
+
+### Drizzle without its dependencies installed
+
+suss found a Drizzle database only by the type `drizzle-orm` declares for it. A first run on a fresh clone has no `node_modules`, so nothing was typed and no builder call was recorded. A database made by `drizzle(...)` from `drizzle-orm` or one of its driver subpaths now counts as well ([#1462](https://github.com/nimbuscloud-ai/suss/pull/1462)).
+
+```ts
+import { and, eq, isNull } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { users } from "./schema";
+
+export const db = drizzle(postgres(process.env.POSTGRES_URL!));
+
+export async function getUser(id: number) {
+  return db.select().from(users).where(and(eq(users.id, id), isNull(users.deletedAt)));
+}
+```
+
+```
+0.38.2  (no storage access without node_modules)
+0.39.0  read users  selector ["id", "deletedAt"]
+```
+
+On a public Next.js starter that uses Drizzle, read without its dependencies, the builder calls recorded go from 0 to 20. Two more cases read correctly: a select kept in a variable before `.from` ([#1459](https://github.com/nimbuscloud-ai/suss/pull/1459)), and a condition that reads a column off another name for the same table, such as `const u = users` ([#1463](https://github.com/nimbuscloud-ai/suss/pull/1463)).
+
+### Worktrees share one extraction cache
+
+Every git worktree of a repository now uses the main checkout's extraction cache, so the first run in a new worktree reads only the files that differ from what another checkout already stored ([#1376](https://github.com/nimbuscloud-ai/suss/pull/1376)).
+
+```
+$ suss extract -p tsconfig.json -f express -o out.json
+Wrote 1 summary to out.json in 0.23s
+$ git worktree add ../feature HEAD && cd ../feature
+$ suss extract -p tsconfig.json -f express -o out.json
+Wrote 1 summary to out.json in 0.01s
+```
+
+The cache also keeps to a size now, 1 GiB or what `SUSS_CACHE_MAX_MB` says, instead of two entries and eight checkouts, which ten worktrees overran on every run ([#1381](https://github.com/nimbuscloud-ai/suss/pull/1381)). A Python or Ruby run after a file is added or removed replays every record whose dependencies didn't change, where it used to start cold ([#1382](https://github.com/nimbuscloud-ai/suss/pull/1382)).
+
+### Smaller summaries for projects with a generated client
+
+A TypeScript summary writes each named type once, into its `definitions` table. The table followed every type reachable from the first one, so a project that commits a generated client, such as Prisma's, wrote thousands of types the checker never reads. It now keeps a type only when something mentions it within the six levels the checker reads ([#1436](https://github.com/nimbuscloud-ai/suss/pull/1436)).
+
+| Extract against a public app's generated Prisma client | 0.38.2 | 0.39.0 |
+|---|---:|---:|
+| Types in `definitions` | 9,033 | 48 |
+| Summary size | 350 MB | 4.3 MB |
+| Time | 24.9 s | 2.1 s |
+| Peak memory | 6.7 GB | 1.2 GB |
+
+We compared 164 projects and fixtures before and after. Eight of them have different summaries, and on all eight `suss check --json` gives the same output as before.
+
+### Python repositories name their table
+
+A FastAPI app often reaches its tables through one repository class that every model gets an instance of, with the model passed to the constructor. suss read the table off `self`, so it could not say which table a route reached. It now follows each construction:
+
+```python
+@app.get("/tools/{key}")
+def get_tool(key: int):
+    return Repository(session, Tool).get_one(key)
+```
+
+```
+$ suss ask "what does GET /tools/{key} reach"
+0.38.2  reads postgresql:<unnamed container>  through select(self.model).filter_by(id=key), by calling Repository(session, Tool).get_one
+0.39.0  reads postgresql:Tool                 through select(self.model).filter_by(id=key), by calling Repository(session, Tool).get_one
+```
+
+On a public FastAPI app with forty repositories, the routes that reach a named table went from 8 to 61 of 196 ([#1375](https://github.com/nimbuscloud-ai/suss/pull/1375)).
+
+### One pack declaration for TypeScript, Python and Ruby
+
+A pack written with `@suss/recognize` now runs in the Python and Ruby adapters as well as TypeScript ([#1385](https://github.com/nimbuscloud-ai/suss/pull/1385), [#1386](https://github.com/nimbuscloud-ai/suss/pull/1386)). The BigQuery pack for Python and the `pg` pack for Ruby are the first to use it ([#1393](https://github.com/nimbuscloud-ai/suss/pull/1393)). A declared pack can also find its units: by a manifest such as a SAM template, by a named export, by a subclass, by a directive such as `"use server"`, or by a function a registration call is handed ([#1454](https://github.com/nimbuscloud-ai/suss/pull/1454)). The AWS Lambda packs now find handlers through one manifest pattern in all three languages ([#1456](https://github.com/nimbuscloud-ai/suss/pull/1456)). For pack authors, [Write a pack](https://github.com/nimbuscloud-ai/suss/blob/main/docs/packs/write-a-pack.md) and [patterns](https://github.com/nimbuscloud-ai/suss/blob/main/docs/packs/patterns.md) cover the new members.
+
+### Performance
+
+Most projects extract in the same time as 0.38.2. Two take longer, each because it reads more. The times are the mean of three runs on each version, on one machine with nothing else running:
+
+| Project | 0.38.2 | 0.39.0 | Peak memory |
+|---|---:|---:|---|
+| A public Next.js app | 39 s | 51 s | 5.3 to 5.6 GB |
+| A public NestJS server with Prisma | 3.7 s | 5.3 s | 0.9 to 1.1 GB |
+| A public Next.js app with Prisma | 80 s | 70 s | 5.3 to 5.6 GB |
+| A large public NestJS server with TypeORM | 131 s | 134 s | unchanged |
+| A public NestJS server with TypeORM | 22.7 s | 23.7 s | unchanged |
+| A public Rails app | 14 s | 15 s | unchanged |
+| A public FastAPI app | 8.7 s | 8.7 s | unchanged |
+
+The first Next.js app now follows `fn.call`, `fn.apply` and `fn.bind`, and reads 292 functions it used to stop at. That change accounts for 9 of the 12 seconds the app gained ([#1438](https://github.com/nimbuscloud-ai/suss/pull/1438)). The NestJS server with Prisma reads 744 queries it read none of before.
+
+### Fixes and improvements
+
+#### TypeScript
+
+- A handler that returns every response through a function of its own gets its transitions ([#1435](https://github.com/nimbuscloud-ai/suss/pull/1435)).
+- The reachable closure follows `fn.call`, `fn.apply` and `fn.bind` ([#1438](https://github.com/nimbuscloud-ai/suss/pull/1438)).
+- A timer set inside a callback gets its own unit ([#1392](https://github.com/nimbuscloud-ai/suss/pull/1392)), and so does an effect written `React.useEffect` ([#1394](https://github.com/nimbuscloud-ai/suss/pull/1394)).
+- A call written as a concise arrow's body is recorded as an effect ([#1391](https://github.com/nimbuscloud-ai/suss/pull/1391)).
+- A route handler keeps its id when another route joins its file ([#1397](https://github.com/nimbuscloud-ai/suss/pull/1397)).
+- A claimed callback no longer pairs with the route its parent serves ([#1425](https://github.com/nimbuscloud-ai/suss/pull/1425)), and everything it does is put on the claim ([#1418](https://github.com/nimbuscloud-ai/suss/pull/1418), [#1419](https://github.com/nimbuscloud-ai/suss/pull/1419)).
+- A call suss could not follow is noted only on the unit whose body makes it ([#1396](https://github.com/nimbuscloud-ai/suss/pull/1396)).
+- A generated module imported through `baseUrl` or `paths` is read as the package it copies ([#1447](https://github.com/nimbuscloud-ai/suss/pull/1447), [#1450](https://github.com/nimbuscloud-ai/suss/pull/1450)).
+- The functions inside an object a factory returns are listed as exports ([#1449](https://github.com/nimbuscloud-ai/suss/pull/1449)).
+- A name imported under another name is read as the export it is ([#1408](https://github.com/nimbuscloud-ai/suss/pull/1408), [#1458](https://github.com/nimbuscloud-ai/suss/pull/1458)).
+- An AppSync resolver in a Lambda is bound over `aws-https`, as the AppSync contract and the Python and Ruby packs bind it ([#1461](https://github.com/nimbuscloud-ai/suss/pull/1461)).
+- `--files` reads a named file the way a full run reads it ([#1429](https://github.com/nimbuscloud-ai/suss/pull/1429)).
+
+#### Python and Ruby
+
+- Python follows a name a package brings in with `from x import *` ([#1377](https://github.com/nimbuscloud-ai/suss/pull/1377)).
+- A Python Lambda handler bound to a def in its module, `handler = run_nightly`, gets the def's unit ([#1451](https://github.com/nimbuscloud-ai/suss/pull/1451)).
+- A raw SQL effect spells its callee and operation the way TypeScript does ([#1388](https://github.com/nimbuscloud-ai/suss/pull/1388)).
+- Ruby states a constant only a library defines as imported from the global module ([#1404](https://github.com/nimbuscloud-ai/suss/pull/1404)).
+
+#### Packs
+
+- Mongoose finds a model's collection in a function the run reaches as a library ([#1387](https://github.com/nimbuscloud-ai/suss/pull/1387)).
+- react-query reads a `queryFn` written as a method, a hook a project file re-exports, an options object passed by name, and options after an `undefined` argument ([#1411](https://github.com/nimbuscloud-ai/suss/pull/1411), [#1412](https://github.com/nimbuscloud-ai/suss/pull/1412), [#1414](https://github.com/nimbuscloud-ai/suss/pull/1414), [#1415](https://github.com/nimbuscloud-ai/suss/pull/1415)).
+- The SQS and EventBridge configured producers read their subject and body the way the SDK sends do, send once per member of a union subject, and compare a `JSON.stringify` body as the object inside ([#1399](https://github.com/nimbuscloud-ai/suss/pull/1399), [#1401](https://github.com/nimbuscloud-ai/suss/pull/1401), [#1403](https://github.com/nimbuscloud-ai/suss/pull/1403)).
+- A stub written the way the guide teaches records its send ([#1389](https://github.com/nimbuscloud-ai/suss/pull/1389)).
+- A test that calls `describe` and `it` as globals is read as vitest's ([#1379](https://github.com/nimbuscloud-ai/suss/pull/1379)).
+- Every SQL access writes its operation before its selector ([#1390](https://github.com/nimbuscloud-ai/suss/pull/1390)).
+- A pack hook or a declared recognizer that throws no longer stops the run, and the throw goes on the pack's tally ([#1420](https://github.com/nimbuscloud-ai/suss/pull/1420), [#1426](https://github.com/nimbuscloud-ai/suss/pull/1426), [#1427](https://github.com/nimbuscloud-ai/suss/pull/1427)).
+
+#### ask
+
+- `what reaches <target>` leaves the functions on the way out of its list ([#1378](https://github.com/nimbuscloud-ai/suss/pull/1378)).
+
+#### Supervisor plugin
+
+- When a compare runs out of time, the report says the limit it was given, such as `500ms`, where it could say "did not finish within 0s" ([#1465](https://github.com/nimbuscloud-ai/suss/pull/1465)).
+
+Upgrade with `npm install -g @suss/cli@0.39.0`, or `npx @suss/cli@0.39.0`.
+
 ## 0.38.2 (2026-10-31)
 
 0.38.2 reads Ruby and Python projects in 35 to 40% less time, makes the rules engine cheaper in every language, follows Python routes into generic repositories, and stops Ruby files that reopen a module from listing each other as imports.
