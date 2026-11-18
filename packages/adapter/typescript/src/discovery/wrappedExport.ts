@@ -74,6 +74,28 @@ export function wrappedExportOf(
 }
 
 /**
+ * The function a project wrapper was handed at `export const x =
+ * wrapper(fn)`, when the wrapper hands back something that runs it. A
+ * wrapper with no body in the project is left out, since nothing then
+ * says whether the export it builds is a function at all.
+ */
+export function functionAProjectWrapperRuns(
+  value: Node,
+  kind: string,
+  resolution: ResolutionStore,
+): FunctionRoot | null {
+  const call = callWrittenAt(value, resolution);
+  if (
+    call === null ||
+    functionOrNull(resolution.resolveCalledFunction(call.getExpression())) ===
+      null
+  ) {
+    return null;
+  }
+  return wrappedExportOf(value, kind, resolution)?.handler ?? null;
+}
+
+/**
  * The layers a project factory puts around the function it was given.
  * It hands back a closure of its own, or what a wrapper the run cannot
  * read makes of one, `withAxiom(async (req) => ...)`.

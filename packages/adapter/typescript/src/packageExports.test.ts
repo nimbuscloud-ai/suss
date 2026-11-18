@@ -226,6 +226,38 @@ describe("discoverPackageExports", () => {
     expect(units.every((u) => u.kind === "library")).toBe(true);
   });
 
+  it("reads an export a project wrapper builds at the function the wrapper was handed", async () => {
+    root = writeFixturePackage([
+      {
+        relPath: "package.json",
+        content: JSON.stringify({
+          name: "@ex/lib",
+          exports: { ".": { types: "./dist/index.d.ts" } },
+        }),
+      },
+      {
+        relPath: "src/index.ts",
+        content: [
+          "declare function libraryWrap<T>(fn: T): T;",
+          "function withLogging(fn: (id: string) => Promise<number>) {",
+          "  return async (id: string) => {",
+          "    return fn(id);",
+          "  };",
+          "}",
+          "export const listOrders = withLogging(async (id: string) => {",
+          "  return id.length;",
+          "});",
+          "export const fromLibrary = libraryWrap(async () => 1);",
+          "export const sorted = [3, 1].sort((a, b) => a - b);",
+        ].join("\n"),
+      },
+    ]);
+
+    const { units } = runDiscovery(path.join(root, "package.json"));
+    expect(units.map((u) => u.name)).toEqual(["listOrders"]);
+    expect(units[0]?.func?.getStartLineNumber()).toBe(7);
+  });
+
   it("reads a package.json again once it changes", async () => {
     root = writeFixturePackage([
       {
