@@ -36,8 +36,10 @@ job runs later.
   `perform` it inherits from a base job. The queue comes from
   `sidekiq_options queue:` in the class's own body.
 - Enqueues: `Job.perform_async(...)`, `Job.perform_in(delay, ...)` and
-  `Job.perform_at(time, ...)`, also with `Job.set(...)` in front, and a
-  bare one in one of the job's own class methods.
+  `Job.perform_at(time, ...)`, also with `Job.set(...)` in front, a
+  bare one in one of the job's own class methods, and one on
+  `self.class` in one of its instance methods. In a method a subclass
+  inherits, `self.class` is read as the class the method is written in.
 
 ## What this leaves out
 

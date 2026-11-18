@@ -39,8 +39,11 @@ reach"` follows the send into the job and says the job runs later.
   inherits from a base job. The queue comes from `queue_as` in the
   class's own body, written as a symbol or a string.
 - Enqueues: `Job.perform_later(...)`, `Job.set(...).perform_later(...)`,
-  `Job.perform_now(...)`, and a bare `perform_later` in one of the job's
-  own class methods. `perform_now` runs the job in the caller's process
+  `Job.perform_now(...)`, a bare `perform_later` in one of the job's
+  own class methods, and `self.class.set(...).perform_later(...)` in one
+  of its instance methods, which enqueues the job again. In a method a
+  subclass inherits, `self.class` is read as the class the method is
+  written in. `perform_now` runs the job in the caller's process
   right away, and is recorded the same way so its work shows up for the
   caller.
 - Mailers: a class whose ancestry reaches `ActionMailer::Base` or
