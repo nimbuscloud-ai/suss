@@ -51,6 +51,7 @@
     "byte-check": "node scripts/byteCheck.mjs",
     "changelog": "node scripts/changelog.mjs",
     "check:ask-shapes": "node scripts/checkAskShapes.mjs",
+    "check:client-urls": "npm run -w @suss/differential client-urls --",
     "check:corpus": "node scripts/checkCorpusBaseline.mjs",
     "check:coverage": "node scripts/checkCoverageBaseline.mjs",
     "check:contract-sources": "node scripts/checkContractSources.mjs",

@@ -1,0 +1,7 @@
+# The Ruby clients whose URL building the client URL check compares with
+# suss's packs. Used only by check:client-urls, never shipped with any
+# package.
+source "https://rubygems.org"
+
+gem "faraday", "2.15.1"
+gem "net-http", "0.10.0"

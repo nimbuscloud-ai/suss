@@ -25,13 +25,15 @@
     "typecheck": "tsc --noEmit",
     "check:fuzz": "vitest run",
     "fuzz:long": "node longFuzz.mjs",
-    "fuzz:python": "node fuzzPython.mjs"
+    "fuzz:python": "node fuzzPython.mjs",
+    "client-urls": "tsx src/client-urls/clientUrls.ts"
   },
   "dependencies": {
     "@suss/adapter-python": "*",
     "@suss/adapter-typescript": "*",
     "@suss/behavioral-ir": "*",
     "@suss/checker": "*",
+    "@suss/cli": "*",
     "@suss/extractor": "*",
     "@suss/framework-apollo": "*",
     "@suss/framework-aws-lambda": "*",
@@ -49,6 +51,7 @@
   },
   "devDependencies": {
     "tsup": "*",
+    "tsx": "*",
     "typescript": "*",
     "vitest": "*"
   }
