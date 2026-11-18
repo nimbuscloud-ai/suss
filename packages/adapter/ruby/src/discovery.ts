@@ -1258,6 +1258,7 @@ interface FieldDeclaration {
   body: BodyReport;
   /** The hooks the library runs on the wired class before its resolver method, in order. */
   hooks: readonly HookDefinition[];
+  filedAt?: ReachSeed;
 }
 
 /** One branch for each path through the method behind a field, or none when no method was read. */
@@ -1292,6 +1293,11 @@ interface FieldReading {
   contract: FieldContract | null;
   body: BodyReport;
   hooks?: readonly HookDefinition[];
+  /**
+   * The resolver method of a wired class. The unit is filed there, so a
+   * change to the class's file is a change to the field.
+   */
+  filedAt?: ReachSeed;
 }
 
 export interface BodyReport {
@@ -1468,6 +1474,7 @@ async function readFieldCall(
     contract: read.contract,
     body: read.body,
     hooks: read.hooks ?? [],
+    ...(read.filedAt === undefined ? {} : { filedAt: read.filedAt }),
   };
 }
 
@@ -1704,6 +1711,7 @@ async function readWiredClass(
       ],
     },
     hooks: hooks.definitions,
+    ...(body.reachSeed === undefined ? {} : { filedAt: body.reachSeed }),
   };
 }
 
@@ -1973,14 +1981,23 @@ function buildFieldUnit(
         }
       : undefined;
 
+  const filedAt = decl.filedAt;
   return {
     identity: {
       name: `${typeName}.${decl.fieldName}`,
       nameKind: "label",
       kind: "resolver",
-      file: filePath,
-      range: rangeOf(decl.node),
-      span: spanOf(decl.node),
+      ...(filedAt === undefined
+        ? {
+            file: filePath,
+            range: rangeOf(decl.node),
+            span: spanOf(decl.node),
+          }
+        : {
+            file: displayPathIn(options, filedAt.file),
+            range: rangeOf(filedAt.node),
+            span: spanOf(filedAt.node),
+          }),
       exportName: null,
       exportPath: null,
     },

@@ -77,15 +77,16 @@ describe("read a graphql-ruby schema", () => {
     expect(inspect.stdout).toContain(
       "gql:Campaign.budget  (graphql-ruby resolver | line 4",
     );
+    // A field wired to a resolver class is filed at the class's resolve method.
     expect(inspect.stdout).toContain(
-      "gql:Query.campaign  (graphql-ruby resolver | line 2",
+      "gql:Query.campaign  (graphql-ruby resolver | line 6",
     );
   });
 
   it("names the file each field came from, relative to the directory it was pointed at", () => {
     const inspect = runSuss(["inspect", summariesFile]);
 
-    expect(inspect.stdout).toContain("app/graphql/types/query_type.rb");
+    expect(inspect.stdout).toContain("app/graphql/queries/campaign_query.rb");
     expect(inspect.stdout).toContain("app/graphql/types/campaign_type.rb");
     expect(inspect.stdout).not.toContain(project);
   });
