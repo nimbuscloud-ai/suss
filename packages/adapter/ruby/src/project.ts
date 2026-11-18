@@ -17,6 +17,7 @@ import path from "node:path";
 import {
   boundaryKey,
   disambiguateSummaryIds,
+  displayLabel,
   linkCallsToSummaries,
   placeArgTargets,
   placeCalleeParameters,
@@ -515,10 +516,12 @@ function moduleInitUnit(options: {
  */
 function discoveredAs(raw: RawCodeStructure): string {
   const reported = raw.identity.exportPath?.join(".") ?? raw.identity.name;
+  // A request with no path has no key, and its label still keeps a GET
+  // and a POST one method sends apart.
   const boundary =
     raw.boundaryBinding === null
       ? ""
-      : (boundaryKey(raw.boundaryBinding) ?? "");
+      : (boundaryKey(raw.boundaryBinding) ?? displayLabel(raw.boundaryBinding));
   return `${raw.identity.file}::${reported}::${raw.identity.range.start}::${boundary}`;
 }
 

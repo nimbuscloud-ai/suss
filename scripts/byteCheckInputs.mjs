@@ -770,6 +770,11 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/wrapper-request-method"),
     ...packs("fetch"),
   ]),
+  fixture("wrapper-request-method-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/wrapper-request-method-ruby"),
+    ...packs("net-http"),
+  ]),
 ];
 
 /**
