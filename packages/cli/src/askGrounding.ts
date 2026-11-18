@@ -22,6 +22,7 @@ import {
   namesBoundary,
   spellingTokens,
 } from "./boundaryReach.js";
+import { operationTouchesAt } from "./graphqlFieldCallers.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type {
@@ -127,6 +128,10 @@ export function groundedTouchesAt(
         ...(notes.length > 0 ? { grounding: notes } : {}),
       });
     }
+  }
+
+  for (const touch of operationTouchesAt(touches, summaries)) {
+    keep(touches, answered, asTouchKey(touch), touch);
   }
 
   return {

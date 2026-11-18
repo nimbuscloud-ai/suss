@@ -14,6 +14,7 @@ import { writtenFunctionOf } from "@suss/checker";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
+import { boundarySpelling } from "./boundaryReach.js";
 import { functionsSpelled, representativeUnit } from "./reachTarget.js";
 import { providesKeyOf } from "./target.js";
 
@@ -41,13 +42,14 @@ export function answerCalls(
 
   const { label } = spelled;
   const { items, callers, calls } = directCalls(facts, spelled.target, label);
+  const needs = alsoDeclaredLines(spelled.units, spelled.alsoDeclaredBy);
   if (items.length === 0) {
     return {
       shape: "calls",
       subject,
       headline: `Nothing in these summaries calls ${label}.`,
       items: [],
-      needs: [],
+      needs,
       caveats: unfollowedCaveat(summaries, label),
       found: true,
     };
@@ -58,13 +60,33 @@ export function answerCalls(
     subject,
     headline: `${callers.length} unit${callers.length === 1 ? "" : "s"} ${callVerb(calls, callers.length)} ${label}:`,
     items,
-    needs: [],
+    needs,
     caveats: [
       ...gapCaveats(callers),
       ...unfollowedCaveat(summaries, label, callers),
     ],
     found: true,
   };
+}
+
+/**
+ * What to say when the name also matched a spec's entry for the boundary
+ * the code serves: which entry, and the question that lists the clients
+ * across that boundary, since a client calls the boundary and not the
+ * function.
+ */
+function alsoDeclaredLines(
+  code: ReadonlyArray<BehavioralSummary>,
+  specs: ReadonlyArray<BehavioralSummary> | undefined,
+): string[] {
+  const binding = code[0]?.identity.boundaryBinding;
+  if (specs === undefined || binding === null || binding === undefined) {
+    return [];
+  }
+  const boundary = boundarySpelling(binding);
+  return [
+    `${specs.map(summaryIdentifier).join(", ")} declares ${boundary}, which this code serves. suss ask 'what calls ${boundary}' lists the clients across it.`,
+  ];
 }
 
 /** The calls into the target's functions, one item per caller and call, and the units making them. */

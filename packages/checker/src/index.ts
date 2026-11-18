@@ -27,7 +27,7 @@ import { checkMetric } from "./metric/metricPairing.js";
 import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
 import { pairSummaries, servingFunction } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
-import { isStory, isTestCode } from "./pairing/testCode.js";
+import { isStory, productionCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
 import {
   checkRuntimeConfig,
@@ -169,6 +169,7 @@ export {
   type UnpairableSummary,
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
+export { productionCode } from "./pairing/testCode.js";
 export { checkRenderProps } from "./render/renderProps.js";
 export {
   checkRuntimeConfig,
@@ -364,7 +365,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   } = pairSummaries(summaries);
   // REST pairing lists test code as unpairable, and every other pass
   // leaves it out the same way.
-  const production = summaries.filter((summary) => !isTestCode(summary));
+  const production = productionCode(summaries);
   const graphql = pairGraphqlOperations(production);
 
   const findings: Finding[] = [

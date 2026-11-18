@@ -33,3 +33,10 @@ export function isTestCode(summary: BehavioralSummary): boolean {
     isTestFile(summary.location.file)
   );
 }
+
+/** The summaries that describe production code, which every pass but REST pairing reads. */
+export function productionCode(
+  summaries: readonly BehavioralSummary[],
+): BehavioralSummary[] {
+  return summaries.filter((summary) => !isTestCode(summary));
+}
