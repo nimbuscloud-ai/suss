@@ -14,6 +14,7 @@
 
 import { dispatchByType, messageBusBinding } from "@suss/behavioral-ir";
 import { formatChannel } from "@suss/ir-core";
+import { SELF_AS_CLASS_NAME, selfFormOf } from "@suss/resolution";
 
 import {
   argumentAt,
@@ -37,7 +38,8 @@ import {
   reachesBase,
 } from "./baseClass.js";
 import { callsUnder } from "./claims.js";
-import { nodeId, readKey } from "./facts/values.js";
+import { resolveValues } from "./facts/resolve.js";
+import { nodeId, readKey, receiverKeyOf } from "./facts/values.js";
 import { argOf } from "./paths/effects.js";
 import { compoundName } from "./scope.js";
 import { stringValueOf } from "./values/evaluator.js";
@@ -397,9 +399,26 @@ function classOfReceiver(
   if (receiver.type === "constant" || receiver.type === "scope_resolution") {
     return classBehind(read.facts, read.file, receiver);
   }
-  return classSettledOn(
-    read.facts,
-    readKey(read.file, receiver, read.enclosing),
+  const key = readKey(read.file, receiver, read.enclosing);
+  if (isOwnClass(key, read)) {
+    return enclosingClassKey(call, read.file) ?? undefined;
+  }
+  return classSettledOn(read.facts, key);
+}
+
+/**
+ * Whether a value is the class the enclosing method runs on, as
+ * `self.class` is in an instance method. In a method a subclass
+ * inherits, that is read as the class the method is written in.
+ */
+function isOwnClass(key: string, read: EnqueueRead): boolean {
+  if (read.enclosing === null) {
+    return false;
+  }
+  resolveValues(read.facts, [key]);
+  return (
+    selfFormOf(read.facts, key, receiverKeyOf(read.file, read.enclosing)) ===
+    SELF_AS_CLASS_NAME
   );
 }
 

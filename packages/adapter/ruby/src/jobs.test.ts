@@ -186,6 +186,15 @@ describe("background jobs in Ruby", () => {
     ]);
   });
 
+  it("reads a job that enqueues itself again through self.class and set(...) as that job", async () => {
+    const summaries = await extract();
+    const job = named(summaries, "ReportExportJob#perform");
+    const worker = named(summaries, "CleanupWorker#perform");
+    expect(channelsOf(job)).toEqual(["ReportExportJob"]);
+    expect(channelsOf(worker)).toEqual(["CleanupWorker"]);
+    expect([...(job?.gaps ?? []), ...(worker?.gaps ?? [])]).toEqual([]);
+  });
+
   it("settles no job where the job has no perform, the mailer is unsettled, or the call has no receiver", async () => {
     const summaries = await extract();
     const destroy = summaries.find(
