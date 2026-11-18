@@ -23,9 +23,22 @@ import {
 } from "./projectSource.js";
 
 const MARKER = ".openapi-generator";
+/** The title is the first line of a file's generated comment, well inside this. */
 const HEADER_BYTES = 2048;
-/** How many of a client's files are tried before it counts as unmatched. */
+/** How many of a client's code files are read for the title. */
 const FILES_TRIED = 20;
+/** How deep the walk goes in a client that has no `FILES` list. */
+const WALK_DEPTH = 4;
+/** The languages suss reads, which are the ones a client here is worth matching for. */
+const CODE_EXTENSIONS = new Set([
+  ".rb",
+  ".py",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".mjs",
+  ".cjs",
+]);
 /** What Bundler installs under `vendor`, as opposed to a gem checked in there. */
 const VENDOR_INSTALLS = new Set(["bundle", "cache"]);
 
@@ -90,32 +103,79 @@ function walksInto(name: string, parent: string): boolean {
   return !isSkippedDirectory(name) && !TEST_DIRECTORIES.has(name);
 }
 
+/**
+ * The lines at the top of the client's code files. The marker already
+ * says the folder is generated, so nothing here looks for the
+ * generator's own line, which comes after the document's description
+ * and can be kilobytes down.
+ */
 function headerOf(folder: string): Set<string> {
-  for (const file of listedFiles(folder).slice(0, FILES_TRIED)) {
-    const head = headOf(path.join(folder, file), HEADER_BYTES);
-    if (/openapi.generator/i.test(head)) {
-      return new Set(
-        head
-          .split("\n")
-          .map(withoutCommentMarks)
-          .filter((line) => line !== ""),
-      );
+  const lines = new Set<string>();
+  for (const file of codeFilesOf(folder).slice(0, FILES_TRIED)) {
+    for (const line of headOf(path.join(folder, file), HEADER_BYTES).split(
+      "\n",
+    )) {
+      const text = withoutCommentMarks(line);
+      if (text !== "") {
+        lines.add(text);
+      }
     }
   }
-  return new Set();
+  return lines;
 }
 
-function listedFiles(folder: string): string[] {
-  let listed: string;
+/**
+ * The code files the generator wrote, in the order `FILES` lists them,
+ * or found by a walk of the folder when it has no `FILES`. The list is
+ * alphabetical, so a Ruby gem's dot files, README and dozens of
+ * `docs/*.md` pages come before `lib/`, and the README has no line that
+ * is the title alone.
+ */
+function codeFilesOf(folder: string): string[] {
+  let listed: string[];
   try {
-    listed = fs.readFileSync(path.join(folder, MARKER, "FILES"), "utf8");
+    listed = fs
+      .readFileSync(path.join(folder, MARKER, "FILES"), "utf8")
+      .split("\n")
+      .map((line) => line.trim());
   } catch {
-    return [];
+    listed = [...filesBelow(folder, "", 0)];
   }
-  return listed
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("."));
+  return listed.filter(isClientCode);
+}
+
+function* filesBelow(
+  folder: string,
+  relative: string,
+  depth: number,
+): Generator<string> {
+  if (depth > WALK_DEPTH) {
+    return;
+  }
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(path.join(folder, relative), {
+      withFileTypes: true,
+    });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const at = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) {
+      yield* filesBelow(folder, at, depth + 1);
+      continue;
+    }
+    yield at;
+  }
+}
+
+function isClientCode(file: string): boolean {
+  return (
+    CODE_EXTENSIONS.has(path.extname(file)) &&
+    file.split("/").every((segment) => !segment.startsWith("."))
+  );
 }
 
 /** `#Ledger Service`, ` * Ledger Service` and `    Ledger Service` all give the title. */
