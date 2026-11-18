@@ -27,6 +27,7 @@ import type { Gap } from "./index.js";
  * `behindUnreadAncestor`: an ancestor the run did not read comes before the project's own definition.
  * `selfCallInMixin`: a call on `self` in a mixin that does not define the method, so the class that mixes it in decides what runs.
  * `unsettledJob`: a call that enqueues a background job, where the run could not settle which job.
+ * `handedBlock`: a call in a block a file hands to a method as it loads, where that method decides whether the block runs.
  */
 export type UnfollowedReason =
   | "noBody"
@@ -41,7 +42,8 @@ export type UnfollowedReason =
   | "definedAtLoadTime"
   | "behindUnreadAncestor"
   | "selfCallInMixin"
-  | "unsettledJob";
+  | "unsettledJob"
+  | "handedBlock";
 
 /** One call the walk met and could not follow. */
 export interface UnfollowedCall {
@@ -76,6 +78,7 @@ const RECORDED: Record<UnfollowedReason, boolean> = {
   behindUnreadAncestor: true,
   selfCallInMixin: true,
   unsettledJob: true,
+  handedBlock: true,
 };
 
 export function worthRecording(reason: UnfollowedReason): boolean {
@@ -139,6 +142,8 @@ const STOP_SENTENCE: Record<
     `The call to ${callee} is made on self in a mixin that does not define it, so it runs whatever the class that mixes it in provides, which is missing from this summary`,
   unsettledJob: ({ callee }) =>
     `The call to ${callee} enqueues a background job, and this run could not settle which job, so what the job does is missing from this summary`,
+  handedBlock: ({ callee }) =>
+    `The call to ${callee} is in a block the file hands to another method as it loads, and that method decides whether the block runs, so whatever runs there is missing from this summary`,
 };
 
 export function unfollowedCallGap(stop: UnfollowedCall): Gap {

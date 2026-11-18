@@ -115,17 +115,18 @@ const DESCENDS_EVERYWHERE: ReadonlySet<string> = new Set<string>();
  * Every name a method binds as a local variable, its own parameters
  * included. The walk does not descend into the node types in `stops`, so
  * a name bound inside a class or a block does not hide a call written
- * outside it.
+ * outside it. A node `runsNow` accepts is read anyway.
  */
 export function localNamesIn(
   definitionNode: RbNode,
   stops: ReadonlySet<string> = DESCENDS_EVERYWHERE,
+  runsNow: (node: RbNode) => boolean = () => false,
 ): Set<string> {
   const names = new Set<string>();
   const visit = (node: RbNode): void => {
     BINDS_A_NAME[node.type]?.(node, names);
     for (const child of bodyStatements(node)) {
-      if (!stops.has(child.type)) {
+      if (!stops.has(child.type) || runsNow(child)) {
         visit(child);
       }
     }
