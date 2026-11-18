@@ -26,7 +26,13 @@ import {
 } from "@suss/resolution";
 
 import { methodInAncestry } from "../ancestry.js";
-import { definesClassMethod, field, singletonMethodsByName } from "../ast.js";
+import {
+  children,
+  definesClassMethod,
+  field,
+  singletonMethodsByName,
+  symbolValue,
+} from "../ast.js";
 import { classBehind } from "../baseClass.js";
 import {
   CONSTRUCTOR,
@@ -34,6 +40,7 @@ import {
   INVOKE_METHOD,
   OBJECT_METHODS,
   SENDING_METHODS,
+  TAP_METHOD,
 } from "../facts/languageWords.js";
 import { RUBY_PROGRAM, resolveValues } from "../facts/resolve.js";
 import {
@@ -432,9 +439,30 @@ export function readsAsACall(
   );
 }
 
+/** The method a call runs on its receiver. For `tap(&:read!)` that is `read!`. */
+function methodRunBy(call: RbNode): string | undefined {
+  const written = calleeMethodName(call);
+  return written === TAP_METHOD ? (tappedMethod(call) ?? written) : written;
+}
+
+/** The method `tap(&:read!)` calls on its receiver, when the call passes `tap` nothing else. */
+function tappedMethod(call: RbNode): string | null {
+  const args = children(field(call, "arguments"));
+  const [only] = args;
+  if (
+    field(call, "block") !== null ||
+    args.length !== 1 ||
+    only?.type !== "block_argument"
+  ) {
+    return null;
+  }
+  const [symbol] = children(only);
+  return symbol === undefined ? null : symbolValue(symbol);
+}
+
 /** How this call's callee is resolved: through its receiver's key, or as a name Ruby looks up on `self`. */
 function spellingFor(call: RbNode, site: CallSite): CalleeSpelling {
-  const methodName = calleeMethodName(call);
+  const methodName = methodRunBy(call);
   if (methodName === undefined) {
     return { kind: "stopped", reason: "noDeclaration" };
   }

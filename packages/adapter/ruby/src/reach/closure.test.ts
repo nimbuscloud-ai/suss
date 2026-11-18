@@ -230,6 +230,63 @@ describe("the methods a graphql-ruby field's resolver reaches", () => {
     ]);
   });
 
+  it("follows tap with a symbol block into the method the symbol names, on the receiver", async () => {
+    writeQueryType("report", ["ReportReader.call(current_user)"]);
+    write("app/services/report_reader.rb", [
+      "class ReportReader",
+      "  def self.call(user)",
+      "    new(user).tap(&:read!)",
+      "  end",
+      "",
+      "  def initialize(user)",
+      "    @user = user",
+      "  end",
+      "",
+      "  def read!",
+      "    @user.reports",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const call = unitNamed(summaries, "call");
+    const read = unitNamed(summaries, "read!");
+    expect(read.identity.exportPath).toEqual(["ReportReader", "read!"]);
+    expect(calls(call)).toContainEqual([
+      "new(user).tap",
+      summaryIdentifier(read),
+    ]);
+  });
+
+  it("reads what tap hands back as its receiver", async () => {
+    writeQueryType("report", [
+      "reader = ReportReader.new(current_user).tap(&:warm!)",
+      "reader.finish!",
+    ]);
+    write("app/services/report_reader.rb", [
+      "class ReportReader",
+      "  def initialize(user)",
+      "    @user = user",
+      "  end",
+      "",
+      "  def warm!",
+      "    @user.reports",
+      "  end",
+      "",
+      "  def finish!",
+      "    @user.reports",
+      "  end",
+      "end",
+    ]);
+
+    const summaries = await extract();
+    const finish = unitNamed(summaries, "finish!");
+    expect(calls(unitNamed(summaries, "Query.report"))).toContainEqual([
+      "reader.finish!",
+      summaryIdentifier(finish),
+    ]);
+  });
+
   it("follows a wired field's resolver the same way a plain field's is followed", async () => {
     write("app/graphql/types/query_type.rb", [
       "class Types::QueryType < Types::BaseObject",
