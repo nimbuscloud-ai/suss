@@ -1,28 +1,28 @@
 {
   "total": {
     "lines": {
-      "total": 4187,
-      "covered": 3998,
+      "total": 4193,
+      "covered": 4004,
       "skipped": 0,
-      "pct": 95.48
+      "pct": 95.49
     },
     "statements": {
-      "total": 4285,
-      "covered": 4093,
+      "total": 4293,
+      "covered": 4101,
       "skipped": 0,
-      "pct": 95.51
+      "pct": 95.52
     },
     "functions": {
-      "total": 952,
-      "covered": 911,
+      "total": 956,
+      "covered": 915,
       "skipped": 0,
-      "pct": 95.69
+      "pct": 95.71
     },
     "branches": {
-      "total": 2932,
-      "covered": 2593,
+      "total": 2937,
+      "covered": 2597,
       "skipped": 0,
-      "pct": 88.43
+      "pct": 88.42
     },
     "branchesTrue": {
       "total": 0,
@@ -59,16 +59,16 @@
   },
   "src/index.ts": {
     "lines": {
-      "total": 75,
-      "covered": 69,
+      "total": 76,
+      "covered": 70,
       "skipped": 0,
-      "pct": 92
+      "pct": 92.1
     },
     "functions": {
-      "total": 24,
-      "covered": 22,
+      "total": 23,
+      "covered": 21,
       "skipped": 0,
-      "pct": 91.66
+      "pct": 91.3
     },
     "statements": {
       "total": 78,
@@ -345,28 +345,28 @@
   },
   "src/contract/contractCompleteness.ts": {
     "lines": {
-      "total": 42,
-      "covered": 41,
+      "total": 46,
+      "covered": 45,
       "skipped": 0,
-      "pct": 97.61
+      "pct": 97.82
     },
     "functions": {
-      "total": 5,
-      "covered": 5,
+      "total": 8,
+      "covered": 8,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 43,
-      "covered": 42,
+      "total": 49,
+      "covered": 48,
       "skipped": 0,
-      "pct": 97.67
+      "pct": 97.95
     },
     "branches": {
-      "total": 34,
-      "covered": 28,
+      "total": 39,
+      "covered": 32,
       "skipped": 0,
-      "pct": 82.35
+      "pct": 82.05
     }
   },
   "src/contract/contractConsistency.ts": {
@@ -1099,20 +1099,20 @@
   },
   "src/pairing/testCode.ts": {
     "lines": {
-      "total": 2,
-      "covered": 2,
+      "total": 3,
+      "covered": 3,
       "skipped": 0,
       "pct": 100
     },
     "functions": {
-      "total": 2,
-      "covered": 2,
+      "total": 4,
+      "covered": 4,
       "skipped": 0,
       "pct": 100
     },
     "statements": {
-      "total": 2,
-      "covered": 2,
+      "total": 4,
+      "covered": 4,
       "skipped": 0,
       "pct": 100
     },
