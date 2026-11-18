@@ -45,6 +45,7 @@ const OUTCOME_OF_RUN_FINDING: Record<RunFindingKind, CheckOutcome> = {
   packNeedsConfig: "findings",
   packPathMissing: "findings",
   readFailed: "findings",
+  contractUnpaired: "findings",
 };
 
 /**

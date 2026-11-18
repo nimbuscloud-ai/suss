@@ -13,7 +13,10 @@ import { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 import { checkConsumerContract } from "./consumer/consumerContract.js";
 import { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 import { checkContractAgreement } from "./contract/contractAgreement.js";
-import { checkContractCompleteness } from "./contract/contractCompleteness.js";
+import {
+  checkContractCompleteness,
+  type UncheckedContract,
+} from "./contract/contractCompleteness.js";
 import { checkContractConsistency } from "./contract/contractConsistency.js";
 import { checkContractImplementation } from "./contract/contractImplementation.js";
 import { isContractDocument } from "./contract/declaredContract.js";
@@ -202,6 +205,7 @@ export {
   normalizedDescription,
 } from "./since/findingIdentity.js";
 
+export type { UncheckedContract } from "./contract/contractCompleteness.js";
 export type { ComparedPair } from "./pairing/comparedPair.js";
 
 import { summaryWithDefinitionsInlined } from "./spelledOut.js";
@@ -296,9 +300,11 @@ export interface CheckAllResult {
    * What a pass could have reported and did not judge. An environment
    * read in a file a runtime loads that no call from its handler reaches
    * is one: it may run there or not, so it is neither a finding nor clear.
+   * A contract document that nothing serves or calls is another.
    */
   unchecked: {
     runtimeConfig: UncheckedRead[];
+    contracts: UncheckedContract[];
   };
 }
 
@@ -421,7 +427,10 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   // These compare each boundary's declared contracts against each other
   // and never look at consumers, so they run outside pairing.
   findings.push(...checkContractAgreement(production));
-  findings.push(...checkContractCompleteness(production));
+  const uncheckedContracts: UncheckedContract[] = [];
+  findings.push(
+    ...checkContractCompleteness(production, pairInfo, uncheckedContracts),
+  );
   findings.push(...checkContractImplementation(production, pairInfo));
   findings.push(...checkGraphqlContractAgreement(production));
   // Stories are left out of pairing, and comparing them with the
@@ -497,7 +506,10 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
           ...(u.detail === undefined ? {} : { detail: u.detail }),
         })),
     },
-    unchecked: { runtimeConfig: uncheckedReads },
+    unchecked: {
+      runtimeConfig: uncheckedReads,
+      contracts: uncheckedContracts,
+    },
   };
 }
 

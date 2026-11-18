@@ -73,7 +73,7 @@ export function readSpecFiles(rootPath: string): SpecFiles {
 }
 
 /** A `.json` file is parsed as JSON, and any other file as YAML, which also accepts JSON. */
-function parsedFile(file: string): unknown {
+export function parsedFile(file: string): unknown {
   const raw = fs.readFileSync(file, "utf-8");
   return path.extname(file).toLowerCase() === ".json"
     ? JSON.parse(raw)

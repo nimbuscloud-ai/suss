@@ -1,0 +1,19 @@
+PATH
+  remote: vendor/ledger_client
+  specs:
+    ledger_client (1.0.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    rails (7.1.3)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  ledger_client!
+  rails (~> 7.1)
+
+BUNDLED WITH
+   2.5.9
