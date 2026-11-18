@@ -265,7 +265,7 @@ interface WrittenAnswer {
   written: Node | null;
   /** The class the value refers to, which `written` leaves out. */
   writtenClass: Node | null;
-  walked: string[];
+  walked: readonly string[];
   extractedAt: number;
 }
 
@@ -340,14 +340,14 @@ export class ResolutionStore {
   private readonly seededValues = new Set<string>();
   private readonly importedNames = new Map<
     string,
-    { names: string[]; walked: string[] }
+    { names: string[]; walked: readonly string[] }
   >();
   private readonly writtenValues = new Map<string, WrittenAnswer>();
   private readonly importOrigins = new Map<
     string,
     {
       origins: Array<{ module: string; path: string[] }>;
-      walked: string[];
+      walked: readonly string[];
       extractedAt: number;
     }
   >();
@@ -361,7 +361,7 @@ export class ResolutionStore {
        * dropping the registration without a word.
        */
       candidates: number;
-      walked: string[];
+      walked: readonly string[];
       extractedAt: number;
     }
   >();
@@ -381,10 +381,14 @@ export class ResolutionStore {
   /** See `remembered`. */
   private readonly answers = new Map<
     string,
-    { answer: unknown; walked: string[]; check: ReadsNoted | number }
+    { answer: unknown; walked: readonly string[]; check: ReadsNoted | number }
   >();
-  /** Files the most recent query read, for the memo to keep. */
-  private lastQueryWalked: string[] = [];
+  /**
+   * Files the most recent query read. Every memo entry that query settles
+   * keeps this same list, and the next query starts a new one rather than
+   * adding to it, so the list never changes once its query has finished.
+   */
+  private lastQueryWalked: readonly string[] = [];
   /** See `environmentSiteFiles`; null until the first env question. */
   private envSiteFiles: readonly SourceFile[] | null = null;
   /** See `environmentAnswers`; null until the first env question. */
@@ -591,7 +595,7 @@ export class ResolutionStore {
         : noteReads(this.db, DERIVED_AGAIN, ask);
     this.answers.set(key, {
       answer: value,
-      walked: [...this.lastQueryWalked],
+      walked: this.lastQueryWalked,
       check: reads ?? this.sourceFactCount(),
     });
     return value;
@@ -776,7 +780,7 @@ export class ResolutionStore {
         this.writtenValues.set(key, {
           written: this.lookupWritten(target),
           writtenClass: this.lookupWrittenClass(target),
-          walked: [...this.lastQueryWalked],
+          walked: this.lastQueryWalked,
           extractedAt: this.fullyExtracted.size,
         });
       }
@@ -1760,7 +1764,7 @@ export class ResolutionStore {
     const settled = this.askAbout(target, "wantedSubject", () =>
       this.lookupSubjectConstruction(target, importModule, importName),
     );
-    const walked = [...this.lastQueryWalked];
+    let walked = this.lastQueryWalked;
 
     // The rule that unwraps a call's return fires only for a call asked
     // about directly, so a candidate that is itself a project function's
@@ -1776,7 +1780,7 @@ export class ResolutionStore {
       resolved = this.askAbout(call, "wantedSubject", () =>
         this.lookupSubjectConstruction(call, importModule, importName),
       );
-      walked.push(...this.lastQueryWalked);
+      walked = [...walked, ...this.lastQueryWalked];
     }
 
     this.subjectConstructions.set(key, {
@@ -2030,7 +2034,7 @@ export class ResolutionStore {
     );
     this.importedNames.set(declaration, {
       names: found,
-      walked: [...this.lastQueryWalked],
+      walked: this.lastQueryWalked,
     });
     return found;
   }
@@ -2096,7 +2100,7 @@ export class ResolutionStore {
           results.set(one.value, origins);
           this.importOrigins.set(one.key, {
             origins,
-            walked: [...this.lastQueryWalked],
+            walked: this.lastQueryWalked,
             extractedAt: this.fullyExtracted.size,
           });
         }
@@ -2253,7 +2257,8 @@ export class ResolutionStore {
     const read = new Set<string>();
     const considered = new Set<string>();
     const callersRead = new Set<string>();
-    this.lastQueryWalked = [];
+    const walked: string[] = [];
+    this.lastQueryWalked = walked;
     let pending: SourceFile[] = [...seeds];
     // Stating a caller's calls can leave every file it needs read already,
     // and the rules still have to run over what was stated.
@@ -2266,7 +2271,7 @@ export class ResolutionStore {
         }
         read.add(filePath);
         readThisRound.push(sourceFile);
-        this.lastQueryWalked.push(filePath);
+        walked.push(filePath);
         // Even an empty answer read these files: their content decided
         // there was nothing to find, so a change to any of them can
         // change the answer.
