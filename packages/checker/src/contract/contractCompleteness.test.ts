@@ -1,16 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { restBinding } from "@suss/behavioral-ir";
+import { restBinding, summaryIdentifier } from "@suss/behavioral-ir";
 
 import { checkContractCompleteness } from "./contractCompleteness.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { UncheckedContract } from "./contractCompleteness.js";
 
-function stub(method: string, path: string): BehavioralSummary {
+function stub(
+  method: string,
+  path: string,
+  document = "openapi:spec.json",
+): BehavioralSummary {
   return {
     kind: "handler",
     location: {
-      file: "spec.json",
+      file: document,
       range: { start: 0, end: 0 },
       exportName: null,
     },
@@ -167,5 +172,63 @@ describe("checkContractCompleteness", () => {
       implemented("GET", "/healthz"),
     ]);
     expect(findings).toEqual([]);
+  });
+
+  it("judges each document on its own, so one the code serves does not make another one its own", () => {
+    const unchecked: UncheckedContract[] = [];
+    const findings = checkContractCompleteness(
+      [
+        stub("GET", "/api/widgets", "openapi:openapi/internal.json"),
+        stub(
+          "POST",
+          "/api/widgets/{id}/archive",
+          "openapi:openapi/internal.json",
+        ),
+        stub("GET", "/accounts", "openapi:openapi/ledger.json"),
+        stub("POST", "/accounts/{id}/entries", "openapi:openapi/ledger.json"),
+        implemented("GET", "/api/widgets"),
+      ],
+      [],
+      unchecked,
+    );
+    expect(findings.map((finding) => finding.description)).toEqual([
+      "The openapi contract declares POST /api/widgets/{id}/archive and no extracted provider implements it.",
+    ]);
+    expect(unchecked).toEqual([
+      {
+        document: "openapi:openapi/ledger.json",
+        source: "openapi",
+        operations: 2,
+        reason: "notServedOrCalled",
+      },
+    ]);
+  });
+
+  it("lists a document nothing serves or calls as unchecked", () => {
+    const unchecked: UncheckedContract[] = [];
+    checkContractCompleteness(
+      [stub("POST", "/v1/provision"), implemented("GET", "/other/route")],
+      [],
+      unchecked,
+    );
+    expect(unchecked.map((one) => one.document)).toEqual(["openapi:spec.json"]);
+  });
+
+  it("leaves out a document nothing serves when a consumer calls one of its operations", () => {
+    const called = stub("GET", "/accounts");
+    const unchecked: UncheckedContract[] = [];
+    const findings = checkContractCompleteness(
+      [called, stub("POST", "/accounts/{id}/entries")],
+      [
+        {
+          key: "GET /accounts",
+          provider: summaryIdentifier(called),
+          consumer: "src/ledger.ts::listAccounts",
+        },
+      ],
+      unchecked,
+    );
+    expect(findings).toEqual([]);
+    expect(unchecked).toEqual([]);
   });
 });

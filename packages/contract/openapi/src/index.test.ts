@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 
 import { readHttpMetadata, safeParseSummaries } from "@suss/behavioral-ir";
 
-import { openApiFileToSummaries, openApiToSummaries } from "./index.js";
+import {
+  openApiDocumentTitle,
+  openApiFileToSummaries,
+  openApiToSummaries,
+} from "./index.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { OpenApiSpec } from "./index.js";
@@ -1548,5 +1552,45 @@ describe("where an operation is declared", () => {
     expect(summary?.location.file).toBe(
       "openapi:https://example.com/openapi.yaml",
     );
+  });
+});
+
+describe("openApiDocumentTitle", () => {
+  function titleOf(contents: string, name = "spec.json"): string | null {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suss-openapi-"));
+    const file = path.join(tmp, name);
+    fs.writeFileSync(file, contents);
+    try {
+      return openApiDocumentTitle(file);
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  }
+
+  it("gives the title the document's info states, trimmed", () => {
+    const spec = {
+      ...minimalSpec,
+      info: { title: "  Ledger  ", version: "1" },
+    };
+    expect(titleOf(JSON.stringify(spec))).toBe("Ledger");
+  });
+
+  it("reads a YAML document too", () => {
+    expect(
+      titleOf(
+        "openapi: 3.0.0\ninfo:\n  title: Ledger\n  version: '1'\npaths: {}\n",
+        "spec.yaml",
+      ),
+    ).toBe("Ledger");
+  });
+
+  it("gives null for a blank title, a missing info, or a file that does not parse", () => {
+    expect(
+      titleOf(
+        JSON.stringify({ ...minimalSpec, info: { title: " ", version: "1" } }),
+      ),
+    ).toBeNull();
+    expect(titleOf(JSON.stringify({ openapi: "3.0.0", paths: {} }))).toBeNull();
+    expect(titleOf("{ not json")).toBeNull();
   });
 });

@@ -1,0 +1,103 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Ledger Service",
+    "description": "The app records entries with the ledger service through this API.",
+    "version": "2.4.0"
+  },
+  "paths": {
+    "/accounts": {
+      "get": {
+        "operationId": "listAccounts",
+        "tags": ["Accounts"],
+        "responses": {
+          "200": {
+            "description": "Every account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Account" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/{account_id}": {
+      "get": {
+        "operationId": "getAccount",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The account.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Account" }
+              }
+            }
+          },
+          "404": { "description": "No account has that id." }
+        }
+      }
+    },
+    "/accounts/{account_id}/entries": {
+      "post": {
+        "operationId": "createEntry",
+        "tags": ["Accounts"],
+        "parameters": [
+          { "name": "account_id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEntryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The entry was recorded.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Entry" }
+              }
+            }
+          },
+          "422": { "description": "The amount is not valid." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "required": ["id", "balance_cents"],
+        "properties": {
+          "id": { "type": "string" },
+          "balance_cents": { "type": "integer" }
+        }
+      },
+      "CreateEntryRequest": {
+        "type": "object",
+        "required": ["amount_cents"],
+        "properties": {
+          "amount_cents": { "type": "integer" }
+        }
+      },
+      "Entry": {
+        "type": "object",
+        "required": ["id", "amount_cents"],
+        "properties": {
+          "id": { "type": "string" },
+          "amount_cents": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

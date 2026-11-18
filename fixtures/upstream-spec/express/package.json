@@ -1,0 +1,7 @@
+{
+  "name": "upstream-spec-express",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.0"
+  }
+}

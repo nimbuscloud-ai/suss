@@ -1,0 +1,6 @@
+.ruby: &ruby
+  variables:
+    LANG: "C.UTF-8"
+  script:
+    - bundle install
+    - bundle exec rspec

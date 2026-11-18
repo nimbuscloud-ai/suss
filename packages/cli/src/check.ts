@@ -71,6 +71,7 @@ import type {
   ComparedPair,
   OutcomeOrigin,
   SuppressionRule,
+  UncheckedContract,
   UncheckedRead,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
@@ -380,6 +381,34 @@ function readFailedFindings(failures: readonly ReadFailure[]): RunFinding[] {
 }
 
 /**
+ * A `contractUnpaired` note for each contract document whose operations
+ * nothing in the run serves or calls. It is info, because suss cannot
+ * tell a service this code calls from a server it could not read.
+ */
+function unpairedContractFindings(
+  contracts: readonly UncheckedContract[],
+): RunFinding[] {
+  return contracts.map((contract) => {
+    const prefix = `${contract.source}:`;
+    const file = contract.document.startsWith(prefix)
+      ? contract.document.slice(prefix.length)
+      : contract.document;
+    const operations =
+      contract.operations === 1
+        ? "1 operation"
+        : `${contract.operations} operations`;
+    return {
+      kind: "contractUnpaired",
+      severity: "info",
+      description: `${file} declares ${operations}, and nothing in the code serves or calls any of them, so suss compared nothing with it. It is the contract either of a service this code calls in a way suss does not read, or of a server suss could not read, so none of its operations is reported as unimplemented.`,
+      remedy:
+        "If this code calls that service, for example through a client generated from the document, there is nothing to do. suss does not read calls made that way yet. " +
+        "If this code serves the document, run `suss extract --explain` to see how far each pack got in reading the handlers.",
+    };
+  });
+}
+
+/**
  * A `packNeedsConfig` finding for each pack an extract left out. It is a
  * warning, because the run that follows fails on its own account when the
  * missing pack left nothing to compare.
@@ -670,6 +699,7 @@ export function checkDir(options: CheckDirOptions): CheckResult & {
     ...packPathFindings(packPathsMissing),
     ...unreadableFindings(options.failOnUnreadable === true, skipped),
     ...unpairedFindings(options.failOnUnpaired, result),
+    ...unpairedContractFindings(result.unchecked.contracts),
   ];
 
   const rest = {

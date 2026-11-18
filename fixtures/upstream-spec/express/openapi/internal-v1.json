@@ -1,0 +1,73 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Widgets Internal API",
+    "description": "The API this app serves to its own frontend.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/widgets": {
+      "get": {
+        "operationId": "listWidgets",
+        "tags": ["Widgets"],
+        "responses": {
+          "200": {
+            "description": "Every widget.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Widget" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/widgets/{id}": {
+      "get": {
+        "operationId": "getWidget",
+        "tags": ["Widgets"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The widget.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Widget" }
+              }
+            }
+          },
+          "404": { "description": "No widget has that id." }
+        }
+      }
+    },
+    "/api/v1/widgets/{id}/archive": {
+      "post": {
+        "operationId": "archiveWidget",
+        "tags": ["Widgets"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Archived." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Widget": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      }
+    }
+  }
+}

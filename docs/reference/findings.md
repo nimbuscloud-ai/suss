@@ -343,11 +343,11 @@ A contract source declares an operation and no extracted provider implements it.
   boundary: openapi (http) POST /orders/{id}/refunds
 ```
 
-The handler may be in a repository suss did not read, so no outcome can be stated.
+Each document is judged on its own. The finding fires only for a document the code serves at least one operation of, because a served operation is the evidence that the document describes this code. When nothing in the code serves any operation of a document, its operations are not reported. The document may be the contract of a service this code calls, or of a server suss could not read, and when nothing in the code calls it either, the run gets one [`contractUnpaired`](#contractunpaired) note about it.
 
 An operation meets a route of the same shape however each side spells the parameter, so `/orders/{order_id}` is served by `/orders/:pk`. The exception is a route that describes a different resource: when the parameter names disagree and the code serves the document's other methods for that path only at a longer path below the route, as `/relations/:collection/:field` does for a document's `/relations/{id}`, the operation is reported.
 
-**Legitimate when:** the handler is in another repository or another service. Suppress.
+**Legitimate when:** the document describes this code and also operations another service serves, such as one spec for two services behind a gateway, or the handler is registered through a framework or a route table suss does not read. Suppress the operations the other service serves.
 
 **A bug when:** the operation was removed from the code and the contract still declares it. Take it out of the contract.
 
@@ -984,6 +984,24 @@ It is a warning, so a run that paired the other reads passes with this beside it
 **Legitimate when:** the read is one you do not need, such as a docs site in the workspace. Leave it out of `suss.json`.
 
 **A bug when:** the read exits with an error. Run the command on its own to see the whole error. A read that runs long or out of heap on a project of ordinary size is worth reporting too.
+
+### `contractUnpaired`
+
+**Severity:** info. Emitted by `suss check --dir`, by a bare `suss check`, and by the MCP `suss_check` tool, once for each contract document that nothing in the code serves or calls.
+
+suss read the document and compared nothing with it. No handler suss read serves any of its operations, and no consumer calls one. It is the contract either of a service this code calls in a way suss does not read, or of a server suss could not read. Its operations are not reported as [`contractOperationUnimplemented`](#contractoperationunimplemented), and `unchecked.contracts` in the JSON lists the document.
+
+```
+info: contractUnpaired
+  openapi/ledger.json declares 3 operations, and nothing in the code serves or calls any of them, so suss compared nothing with it. It is the contract either of a service this code calls in a way suss does not read, or of a server suss could not read, so none of its operations is reported as unimplemented.
+  If this code calls that service, for example through a client generated from the document, there is nothing to do. suss does not read calls made that way yet. If this code serves the document, run `suss extract --explain` to see how far each pack got in reading the handlers.
+```
+
+A document whose operations some consumer in the code calls gets no note, because the check compared those calls with it.
+
+**Legitimate when:** the code calls the service through a client generated from the document, such as one OpenAPI Generator wrote. suss does not read those calls yet.
+
+**A bug when:** the code serves the document. The pack read none of its handlers, or reads them at different paths than the document gives, such as without a prefix the document's server URL adds. `suss extract --explain` shows how far each pack got.
 
 ### `noPackMatched`
 

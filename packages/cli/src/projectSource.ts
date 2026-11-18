@@ -86,6 +86,23 @@ const isSourceDirectoryName = (name: string): boolean =>
  * contract files goes as deep, so a spec next to the code is found.
  */
 export const PROJECT_WALK_DEPTH = 10;
+
+/** The first `bytes` of a file as text, or "" when it cannot be read. */
+export function headOf(file: string, bytes: number): string {
+  let handle: number | undefined;
+  try {
+    handle = fs.openSync(file, "r");
+    const buffer = Buffer.alloc(bytes);
+    const read = fs.readSync(handle, buffer, 0, bytes, 0);
+    return buffer.subarray(0, read).toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (handle !== undefined) {
+      fs.closeSync(handle);
+    }
+  }
+}
 /** How many files the search for a call looks at before it gives up. */
 const MATCH_FILES = 5000;
 /** A file this large is a bundle or generated code, not something the project wrote. */

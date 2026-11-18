@@ -1,6 +1,6 @@
 {
   "name": "@suss/contract-openapi",
-  "exports": 2,
+  "exports": 3,
   "internal": 47,
   "consumers": 13,
   "unfollowedCalls": 0
