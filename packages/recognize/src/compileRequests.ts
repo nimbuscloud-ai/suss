@@ -546,13 +546,20 @@ export function joinedPath(
   return JOINED[joins](base, path);
 }
 
-/** `path` after `base` with one slash between. A base of `/` says nothing about where the request goes. */
+/**
+ * `path` after `base` with one slash between, under a base of `/` too.
+ * A path that starts with a hole under a base with no path keeps the
+ * hole in front, since pairing reads it as the base URL.
+ */
 function appendedPath(base: string, path: string): string {
   const prefix = base.replace(/\/+$/, "");
-  if (prefix === "") {
+  if (path.startsWith("/")) {
+    return `${prefix}${path}`;
+  }
+  if (prefix === "" && OPENING_HOLE.test(path)) {
     return path;
   }
-  return path.startsWith("/") ? `${prefix}${path}` : `${prefix}/${path}`;
+  return `${prefix}/${path}`;
 }
 
 // Pairing reads a hole at the front of a path as the base URL.

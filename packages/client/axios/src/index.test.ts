@@ -357,6 +357,19 @@ describe("axiosPack — an instance's baseURL", () => {
     expect(found.getPet).toBe("/pet/1");
   });
 
+  it("puts a relative path under a base with no path after a slash", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "https://api.example.com" });
+        export async function listOrders() {
+          return api.get("orders");
+        }
+      `,
+    });
+    expect(found.listOrders).toBe("/orders");
+  });
+
   it("sends each caller of a path-passthrough wrapper under the base", async () => {
     const found = await pathsOf({
       "api-client.ts": `
