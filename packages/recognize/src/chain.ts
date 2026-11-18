@@ -1303,11 +1303,13 @@ export interface SentAsObject {
 /**
  * How a library puts a call's path under the base URL its client was
  * built with. `appended` writes the path after the base with one slash
- * between, as axios and httpx do. `resolved` resolves the path against
- * the base the way RFC 3986 resolves a reference, as Faraday, Net::HTTP
- * and aiohttp do: a path that starts with `/` replaces the base's path.
+ * between and removes dot segments, as axios and httpx do. `resolved`
+ * resolves the path against the base the way RFC 3986 resolves a
+ * reference, as Faraday and aiohttp do: a path that starts with `/`
+ * replaces the base's path. `asWritten` sends the path as the call
+ * writes it to the base's host, as a Net::HTTP connection does.
  */
-export type BaseJoin = "appended" | "resolved";
+export type BaseJoin = "appended" | "resolved" | "asWritten";
 
 /**
  * Where the construction a call's receiver was made by states a base

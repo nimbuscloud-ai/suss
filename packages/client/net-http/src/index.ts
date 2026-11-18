@@ -95,7 +95,8 @@ export const NET_HTTP_CONNECTION = httpRequests({
   client: constructedFrom({ from: ["Net::HTTP"], named: ["HTTP"] }),
 })
   .methods({ ...verbs(VERB_METHODS, URL_FIRST), request: REQUEST_OBJECT })
-  .baseUrl({ at: 0, reads: "host", port: { at: 1 }, joins: "resolved" })
+  // Net::HTTP sends the path as the request target exactly as written.
+  .baseUrl({ at: 0, reads: "host", port: { at: 1 }, joins: "asWritten" })
   .response(RESPONSE)
   .example('Net::HTTP.new("api.example.com").get("/orders")');
 

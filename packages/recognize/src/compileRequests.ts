@@ -568,6 +568,7 @@ function emptyPathUnder(base: Base): string | null {
 const JOINED: Record<BaseJoin, (base: string, path: string) => string> = {
   appended: appendedPath,
   resolved: resolvedPath,
+  asWritten: asWrittenPath,
 };
 
 /**
@@ -583,23 +584,43 @@ export function joinedPath(
 }
 
 /**
- * `path` after `base` with one slash between, under a base of `/` too.
- * A path that starts with a hole under a base with no path keeps the
- * hole in front, since pairing reads it as the base URL.
+ * `path` after `base` with one slash between, under a base of `/` too,
+ * with dot segments removed, since httpx and axios both parse the joined
+ * URL. A path that starts with a hole under a base with no path keeps
+ * the hole in front, since pairing reads it as the base URL.
  */
 function appendedPath(base: string, path: string): string {
   const prefix = base.replace(/\/+$/, "");
   if (path.startsWith("/")) {
-    return `${prefix}${path}`;
+    return withoutDotSegmentsAfterHole(`${prefix}${path}`);
   }
   if (prefix === "" && OPENING_HOLE.test(path)) {
-    return path;
+    return withoutDotSegmentsAfterHole(path);
   }
-  return `${prefix}/${path}`;
+  return withoutDotSegmentsAfterHole(`${prefix}/${path}`);
+}
+
+/** The path the call writes, to the base's host, whatever the base's path. */
+function asWrittenPath(_base: string, path: string): string {
+  return path;
 }
 
 // Pairing reads a hole at the front of a path as the base URL.
 const OPENING_HOLE = /^(\{[^{}]+\})(.*)$/;
+
+const DOT_SEGMENT = /(^|\/)\.\.?(\/|$)/;
+
+/** The path with its dot segments removed after any hole at its front, and as it is when it has none. */
+function withoutDotSegmentsAfterHole(path: string): string {
+  if (!DOT_SEGMENT.test(path)) {
+    return path;
+  }
+  const opening = OPENING_HOLE.exec(path);
+  if (opening !== null) {
+    return `${opening[1]}${withoutDotSegmentsAfterHole(opening[2] ?? "")}`;
+  }
+  return withoutDotSegments(path);
+}
 
 /**
  * `path` resolved against `base` the way RFC 3986 resolves a reference:
