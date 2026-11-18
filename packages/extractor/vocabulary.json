@@ -152,7 +152,7 @@
   "parameterMethodCall": "suss: TerminalMatch variant tag",
   "parent": "suss: sub-unit name part, the name of the unit the callback is written in",
   "passedTo": "suss: CallStep variant tag, the call a result is passed to as an argument",
-  "path": "suss: RestSemantics field",
+  "path": "suss: RestSemantics field; also a base URL reading tag, a library that reads a URL starting with // as a path under the base",
   "pathParams": "suss: input role",
   "positionalParams": "suss: InputMappingPattern variant tag",
   "postgresql": "OpenTelemetry semconv: db.system.name value, Postgres",
