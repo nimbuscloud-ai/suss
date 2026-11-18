@@ -64,10 +64,15 @@ const PAGES_ROUTES: Extract<
  */
 const NEXT_SERVER = ["next/server"];
 
-/** A server action returns a value where a route handler sends a response, so it keeps its own terminals. */
+/**
+ * A server action returns a value where a route handler sends a response,
+ * so it keeps its own terminals. An action that runs off its end returns
+ * nothing to the client, which is a normal outcome for a form action.
+ */
 const ACTION_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "returnStatement" }, extraction: {} },
   { kind: "throw", match: { type: "throwExpression" }, extraction: {} },
+  { kind: "return", match: { type: "functionFallthrough" }, extraction: {} },
 ];
 
 /** The functions a `"use server"` directive turns into server actions, each bound by its module and name. */

@@ -112,6 +112,10 @@ since the closure `withTeam` returns calls it. `cached` returns a
 closure that calls a cached copy instead, so the summary of
 `getHistory` reads that closure.
 
+An action that returns nothing, such as one that ends in `redirect`,
+still gets a transition when it runs off its end, and that transition
+lists what the action called on the way.
+
 A directive inside a function marks that function alone, exported or
 not, nested in another function or a method of a class. An anonymous
 one, such as `<form action={async () => { "use server"; ... }}>`, is
