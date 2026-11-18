@@ -52,9 +52,14 @@ export const HTTPX = httpRequests({
   ),
 })
   .methods(METHODS)
-  // httpx takes `base_url` only by keyword, and puts a relative path
-  // after the base's path whether or not the path starts with `/`.
-  .baseUrl({ at: 0, keyword: "base_url", joins: "appended" })
+  // httpx takes `base_url` only by keyword, ends its path with `/`, and
+  // puts a relative path after it whether or not the path starts with `/`.
+  .baseUrl({
+    at: 0,
+    keyword: "base_url",
+    joins: "appended",
+    trailingSlash: "added",
+  })
   // httpx copies the requests response API, with `is_success` in place
   // of `ok`, and hands a 3xx back unless the call passes
   // `follow_redirects=True`.
