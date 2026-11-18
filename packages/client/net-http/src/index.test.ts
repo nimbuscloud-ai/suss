@@ -234,6 +234,14 @@ describe("a host and a path given apart", () => {
     ).toBe("GET cdn.example.com/assets/app.css");
   });
 
+  it("goes to the host of a full URL passed as the path", async () => {
+    expect(
+      await requestIn([
+        '    Net::HTTP.get("api.example.com", "https://other.example.com/orders")',
+      ]),
+    ).toBe("GET other.example.com/orders");
+  });
+
   it("reads a host-first call on a connection as a path and its headers", async () => {
     expect(
       await requestIn([
@@ -241,6 +249,33 @@ describe("a host and a path given apart", () => {
         '    http.get("/orders", "/ignored")',
       ]),
     ).toBe("GET api.example.com/orders");
+  });
+
+  it("leaves out a path that does not start with a slash, which Net::HTTP sends as written", async () => {
+    const summaries = await summariesOf(
+      [
+        "class OrderClient",
+        "  def fetch",
+        '    http = Net::HTTP.new("api.example.com")',
+        '    http.get("orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(summaries)).toEqual({ method: "GET", path: null });
+  });
+
+  it("leaves out a host that is written as a URL", async () => {
+    expect(
+      await requestIn([
+        '    http = Net::HTTP.new("https://api.example.com")',
+        '    http.get("/orders")',
+      ]),
+    ).toBe("GET /orders");
+    expect(
+      await requestIn(['    Net::HTTP.get("api.example.com/", "/orders")']),
+    ).toBe("GET /orders");
   });
 
   it("sends a connection's path as written, dot segments and all", async () => {
