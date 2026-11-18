@@ -165,6 +165,7 @@ import { readRegisteringFiles } from "./discovery/registrationCall.js";
 import {
   expandRestWrapperCallers,
   parametersAsHoles,
+  type ReadSink,
   type SinkReading,
 } from "./discovery/restWrapper.js";
 import {
@@ -2250,6 +2251,49 @@ function sinkMethod(
   return literalOf(value) ?? undefined;
 }
 
+/** The method the call's options object sets under these bindings. The library's default does not count. */
+function passedMethod(
+  sink: WrapperSink,
+  bindings: ReadonlyMap<string, Value>,
+  resolution: ResolutionStore,
+): string | undefined {
+  const m = sink.extraction.method;
+  if (m.type !== "fromArgumentProperty") {
+    return undefined;
+  }
+  const record = sinkArgumentValue(sink, m.position, bindings, resolution);
+  const value = fieldValue(record, m.property);
+  return value === undefined ? undefined : (literalOf(value) ?? undefined);
+}
+
+/**
+ * How the expansion reads the sink under a caller's values. Where they
+ * leave the path open, a caller that passes the method still sends with
+ * it. A method the wrapper sets itself is in its own summary already.
+ */
+function callerReadingOf(
+  wrapper: WrapperInfo,
+  resolution: ResolutionStore,
+): ReadSink {
+  const { sink } = wrapper;
+  const setByWrapper =
+    passedMethod(sink, parametersAsHoles(wrapper.func), resolution) !==
+    undefined;
+  return (bindings) => {
+    const reading = sinkReading(sink, bindings, resolution);
+    if (reading !== null || setByWrapper) {
+      return reading;
+    }
+    const method = passedMethod(sink, bindings, resolution);
+    if (method === undefined) {
+      return null;
+    }
+    const url = sinkUrl(sink, bindings, resolution);
+    const host = url === undefined ? undefined : hostOf(url);
+    return { path: null, method, ...(host === undefined ? {} : { host }) };
+  };
+}
+
 /** Reads a caller's body as a unit with the given terminals. */
 type ReadBody = (unit: DiscoveredUnit, pack: PatternPack) => RawCodeStructure;
 
@@ -2263,7 +2307,7 @@ function synthesizeCallerSummaries(
   const out: BehavioralSummary[] = [];
   const callers = expandRestWrapperCallers(
     wrapper.func,
-    (bindings) => sinkReading(wrapper.sink, bindings, resolution),
+    callerReadingOf(wrapper, resolution),
     resolution,
   );
 
@@ -2352,10 +2396,7 @@ function buildCallerSummary(
   raw.boundaryBinding = restBinding({
     transport: wrapperBinding?.transport ?? "http",
     method: reading.method,
-    path:
-      reading.host === undefined && base?.path !== undefined
-        ? joinedPath(base.joins, base.path, reading.path)
-        : reading.path,
+    path: pathUnderBase(reading, base),
     host: reading.host ?? base?.host,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
@@ -2371,6 +2412,21 @@ function buildCallerSummary(
   };
   summary.confidence = { source: "inferred_static", level: "low" };
   return summary;
+}
+
+/** The caller's path under the base its instance sends to, which an absolute URL replaces. */
+function pathUnderBase(
+  reading: SinkReading,
+  base: WrapperSink["base"],
+): string | null {
+  if (
+    reading.path === null ||
+    reading.host !== undefined ||
+    base?.path === undefined
+  ) {
+    return reading.path;
+  }
+  return joinedPath(base.joins, base.path, reading.path);
 }
 
 // A run without a settled root (a caller-supplied Project and no
