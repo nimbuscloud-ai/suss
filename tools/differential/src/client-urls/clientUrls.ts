@@ -2,15 +2,15 @@
  * The client URL check. For the same base and path, it compares the URL
  * a suss client pack says a request goes to with the URL the library
  * itself builds, for httpx, aiohttp, Faraday, Net::HTTP and axios. The
- * library is asked with nothing sent, and the README says what each
- * library needs installed.
+ * README says what each library needs installed.
  *
  *   npm run check:client-urls
  *   npx tsx tools/differential/src/client-urls/clientUrls.ts \
  *     [--library httpx]... [--json report.json] [--work-dir dir]
  *
- * Build the CLI first. `--work-dir` keeps the probe projects. The run
- * exits 1 when any case disagrees or a library could not be run.
+ * Build the CLI first. The run exits 1 when a case outside the known
+ * gaps disagrees, when a known gap no longer reproduces, or when a
+ * library could not be run.
  */
 
 import fs from "node:fs";
@@ -20,6 +20,7 @@ import { parseArgs } from "node:util";
 
 import { casesFor, LIBRARIES, type Library, type UrlCase } from "./cases.js";
 import { type Comparison, compare } from "./compare.js";
+import { gapOf, KNOWN_GAPS, type KnownGap } from "./knownGaps.js";
 import { type LibraryResult, runLibrarySide } from "./library.js";
 import { runSussSide, type SussRequest } from "./suss.js";
 
@@ -94,6 +95,33 @@ async function buildReports(
   });
 }
 
+function isUnexpected(c: Comparison): boolean {
+  return c.disagreement !== null && gapOf(c.case) === null;
+}
+
+/** Each known gap, for each library it lists that ran, where no case disagrees any more. */
+function staleGaps(
+  reports: readonly LibraryReport[],
+): { gap: KnownGap; library: Library }[] {
+  const stale: { gap: KnownGap; library: Library }[] = [];
+  for (const report of reports) {
+    if (report.error !== null) {
+      continue;
+    }
+
+    for (const gap of KNOWN_GAPS) {
+      const reproduces = report.comparisons.some(
+        (c) => c.disagreement !== null && gapOf(c.case) === gap,
+      );
+      if (gap.libraries.includes(report.library) && !reproduces) {
+        stale.push({ gap, library: report.library });
+      }
+    }
+  }
+
+  return stale;
+}
+
 function printReport(reports: readonly LibraryReport[]): void {
   for (const report of reports) {
     if (report.error !== null) {
@@ -104,17 +132,25 @@ function printReport(reports: readonly LibraryReport[]): void {
     const disagreeing = report.comparisons.filter(
       (c) => c.disagreement !== null,
     );
+    const unexpected = disagreeing.filter(isUnexpected);
     console.log(
       `${report.library}: ${report.comparisons.length} cases, ` +
         `${report.comparisons.length - disagreeing.length} agree, ` +
-        `${disagreeing.length} disagree`,
+        `${disagreeing.length - unexpected.length} known gaps, ` +
+        `${unexpected.length} disagree`,
     );
-    for (const c of disagreeing) {
+    for (const c of unexpected) {
       console.log(`  ${c.case.id}: ${caseText(c.case)}`);
       console.log(`    library  ${libraryText(c.library)}`);
       console.log(`    suss     ${sussText(c.suss)}`);
       console.log(`    ${c.disagreement}`);
     }
+  }
+
+  for (const { gap, library } of staleGaps(reports)) {
+    console.log(
+      `A known gap no longer reproduces for ${library}, so take it off the list: ${gap.reason}`,
+    );
   }
 }
 
@@ -150,10 +186,9 @@ async function main(): Promise<number> {
       );
     }
 
-    const failed = reports.some(
-      (r) =>
-        r.error !== null || r.comparisons.some((c) => c.disagreement !== null),
-    );
+    const failed =
+      staleGaps(reports).length > 0 ||
+      reports.some((r) => r.error !== null || r.comparisons.some(isUnexpected));
     return failed ? 1 : 0;
   } finally {
     if (keep === undefined) {

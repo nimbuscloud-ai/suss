@@ -129,5 +129,10 @@ npm ci --prefix tools/differential/node
 
 `SUSS_FUZZ_PYTHON` and `SUSS_FUZZ_RUBY` choose the interpreters.
 `--library httpx` runs one library, `--json report.json` writes every
-comparison, and `--work-dir dir` keeps the probe projects. The run
-exits 1 when any case disagrees or a library could not be run.
+comparison, and `--work-dir dir` keeps the probe projects.
+
+`src/client-urls/knownGaps.ts` lists the disagreements suss keeps on
+purpose, each with the reason. A case on that list does not fail the
+run. The run exits 1 when any other case disagrees, when a library
+could not be run, or when a known gap no longer reproduces for one of
+its libraries, so a fix also takes its entry off the list.
