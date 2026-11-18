@@ -23,6 +23,7 @@ import {
 import { factCallOps } from "@suss/recognize/ops";
 import { noteKeyRead, noteLookup } from "@suss/resolution";
 
+import { aliasValueOf } from "./annotations.js";
 import {
   children,
   field,
@@ -64,6 +65,7 @@ import type {
 import type { Range } from "./ast.js";
 import type { BoundPythonFile } from "./boundFiles.js";
 import type { RouteDecorator } from "./discovery.js";
+import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type {
   PyDecoratedWrapperForm,
   PyDependencyForm,
@@ -88,6 +90,8 @@ export interface WrapperIndexOptions {
   storageFor: (file: BoundPythonFile) => StorageLookup | undefined;
   /** Where each router is mounted, so a dependency registered on the way reaches the routes below it. */
   routes?: DeclaredRouteIndex;
+  /** Where a name a file imports is defined, so an annotation alias imported from another module can be read. */
+  importedDefinition?: ImportedDefinitionLookup;
 }
 
 /** The route asking which wrappers reach it: the decorator it was found by, and where that decorator was read. */
@@ -242,6 +246,24 @@ export class PythonWrapperIndex {
     return found ?? [];
   }
 
+  /**
+   * The value a module-level name was assigned, in this file or the one it
+   * is imported from, `CurrentUser = Annotated[User, Depends(f)]`, and the
+   * file that value is written in.
+   */
+  aliasValueOf(file: string, name: string): WrittenValue | null {
+    const bound = this.filesByPath.get(file);
+    if (bound === undefined) {
+      return null;
+    }
+    const alias = aliasValueOf(name, bound.module.moduleScope, {
+      importedDefinition: this.options.importedDefinition ?? null,
+    });
+    return alias === null
+      ? null
+      : { node: alias.node, file: alias.file ?? file };
+  }
+
   /** The project function a module-level name in this file refers to, or null for anything else. */
   functionCalled(file: string, name: string): ReachedFunction | null {
     if (this.options.facts === undefined) {
@@ -383,11 +405,17 @@ export class PythonWrapperIndex {
         continue;
       }
       const targets = [
-        ...dependenciesListed(decorator, declared.form),
-        ...parameterDependencies(query.definitionNode, declared.form),
+        ...dependenciesListed(decorator, declared.form).map((name) => ({
+          file: file.file,
+          name,
+        })),
+        ...parameterDependencies(query.definitionNode, declared.form, {
+          file: file.file,
+          aliasOf: (name) => this.aliasValueOf(file.file, name),
+        }),
       ];
-      for (const name of targets) {
-        const target = this.functionCalled(file.file, name);
+      for (const { file: writtenIn, name } of targets) {
+        const target = this.functionCalled(writtenIn, name);
         if (target !== null) {
           found.push(this.registered(target, declared));
         }
@@ -890,21 +918,55 @@ function functionHandedOver(
   return handed?.form?.() === "name" ? (handed.source?.() ?? null) : null;
 }
 
+/** An expression, and the file it is written in, where the names inside it resolve. */
+interface WrittenValue {
+  node: PyNode;
+  file: string;
+}
+
 /**
- * `user: User = Depends(f)` and `user: Annotated[User, Depends(f)]`, in
- * parameter order. A parameter's default and annotation state no call
- * facts, so each is read as written, through the chain's methods table.
+ * `user: User = Depends(f)`, `user: Annotated[User, Depends(f)]`, and
+ * `user: CurrentUser` with `CurrentUser = Annotated[User, Depends(f)]`, in
+ * parameter order, each with the file `f` is named in. A parameter's
+ * default and annotation state no call facts, so each is read as written,
+ * through the chain's methods table.
  */
 function parameterDependencies(
   definitionNode: PyNode,
   form: PyDependencyForm,
-): string[] {
+  where: { file: string; aliasOf: (name: string) => WrittenValue | null },
+): { file: string; name: string }[] {
   const handedIn = (node: PyNode): string | null => writtenHandOver(node, form);
+  const foundIn = (
+    written: WrittenValue | null,
+  ): { file: string; name: string }[] => {
+    const name = written === null ? null : firstWithin(written.node, handedIn);
+    return written === null || name === null
+      ? []
+      : [{ file: written.file, name }];
+  };
   return parameterDefaults(definitionNode).flatMap(({ value, annotation }) => {
-    const found =
-      value === null ? firstWithin(annotation, handedIn) : handedIn(value);
-    return found === null ? [] : [found];
+    if (value !== null) {
+      return foundIn({ node: value, file: where.file });
+    }
+    const written = foundIn(
+      annotation === null ? null : { node: annotation, file: where.file },
+    );
+    if (written.length > 0) {
+      return written;
+    }
+    const alias = aliasNameOf(annotation);
+    return alias === null ? [] : foundIn(where.aliasOf(alias));
   });
+}
+
+/** The name an annotation is written as when it is a bare name, `CurrentUser`. */
+function aliasNameOf(annotation: PyNode | null): string | null {
+  const written =
+    annotation?.type === "type"
+      ? (children(annotation)[0] ?? null)
+      : annotation;
+  return written?.type === "identifier" ? written.text : null;
 }
 
 /**

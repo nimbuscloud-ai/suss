@@ -625,6 +625,7 @@ async function runPython(
         }
       : undefined;
 
+  const importedDefinition = importedDefinitionLookup(db, bound);
   const wrapperIndex = timer.time("discover", () =>
     buildWrapperIndex(bound, {
       packs: options.packs,
@@ -633,10 +634,10 @@ async function runPython(
       definitions,
       storageFor,
       routes: plainRoutes,
+      importedDefinition,
     }),
   );
 
-  const importedDefinition = importedDefinitionLookup(db, bound);
   const tests = pythonTestIndex(options.packs, {
     filesByPath,
     roots,
