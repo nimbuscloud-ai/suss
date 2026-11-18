@@ -732,6 +732,20 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/typescript-monorepo/packages/api/tsconfig.json"),
     ...packs("express"),
   ]),
+  fixture("upstream-spec/express", [
+    ...dir("fixtures/upstream-spec/express"),
+    ...packs("express", "fetch"),
+  ]),
+  fixture("upstream-spec/fastapi", [
+    ...lang("python"),
+    ...dir("fixtures/upstream-spec/fastapi"),
+    ...packs("fastapi"),
+  ]),
+  fixture("upstream-spec/rails", [
+    ...lang("ruby"),
+    ...dir("fixtures/upstream-spec/rails"),
+    ...packs(railsIn("fixtures/upstream-spec/rails")),
+  ]),
   fixture("wrapped-routes", [
     ...dir("fixtures/wrapped-routes"),
     ...packs("hono"),

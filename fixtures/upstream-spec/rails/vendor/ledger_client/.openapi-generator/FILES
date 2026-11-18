@@ -1,0 +1,4 @@
+.openapi-generator-ignore
+ledger_client.gemspec
+lib/ledger_client.rb
+lib/ledger_client/api/accounts_api.rb

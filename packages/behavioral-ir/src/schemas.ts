@@ -163,6 +163,8 @@ export const RunFindingKindSchema = z.enum([
   "notCovered",
   /** One of the project's reads failed or ran past its time limit, so its summaries are missing. */
   "readFailed",
+  /** No extracted code serves or calls any operation a contract document declares, so nothing was compared with it. */
+  "contractUnpaired",
 ]);
 
 export const RunFindingSchema = z.object({
