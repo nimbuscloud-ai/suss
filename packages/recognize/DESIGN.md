@@ -2159,7 +2159,9 @@ since 3.10: that client is never built, so the call keeps its own path.
 A call that passes an empty path goes to the base, and
 `trailingSlash: "added"` is for a library that ends the base's path
 with `/` itself, as httpx does, so that call goes to the base with a
-`/` at the end.
+`/` at the end. `schemeRelative: "path"` is for a library that reads a
+URL starting with `//` as a path under the base, as Faraday does to keep
+the request on the base's host.
 A base path that ends in a hole is refused too, since it may or may not
 end with `/` when it runs.
 

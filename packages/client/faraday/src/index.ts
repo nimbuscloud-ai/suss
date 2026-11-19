@@ -43,8 +43,9 @@ export const FARADAY = httpRequests({
 })
   .methods(verbs(VERB_METHODS, { at: 0 }))
   // On a connection from `Faraday.new(url: ".../v1")`, `get("orders")`
-  // goes to `/v1/orders` and `get("/orders")` to `/orders`.
-  .baseUrl({ keyword: "url", at: 0, joins: "resolved" })
+  // goes to `/v1/orders` and `get("/orders")` to `/orders`. Faraday puts
+  // `./` before a path that starts with `//`, to keep it on the base host.
+  .baseUrl({ keyword: "url", at: 0, joins: "resolved", schemeRelative: "path" })
   // A caller's condition on one of these members shows which statuses
   // it handles.
   .response({

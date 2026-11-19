@@ -1335,6 +1335,12 @@ export interface BaseUrlLink {
    * when a call passes an empty path and goes to the base.
    */
   readonly trailingSlash?: "required" | "added";
+  /**
+   * `path` for a library that reads a URL starting with `//` as a path
+   * under the base, as Faraday does so the request stays on the base's
+   * host. Any other library sends it to the host after the `//`.
+   */
+  readonly schemeRelative?: "path";
 }
 
 /**
