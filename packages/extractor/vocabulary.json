@@ -20,7 +20,7 @@
   "argumentProperty": "suss: TerminalExtraction source tag",
   "any": "suss: value-language row tag for a method that applies whatever kind of value receives it",
   "array": "JavaScript value kind",
-  "asWritten": "suss: schedule ending, the callee as the source writes it is what scheduled the callback",
+  "asWritten": "suss: schedule ending, the callee as the source writes it is what scheduled the callback; also a BaseJoin tag, a path sent to the base's host as the call writes it",
   "assignedName": "suss: MarkedMatch name rule, the variable or property a marked function is assigned to",
   "aws_sqs": "OpenTelemetry semconv: messaging.system value, Amazon SQS",
   "body": "suss: ResponsePropertyMeaning tag",

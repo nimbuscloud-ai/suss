@@ -2140,7 +2140,9 @@ export interface RequestRead {
    * how the library puts a path under it. A base appended to that has a
    * hole has no path.
    */
-  readonly base?: UrlTarget & { readonly joins: "appended" | "resolved" };
+  readonly base?: UrlTarget & {
+    readonly joins: "appended" | "resolved" | "asWritten";
+  };
 }
 
 /** One argument of a call, by position or by keyword, and the properties read inside it. */
