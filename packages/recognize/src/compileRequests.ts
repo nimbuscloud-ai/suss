@@ -290,7 +290,7 @@ function claimOf(
     requesting.base === null
       ? null
       : baseOf(requesting.base, construction(), site);
-  const placed = underBase(base, own);
+  const placed = underBase(base, own, sent.written);
   const redirectDelivery =
     redirectAt(requesting.response, meaning, ops, {
       built: construction,
@@ -316,6 +316,8 @@ function claimOf(
 interface Sent {
   readonly method: string;
   readonly url: UrlReading;
+  /** The URL argument when it comes to one string, which is how an empty URL shows. */
+  readonly written: () => string | null;
   readonly read: Pick<RequestRead, "url" | "method">;
 }
 
@@ -330,22 +332,20 @@ function sentBy(
   site: string | undefined,
 ): Sent | null {
   if ("url" in meaning) {
-    const url = urlOrHostFirst(
-      ops,
-      urlArgument(ops, meaning.url),
-      meaning.url.hostFirst,
-    );
+    const urlValue = urlArgument(ops, meaning.url);
+    const url = urlOrHostFirst(ops, urlValue, meaning.url.hostFirst);
+    const written = writtenOf(urlValue);
     const { sends } = meaning;
     const urlPlace = placeOf(meaning.url);
     if (typeof sends === "string") {
-      return withUrl(sends, url, { url: urlPlace, method: sends });
+      return withUrl(sends, url, written, { url: urlPlace, method: sends });
     }
     // A method the call states and suss cannot settle sends the default
     // too, so the request is kept with the method the library sends most.
     const stated = statedValue(ops, sends.from);
     const method =
       (stated === null ? null : stringOf(stated)) ?? sends.default ?? null;
-    return withUrl(method?.toUpperCase() ?? null, url, {
+    return withUrl(method?.toUpperCase() ?? null, url, written, {
       url: urlPlace,
       method: {
         at: placeOf(sends.from),
@@ -363,10 +363,16 @@ function sentBy(
   const written = built.calleeText();
   const requestClass = written.slice(0, written.length - ".new".length);
   const method = sends.classes[requestClass] ?? null;
-  return withUrl(method, urlReadingOf(urlArgument(built, sends.url)), {
+  const urlValue = urlArgument(built, sends.url);
+  return withUrl(method, urlReadingOf(urlValue), writtenOf(urlValue), {
     url: { at: sends.object },
     method: method ?? "",
   });
+}
+
+/** The string a URL argument comes to, read only when a base asks. */
+function writtenOf(value: ValueOps | null): () => string | null {
+  return () => (value === null ? null : stringOf(value));
 }
 
 /** Where a pick reads an argument, as a claim says it. */
@@ -405,9 +411,12 @@ const UNREAD: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
 function withUrl(
   method: string | null,
   url: UrlReading | null,
+  written: Sent["written"],
   read: Sent["read"],
 ): Sent | null {
-  return method === null || url === null ? null : { method, url, read };
+  return method === null || url === null
+    ? null
+    : { method, url, written, read };
 }
 
 /**
@@ -460,7 +469,7 @@ function baseOf(
   link: BaseUrlLink | null,
   built: CallOps | null,
   site: string | undefined,
-): { url: UrlTarget; joins: BaseJoin } | null {
+): Base | null {
   if (link === null || built === null) {
     return null;
   }
@@ -475,7 +484,15 @@ function baseOf(
   return {
     url: guessed ? { path: undefined, host: url.host } : url,
     joins: link.joins,
+    link,
   };
+}
+
+/** The base a client was built with, and the link that says how its library uses it. */
+interface Base {
+  readonly url: UrlTarget;
+  readonly joins: BaseJoin;
+  readonly link: BaseUrlLink;
 }
 
 /**
@@ -512,8 +529,9 @@ const BASE_READ: Record<
  * goes is no path, and the base's path does not go in front of it.
  */
 function underBase(
-  base: { url: UrlTarget; joins: BaseJoin } | null,
+  base: Base | null,
   own: UrlTarget,
+  written: Sent["written"],
 ): Pick<RequestClaim, "path" | "host"> {
   if (base === null || own.host !== undefined) {
     return {
@@ -521,12 +539,30 @@ function underBase(
       host: own.host,
     };
   }
+  if (written() === "") {
+    return { path: emptyPathUnder(base), host: base.url.host };
+  }
   const path = statedRequestPath(own.path, base.url.host);
   return {
     path:
       path === undefined ? null : JOINED[base.joins](base.url.path ?? "", path),
     host: base.url.host,
   };
+}
+
+/**
+ * Where a call that passes an empty URL goes: to the base's path, ended
+ * with `/` for a library that adds one. A client built on a host sends
+ * the empty string as the request target, which Net::HTTP refuses.
+ */
+function emptyPathUnder(base: Base): string | null {
+  if (base.link.reads === "host" || base.url.path === undefined) {
+    return null;
+  }
+  const path = base.url.path === "" ? "/" : base.url.path;
+  return base.link.trailingSlash === "added" && !path.endsWith("/")
+    ? `${path}/`
+    : path;
 }
 
 const JOINED: Record<BaseJoin, (base: string, path: string) => string> = {

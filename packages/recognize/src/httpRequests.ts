@@ -62,7 +62,7 @@ export type BaseUrlPick = OneArgument & {
   readonly joins: BaseJoin;
   readonly reads?: "host";
   readonly port?: OneArgument;
-  readonly trailingSlash?: "required";
+  readonly trailingSlash?: "required" | "added";
 };
 
 /**

@@ -13,6 +13,7 @@
   "Subscription": "GraphQL spec: operation root type",
   "Type": "suss: the suffix the stripTypeSuffix type-name convention takes off a class's name, as graphql-ruby's default_graphql_name does",
   "absent": "suss: unresolved marker",
+  "added": "suss: base URL reading tag, a library that ends the base's path with a slash itself",
   "argument": "expression kind the extractor records",
   "argumentItems": "suss: claim metadata leaf, the items of a list argument as written",
   "argumentConstructor": "suss: TerminalExtraction source tag",
