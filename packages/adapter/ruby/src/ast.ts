@@ -15,6 +15,8 @@ import {
  * upgrade that renames a field is fixed in one place.
  */
 
+import { RUNS_BLOCK_IN_PLACE } from "./facts/languageWords.js";
+
 import type { RbNode, RbTree } from "./parser.js";
 
 export interface Range {
@@ -172,12 +174,27 @@ export const PROGRAM_TYPE = "program";
  * descend into. Blocks are included with the definitions because the
  * call a block is passed to decides whether it runs. Otherwise a Rake
  * task body would count as work the file does when it is required.
+ * `runsInPlace` says which blocks are read anyway.
  */
 export const MODULE_SCOPE_STOPS = new Set([
   ...OWN_BODY_TYPES,
   "block",
   "do_block",
 ]);
+
+/**
+ * Whether this node is a block handed to a method Ruby says runs it
+ * before returning, as `accounts.each do ... end` does, so its
+ * statements run where the method is called.
+ */
+export function runsInPlace(node: RbNode): boolean {
+  const call = node.parent;
+  return (
+    BLOCK_TYPES.has(node.type) &&
+    call?.type === "call" &&
+    RUNS_BLOCK_IN_PLACE.has(field(call, "method")?.text ?? "")
+  );
+}
 
 /** Classes and modules, whose bodies can contain definitions. */
 export const NESTING_TYPES = new Set(["class", "module"]);

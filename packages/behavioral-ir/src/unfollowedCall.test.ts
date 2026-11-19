@@ -24,6 +24,7 @@ describe("unfollowed calls", () => {
       behindUnreadAncestor: true,
       selfCallInMixin: true,
       unsettledJob: true,
+      handedBlock: true,
     };
     for (const [reason, expected] of Object.entries(recorded)) {
       expect(worthRecording(reason as UnfollowedReason)).toBe(expected);
@@ -47,6 +48,7 @@ describe("unfollowed calls", () => {
       behindUnreadAncestor: "could land in an ancestor this run did not read",
       selfCallInMixin: "runs whatever the class that mixes it in provides",
       unsettledJob: "could not settle which job",
+      handedBlock: "decides whether the block runs",
     };
     for (const [reason, fragment] of Object.entries(sentences)) {
       const gap = unfollowedCallGap({

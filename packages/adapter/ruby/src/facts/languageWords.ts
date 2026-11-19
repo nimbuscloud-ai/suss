@@ -16,6 +16,30 @@ export const RECEIVER_RETURNS: readonly string[] = ["freeze", "dup", "tap"];
  */
 export const TAP_METHOD = "tap";
 
+/**
+ * Methods that run the block they are handed before they return, so a
+ * call in the block runs where the method is called: a loop over a list
+ * or a count, `tap`, and `class_eval` and its kin, which run the block on
+ * a class or an object. Ruby defines them all, so no pack lists them.
+ */
+export const RUNS_BLOCK_IN_PLACE: ReadonlySet<string> = new Set([
+  "each",
+  "each_with_index",
+  "each_with_object",
+  "each_pair",
+  "each_key",
+  "each_value",
+  "map",
+  "times",
+  "tap",
+  "class_eval",
+  "class_exec",
+  "module_eval",
+  "module_exec",
+  "instance_eval",
+  "instance_exec",
+]);
+
 /** The methods that convert the value they are called on to another type. */
 export const CONVERTING_METHODS: ReadonlySet<string> = new Set([
   "to_i",

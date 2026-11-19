@@ -2588,16 +2588,40 @@ describe("what a file calls when it loads", () => {
     );
   });
 
-  it("leaves out a call written in a block, whose library decides whether to run it", async () => {
+  it("lists a call written in a block, whose library decides whether to run it, as one it did not follow", async () => {
     writeAccountModel();
     writeJobMethods();
     write("bin/run_sync.rb", ["schedule :nightly do", "  run_report", "end"]);
 
     const summaries = await extractRails();
+    const entry = moduleInitOf(summaries, "bin/run_sync.rb");
     expect(summaries.some((s) => s.identity.name === "run_report")).toBe(false);
-    expect(summaries.some((s) => s.location.file === "bin/run_sync.rb")).toBe(
-      false,
+    expect(calls(entry).some(([name]) => name === "run_report")).toBe(false);
+    expect(entry.gaps).toEqual([
+      expect.objectContaining({
+        type: "unfollowedCall",
+        callee: "run_report",
+      }),
+    ]);
+  });
+
+  it("follows a call written in a block Ruby runs in place", async () => {
+    writeAccountModel();
+    writeJobMethods();
+    write("bin/run_sync.rb", [
+      "%w[eu us].each do |region|",
+      "  run_report",
+      "end",
+    ]);
+
+    const summaries = await extractRails();
+    const entry = moduleInitOf(summaries, "bin/run_sync.rb");
+    const reached = summaries.find((s) => s.identity.name === "run_report");
+    expect(reached).toBeDefined();
+    expect(callTo(entry, "run_report")).toBe(
+      summaryIdentifier(reached as BehavioralSummary),
     );
+    expect(entry.gaps).toEqual([]);
   });
 
   it("gives an action one summary when module scope calls it as well", async () => {
