@@ -464,6 +464,53 @@ describe("FastAPI wrappers", () => {
     });
   });
 
+  it("reads a dependency behind a type alias to Annotated[...], in this file or an imported one", async () => {
+    const summaries = await extractWritten({
+      "app/__init__.py": "",
+      "app/deps.py": [
+        "from typing import Annotated",
+        "from fastapi import Depends",
+        "",
+        "",
+        "def current_user():",
+        "    return 'u1'",
+        "",
+        "",
+        "CurrentUser = Annotated[str, Depends(current_user)]",
+        "",
+      ].join("\n"),
+      "app/main.py": [
+        "from typing import Annotated",
+        "from fastapi import Depends, FastAPI",
+        "",
+        "from app.deps import CurrentUser",
+        "",
+        "app = FastAPI()",
+        "",
+        "",
+        "def current_team():",
+        "    return 't1'",
+        "",
+        "",
+        "CurrentTeam = Annotated[str, Depends(current_team)]",
+        "",
+        "",
+        '@app.get("/orders")',
+        "def list_orders(user: CurrentUser, team: CurrentTeam):",
+        "    return []",
+        "",
+      ].join("\n"),
+    });
+
+    const orders = routeFor(summaries, "GET", "/orders");
+    expect(wrappersOf(orders)).toEqual({
+      applied: [
+        { file: "app/deps.py", name: "current_user" },
+        { file: "app/main.py", name: "current_team" },
+      ],
+    });
+  });
+
   it("registers nothing off an app a factory in another module builds", async () => {
     const summaries = await extractWritten({
       "app/__init__.py": "",

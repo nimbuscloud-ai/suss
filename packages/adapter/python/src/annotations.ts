@@ -65,6 +65,8 @@ export interface AliasValue {
   node: PyNode;
   /** Where the value is written, which is where the identifiers inside it resolve. */
   scope: Scope;
+  /** The file the value is written in, when the name is imported from another one. */
+  file?: string;
 }
 
 /**
@@ -76,7 +78,7 @@ export interface AliasValue {
 export function aliasValueOf(
   name: string,
   scope: Scope,
-  ctx: AnnotationContext,
+  ctx: Pick<AnnotationContext, "importedDefinition">,
 ): AliasValue | null {
   const binding = resolveName(scope, name);
   if (binding?.kind === "assignment") {
@@ -89,7 +91,11 @@ export function aliasValueOf(
   if (imported === null || imported.node.type === "class_definition") {
     return null;
   }
-  return { node: imported.node, scope: imported.moduleScope };
+  return {
+    node: imported.node,
+    scope: imported.moduleScope,
+    file: imported.file,
+  };
 }
 
 export function collectedDefinitions(
