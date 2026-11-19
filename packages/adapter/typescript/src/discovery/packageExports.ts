@@ -14,6 +14,7 @@ import { resolvePackageExportsCached } from "../packageExports.js";
 import { sourceDeclarationsBehind } from "../resolve/sourceDeclaration.js";
 import { surfaceMethods } from "./factorySurface.js";
 import { type DiscoveredUnit, toFunctionRoot } from "./shared.js";
+import { functionAProjectWrapperRuns } from "./wrappedExport.js";
 
 import type { DiscoveryPattern } from "@suss/extractor";
 import type { FunctionRoot } from "../conditions.js";
@@ -174,6 +175,13 @@ function unitsForExport(
           exportUnit(init, exportName, path, walk),
           ...methodUnits(init, exportName, path, walk),
         ];
+      }
+      const wrapped =
+        init === undefined
+          ? null
+          : functionAProjectWrapperRuns(init, walk.kind, walk.resolution);
+      if (wrapped !== null) {
+        return [exportUnit(wrapped, exportName, path, walk)];
       }
       continue;
     }

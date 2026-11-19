@@ -479,6 +479,8 @@ The same `RouteTableDeclaration` describes routes that are written across files.
 
 `packageExports` treats a package's public exports as a boundary. The adapter reads the manifest, resolves every reachable entry point (the root `.` plus any sub-path in `exports`), follows barrel re-exports, and emits one `library`-kind unit per exported function, the provider side of an in-process `function-call` boundary.
 
+An export written as `export const listOrders = withLogging(async (id) => { ... })` is a unit too, when `withLogging` is a project function that hands back something which runs the function it was given. The unit goes by the export's name and reads that function. A wrapper with no body in the project, such as one from a library, leaves the export out, since nothing then says whether what it builds is a function.
+
 `workspaces: true` applies the pattern once per package the workspace manifest declares, since the package list is a property of the project itself. Each binding is identified by `{ package, exportPath }`, so a sub-path export comes out as `@suss/behavioral-ir/schemas::BehavioralSummarySchema`. Root exports leave the sub-path segment out. The package-exports pack uses it.
 
 It resolves the `types`, `default` and `import` conditions on `exports`, and falls back to `types`, `main` and `module` when there is no `exports` field. Pattern exports (`./utils/*`) and `development`-conditional resolution are not done yet, and come back as warnings on the resolver result.
