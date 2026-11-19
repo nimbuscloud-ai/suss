@@ -26,8 +26,7 @@ import { type GeneratedModules, NO_GENERATOR } from "./generatedModules.js";
  * `importsFile(f, g)` says f writes a specifier resolving to file g.
  * `importsPackage(f, p)` says one of f's own specifiers is p or a
  * subpath of p. `reachesPackage(f, p)` says p is reachable from f
- * through project files. `reachesFile(f, t)` says the same of a file
- * somebody asked about, with `wantedFile(t)` as the asking.
+ * through project files.
  */
 const REACH_RULES = [
   rule(
@@ -43,19 +42,6 @@ const REACH_RULES = [
     "reachesPackage",
     [v("f"), v("p")],
     [lit("reachesPackage", v("g"), v("p")), lit("importsFile", v("f"), v("g"))],
-  ),
-  // Without `wantedFile` this is every edge closed over every other
-  // edge, which is the import graph squared.
-  rule(
-    "reachesFile",
-    [v("f"), v("t")],
-    [lit("wantedFile", v("t")), lit("importsFile", v("f"), v("t"))],
-  ),
-  // Same body order as `reachesPackage`, and for the same reason.
-  rule(
-    "reachesFile",
-    [v("f"), v("t")],
-    [lit("reachesFile", v("g"), v("t")), lit("importsFile", v("f"), v("g"))],
   ),
 ];
 
@@ -164,19 +150,20 @@ export class ModuleGraph {
    * For each of these targets, which of the given files reach it
    * through project-local imports and re-exports. A file that imports
    * the target through a barrel counts, which is what makes this worth
-   * asking the rules rather than reading one file's own specifiers.
+   * more than reading one file's own specifiers.
    *
-   * Answered together for the same reason package reachability is: one
-   * pass of the rules over the collected edges covers every target.
+   * Every set's edges are walked before any answer is read, so an edge
+   * one set's walk found counts toward every target. Each answer is a
+   * walk up the files importing the target and is not kept: as rows the
+   * rules derived, a run asking about thousands of targets kept a row
+   * for every file reaching each one.
    */
   filesReachingFile(
     queries: ReadonlyArray<FileTargetQuery>,
   ): ReadonlyArray<readonly SourceFile[]> {
-    const walked = queries.map(({ sourceFiles, target }) => {
-      this.assert("wantedFile", [target.getFilePath()]);
-      return this.walkEdgesOfAll(sourceFiles);
-    });
-    this.derive();
+    const walked = queries.map(({ sourceFiles }) =>
+      this.walkEdgesOfAll(sourceFiles),
+    );
 
     return queries.map(({ target }, at) =>
       this.reachingAmong(walked[at] as WalkedFiles, target),
@@ -205,22 +192,38 @@ export class ModuleGraph {
 
   /**
    * The walked files that reach the target, in the order of their set,
-   * read off the target's rows rather than by testing every file.
+   * read off the files importing it rather than by testing every file.
    */
   private reachingAmong(walked: WalkedFiles, target: SourceFile): SourceFile[] {
     const found: number[] = [];
-    for (const [filePath] of this.db.lookup(
-      "reachesFile",
-      1,
-      target.getFilePath(),
-    )) {
-      const at = walked.positions.get(String(filePath));
+    for (const filePath of this.filesWithImportsReaching(target)) {
+      const at = walked.positions.get(filePath);
       if (at !== undefined) {
         found.push(at);
       }
     }
     found.sort((a, b) => a - b);
     return found.map((at) => walked.files[at] as SourceFile);
+  }
+
+  /**
+   * Every file with a chain of one or more imports ending at the target,
+   * the target itself included when the chain is a cycle.
+   */
+  private filesWithImportsReaching(target: SourceFile): Set<string> {
+    const reached = new Set<string>();
+    const pending: string[] = [target.getFilePath()];
+    while (pending.length > 0) {
+      const current = pending.pop() as string;
+      for (const [importer] of this.db.lookup("importsFile", 1, current)) {
+        const importerPath = String(importer);
+        if (!reached.has(importerPath)) {
+          reached.add(importerPath);
+          pending.push(importerPath);
+        }
+      }
+    }
+    return reached;
   }
 
   /**
