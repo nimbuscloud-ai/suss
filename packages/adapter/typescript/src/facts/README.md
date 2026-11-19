@@ -279,8 +279,11 @@ result handed to a function the rules cannot follow does not.
 The callers are in files that import the parameter's own file, so those
 get read first. `ModuleGraph.filesReachingFile` returns the files in a
 candidate set that reach a given file, directly or through a barrel. It
-uses the same rule as package reachability, with a file in place of the
-package. The candidates are the files `notePossibleCallers` was given,
+walks up from the file through the import edges package reachability
+already resolved, and keeps nothing of the walk. A run asks about
+thousands of files, and a row for every file reaching each of them
+would stay in memory to the end of the run. The candidates are the
+files `notePossibleCallers` was given,
 and the adapter fills that with the files its packs apply to. Without
 it, the store falls back to every file the project has loaded outside
 `node_modules`.
