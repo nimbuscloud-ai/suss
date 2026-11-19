@@ -21,6 +21,7 @@ import { linkIn } from "./compileReads.js";
 import {
   hostBase,
   NOWHERE,
+  requestTargetPath,
   urlOrHostFirst,
   urlReadingOf,
 } from "./httpRequestsHost.js";
@@ -546,7 +547,9 @@ function underBase(
   if (written() === "") {
     return { path: emptyPathUnder(base), host: base.url.host };
   }
-  const path = statedRequestPath(own.path, base.url.host);
+  const ownPath =
+    base.joins === "asWritten" ? requestTargetPath(own.path) : own.path;
+  const path = statedRequestPath(ownPath, base.url.host);
   return {
     path:
       path === undefined ? null : JOINED[base.joins](base.url.path ?? "", path),
