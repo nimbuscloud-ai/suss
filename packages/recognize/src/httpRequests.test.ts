@@ -794,6 +794,42 @@ describe("a base URL the client was built with", () => {
     ]);
   });
 
+  it("keeps a URL that starts with // under the base for a library that reads it as a path", () => {
+    const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
+      .methods(verbs({ get: "GET" }, { at: 0 }))
+      .baseUrl({ at: 0, joins: "resolved", schemeRelative: "path" });
+    const sent = (written: string, base: string) =>
+      claimsOf(chain, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          {
+            url: { path: "/orders", host: "other.example.com" },
+            evaluated: written,
+          },
+        ],
+        receiver: built({ path: base, host: "api.example.com" }),
+      });
+
+    expect(sent("//other.example.com/orders?page=2", "/v1")).toEqual([
+      {
+        method: "GET",
+        path: "/v1///other.example.com/orders",
+        host: "api.example.com",
+      },
+    ]);
+    expect(sent("//other.example.com/orders", "/v1/")).toEqual([
+      {
+        method: "GET",
+        path: "/v1///other.example.com/orders",
+        host: "api.example.com",
+      },
+    ]);
+    expect(sent("https://other.example.com/orders", "/v1")).toEqual([
+      { method: "GET", path: "/orders", host: "other.example.com" },
+    ]);
+  });
+
   it("joins a path under a base the way the library does, for an adapter reading the call again", () => {
     expect(joinedPath("appended", "/v1/", "orders")).toBe("/v1/orders");
     expect(joinedPath("resolved", "/v1/", "../orders")).toBe("/orders");
