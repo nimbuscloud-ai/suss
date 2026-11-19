@@ -94,6 +94,21 @@ export function evaluatedValueUnder(
 }
 
 /**
+ * What a call gives each parameter of the function it calls, with the
+ * parameters of the function the call is written in bound by
+ * `bindings`: the argument passed, else the parameter's default, else
+ * undefined. Null when the evaluator cannot see the function the call
+ * runs.
+ */
+export function argumentsAt(
+  call: Node,
+  resolution: ResolutionStore | undefined,
+  bindings: ReadonlyMap<string, Value>,
+): ReadonlyMap<string, Value> | null {
+  return evaluatorFor(call, resolution).argumentsAt(call, { bindings });
+}
+
+/**
  * What an expression is worth when the function it is written in runs
  * from one particular call. `calls` runs innermost first: the first one
  * calls the expression's function, the next calls the function the

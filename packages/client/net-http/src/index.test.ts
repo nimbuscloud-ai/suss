@@ -179,6 +179,27 @@ describe("a method that calls Net::HTTP", () => {
     expect(summaries).toHaveLength(1);
     expect(boundary(summaries)).toEqual({ method: "GET", path: null });
   });
+
+  it("keeps each request with no path that one method sends", async () => {
+    const root = path.resolve(
+      __dirname,
+      "../../../../fixtures/wrapper-request-method-ruby",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [path.join(root, "app/http_client.rb")],
+      packs: [netHttpClient()],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    const requests = summaries.flatMap((summary) => {
+      const semantics = summary.identity.boundaryBinding?.semantics;
+      return summary.kind === "client" && semantics?.name === "rest"
+        ? [`${semantics.method} ${semantics.path}`]
+        : [];
+    });
+
+    expect(requests).toEqual(["GET null", "DELETE null", "POST null"]);
+  });
 });
 
 describe("a host and a path given apart", () => {
