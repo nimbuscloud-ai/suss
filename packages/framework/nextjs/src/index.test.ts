@@ -253,6 +253,43 @@ describe("server actions", () => {
     ).toEqual(["sku", "count"]);
   });
 
+  it("keeps the calls of an action that returns nothing", async () => {
+    const summaries = await extract({
+      "/app/billing.ts": `
+        export async function openPortal(team: string): Promise<string> {
+          return team;
+        }
+      `,
+      "/app/actions.ts": `
+        "use server";
+
+        import { openPortal } from "./billing";
+
+        declare function redirect(url: string): never;
+
+        export const portalAction = async (team: string) => {
+          const url = await openPortal(team);
+          redirect(url);
+        };
+      `,
+    });
+
+    const action = summaries.find(
+      (one) => one.identity.name === "portalAction",
+    );
+    const callees = action?.transitions.flatMap((t) =>
+      t.effects.flatMap((effect) =>
+        effect.type === "invocation" ? [effect.callee] : [],
+      ),
+    );
+    expect(action?.transitions).toHaveLength(1);
+    expect(action?.transitions[0]?.output).toEqual({
+      type: "return",
+      value: null,
+    });
+    expect(callees).toEqual(["openPortal", "redirect"]);
+  });
+
   it("reads a function-level directive, inline actions included", async () => {
     const summaries = await extract({
       "/app/page.tsx": `
