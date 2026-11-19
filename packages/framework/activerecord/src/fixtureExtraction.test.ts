@@ -56,14 +56,27 @@ function accesses(summary: BehavioralSummary) {
     );
 }
 
-/** The summary each call the entry script makes was linked to, by callee. */
-function callsFromEntry(): Map<string, string | undefined> {
+function moduleInitOf(file: string): BehavioralSummary {
   const entry = summaries.find(
-    (s) => s.kind === "module-init" && s.location.file === "bin/run_sync.rb",
+    (s) => s.kind === "module-init" && s.location.file === file,
   );
   if (entry === undefined) {
-    throw new Error("no module-init unit for bin/run_sync.rb");
+    throw new Error(`no module-init unit for ${file}`);
   }
+  return entry;
+}
+
+function unfollowedIn(summary: BehavioralSummary): (string | undefined)[] {
+  return summary.gaps
+    .filter((gap) => gap.type === "unfollowedCall")
+    .map((gap) => gap.callee);
+}
+
+/** The summary each call a script makes was linked to, by callee. */
+function callsFromEntry(
+  file = "bin/run_sync.rb",
+): Map<string, string | undefined> {
+  const entry = moduleInitOf(file);
   return new Map(
     entry.transitions
       .flatMap((transition) => transition.effects)
@@ -132,18 +145,33 @@ describe("a job whose entry script does its work at module scope", () => {
     );
   });
 
-  it("leaves out a call written in a block the library decides to run", () => {
-    expect(
-      summaries.some((s) => s.location.file === "lib/tasks/nightly.rb"),
-    ).toBe(false);
+  it("lists a call written in a block the library decides to run as one it did not follow", () => {
+    const tasks = moduleInitOf("lib/tasks/nightly.rb");
+
+    expect(callsFromEntry("lib/tasks/nightly.rb").has("run_report")).toBe(
+      false,
+    );
+    expect(unfollowedIn(tasks)).toEqual(["run_report"]);
+  });
+
+  it("follows a call in a block Ruby runs in place, and lists one in a transaction block", () => {
+    const backfill = moduleInitOf("bin/backfill.rb");
+
+    expect(callsFromEntry("bin/backfill.rb").get("sync_accounts")).toBe(
+      summaryIdentifier(unitNamed("sync_accounts")),
+    );
+    expect(callsFromEntry("bin/backfill.rb").has("close_pool")).toBe(false);
+    expect(unfollowedIn(backfill)).toEqual(["close_pool"]);
   });
 
   it("gives each reached method one summary", () => {
     const names = summaries.map((s) => s.identity.name).sort();
     expect(names).toEqual([
+      "backfill.rb",
       "build_pool",
       "close_pool",
       "initialize",
+      "nightly.rb",
       "run",
       "run_nightly",
       "run_report",

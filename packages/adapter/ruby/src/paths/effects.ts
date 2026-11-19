@@ -16,6 +16,7 @@ import {
   pairValue,
   rangeOf,
   readAsType,
+  runsInPlace,
 } from "../ast.js";
 import { claimedBodyOf, claimedIn, isClaimed } from "../claims.js";
 import { evaluatedValue } from "../values/evaluator.js";
@@ -196,7 +197,9 @@ function collectCalls(
 ): RbNode[] {
   for (const child of children(node)) {
     if (
-      (read.stops.has(child.type) && !isLambdaArgument(child)) ||
+      (read.stops.has(child.type) &&
+        !isLambdaArgument(child) &&
+        read.runsNow?.(child) !== true) ||
       isClaimed(child, read.claimed)
     ) {
       continue;
@@ -216,6 +219,8 @@ export interface ReadableBody {
   readonly stops: ReadonlySet<string>;
   /** The blocks and lambdas a pack claims as units of their own, by node id. Their statements are read on their own summaries. */
   readonly claimed?: ReadonlySet<number>;
+  /** Whether a node of one of the `stops` types runs with the body anyway, so its statements are read as part of it. */
+  readonly runsNow?: (node: RbNode) => boolean;
 }
 
 /**
@@ -244,13 +249,68 @@ export function methodBody(
   };
 }
 
-/** What a file runs as it loads: the statements written outside every definition and every block. */
+/**
+ * What a file runs as it loads: the statements written outside every
+ * definition, and outside every block other than one Ruby runs in place.
+ */
 export function moduleScopeBody(root: RbNode): ReadableBody {
   return {
     body: root,
-    locals: localNamesIn(root, MODULE_SCOPE_STOPS),
+    locals: localNamesIn(root, MODULE_SCOPE_STOPS, runsInPlace),
     stops: MODULE_SCOPE_STOPS,
+    runsNow: runsInPlace,
   };
+}
+
+/**
+ * The calls a file writes at module scope inside a block it hands to a
+ * method that decides whether the block runs, such as a Rake `task`. They
+ * are not what the file does as it loads, so the walk records each one
+ * that lands in the project as a call it did not follow. A block a pack
+ * claims as a unit of its own is read on that unit.
+ */
+export function handedBlockCalls(
+  root: RbNode,
+  facts: Database | undefined,
+  inherited: InheritedMethods = NO_INHERITED_METHODS,
+): RbNode[] {
+  const outer = moduleScopeBody(root);
+  const claimed = claimedIn(root, facts);
+  return handedBlocksIn(root, claimed, []).flatMap((block) =>
+    collectCalls(
+      block,
+      {
+        ...outer,
+        body: block,
+        locals: new Set([
+          ...outer.locals,
+          ...localNamesIn(block, MODULE_SCOPE_STOPS, runsInPlace),
+        ]),
+        ...(claimed === undefined ? {} : { claimed }),
+      },
+      inherited,
+      [],
+    ),
+  );
+}
+
+/** The module-scope blocks that do not run in place, in source order. */
+function handedBlocksIn(
+  node: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+  found: RbNode[],
+): RbNode[] {
+  for (const child of children(node)) {
+    if (isClaimed(child, claimed) || OWN_BODY_TYPES.has(child.type)) {
+      continue;
+    }
+    if (MODULE_SCOPE_STOPS.has(child.type) && !runsInPlace(child)) {
+      found.push(child);
+      continue;
+    }
+    handedBlocksIn(child, claimed, found);
+  }
+  return found;
 }
 
 /**

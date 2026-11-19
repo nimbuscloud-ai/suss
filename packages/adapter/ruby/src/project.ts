@@ -1100,6 +1100,11 @@ async function runRuby(
       ...(subUnits === null ? {} : { claimsIn: db }),
     }),
   );
+  // A file whose load-time work is all in calls the walk could not follow
+  // still gets a unit, so those calls are listed somewhere.
+  const reachesOrRecordsAStop = (seedKey: string): boolean =>
+    reached.followedKeys.has(seedKey) ||
+    (gapHandling !== "silent" && reached.stopsByKey.has(seedKey));
   const assembledHere = new Set<BehavioralSummary>();
   const toStore: {
     summary: BehavioralSummary;
@@ -1114,7 +1119,7 @@ async function runRuby(
     const { seedKey } = entry;
     if (
       entry.onlyIfItReaches === true &&
-      (seedKey === null || !reached.followedKeys.has(seedKey))
+      (seedKey === null || !reachesOrRecordsAStop(seedKey))
     ) {
       continue;
     }

@@ -61,6 +61,7 @@ import {
   calleeMethodName,
   calleeText,
   callsReported,
+  handedBlockCalls,
   isArglessReceiverCall,
   methodBody,
   moduleScopeBody,
@@ -528,7 +529,10 @@ function batchedReads(
       : [],
   );
   const written = bodies.flatMap((body) => body.written);
-  const spellings = calleeSpellings(written, options.context);
+  const spellings = calleeSpellings(
+    [...written, ...bodies.flatMap((body) => body.handed)],
+    options.context,
+  );
   const dispatched = dispatchedAmong(written, spellings, options.context);
   return new Map(
     bodies.map((body) => [body.key, { ...body, spellings, dispatched }]),
@@ -615,7 +619,10 @@ function scanOnce(
 /** One body's calls, asked about on their own. */
 function ownReads(source: ReachedFunction, options: ReachOptions): BodyReads {
   const body = bodyOf(source, options);
-  const spellings = calleeSpellings(body.written, options.context);
+  const spellings = calleeSpellings(
+    [...body.written, ...body.handed],
+    options.context,
+  );
   return {
     ...body,
     spellings,
@@ -811,6 +818,8 @@ interface BodyCalls {
   /** The predicate a matcher call in an example calls, and on what. */
   readonly predicateOf: (call: RbNode) => PredicateCall | null;
   readonly written: { call: RbNode; site: CallSite }[];
+  /** For a file's load-time statements, the calls in the blocks it hands to other methods, which the walk lists as stops instead of following. */
+  readonly handed: { call: RbNode; site: CallSite }[];
 }
 
 /**
@@ -829,9 +838,21 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
       : { ...site, file, method: enclosingDefinition(call) };
   };
   const written = callsWrittenIn(source.node, run, options);
-  const calls = callsReported(written, (call) =>
-    mightReadAsACall(call, siteFor(call), options.context),
-  );
+  const reported = (among: RbNode[]): RbNode[] =>
+    callsReported(among, (call) =>
+      mightReadAsACall(call, siteFor(call), options.context),
+    );
+  const calls = reported(written);
+  const handed =
+    source.node.type === PROGRAM_TYPE
+      ? reported(
+          handedBlockCalls(
+            source.node,
+            claimsFactsOf(options),
+            options.inheritedMethods,
+          ),
+        )
+      : [];
   return {
     calls,
     argless: written.filter(isArglessReceiverCall),
@@ -839,6 +860,7 @@ function bodyOf(source: ReachedFunction, options: ReachOptions): BodyCalls {
     siteFor,
     predicateOf: (call) => run?.predicateOf?.(call) ?? null,
     written: calls.map((call) => ({ call, site: siteFor(call) })),
+    handed: handed.map((call) => ({ call, site: siteFor(call) })),
   };
 }
 
@@ -1137,6 +1159,25 @@ function scanBody(
       keptArgless.add(call.id);
     }
     follow(outcome.target);
+  }
+
+  const handed = callsMade(
+    read.handed.map(({ call }) => call),
+    read.siteFor,
+    ctx,
+    read.spellings,
+    false,
+  );
+  for (const call of handed) {
+    const outcome = resolveCallee(
+      call,
+      read.siteFor(call),
+      ctx,
+      read.spellings,
+    );
+    if (outcome.kind === "followed") {
+      stops.add({ callee: calleeText(call), reason: "handedBlock" });
+    }
   }
 
   return {

@@ -68,6 +68,7 @@ import {
   METHOD_REFERENCE,
   PROC_CLASS,
   RECEIVER_RETURNS,
+  RUNS_BLOCK_IN_PLACE,
   SENDING_METHODS,
 } from "./languageWords.js";
 import {
@@ -1006,30 +1007,6 @@ const LOOP_METHODS = new Set(["each", "each_with_index", "map"]);
 
 /** The loop method whose block takes the position after the element. */
 const COUNTING_LOOP = "each_with_index";
-
-/**
- * Methods that run the block they are handed before they return, so a
- * call in the block runs where the method is called: a loop over a list
- * or a count, `tap`, and `class_eval` and its kin, which run the block on
- * a class or an object. Ruby defines them all, so no pack lists them.
- */
-const RUNS_BLOCK_IN_PLACE = new Set([
-  "each",
-  "each_with_index",
-  "each_with_object",
-  "each_pair",
-  "each_key",
-  "each_value",
-  "map",
-  "times",
-  "tap",
-  "class_eval",
-  "class_exec",
-  "module_eval",
-  "module_exec",
-  "instance_eval",
-  "instance_exec",
-]);
 
 /**
  * `elementOf` for the variable a loop block gives each element, and
