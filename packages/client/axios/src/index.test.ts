@@ -370,6 +370,19 @@ describe("axiosPack — an instance's baseURL", () => {
     expect(found.listOrders).toBe("/orders");
   });
 
+  it("removes dot segments after joining, as the Node adapter's URL parse does", async () => {
+    const found = await pathsOf({
+      "consumer.ts": `
+        import axios from "axios";
+        const api = axios.create({ baseURL: "https://api.example.com/v1" });
+        export async function listOrders() {
+          return api.get("/v2/../orders");
+        }
+      `,
+    });
+    expect(found.listOrders).toBe("/v1/orders");
+  });
+
   it("sends an empty path to the base as written", async () => {
     const found = await pathsOf({
       "consumer.ts": `

@@ -2149,8 +2149,10 @@ request object built from one of the classes it lists.
 `.baseUrl(pick)` reads the base URL off the
 construction the call's receiver was made by, and `joins` says how the
 library puts a path under it: `appended` writes it after the base with
-one slash, and `resolved` resolves it the way RFC 3986 does, so a path
-that starts with `/` replaces the base's path. An absolute URL on the
+one slash and removes dot segments, `resolved` resolves it the way
+RFC 3986 does, so a path that starts with `/` replaces the base's path,
+and `asWritten` sends it to the base's host as the call writes it, as a
+Net::HTTP connection does. An absolute URL on the
 call goes where it says. `trailingSlash: "required"` is for a library
 that refuses a base whose path does not end with `/`, as aiohttp does
 since 3.10: that client is never built, so the call keeps its own path.

@@ -144,6 +144,15 @@ describe("a client built with a base URL", () => {
     );
   });
 
+  it("removes dot segments after joining, as httpx does", async () => {
+    expect(await pathUnder("https://api.example.com/v1/", "../orders")).toBe(
+      "/orders",
+    );
+    expect(await pathUnder("https://api.example.com/v1", "/v2/../orders")).toBe(
+      "/v1/orders",
+    );
+  });
+
   it("sends an empty path to the base, ended with a slash", async () => {
     expect(await pathUnder("https://api.example.com/v1", "")).toBe("/v1/");
     expect(await pathUnder("https://api.example.com", "")).toBe("/");

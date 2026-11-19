@@ -639,7 +639,11 @@ describe("a base URL the client was built with", () => {
   const built = (base: UrlTarget) =>
     callOps({ method: "new", args: [{ url: base }] });
 
-  function joined(joins: "appended" | "resolved", path: string, base = "/v1") {
+  function joined(
+    joins: "appended" | "resolved" | "asWritten",
+    path: string,
+    base = "/v1",
+  ) {
     const chain = httpRequests({ client: imported({ from: ["httplib"] }) })
       .methods(verbs({ get: "GET" }, { at: 0 }))
       .baseUrl({ at: 0, joins });
@@ -772,6 +776,21 @@ describe("a base URL the client was built with", () => {
   it("keeps a hole at the front of a path appended under a base with no path", () => {
     expect(joined("appended", "{base}/orders", "")).toEqual([
       { method: "GET", path: "{base}/orders", host: "api.example.com" },
+    ]);
+  });
+
+  it("removes dot segments after appending, behind a hole at the front too", () => {
+    expect(joined("appended", "/v2/../orders")).toEqual([
+      { method: "GET", path: "/v1/orders", host: "api.example.com" },
+    ]);
+    expect(joined("appended", "{base}/../orders", "")).toEqual([
+      { method: "GET", path: "{base}/orders", host: "api.example.com" },
+    ]);
+  });
+
+  it("sends the path as written, dot segments and all, for a library that sends it as the request target", () => {
+    expect(joined("asWritten", "/v2/../orders", "")).toEqual([
+      { method: "GET", path: "/v2/../orders", host: "api.example.com" },
     ]);
   });
 

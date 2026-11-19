@@ -243,6 +243,15 @@ describe("a host and a path given apart", () => {
     ).toBe("GET api.example.com/orders");
   });
 
+  it("sends a connection's path as written, dot segments and all", async () => {
+    expect(
+      await requestIn([
+        '    http = Net::HTTP.new("api.example.com")',
+        '    http.get("/v2/../orders")',
+      ]),
+    ).toBe("GET api.example.com/v2/../orders");
+  });
+
   it("sends a connection's calls to the host and port it was built on", async () => {
     expect(
       await requestIn([
