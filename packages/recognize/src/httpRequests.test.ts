@@ -925,6 +925,71 @@ describe("a host passed apart from the path", () => {
     ]);
   });
 
+  it("goes to the host of a full URL passed as the path", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          { ...at("api.example.com"), host: "api.example.com" },
+          { ...at("/orders", "other.example.com"), string: true },
+        ],
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: "other.example.com" }]);
+  });
+
+  it("leaves out a path that does not start with a slash, which is no request target", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          { ...at("api.example.com"), host: "api.example.com" },
+          { ...at("orders"), string: true },
+        ],
+      }),
+    ).toEqual([{ method: "GET", path: null, host: "api.example.com" }]);
+
+    const asWritten = httpRequests({ client: imported({ from: ["httplib"] }) })
+      .methods(verbs({ get: "GET" }, { at: 0 }))
+      .baseUrl({ at: 0, reads: "host", joins: "asWritten" });
+    expect(
+      claimsOf(asWritten, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("orders")],
+        receiver: callOps({
+          method: "new",
+          args: [{ host: "api.example.com" }],
+        }),
+      }),
+    ).toEqual([{ method: "GET", path: null, host: "api.example.com" }]);
+  });
+
+  it("leaves out a host written as a URL, which no connection can be opened to", () => {
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          { host: "https", evaluated: "https://api.example.com" },
+          { ...at("/orders"), string: true },
+        ],
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+    expect(
+      claimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("/orders")],
+        receiver: callOps({
+          method: "new",
+          args: [{ host: "api.example.com", evaluated: "api.example.com/" }],
+        }),
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+  });
+
   it("takes no base from a construction that states no host", () => {
     expect(
       claimsOf(MODULE, {
