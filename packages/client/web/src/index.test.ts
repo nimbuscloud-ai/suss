@@ -256,6 +256,41 @@ describe("webFetchPack — integration", () => {
 });
 
 describe("webFetchPack — fixtures", () => {
+  it("sends each caller of a wrapper with the method that caller passes", async () => {
+    const fixturesDir = path.resolve(
+      __dirname,
+      "../../../../fixtures/wrapper-request-method",
+    );
+    const project = createFixtureProject(fixturesDir, "*.ts");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const requestOf = (name: string): string | undefined => {
+      const semantics = summaries.find((s) => s.identity.name === name)
+        ?.identity.boundaryBinding?.semantics;
+      return semantics?.name === "rest"
+        ? `${semantics.method} ${semantics.path}`
+        : undefined;
+    };
+    expect({
+      listOrders: requestOf("listOrders"),
+      createOrder: requestOf("createOrder"),
+      cancelOrder: requestOf("cancelOrder"),
+      submitOrderForm: requestOf("submitOrderForm"),
+      loadCatalog: requestOf("loadCatalog"),
+      saveCatalog: requestOf("saveCatalog"),
+    }).toEqual({
+      listOrders: "GET /orders",
+      createOrder: "POST /orders",
+      cancelOrder: "DELETE /orders/{id}",
+      submitOrderForm: "POST null",
+      loadCatalog: "GET /catalog",
+      saveCatalog: "PUT /catalog",
+    });
+  });
+
   it("summarizes the ALB fixture's client on the order path, not the absolute URL it calls", async () => {
     // fetchOrder.ts calls `fetch("https://shop.example.com/api/orders/123")`.
     // The provider side never gives the scheme or host, so the path is

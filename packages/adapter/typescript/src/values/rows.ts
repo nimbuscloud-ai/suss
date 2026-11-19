@@ -81,7 +81,12 @@ const operatorRows: Row[] = [
     kind: "operator",
     operator: "||",
     arity: 2,
-    apply: ([a, b]) => readableFallback(operand(a), operand(b), truthOf),
+    // An object counts as true however empty, so `options || {}` keeps
+    // the object a caller passed instead of joining it with a new one.
+    apply: ([a, b], contentOf) =>
+      readableFallback(operand(a), operand(b), (left) =>
+        javascriptTruthiness(contentOf(left)),
+      ),
   },
   {
     kind: "operator",

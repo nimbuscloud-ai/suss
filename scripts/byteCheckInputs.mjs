@@ -766,6 +766,15 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/wrapped-set-timeout/tsconfig.json"),
     ...packs("react", "express", "node", "fetch"),
   ]),
+  fixture("wrapper-request-method", [
+    ...dir("fixtures/wrapper-request-method"),
+    ...packs("fetch"),
+  ]),
+  fixture("wrapper-request-method-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/wrapper-request-method-ruby"),
+    ...packs("net-http"),
+  ]),
 ];
 
 /**

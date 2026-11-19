@@ -12,6 +12,7 @@ const response = await fetch("/api/orders/42", { method: "DELETE" });
 
 - **Requests**: calls to `fetch()`, declared with `@suss/recognize`'s `httpRequests`. There is no import to match, since `fetch` is built in. The call can be written bare or through the global object, as `globalThis.fetch()`, `window.fetch()`, `self.fetch()` or `global.fetch()`. A `fetch` the program binds itself, such as one a caller hands in or one a fetch library exports, is read as `fetch` too, since it is nearly always an implementation of it.
 - **Binding**: the URL from the first argument, evaluated, and the HTTP method from `options.method`, which is `GET` when the call states none or states one suss cannot settle. `options.redirect` says whether the call follows a redirect. A `data:` URL makes no request.
+- **Wrappers**: a project function that hands its own parameters to `fetch` is read again for each of its callers, with the URL and the method that caller passes. A caller that passes a method with a URL suss cannot settle is a client of that method with no path.
 - **Terminals**: `returnStatement` (any return) and `throwExpression`.
 
 `fetch` is a web API built into the runtime and has no framework behind it, so this is a client pack. It uses the same `PatternPack` interface because the adapter reads both kinds of pack the same way.
