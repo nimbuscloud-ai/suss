@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  messageBusBinding,
   packageExportBinding,
   restBinding,
   runtimeConfigBinding,
@@ -1774,6 +1775,47 @@ describe("suss ask what reaches, over a chain", () => {
         provides: "POST /orders",
       }),
     ]);
+  });
+
+  it("names the queue of a job that calls into the target, though nothing enqueues the job", () => {
+    const job = {
+      ...like(
+        "SyncOrdersJob",
+        messageBusBinding({
+          recognition: "test",
+          messageBus: "activejob",
+          channel: "default#SyncOrdersJob",
+        }),
+        [
+          {
+            type: "invocation",
+            callee: "orderService",
+            summary: "repo::src/orderService.ts::orderService",
+            args: [],
+            async: false,
+          },
+        ],
+      ),
+      kind: "consumer",
+    };
+    const app = JSON.parse(fs.readFileSync(path.join(dir, "app.json"), "utf8"));
+    fs.writeFileSync(path.join(dir, "app.json"), JSON.stringify([...app, job]));
+
+    const { answer: json } = answerQuestion({
+      question: "what reaches aws.dynamodb:editions",
+      dir,
+      output: path.join(dir, "answer.txt"),
+    });
+
+    expect(json?.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          boundary: "bus:activejob default#SyncOrdersJob",
+          unit: "repo::src/SyncOrdersJob.ts::SyncOrdersJob",
+          through: ["orderService", "writeOrder"],
+        }),
+      ]),
+    );
   });
 });
 
