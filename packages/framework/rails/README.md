@@ -90,7 +90,7 @@ const pack = railsFramework({
 
 `inheritedMethodNames` adds to the methods Rails itself defines, which the pack always declares. Use it for a controller method that comes from a gem or an engine, so that an action does not report a call to something the project never defines. `current_user` and `authenticate_user!` come from Devise, which is why they are not in the built-in list.
 
-`root` and `routesFile` default to what `rails new` scaffolds, `app` and `config/routes.rb`. The CLI resolves a relative value, including a pattern in `engineRoots` or `routesFiles`, against the config file's directory when the options came from `-f rails=config.json`. For a bare `-f rails`, it resolves against the directory the run reads (`--dir`, or the working directory). A pack constructed in code with no `configDirectory` resolves against the working directory.
+`root` and `routesFile` default to what `rails new` scaffolds, `app` and `config/routes.rb`. A `root` that points at the application's own folder, the one with `app` and `config` side by side in it, is read as its `app` directory, so `"."` and `"app"` find the same controllers. The CLI resolves a relative value, including a pattern in `engineRoots` or `routesFiles`, against the config file's directory when the options came from `-f rails=config.json`. For a bare `-f rails`, it resolves against the directory the run reads (`--dir`, or the working directory). A pack constructed in code with no `configDirectory` resolves against the working directory.
 
 ## Composing with ActiveRecord
 

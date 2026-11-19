@@ -15,7 +15,11 @@ import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
-import { applicationFile, readAutoloadRoots } from "./autoloadPaths.js";
+import {
+  appDirectoryOf,
+  applicationFile,
+  readAutoloadRoots,
+} from "./autoloadPaths.js";
 import {
   engineSourceFiles,
   expandPathPattern,
@@ -41,7 +45,8 @@ export const optionsSchema = z
   .object({
     /**
      * The directory a bare controller name is looked up under, `app` in a
-     * scaffolded Rails app.
+     * scaffolded Rails app. Pointing it at the application's own folder,
+     * with `app` and `config` in it, reads the same as pointing it at `app`.
      */
     root: z.string().optional(),
     /**
@@ -216,7 +221,9 @@ function resolveAgainst(
 }
 
 export function railsFramework(options: RailsPackOptions = {}): RubyPack {
-  const root = resolveAgainst(options.configDirectory, options.root ?? "app");
+  const root = appDirectoryOf(
+    resolveAgainst(options.configDirectory, options.root ?? "app"),
+  );
   const routesFile = resolveAgainst(
     options.configDirectory,
     options.routesFile ?? "config/routes.rb",
@@ -305,7 +312,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
 
   return {
     name: "rails",
-    version: "5",
+    version: "6",
     protocol: "http",
     discovery: [pattern],
     bodyBlocks: BODY_BLOCKS,
