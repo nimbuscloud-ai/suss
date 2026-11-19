@@ -108,6 +108,24 @@ describe("a method that calls Faraday", () => {
     expect(boundary(units).path).toBe("/orders");
   });
 
+  it("keeps a path that starts with // on the connection's host, as Faraday does", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def fetch",
+        '    conn = Faraday.new(url: "https://api.example.com/v1")',
+        '    conn.get("//other.example.com/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).path).toBe("/v1///other.example.com/orders");
+    expect(units[0]?.boundaryBinding?.semantics).toMatchObject({
+      host: "api.example.com",
+    });
+  });
+
   it("says nothing about a call on something else entirely", async () => {
     const units = await unitsIn(
       [

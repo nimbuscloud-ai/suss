@@ -63,6 +63,7 @@ export type BaseUrlPick = OneArgument & {
   readonly reads?: "host";
   readonly port?: OneArgument;
   readonly trailingSlash?: "required" | "added";
+  readonly schemeRelative?: "path";
 };
 
 /**
@@ -97,7 +98,7 @@ function chainFrom(declared: Chain<MethodMeaning>): HttpRequests {
     declared,
     methods: (table) => adding({ asks: "methods", table, ignoringCase: false }),
     calls: (meaning) => adding({ asks: "calls", meaning }),
-    baseUrl: ({ joins, reads, port, trailingSlash, ...at }) =>
+    baseUrl: ({ joins, reads, port, trailingSlash, schemeRelative, ...at }) =>
       adding({
         asks: "baseUrl",
         at,
@@ -105,6 +106,7 @@ function chainFrom(declared: Chain<MethodMeaning>): HttpRequests {
         ...(reads === undefined ? {} : { reads }),
         ...(port === undefined ? {} : { port }),
         ...(trailingSlash === undefined ? {} : { trailingSlash }),
+        ...(schemeRelative === undefined ? {} : { schemeRelative }),
       }),
     response: (response) =>
       chainFrom({

@@ -533,11 +533,15 @@ function underBase(
   own: UrlTarget,
   written: Sent["written"],
 ): Pick<RequestClaim, "path" | "host"> {
-  if (base === null || own.host !== undefined) {
-    return {
-      path: statedRequestPath(own.path, own.host) ?? null,
-      host: own.host,
-    };
+  if (base === null) {
+    return ownPlace(own);
+  }
+  if (own.host !== undefined) {
+    const kept =
+      base.link.schemeRelative === "path"
+        ? schemeRelativeUnder(base, written())
+        : null;
+    return kept ?? ownPlace(own);
   }
   if (written() === "") {
     return { path: emptyPathUnder(base), host: base.url.host };
@@ -546,6 +550,35 @@ function underBase(
   return {
     path:
       path === undefined ? null : JOINED[base.joins](base.url.path ?? "", path),
+    host: base.url.host,
+  };
+}
+
+/** Where a call's own URL goes when no base comes into it. */
+function ownPlace(own: UrlTarget): Pick<RequestClaim, "path" | "host"> {
+  return {
+    path: statedRequestPath(own.path, own.host) ?? null,
+    host: own.host,
+  };
+}
+
+/**
+ * Where a URL that starts with `//` goes on a library that reads it as
+ * a path: after the base's path and a `/`, on the base's host. Null for
+ * any other URL, which goes where it says.
+ */
+function schemeRelativeUnder(
+  base: Base,
+  written: string | null,
+): Pick<RequestClaim, "path" | "host"> | null {
+  if (written?.startsWith("//") !== true || base.url.path === undefined) {
+    return null;
+  }
+  const directory = base.url.path.endsWith("/")
+    ? base.url.path
+    : `${base.url.path}/`;
+  return {
+    path: `${directory}${written.replace(/[?#].*$/, "")}`,
     host: base.url.host,
   };
 }
