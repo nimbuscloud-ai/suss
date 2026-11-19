@@ -53,7 +53,16 @@ export function urlOrHostFirst(
     if (path.isString?.(site) !== true) {
       return plain === null ? null : plain(site);
     }
-    return { path: path.url?.(site)?.path, host: host?.host?.(port, site) };
+    const own = path.url?.(site);
+    // Net::HTTP sends a full URL as the request target, and a server
+    // takes the request's host from it (RFC 9112, section 3.2.2).
+    if (own?.host !== undefined) {
+      return own;
+    }
+    return {
+      path: requestTargetPath(own?.path),
+      host: hostNamed(host, port, site),
+    };
   };
 }
 
@@ -68,6 +77,37 @@ export function hostBase(
 ): UrlTarget | null {
   const host = statedValue(built, link.at);
   const port = link.port === undefined ? null : statedValue(built, link.port);
-  const read = host?.host?.(port, site);
+  const read = hostNamed(host, port, site);
   return read === undefined ? null : { path: "", host: read };
+}
+
+/**
+ * The host a value states with its port, or undefined when the value
+ * writes a URL or a path in place of a host name, as
+ * `Net::HTTP.new("https://api.example.com")` does. Net::HTTP cannot
+ * connect to such an address.
+ */
+function hostNamed(
+  host: ValueOps | null,
+  port: ValueOps | null,
+  site: string | undefined,
+): string | undefined {
+  const written = host?.evaluated?.();
+  if (typeof written === "string" && written.includes("/")) {
+    return undefined;
+  }
+  return host?.host?.(port, site);
+}
+
+/**
+ * A path the library can send as the request target: one that starts
+ * with `/`, or with a hole that may. Net::HTTP sends `orders` as it is
+ * written, which no server reads as a path, so that is no path.
+ */
+export function requestTargetPath(
+  path: string | undefined,
+): string | undefined {
+  return path === undefined || path.startsWith("/") || path.startsWith("{")
+    ? path
+    : undefined;
 }
