@@ -85,7 +85,7 @@ file read, and nothing is extracted again.
 suss ask "what writes aws.dynamodb:orders" --dir .suss --json
 ```
 
-It takes ten questions, worded like this:
+It takes eleven questions, worded like this:
 
 - `what can I project from <boundary>`, also `what does <boundary> declare`
 - `what reads <boundary>`
@@ -95,6 +95,7 @@ It takes ten questions, worded like this:
 - `what does <unit> reach`
 - `what reaches <target>`
 - `what does <package or unit> provide`, also `what does <package> export`
+- `how is <unit or boundary> used`
 - `why does <unit> reach <boundary>`
 - `why does <name> at <file>:<line> resolve to <target>`
 
@@ -104,6 +105,15 @@ Run `suss ask` with no question and it prints this list back.
 calls it from outside, the same units `what reads` and `what writes`
 list, and says what each one does there. Units that call the code
 serving it as a function come after them.
+
+`how is` takes a helper, a class or a boundary, such as `how is
+Outbound.fetch used` or `how is Setting used`. It lists every call into
+it, grouped by what each call passes into the boundary, such as the
+key a store call selects by. Then it lists the callers by class or
+module, with the routes and jobs that reach each one, the condition
+each call runs under, how the helper can fail, and the calls around it
+that suss could not follow. `what calls` stays the flat list of
+callers.
 
 Five of them also have a symbol form, such as `<- <unit>` and
 `<unit> ->`. The reference for
@@ -125,7 +135,7 @@ saying so.
 
 Exit code 0 means the question parsed and its subject is in these
 summaries, even when the answer is empty. Exit code 1 means the
-question was not one of the ten, or nothing in these summaries is at
+question was not one of the eleven, or nothing in these summaries is at
 the boundary it named.
 
 ## Reading a finding
@@ -168,7 +178,7 @@ this file:
 npx @suss/mcp /path/to/project
 ```
 
-`suss_ask` takes the ten questions. `suss_check` compares both sides
+`suss_ask` takes the eleven questions. `suss_check` compares both sides
 of every boundary, and with a `base` such as `origin/main` it keeps
 the findings the branch introduced. `suss_boundaries` lists the
 boundaries.
@@ -190,8 +200,8 @@ is reject it. Run extract and check while the code is being written,
 and keep the merge gate as a backstop.
 
 For an agent, that means reading a file's summary before changing the
-file, and asking `what reads` or `what calls` before changing
-something other code depends on. Use `--json` and act on the findings
+file, and asking `what reads`, `what calls` or `how is ... used`
+before changing something other code depends on. Use `--json` and act on the findings
 in it. A failed check with nothing parseable behind it gives whoever
 has to fix it nothing to go on.
 
