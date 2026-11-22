@@ -7,6 +7,111 @@ description: What changed in each suss release, newest first.
 
 One section per release, newest first.
 
+## 0.40.1 (2026-11-22)
+
+0.40.1 wins back part of the time 0.40.0 added on TypeScript projects, records the URL each HTTP client actually sends, and stops reporting the operations of a service the code calls as unimplemented.
+
+### Performance
+
+0.40.0 read TypeScript projects 1.2 to 1.35 times slower than 0.39.0. Most of that came from reading every file that may call a function when a question reaches one of its parameters. 0.40.1 stops keeping a copy of those files for every cached answer and every target, reads the files that reach a target off rows the adapter already has, and asks a bare call's export before working out where the call starts ([#1625](https://github.com/nimbuscloud-ai/suss/pull/1625), [#1626](https://github.com/nimbuscloud-ai/suss/pull/1626), [#1642](https://github.com/nimbuscloud-ai/suss/pull/1642)). These three write the same summaries as before.
+
+The gain is largest on the biggest project. twenty's server, read with an 8 GB heap, took 424 s of CPU on 0.40.0 and takes about 354 s on 0.40.1, against 315 s on 0.39.0, and its live heap is 434 MB smaller, so garbage collection no longer runs near the limit. On the other projects 0.40.1 takes about as long as 0.40.0 and is still 10 to 25% slower than 0.39.0:
+
+| Project | 0.39.0 | 0.40.0 | 0.40.1 |
+|---|---:|---:|---:|
+| cal.com (TypeScript) | 84.8 s | 103.0 s | 98.2 s |
+| dub (TypeScript) | 97.8 s | 126.7 s | 123.5 s |
+| tooljet (TypeScript) | 38.3 s | 46.4 s | 48.6 s |
+| hoppscotch (TypeScript) | 10.5 s | 10.3 s | 10.4 s |
+| mastodon (Ruby) | 22.5 s | 26.0 s | 26.6 s |
+| dispatch (Python) | 13.7 s | 15.6 s | 16.5 s |
+
+CPU time, the faster of two rounds on one machine with other work running, so a difference under about 5% is noise. Python and Ruby read a little more code than in 0.40.0 because of the fixes below, such as following calls in a block at a file's top level.
+
+### Client URLs match what the library sends
+
+suss records the method, host and path of every outbound request, and pairs it with the route that serves it. Until now each client pack's idea of how the library joins a path to its base URL was tested only against itself, so a wrong idea passed. A new check, `npm run check:client-urls`, builds each call with httpx, aiohttp, Faraday, Net::HTTP and axios themselves, stops before anything is sent, and compares the URL with the one suss records ([#1633](https://github.com/nimbuscloud-ai/suss/pull/1633)). It found these, now fixed:
+
+```python
+client = httpx.Client(base_url="https://api.example.com")
+client.get("orders")        # httpx sends /orders; 0.40.0 recorded "orders", which paired with nothing
+
+client = httpx.Client(base_url="https://api.example.com/v1")
+client.get("")              # httpx sends /v1/; 0.40.0 left the path out
+```
+
+```ruby
+Net::HTTP.new("api.example.com").get("orders")     # sends "GET orders"; 0.40.0 recorded /orders
+conn = Faraday.new(url: "https://api.example.com/v1")
+conn.get("//other.example.com/orders")             # stays on api.example.com; 0.40.0 sent it to other.example.com
+```
+
+- A relative path under a base with no path gets its leading slash, in httpx and axios ([#1634](https://github.com/nimbuscloud-ai/suss/pull/1634)).
+- An empty path goes to the client's base, in httpx, aiohttp, Faraday and axios ([#1635](https://github.com/nimbuscloud-ai/suss/pull/1635)).
+- httpx and axios remove `..` and `.` segments, as they do when they send. Net::HTTP sends the path exactly as written, and suss now keeps it that way ([#1643](https://github.com/nimbuscloud-ai/suss/pull/1643)).
+- Faraday keeps a path that starts with `//` on the connection's host ([#1644](https://github.com/nimbuscloud-ai/suss/pull/1644)).
+- Net::HTTP no longer adds a `/` to a relative target, takes the host from a full URL passed as the path, and no longer reads `https` as the host when a URL is passed where a host belongs ([#1645](https://github.com/nimbuscloud-ai/suss/pull/1645)).
+
+A request that used to pair with nothing because of one of these now pairs with the route it reaches.
+
+### A called service's spec no longer reports every operation as unimplemented
+
+A bare `suss check` reads every OpenAPI document `suss init` finds as a contract the code serves. An app that keeps the spec of a service it calls, next to its own, got one `contractOperationUnimplemented` warning for each of that service's operations. This was reported from the field, where it was 20 of a run's warnings. Now a document none of whose operations the code serves is set aside with one note:
+
+```
+info: contractUnpaired
+  openapi/ledger.json declares 3 operations, and nothing in the code serves or calls any of them, so suss compared nothing with it. It is the contract either of a service this code calls in a way suss does not read, or of a server suss could not read, so none of its operations is reported as unimplemented.
+```
+
+The spec of an API the app does serve is checked as before ([#1630](https://github.com/nimbuscloud-ai/suss/pull/1630)).
+
+### Callers of a fetch wrapper send the method they pass
+
+A TypeScript wrapper around `fetch` that fills in its options gave its callers no request of their own, so each caller reached the wrapper's GET whatever method it passed:
+
+```ts
+export function sendWithToken(url: string, options?: RequestInit) {
+  options = options || {};
+  options.headers = { "X-Token": "token" };
+  return fetch(url, options).then((response) => response.json());
+}
+
+sendWithToken(`/orders/${id}`, { method: "delete" });
+```
+
+```
+             0.40.0           0.40.1
+cancelOrder  (nothing)        DELETE /orders/{id}
+loadCatalog  PUT /catalog     GET /catalog
+```
+
+In Ruby, a method that picks its Net::HTTP call by the verb it is passed kept only its first request, and now keeps one per verb ([#1646](https://github.com/nimbuscloud-ai/suss/pull/1646)).
+
+### `ask` agrees with `check`
+
+- `what calls gql:Query.<field>` lists the client operations `check` pairs with that field, and asking by the bare `Query.<field>` points at the field instead of offering the schema file as a second match ([#1628](https://github.com/nimbuscloud-ai/suss/pull/1628)).
+- `what reaches <function>` lists the jobs and queue consumers that reach it: an ActiveJob `perform`, a Sidekiq worker, a Celery task or a BullMQ processor ([#1636](https://github.com/nimbuscloud-ai/suss/pull/1636)).
+
+```
+$ suss ask "what reaches Accounts.sync_account"
+0.40.0  Nothing in these summaries reaches Accounts.sync_account.
+0.40.1  1 boundary reaches Accounts.sync_account:
+          bus:sidekiq RefreshWorker, by calling Accounts.sync_account
+```
+
+### Fixes and improvements
+
+- Ruby: `new(x).tap(&:read!)` follows the call into `read!` on the receiver ([#1631](https://github.com/nimbuscloud-ai/suss/pull/1631)).
+- Ruby: `self.class.set(wait: 5.minutes).perform_later(...)` inside a job is an enqueue of that job ([#1632](https://github.com/nimbuscloud-ai/suss/pull/1632)).
+- Ruby: calls in a block at a file's top level, such as `%w[eu us].each do ... end`, are followed, and a block handed to another method, such as a Rake `task`, becomes an `unfollowedCall` gap with the reason `handedBlock` ([#1637](https://github.com/nimbuscloud-ai/suss/pull/1637)).
+- graphql-ruby: a field wired to a mutation or resolver class is filed under that class's `resolve` method, where its summary's lines are ([#1629](https://github.com/nimbuscloud-ai/suss/pull/1629)).
+- Rails: a pack config whose `root` is the application's folder rather than its `app` directory reads the same units as one pointed at `app` ([#1641](https://github.com/nimbuscloud-ai/suss/pull/1641)).
+- TypeScript: an export written as a call to a project wrapper, `export const listOrders = withLogging(async (id) => ...)`, is a unit with the calls of the function it wraps ([#1638](https://github.com/nimbuscloud-ai/suss/pull/1638)).
+- Next.js: a server action that ends in `redirect` or runs off its end keeps the calls it makes ([#1639](https://github.com/nimbuscloud-ai/suss/pull/1639)).
+- FastAPI: a dependency written once as a type alias, `CurrentUser = Annotated[User, Depends(get_current_user)]`, is composed onto every route typed with it, so those routes get the dependency's 401 and 403 ([#1640](https://github.com/nimbuscloud-ai/suss/pull/1640)).
+
+Upgrade with `npm install -D @suss/cli@0.40.1`, or run `npx @suss/cli@0.40.1`.
+
 ## 0.40.0 (2026-11-17)
 
 0.40.0 rewrites most of suss's packs as declarations that the TypeScript, Python and Ruby adapters all run, and fixes several dozen readings the rewrite turned up on the way.
