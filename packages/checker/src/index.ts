@@ -93,6 +93,21 @@ export {
   readCallFacts,
   writtenFunctionOf,
 } from "./calls/callFacts.js";
+export {
+  type ConstructSubject,
+  type ConstructUsage,
+  classNameOf,
+  constructUsage,
+  type EffectClass,
+  type UsageCall,
+  type UsageCaller,
+  type UsageEntryPoint,
+  type UsageGap,
+  type UsageGroup,
+  type UsageMember,
+  type UsageOutcome,
+  type UsageValue,
+} from "./constructs/constructUsage.js";
 export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";

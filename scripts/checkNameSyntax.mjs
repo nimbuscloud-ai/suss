@@ -53,6 +53,10 @@ const EXEMPT = new Map([
     "packages/adapter/python/src/discovery.ts",
     "reads route-path templates, which have their own brace convention",
   ],
+  [
+    "packages/checker/src/constructs/argumentSpelling.ts",
+    "spells a call's arguments the way the source writes them, object literals and string interpolation included",
+  ],
 ]);
 
 function walk(dir, found) {
