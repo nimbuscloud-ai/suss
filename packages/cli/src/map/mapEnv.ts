@@ -5,7 +5,8 @@
  * one per unit, variable and default, however many paths repeat the read.
  */
 
-import { boundarySpelling } from "../boundaryReach.js";
+import { boundarySpelling } from "@suss/checker";
+
 import { boundaryOf } from "./mapReach.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";

@@ -1385,10 +1385,11 @@ describe("runCli check --at", () => {
 });
 
 describe("runCli ask", () => {
-  it("prints the ten questions when asked none, which is not a failure", async () => {
+  it("prints the eleven questions when asked none, which is not a failure", async () => {
     const { exit, io } = await capture(() => runCli(["ask"]));
     expect(exit).toBe(0);
-    expect(io.stdout).toContain("one of ten questions");
+    expect(io.stdout).toContain("one of eleven questions");
+    expect(io.stdout).toContain("how is src/editions/dao.ts used");
   });
 
   it("fails on a question it does not answer", async () => {
@@ -1412,7 +1413,7 @@ describe("runCli ask", () => {
       runCli(["ask", "why is x.ts slow", "--dir", tmpDir]),
     );
     expect(exit).toBe(1);
-    expect(io.stdout).toContain("one of ten questions");
+    expect(io.stdout).toContain("one of eleven questions");
   });
 });
 

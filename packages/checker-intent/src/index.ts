@@ -25,6 +25,7 @@ import {
   withDeclaredDelivery,
   wrappersAround,
 } from "@suss/behavioral-ir";
+import { accessDetail } from "@suss/checker";
 import {
   applySuppressionsToFindings,
   bodyShapesMatch,
@@ -47,7 +48,6 @@ import type {
   BoundaryCall,
   BoundaryGuard,
   Deployment,
-  Interaction,
   ProvenanceEntry,
   Transition,
   TypeShape,
@@ -72,6 +72,8 @@ import type {
   SuppressionRule,
 } from "@suss/ir-core";
 import type { CoveringTestClaim, CoveringTestLookup } from "./coveringTests.js";
+
+export { accessDetail } from "@suss/checker";
 
 export type { IntentFinding } from "@suss/intent-ir";
 export type {
@@ -1547,38 +1549,6 @@ export function codeEffectsOf(
     }
   }
   return reached;
-}
-
-/**
- * The fields an access states: a storage access's columns and key, or
- * the variable a config read takes, which is a field of the runtime's
- * contract. Nothing for any other class.
- */
-export function accessDetail(interaction: Interaction): {
-  fields: string[];
-  by: string[];
-  payload?: TypeShape;
-} {
-  if (interaction.class === "config-read") {
-    return {
-      fields: interaction.name === null ? [] : [interaction.name],
-      by: [],
-    };
-  }
-
-  if (interaction.class === "stream-write") {
-    return interaction.payload === null
-      ? { fields: [], by: [] }
-      : { fields: [], by: [], payload: interaction.payload };
-  }
-
-  if (interaction.class !== "storage-access") {
-    return { fields: [], by: [] };
-  }
-  return {
-    fields: interaction.fields,
-    by: interaction.selector ?? [],
-  };
 }
 
 /** Whether the code ends the way the intent says. The body is compared elsewhere. */

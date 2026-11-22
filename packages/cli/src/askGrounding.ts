@@ -14,14 +14,14 @@
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
-import { groundStorageAccesses } from "@suss/checker";
-
 import {
   boundariesTouchedBy,
   boundarySpelling,
+  groundStorageAccesses,
   namesBoundary,
   spellingTokens,
-} from "./boundaryReach.js";
+} from "@suss/checker";
+
 import { operationTouchesAt } from "./graphqlFieldCallers.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -29,9 +29,9 @@ import type {
   GroundedBy,
   GroundedStorageAccess,
   GroundedStorageProvider,
+  TargetTouch,
+  TouchedBoundary,
 } from "@suss/checker";
-import type { TouchedBoundary } from "./boundaryReach.js";
-import type { TargetTouch } from "./target.js";
 
 /** One deployed name an access grounds to, and who supplied it. */
 export interface GroundingNote {

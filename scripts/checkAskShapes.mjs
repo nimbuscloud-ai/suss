@@ -34,6 +34,7 @@ const PATTERN_BY_SHAPE = {
   reaches: /what does[^\n]*\breach\b/i,
   reachedBy: /what reaches\b/i,
   provides: /what does[^\n]*(provide|export)/i,
+  usedBy: /how is[^\n]*\bused\b/i,
   whyReaches: /why does[^\n]*\breach\b/i,
   whyResolves: /why does[^\n]*resolve to/i,
 };

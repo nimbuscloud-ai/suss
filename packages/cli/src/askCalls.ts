@@ -10,13 +10,16 @@
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
-import { writtenFunctionOf } from "@suss/checker";
+import {
+  boundarySpelling,
+  providesKeyOf,
+  representativeUnit,
+  writtenFunctionOf,
+} from "@suss/checker";
 
 import { hiddenBehindLine, unfollowedCalls } from "./ask.js";
 import { gapCaveats } from "./askCaveats.js";
-import { boundarySpelling } from "./boundaryReach.js";
-import { functionsSpelled, representativeUnit } from "./reachTarget.js";
-import { providesKeyOf } from "./target.js";
+import { functionsSpelled } from "./reachTarget.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CallFacts, DirectCall, ReachTarget } from "@suss/checker";

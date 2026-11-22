@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { functionCallBinding } from "@suss/behavioral-ir";
+import { boundarySpelling, namesBoundary, spellingTokens } from "@suss/checker";
 
 import {
   allSummaries,
@@ -8,11 +9,6 @@ import {
   indexContract,
   route,
 } from "./__fixtures__/oneThing.js";
-import {
-  boundarySpelling,
-  namesBoundary,
-  spellingTokens,
-} from "./boundaryReach.js";
 import { resolveTarget } from "./target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";

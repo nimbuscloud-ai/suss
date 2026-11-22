@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { messageBusBinding, storageBinding } from "@suss/behavioral-ir";
-import { readCallFacts } from "@suss/checker";
 
-import { touchesOfUnits } from "./target.js";
+import { readCallFacts } from "../calls/callFacts.js";
+import { touchesOfUnits } from "./touches.js";
 import { reachedFunctions, touchesReached } from "./unitReach.js";
 
 import type { BehavioralSummary, Effect } from "@suss/behavioral-ir";
