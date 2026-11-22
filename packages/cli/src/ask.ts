@@ -2,9 +2,9 @@
  * `suss ask`: one question, answered from the summaries already on disk,
  * and for a why question from the source as well.
  *
- * A question has to match one of ten fixed patterns. Anything else gets
- * the ten printed back instead of a guess, because a wrong answer about a
- * store misleads more than no answer.
+ * A question has to match one of eleven fixed patterns. Anything else
+ * gets the eleven printed back instead of a guess, because a wrong answer
+ * about a store misleads more than no answer.
  *
  * Every answer says what it is missing. Most stores have no declaration
  * on disk until somebody reads the deploy template in, and a field list
@@ -39,6 +39,7 @@ import {
 import { answerCalls, directCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
+import { answerHowUsed, renderUsage } from "./askHowUsed.js";
 import { expandShorthand, looksLikeShorthand } from "./askShorthand.js";
 import {
   askWhy,
@@ -85,6 +86,7 @@ export type QuestionShape =
   | "reaches"
   | "reachedBy"
   | "provides"
+  | "usedBy"
   | WhyShape;
 
 export interface AskOptions {
@@ -148,9 +150,10 @@ const SHAPES: ReadonlyArray<{ shape: QuestionShape; pattern: RegExp }> = [
   { shape: "reaches", pattern: /^what does\s+(.+?)\s+reach$/i },
   { shape: "reachedBy", pattern: /^what reaches\s+(.+)$/i },
   { shape: "provides", pattern: /^what does\s+(.+?)\s+(?:provide|export)$/i },
+  { shape: "usedBy", pattern: /^how is\s+(.+?)\s+used$/i },
 ];
 
-const HOW_TO_ASK = `suss ask takes one of ten questions:
+const HOW_TO_ASK = `suss ask takes one of eleven questions:
   suss ask 'what can I project from aws.dynamodb:editions#by-publication'
   suss ask 'what reads aws.dynamodb:editions'
   suss ask 'what writes aws.dynamodb:editions'
@@ -159,6 +162,7 @@ const HOW_TO_ASK = `suss ask takes one of ten questions:
   suss ask 'what does src/editions/dao.ts reach'
   suss ask 'what reaches src/editions/dao.ts'
   suss ask 'what does @suss/checker provide'
+  suss ask 'how is src/editions/dao.ts used'
   suss ask 'why does src/editions/dao.ts reach aws.dynamodb:editions'
   suss ask 'why does handler at src/app.ts:12 resolve to createHandler'
 The same five, in symbols: '<- <unit>', '<unit> ->',
@@ -207,7 +211,7 @@ export function answerQuestion(options: AskOptions): {
       : ANSWERS[question.shape](question.subject, loadSummaries(options));
   const rendered = options.json
     ? `${JSON.stringify(asJson(options.question, answer), null, 2)}\n`
-    : renderAnswer(answer, options.all === true);
+    : (RENDERERS[answer.shape] ?? renderAnswer)(answer, options.all === true);
   writeReport(rendered, options.output);
   return {
     exitCode: answer.found ? 0 : 1,
@@ -302,6 +306,14 @@ const ANSWERS: Record<
   reaches: answerReaches,
   reachedBy: answerReachedBy,
   provides: answerProvides,
+  usedBy: answerHowUsed,
+};
+
+/** The answers printed as tables of their own. Every other one prints its headline and a line per item. */
+const RENDERERS: Partial<
+  Record<QuestionShape, (answer: Answer, all: boolean) => string>
+> = {
+  usedBy: renderUsage,
 };
 
 /**

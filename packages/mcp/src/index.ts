@@ -77,7 +77,7 @@ export function createServer(options: ServerOptions): {
       inputSchema: {
         question: z
           .string()
-          .describe("One of the ten questions, in the words listed above."),
+          .describe("One of the eleven questions, in the words listed above."),
         limit: z
           .number()
           .int()

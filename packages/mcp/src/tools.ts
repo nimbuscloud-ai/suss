@@ -37,7 +37,7 @@ export const ASK_DESCRIPTION = `Ask one question about one boundary in this code
 
 Reach for this before changing something other code depends on: a route, a database table, a queue, an environment variable. It answers from summaries the server keeps current as files change, so the answer describes the code as it is right now.
 
-The question must be one of these ten, in these words:
+The question must be one of these eleven, in these words:
   what can I project from <boundary>   what the boundary declares: the fields a store serves, the statuses a route returns, the env vars a runtime takes. Also written "what does <boundary> declare".
   what reads <boundary>                every unit that reads it, with the file, the line, and the call.
   what writes <boundary>               the same, for writes.
@@ -46,6 +46,7 @@ The question must be one of these ten, in these words:
   what does <unit> reach               every boundary a file or a summary goes through, and whether it reads or writes each.
   what reaches <target>                every boundary whose unit ends up going through the target, however many calls away, with the calls it took. Pass a large limit to see all of them.
   what does <package or unit> provide  every boundary it provides, one per line. A package is spelled by its name, "@suss/checker". Also written "what does <package> export".
+  how is <unit or boundary> used       every call into a helper, a class or a boundary, grouped by what each call passes into the boundary, with its callers by class or module, the entry points that reach each, the condition each call runs under, and what suss could not follow around it. Ask it before changing something many routes go through.
   why does <unit> reach <boundary>     the call chain, with each hop proved from source.
   why does <name> at <file>:<line> resolve to <target>   the chain from a written name to the function it comes down to.
 
@@ -102,7 +103,7 @@ export async function askTool(
   });
   if (answer === null) {
     return failure(
-      `"${args.question}" is not one of the ten questions. The tool description lists them.`,
+      `"${args.question}" is not one of the eleven questions. The tool description lists them.`,
     );
   }
   const trimmed = trim(answer.items, () => "item", args.limit ?? SHOWN);
