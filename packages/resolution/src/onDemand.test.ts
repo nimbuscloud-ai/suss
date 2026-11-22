@@ -296,6 +296,25 @@ describe("deriving the resolution rules on demand", () => {
     );
   });
 
+  it("follows a chain kept from an earlier ask into facts read since", () => {
+    // The nightly run's counterexample, shrunk. The first ask finds the
+    // chain's start and nothing past it; the second has a hop to take.
+    const scoped = new Database();
+    scoped.add("wantedCallOrigin", ["callee"]);
+    evaluate(scoped, ON_DEMAND);
+    clearRelations(scoped, ON_DEMAND, QUERY_FACTS);
+
+    scoped.add("imports", ["local", "lib", "run"]);
+    scoped.add("endsHolding", ["callee", "local"]);
+    scoped.add("wantedCallOrigin", ["callee"]);
+    evaluate(scoped, ON_DEMAND);
+
+    expect(readableFor(scoped, "wantedCallOrigin", "callee")).toEqual({
+      wantedCallOriginPair: ["callee|lib|run"],
+      wantedCallOriginMember: [],
+    });
+  });
+
   it("derives nothing a question takes back until a question is asked", () => {
     // A cleared row derived from the facts alone would come back only
     // while those facts are new, so a later question would go without it.
