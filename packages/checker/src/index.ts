@@ -173,6 +173,43 @@ export {
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { productionCode } from "./pairing/testCode.js";
+export { accessDetail } from "./reach/accessDetail.js";
+export {
+  type Access,
+  bindingTokens,
+  boundariesTouchedBy,
+  boundarySpelling,
+  effectLine,
+  interactionDetail,
+  NO_ACCESS,
+  namesBoundary,
+  namesBoundaryExactly,
+  type Relation,
+  relationsOf,
+  spellingTokens,
+  type TouchedBoundary,
+  touchLabel,
+} from "./reach/boundaryReach.js";
+export { ownBoundariesOf } from "./reach/ownBoundaries.js";
+export {
+  reachTargetOfTouches,
+  reachTargetOfUnits,
+  representativeUnit,
+} from "./reach/reachTarget.js";
+export {
+  providesKeyOf,
+  type TargetTouch,
+  touchesOf,
+  touchesOfUnits,
+  unitsServing,
+} from "./reach/touches.js";
+export {
+  type ReachedTouch,
+  reachedFunctions,
+  servesItself,
+  shortestFirst,
+  touchesReached,
+} from "./reach/unitReach.js";
 export { checkRenderProps } from "./render/renderProps.js";
 export {
   checkRuntimeConfig,

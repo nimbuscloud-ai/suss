@@ -35,6 +35,7 @@ import {
 } from "@suss/behavioral-ir";
 import {
   contractDeclaresStatus,
+  interactionDetail,
   invokersOfUnits,
   pairSummaries,
   readDeclaredContract,
@@ -42,7 +43,6 @@ import {
 } from "@suss/checker";
 import { labelWithDetail } from "@suss/ir-core";
 
-import { interactionDetail } from "./boundaryReach.js";
 import { changeNoClientSees } from "./caughtThrowChange.js";
 import { declarationChanges } from "./declaredEnvironment.js";
 import {

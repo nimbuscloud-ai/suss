@@ -9,9 +9,8 @@
  * route at once and hands each route its own paths.
  */
 
-import { functionOf } from "@suss/checker";
-
-import { touchesOfUnits } from "./target.js";
+import { functionOf } from "../calls/callFacts.js";
+import { touchesOfUnits } from "./touches.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type {
@@ -19,8 +18,8 @@ import type {
   CallPath,
   CallRecord,
   FunctionKey,
-} from "@suss/checker";
-import type { TargetTouch } from "./target.js";
+} from "../calls/callFacts.js";
+import type { TargetTouch } from "./touches.js";
 
 /** A touch, and the calls from the unit in the question to the unit that makes it. */
 export interface ReachedTouch extends TargetTouch {

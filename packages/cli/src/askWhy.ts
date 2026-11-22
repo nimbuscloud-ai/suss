@@ -17,18 +17,19 @@ import { PythonWhySession, preloadPythonGrammar } from "@suss/adapter-python";
 import { preloadRubyGrammar, RubyWhySession } from "@suss/adapter-ruby";
 import { TypeScriptWhySession } from "@suss/adapter-typescript";
 import { summaryIdentifier } from "@suss/behavioral-ir";
+import {
+  boundariesTouchedBy,
+  providesKeyOf,
+  reachTargetOfTouches,
+  representativeUnit,
+} from "@suss/checker";
 
 import { gapCaveats } from "./askCaveats.js";
 import { groundedTouchesAt } from "./askGrounding.js";
-import { boundariesTouchedBy } from "./boundaryReach.js";
 import { checkedOutSubmodules } from "./gitSubmodules.js";
 import { LANGUAGE_LABEL, languageOfFile } from "./language.js";
-import {
-  functionsSpelled,
-  reachTargetOfTouches,
-  representativeUnit,
-} from "./reachTarget.js";
-import { providesKeyOf, resolveTarget } from "./target.js";
+import { functionsSpelled } from "./reachTarget.js";
+import { resolveTarget } from "./target.js";
 import { NO_WHY_PACKS, unloadedPackCaveats, whyPacksFor } from "./whyPacks.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
@@ -38,14 +39,14 @@ import type {
   CallRecord,
   FunctionKey,
   ReachTarget,
+  TargetTouch,
+  TouchedBoundary,
 } from "@suss/checker";
 import type { ValueLocation, WhyExplained } from "@suss/resolution";
 import type { Answer, AnswerItem, AskOptions, ParsedQuestion } from "./ask.js";
-import type { TouchedBoundary } from "./boundaryReach.js";
 import type { Language } from "./language.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
 import type { SpelledFunctions } from "./reachTarget.js";
-import type { TargetTouch } from "./target.js";
 import type { WhyPacks } from "./whyPacks.js";
 
 export type WhyShape = "whyReaches" | "whyResolves";

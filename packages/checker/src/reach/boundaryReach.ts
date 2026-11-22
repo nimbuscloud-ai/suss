@@ -13,8 +13,9 @@ import {
   OWN_BINDING,
   relationsOf,
 } from "@suss/behavioral-ir";
-import { accessDetail } from "@suss/checker-intent";
 import { displayLabel, labelWithDetail } from "@suss/ir-core";
+
+import { accessDetail } from "./accessDetail.js";
 
 import type {
   BehavioralSummary,

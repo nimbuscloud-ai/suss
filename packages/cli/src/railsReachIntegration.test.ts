@@ -16,12 +16,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { extractRubyProject, findRubyFiles } from "@suss/adapter-ruby";
-import { functionOf, readCallFacts } from "@suss/checker";
+import { functionOf, readCallFacts, touchesOfUnits } from "@suss/checker";
 import railsFramework from "@suss/packs/rails";
 
 import { answerQuestion } from "./ask.js";
 import { relativizeSummaryPaths } from "./extract.js";
-import { touchesOfUnits } from "./target.js";
 
 import type { RubyPack } from "@suss/adapter-ruby";
 import type { BehavioralSummary } from "@suss/behavioral-ir";

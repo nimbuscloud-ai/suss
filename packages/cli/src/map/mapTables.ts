@@ -8,9 +8,9 @@
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
+import { boundariesTouchedBy } from "@suss/checker";
 
 import { unitsAtBoundary } from "../ask.js";
-import { boundariesTouchedBy } from "../boundaryReach.js";
 import { boundaryOf } from "./mapReach.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";

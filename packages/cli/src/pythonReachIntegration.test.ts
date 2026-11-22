@@ -14,13 +14,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
-import { functionOf, readCallFacts } from "@suss/checker";
+import { functionOf, readCallFacts, touchesOfUnits } from "@suss/checker";
 import fastapiFramework from "@suss/packs/fastapi";
 import sqlalchemyFramework from "@suss/packs/sqlalchemy";
 
 import { answerQuestion } from "./ask.js";
 import { relativizeSummaryPaths } from "./extract.js";
-import { touchesOfUnits } from "./target.js";
 
 import type { DeclaredRoutes, PythonPack } from "@suss/adapter-python";
 import type { BehavioralSummary } from "@suss/behavioral-ir";

@@ -24,6 +24,17 @@ import {
   summaryIdentifier,
   unsettledSummaryId,
 } from "@suss/behavioral-ir";
+import {
+  ownBoundariesOf,
+  providesKeyOf,
+  type ReachedTouch,
+  reachedFunctions,
+  shortestFirst,
+  type TargetTouch,
+  touchesOfUnits,
+  touchesReached,
+  unitsServing,
+} from "@suss/checker";
 
 import { answerCalls, directCalls } from "./askCalls.js";
 import { gapCaveats } from "./askCaveats.js";
@@ -46,21 +57,10 @@ import {
   ambiguousBoundarySpelling,
   collapseTouches,
   oneTouchPerCall,
-  providesKeyOf,
   type ResolvedTarget,
   resolveTarget,
   type TargetKind,
-  type TargetTouch,
-  touchesOfUnits,
-  unitsServing,
 } from "./target.js";
-import {
-  type ReachedTouch,
-  reachedFunctions,
-  servesItself,
-  shortestFirst,
-  touchesReached,
-} from "./unitReach.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -69,7 +69,7 @@ import type {
   TypeShape,
   ValueRef,
 } from "@suss/behavioral-ir";
-import type { CallFacts, FunctionKey } from "@suss/checker";
+import type { CallFacts } from "@suss/checker";
 import type { GroundingNote } from "./askGrounding.js";
 import type { WhyShape } from "./askWhy.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
@@ -743,35 +743,6 @@ function unresolvedCallCount(summaries: BehavioralSummary[]): number {
     }
   }
   return count;
-}
-
-/** The boundaries a function serves, one per summary of it that serves one. */
-function ownBoundariesOf(facts: CallFacts, fn: FunctionKey): TargetTouch[] {
-  return touchesOfUnits(facts.units.get(fn) ?? []).filter(
-    (touch) =>
-      (servesItself(touch) || consumesItsChannel(touch)) &&
-      !reachedOnTheWay(touch.summary),
-  );
-}
-
-/**
- * A job or queue consumer runs on each message that arrives on its own
- * channel, so the channel behaves differently when what it calls changes.
- */
-function consumesItsChannel(touch: TargetTouch): boolean {
-  return (
-    touch.summary.kind === "consumer" &&
-    touch.touched.binding === touch.summary.identity.boundaryBinding
-  );
-}
-
-/**
- * A library function the walk reached from something else. Its binding
- * addresses nothing, so it serves no boundary of its own, where a
- * package's export has a key that a caller in another package uses.
- */
-function reachedOnTheWay(summary: BehavioralSummary): boolean {
-  return summary.kind === "library" && providesKeyOf(summary) === undefined;
 }
 
 /**

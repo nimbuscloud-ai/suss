@@ -10,11 +10,11 @@
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
-import { readCallFacts } from "@suss/checker";
+import { reachTargetOfUnits, readCallFacts } from "@suss/checker";
 import { loadIntentDirectory } from "@suss/contract-intent";
 import { NODE_ID_SEPARATOR, TEST_TITLE_SEPARATOR } from "@suss/intent-ir";
 
-import { functionsSpelled, reachTargetOfUnits } from "./reachTarget.js";
+import { functionsSpelled } from "./reachTarget.js";
 import { filesMatching } from "./target.js";
 
 import type { BehavioralSummary, ReceiverClass } from "@suss/behavioral-ir";
