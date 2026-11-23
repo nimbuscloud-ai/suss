@@ -1,21 +1,23 @@
 name: Perf
 
-# Extraction wall time, peak memory, and packed tarball sizes, compared
-# against scripts/perf-baseline.json. Weekly rather than per pull
-# request: the measurements cost minutes of runner time, and the
-# thresholds are wide enough that a week of drift is still caught.
-# Saturday early morning UTC is a quiet slot, and the offset from the
-# top of the hour avoids the scheduling congestion GitHub warns about.
+# What suss costs at main against what it cost at the last release:
+# fixture extraction and dogfood wall time and peak memory, and packed
+# tarball sizes. Both commits are built and measured on this runner in
+# this job, taking turns, so the ratios compare like with like. The log
+# says which two commits it compared and by how much each number moved.
+# Weekly rather than per pull request, because building and measuring
+# both takes about half an hour of runner time. Saturday early morning
+# UTC is a quiet slot, offset from the top of the hour.
 on:
   schedule:
     - cron: "47 5 * * 6"
   workflow_dispatch:
     inputs:
-      refresh-baseline:
-        description: Rewrite the baseline with this runner's numbers and push it, so future runs compare like machines
+      base:
+        description: The commit or tag to compare main against (default the last release before it)
         required: false
-        default: false
-        type: boolean
+        default: ""
+        type: string
 
 # One run at a time. A manual dispatch during the scheduled run waits
 # for it instead of cancelling a measurement mid-flight.
@@ -24,16 +26,16 @@ concurrency:
 
 permissions:
   contents: read
-  # The refresh path pushes the new baseline to main through the deploy
-  # key, the same way the regenerate workflow pushes its baselines.
 
 jobs:
   perf:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
+      # The tags and the history behind them, so the base commit can be
+      # found and checked out into a worktree of its own.
       - uses: actions/checkout@v4
         with:
-          ssh-key: ${{ secrets.REGENERATE_DEPLOY_KEY }}
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -46,25 +48,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Fails past 2x the baseline's calibration-normalized wall time or
-      # raw peak RSS, or a tarball more than 15% or 250KB over baseline,
-      # whichever allowance is larger. The log carries what moved; if
-      # the growth is intended, refresh the baseline locally with
-      # `node scripts/checkPerfBaseline.mjs --update` and commit it.
-      # Wall time gates only when the baseline came from the same kind of
-      # machine; against any other it is reported and left alone. Peak RSS
-      # and tarball sizes gate either way. Refreshing the baseline here,
-      # on the runner, is what makes the wall gate meaningful again.
-      - name: Measure against the committed baseline
-        if: ${{ !inputs.refresh-baseline }}
-        run: npm run check:perf
-
-      - name: Refresh the baseline on this runner and push it
-        if: ${{ inputs.refresh-baseline }}
-        run: |
-          node scripts/checkPerfBaseline.mjs --update
-          git add scripts/perf-baseline.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: record the perf baseline on the runner [skip ci]"
-          git push origin HEAD:main
+      # Fails when main's peak RSS is more than 1.25x the base's, its wall
+      # time more than 1.5x, or a tarball grows more than 15% or 250KB.
+      - name: Compare main with the base commit
+        env:
+          PERF_BASE: ${{ inputs.base }}
+        run: node scripts/checkPerf.mjs ${PERF_BASE:+--base "$PERF_BASE"}
