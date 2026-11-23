@@ -402,6 +402,12 @@ export type EffectArg =
   | { kind: "undefined" }
   | { kind: "object"; fields: Record<string, EffectArg> }
   /**
+   * A Python or Ruby call's keyword arguments, by the name each is
+   * written with. It comes after the positional arguments, since a
+   * keyword fills the parameter of its name wherever the call writes it.
+   */
+  | { kind: "keywords"; fields: Record<string, EffectArg> }
+  /**
    * The element shapes the adapter could read, which is not always one
    * per runtime element. An array a callback builds,
    * `tags.map((tag) => ({ name: tag }))`, arrives with a single item,

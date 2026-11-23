@@ -159,13 +159,43 @@ describe("ruby invocation effects", () => {
     ]);
   });
 
-  it("reads a keyword argument's value rather than the keyword", async () => {
+  it("records keyword arguments by name, after the positional ones", async () => {
     const effects = await effectsFor([
       "def total",
-      "  publish(queue: 'orders')",
+      "  publish(payload, queue: 'orders', :retries => 3)",
       "end",
     ]);
-    expect(effects[0]?.args).toEqual([{ kind: "string", value: "orders" }]);
+    expect(effects[0]?.args).toEqual([
+      { kind: "identifier", name: "payload" },
+      {
+        kind: "keywords",
+        fields: {
+          queue: { kind: "string", value: "orders" },
+          retries: { kind: "number", value: 3 },
+        },
+      },
+    ]);
+  });
+
+  it("leaves a comment out of the arguments, and keeps a computed key under its text", async () => {
+    const effects = await effectsFor([
+      "def bump(key)",
+      "  update!(",
+      "    count: 1,",
+      "    # the key the caller picked:",
+      "    key => 2",
+      "  )",
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      {
+        kind: "keywords",
+        fields: {
+          count: { kind: "number", value: 1 },
+          key: { kind: "number", value: 2 },
+        },
+      },
+    ]);
   });
 
   it("reads a keyword written with no value as the local or the call it spells", async () => {
@@ -181,8 +211,13 @@ describe("ruby invocation effects", () => {
       "queue",
     ]);
     expect(effects[1]?.args).toEqual([
-      { kind: "identifier", name: "items" },
-      { kind: "identifier", name: "queue" },
+      {
+        kind: "keywords",
+        fields: {
+          items: { kind: "identifier", name: "items" },
+          queue: { kind: "identifier", name: "queue" },
+        },
+      },
     ]);
   });
 

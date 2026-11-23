@@ -107,6 +107,7 @@ export {
   type UsageGroup,
   type UsageMember,
   type UsageOutcome,
+  type UsageRequest,
   type UsageValue,
 } from "./constructs/constructUsage.js";
 export { checkConsumerContract } from "./consumer/consumerContract.js";

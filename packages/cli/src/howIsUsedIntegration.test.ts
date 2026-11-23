@@ -87,6 +87,30 @@ function entryPoints(answer: AnswerJson): string[] {
     .sort();
 }
 
+/**
+ * Each group as "member METHOD: values", with "could be A or B" when a
+ * call may make one of several requests.
+ */
+function requestGroups(answer: AnswerJson): string[] {
+  return itemsOf(answer, "group")
+    .map((group) => {
+      const requests = group.requests as Array<{
+        method: string | null;
+        possible?: true;
+      }>;
+      const certain = requests.filter((one) => one.possible !== true);
+      const methods = (list: typeof requests) =>
+        [...new Set(list.map((one) => one.method ?? "?"))].join(" or ");
+      const sends =
+        certain.length > 0 ? methods(certain) : `could be ${methods(requests)}`;
+      const spellings = (group.spellings as Array<{ spelled: string }>).map(
+        (one) => one.spelled,
+      );
+      return `${group.through} ${sends}: ${spellings.join(" | ")}`;
+    })
+    .sort();
+}
+
 function conditions(answer: AnswerJson): string[] {
   return itemsOf(answer, "call").flatMap((call) => call.conditions as string[]);
 }
@@ -262,4 +286,120 @@ describe("how is a construct used, in an Express app", () => {
       "PUT /account",
     ]);
   });
+});
+
+/**
+ * HTTP helpers that take the method from their caller, by position or by
+ * keyword, with a default when the caller leaves it out. Each call is in
+ * the group of the request it makes, and a call that passes on a value
+ * suss cannot settle says which requests it could make.
+ */
+describe("how is an HTTP helper used, by the request each call makes", () => {
+  async function extracted(
+    fixture: string,
+    lang: "ruby" | "python" | "typescript",
+    frameworks: string[],
+  ): Promise<string> {
+    const summaries = await extract({
+      dir: path.join(fixtures, fixture),
+      ...(lang === "typescript" ? {} : { lang }),
+      frameworks,
+      noCache: true,
+      quiet: true,
+    });
+    return written(fixture, summaries);
+  }
+
+  it("groups a Ruby helper's calls by the verb each passes or the default", async () => {
+    const dir = await extracted("request-method-parameter-ruby", "ruby", [
+      "net-http",
+      "faraday",
+    ]);
+    const { json, text } = asked("how is HttpClient.fetch used", dir);
+    expect(requestGroups(json)).toEqual([
+      'fetch DELETE: "delete"',
+      'fetch GET: "get" by default',
+      'fetch POST: "post"',
+    ]);
+    expect(text).toMatch(/fetch\s+GET\s+1\s+"get" by default/);
+    expect(
+      requestGroups(asked("how is HttpClient.send_request used", dir).json),
+    ).toEqual([
+      'send_request GET: "https://api.example.com/audit", "get" by default',
+      'send_request PUT: "https://api.example.com/grants/#{id}", "put"',
+    ]);
+    expect(
+      requestGroups(asked("how is HttpClient.send_raw used", dir).json),
+    ).toEqual(['send_raw DELETE: "DELETE"']);
+  }, 120_000);
+
+  it("reads a Ruby verb passed as a keyword by its name", async () => {
+    const dir = await extracted("request-method-keyword-ruby", "ruby", [
+      "net-http",
+      "faraday",
+    ]);
+    expect(
+      requestGroups(asked("how is HttpClient.fetch used", dir).json),
+    ).toEqual([
+      'fetch DELETE: "delete"',
+      'fetch GET: "get" by default',
+      'fetch POST: "post"',
+      "fetch could be GET or DELETE or POST: verb",
+    ]);
+    expect(
+      requestGroups(asked("how is HttpClient.send_request used", dir).json),
+    ).toEqual([
+      'send_request GET: "https://api.example.com/audit", "get" by default',
+      'send_request PUT: "https://api.example.com/grants/#{id}", "put"',
+    ]);
+  }, 120_000);
+
+  it("groups a Python helper's calls, with keywords in any order", async () => {
+    const positional = await extracted(
+      "request-method-parameter-python",
+      "python",
+      ["requests", "httpx", "aiohttp"],
+    );
+    expect(requestGroups(asked("how is fetch used", positional).json)).toEqual([
+      'fetch DELETE: "https://api.example.com/grants/g1", "delete"',
+      'fetch GET: "https://api.example.com/grants", "get" by default',
+      'fetch POST: "https://api.example.com/grants", "post"',
+    ]);
+    expect(
+      requestGroups(asked("how is send_httpx used", positional).json),
+    ).toEqual([
+      'send_httpx DELETE: "https://api.example.com/grants/g1", "DELETE"',
+    ]);
+
+    const keyword = await extracted("request-method-keyword-python", "python", [
+      "requests",
+    ]);
+    expect(requestGroups(asked("how is fetch used", keyword).json)).toEqual([
+      'fetch DELETE: "https://api.example.com/grants/g1", "delete"',
+      'fetch GET: "https://api.example.com/grants", "get" by default',
+      'fetch POST: "https://api.example.com/grants", "post"',
+      'fetch could be GET or DELETE or POST: "https://api.example.com/grants/g1", method',
+    ]);
+    expect(requestGroups(asked("how is send used", keyword).json)).toEqual([
+      'send GET: "https://api.example.com/audit", "GET" by default',
+      'send PUT: "https://api.example.com/grants/g1", "PUT"',
+    ]);
+  }, 120_000);
+
+  it("groups a TypeScript helper's calls by the method each passes or the default", async () => {
+    const dir = await extracted("request-method-parameter", "typescript", [
+      "express",
+      "fetch",
+      "axios",
+    ]);
+    expect(requestGroups(asked("how is call used", dir).json)).toEqual([
+      'call GET: "https://api.example.com/audit", "get" by default',
+      'call PUT: `https://api.example.com/grants/${req.params.id}`, "put"',
+    ]);
+    expect(requestGroups(asked("how is send used", dir).json)).toEqual([
+      'send DELETE: `https://api.example.com/grants/${req.params.id}`, "DELETE"',
+      'send GET: "https://api.example.com/grants", "GET" by default',
+      'send POST: "https://api.example.com/grants", "POST"',
+    ]);
+  }, 120_000);
 });
