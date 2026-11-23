@@ -238,6 +238,15 @@ export interface ServesRole {
     readonly controller: EntryPick;
     readonly on: EntryPick;
     readonly wordRule: { readonly replace: readonly [string, string] };
+    /**
+     * When the entry states no handler and no action, a path of two or
+     * more words joined by `/`, and nothing else, says the handler
+     * itself: the words before the last are the controller and the last
+     * is the action, each with `wordRule` applied. The controller goes
+     * under the scope's namespace. A path that ends with
+     * `optionalSuffix` is read without it.
+     */
+    readonly handlerInPath?: { readonly optionalSuffix: string };
   };
   /** A flag that turns the format suffix off, when the pick reads `when`. */
   readonly formatless?: { readonly pick: EntryPick; readonly when: boolean };

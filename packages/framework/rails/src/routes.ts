@@ -60,7 +60,9 @@ export interface RouteTable {
 
 /**
  * `get "x", to: "c#a"`, `get "x" => "c#a"`, and inside a resource a bare
- * `get :x`, which routes to the action `x` at the path `x`.
+ * `get :x`, which routes to the action `x` at the path `x`. A bare
+ * `get "/c/a"` routes to `c#a`, as ActionDispatch's match shorthand
+ * reads it.
  */
 const VERB = (method: string): ServesRole => ({
   role: "serves",
@@ -74,6 +76,7 @@ const VERB = (method: string): ServesRole => ({
     on: { keyword: "on" },
     // ActionDispatch writes `post "reset-score"` as the action `reset_score`.
     wordRule: { replace: ["-", "_"] },
+    handlerInPath: { optionalSuffix: "(.:format)" },
   },
   formatless: { pick: { keyword: "format" }, when: false },
 });

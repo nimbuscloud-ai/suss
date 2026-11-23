@@ -573,6 +573,35 @@ describe("railsFramework", () => {
       ).toEqual([]);
     });
 
+    it("routes a bare verb whose path is words joined by slashes to the controller and action they spell", () => {
+      const source =
+        "Rails.application.routes.draw do\n" +
+        '  post "/orders/refresh-totals", format: "json"\n' +
+        '  get "reports/daily(.:format)"\n' +
+        "  namespace :admin do\n" +
+        '    get "audit/entries/recent"\n' +
+        "  end\n" +
+        '  get "/orders/:id/print"\n' +
+        '  get "/orders/archive", to: redirect("/orders")\n' +
+        '  get "/orders/pending", action: :index, controller: "orders"\n' +
+        "end\n";
+      expect(routesFor(source, "OrdersController", "refresh_totals")).toEqual([
+        { method: "POST", path: "/orders/refresh-totals" },
+      ]);
+      expect(routesFor(source, "ReportsController", "daily")).toEqual([
+        { method: "GET", path: "/reports(/daily|/daily.:format)" },
+      ]);
+      expect(
+        routesFor(source, "Admin::Audit::EntriesController", "recent"),
+      ).toEqual([{ method: "GET", path: "/admin/audit/entries/recent" }]);
+      expect(routesFor(source, "OrdersController", "print")).toEqual([]);
+      expect(routesFor(source, "OrdersController", "archive")).toEqual([]);
+      expect(routesFor(source, "OrdersController", "pending")).toEqual([]);
+      expect(routesFor(source, "OrdersController", "index")).toEqual([
+        { method: "GET", path: "/orders/pending" },
+      ]);
+    });
+
     it("takes no action from a bare verb's path of more than one word", () => {
       const source =
         "Rails.application.routes.draw do\n" +
