@@ -370,13 +370,13 @@ describe("FastAPI wrappers", () => {
     });
 
     expect(statusesOf(routeFor(summaries, "GET", "/{tenant}/orders"))).toEqual([
-      404, 200, 422,
+      404, 422, 200,
     ]);
     expect(statusesOf(routeFor(summaries, "GET", "/{region}/stock"))).toEqual([
       200,
     ]);
     expect(statusesOf(routeFor(summaries, "GET", "/{region}/history"))).toEqual(
-      [200, 422],
+      [422, 200],
     );
   });
 

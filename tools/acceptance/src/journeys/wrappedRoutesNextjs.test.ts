@@ -86,8 +86,8 @@ describe("read a Next.js app whose routes are wrapped in calls", () => {
     expect(inspect.stdout).toContain(
       "POST /api/links  (nextjs handler | line 13 | wrapped by withAxiomBodyLog (fixtures/wrapped-routes-nextjs/lib/axiom/server.ts), withWorkspace(handler) (fixtures/wrapped-routes-nextjs/lib/auth/workspace.ts))",
     );
-    expect(inspect.stdout).toContain(
-      "401 { error }  (from withWorkspace(handler))",
+    expect(inspect.stdout).toMatch(
+      /from withWorkspace\(handler\), before the handler\n\s+if {2}getSession\(\) == null\n\s+-> 401 \{ error \}\n/,
     );
   });
 

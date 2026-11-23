@@ -92,10 +92,10 @@ describe("extraction over fixtures/python-fastapi", () => {
         transition.conditions.map((condition) => condition.type),
       ]),
     ).toEqual([
-      [{ type: "literal", value: 404 }, ["comparison"]],
-      [{ type: "literal", value: 200 }, ["negation"]],
       // FastAPI's own response to an `item_id` that is not an int.
       [{ type: "literal", value: 422 }, ["opaque"]],
+      [{ type: "literal", value: 404 }, ["comparison"]],
+      [{ type: "literal", value: 200 }, ["negation"]],
     ]);
   });
 
@@ -134,7 +134,7 @@ describe("extraction over fixtures/python-fastapi", () => {
   it("reads response_model and status_code into the declared transition", async () => {
     const { summaries } = await extractFixture();
     const createItem = summaries.find((s) => s.identity.name === "create_item");
-    const transition = createItem?.transitions[0];
+    const transition = createItem?.transitions.find((one) => one.isDefault);
     expect(transition?.output.type).toBe("response");
     expect(
       transition?.output.type === "response" && transition.output.statusCode,

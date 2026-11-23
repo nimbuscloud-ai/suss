@@ -114,7 +114,7 @@ export interface EntryData {
   fw: number;
   u: number[];
   sp: number[];
-  /** Outcomes: [status, output, exception, conditions, unit, line, wrapper, returns]. */
+  /** Outcomes: [status, output, exception, conditions, unit, line, wrapper, returns, onThrow]. */
   o: Array<
     [
       number | null,
@@ -125,6 +125,7 @@ export interface EntryData {
       number,
       number | null,
       number | null,
+      0 | 1,
     ]
   >;
   /** Reach: [boundary, relations, unit, via, through, line]. */
@@ -317,6 +318,7 @@ function pageDataWith(model: MapModel, listed: ListedFindings): PageData {
         outcome.line,
         maybe(outcome.wrapper),
         maybe(outcome.returns),
+        outcome.onThrow ? 1 : 0,
       ]),
       r: entry.reach.map(reach),
       c: entry.callers,

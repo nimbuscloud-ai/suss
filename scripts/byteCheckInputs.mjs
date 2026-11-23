@@ -785,6 +785,20 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/wrapped-set-timeout/tsconfig.json"),
     ...packs("react", "express", "node", "fetch"),
   ]),
+  fixture("wrapper-guards", [
+    ...dir("fixtures/wrapper-guards"),
+    ...packs("express"),
+  ]),
+  fixture("wrapper-guards-python", [
+    ...lang("python"),
+    ...dir("fixtures/wrapper-guards-python"),
+    ...packs("fastapi"),
+  ]),
+  fixture("wrapper-guards-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/wrapper-guards-ruby"),
+    ...packs("rails"),
+  ]),
   fixture("wrapper-request-method", [
     ...dir("fixtures/wrapper-request-method"),
     ...packs("fetch"),

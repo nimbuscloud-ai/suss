@@ -12,16 +12,19 @@ import {
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 
+import { extract } from "./extract.js";
 import { formatCondition, inspect, inspectDiff } from "./inspect.js";
 import { runCli } from "./run.js";
 
 import type {
   BehavioralSummary,
   Effect,
+  Predicate,
   Transition,
   TypeShape,
   ValueRef,
   WrapperMetadata,
+  WrapperReference,
 } from "@suss/behavioral-ir";
 
 /** The smallest summary a diff has something to say about. */
@@ -63,6 +66,14 @@ function captureStdout<T>(run: () => T): { output: string; result: T } {
   } finally {
     process.stdout.write = original;
   }
+}
+
+/** The printout with the tree's three-column gutter taken off every line. */
+function bodyText(output: string): string {
+  return output
+    .split("\n")
+    .map((line) => line.slice(3))
+    .join("\n");
 }
 
 /** Two runs written to files, for a diff to read. */
@@ -703,7 +714,86 @@ describe("inspect, a route the wrappers cover", () => {
       ],
       (file) => {
         const { output } = captureStdout(() => inspect({ file }));
-        expect(output).toContain("-> 401  (from requireCaller)");
+        expect(bodyText(output)).toContain(
+          ["    from requireCaller, before the handler", "      -> 401"].join(
+            "\n",
+          ),
+        );
+      },
+    );
+  });
+
+  it("prints each wrapper's tests apart from the route's, in the order a request meets them", () => {
+    const filter = { file: "app/controllers/notes.rb", name: "requireAccount" };
+    const handler = {
+      file: "app/controllers/notes.rb",
+      name: "notFound",
+      onThrow: true,
+    };
+    const signedIn: Predicate = {
+      type: "opaque",
+      sourceText: "@account",
+      reason: "complexExpression",
+    };
+    const found: Predicate = {
+      type: "opaque",
+      sourceText: "note",
+      reason: "complexExpression",
+    };
+    const outcome = (
+      id: string,
+      status: number,
+      conditions: Predicate[],
+      from?: WrapperReference,
+    ): Transition => ({
+      id,
+      conditions,
+      output: {
+        type: "response",
+        statusCode: { type: "literal", value: status },
+        body: null,
+        headers: {},
+      },
+      effects: [],
+      location: { start: 1, end: 1 },
+      isDefault: false,
+      ...(from === undefined
+        ? {}
+        : { metadata: withWrapperMetadata(undefined, { from }) }),
+    });
+    withSummaries(
+      [
+        {
+          ...wrapped([filter, handler]),
+          transitions: [
+            outcome(
+              "redirect",
+              302,
+              [{ type: "negation", operand: signedIn }],
+              filter,
+            ),
+            outcome("shown", 200, [found]),
+            outcome("missing", 404, [{ type: "negation", operand: found }]),
+            outcome("rescued", 404, [], handler),
+          ],
+        },
+      ],
+      (file) => {
+        const { output } = captureStdout(() => inspect({ file }));
+        expect(bodyText(output)).toContain(
+          [
+            "    from requireAccount, before the handler",
+            "      if  !(@account)",
+            "        -> 302",
+            "    from the handler",
+            "      if  note",
+            "        -> 200",
+            "      else",
+            "        -> 404",
+            "    from notFound, on a throw",
+            "      -> 404",
+          ].join("\n"),
+        );
       },
     );
   });
@@ -724,6 +814,102 @@ describe("inspect, a route the wrappers cover", () => {
         expect(output).not.toContain("src/d.ts");
       },
     );
+  });
+});
+
+describe("inspect, two guards in front of a route, in each language", () => {
+  const fixtures = path.resolve(__dirname, "../../../fixtures");
+
+  /** The route's outcomes as inspect prints them, without the effect lines. */
+  async function printedOutcomes(
+    fixture: string,
+    options: { lang?: "python" | "ruby"; frameworks: string[] },
+  ): Promise<string[]> {
+    const out = fs.mkdtempSync(path.join(os.tmpdir(), "suss-guards-"));
+    const file = path.join(out, "summaries.json");
+    try {
+      await extract({
+        dir: path.join(fixtures, fixture),
+        ...(options.lang === undefined ? {} : { lang: options.lang }),
+        frameworks: options.frameworks,
+        output: file,
+        noCache: true,
+        quiet: true,
+      });
+      const { output } = captureStdout(() => inspect({ file }));
+      const lines = bodyText(output).split("\n");
+      const header = lines.findIndex((line) => line.includes("GET /notes/"));
+      const end = lines.findIndex(
+        (line, at) => at > header && line.trim() === "",
+      );
+      return lines
+        .slice(header + 1, end)
+        .filter((line) => !line.trimStart().startsWith("+ "));
+    } finally {
+      fs.rmSync(out, { recursive: true, force: true });
+    }
+  }
+
+  it("prints Express middleware tests apart from the handler's", async () => {
+    expect(
+      await printedOutcomes("wrapper-guards", { frameworks: ["express"] }),
+    ).toEqual([
+      "    from requireAccount, before the handler",
+      "      if  !(signedIn(req))",
+      "        -> 401 { error }",
+      "    from requireEditor, before the handler",
+      "      if  !(canEdit(req))",
+      "        -> 403 { error }",
+      "    from the handler",
+      "      if  !notes.find()",
+      "        -> 404 { error }",
+      "      else",
+      "        -> 200 { id, body }",
+    ]);
+  });
+
+  it("prints FastAPI dependency tests apart from the route's, with the validation response first", async () => {
+    expect(
+      await printedOutcomes("wrapper-guards-python", {
+        lang: "python",
+        frameworks: ["fastapi"],
+      }),
+    ).toEqual([
+      "    from require_account, before the handler",
+      "      if  !(signed_in(request))",
+      "        -> 401",
+      "    from require_editor, before the handler",
+      "      if  !(can_edit(request))",
+      "        -> 403",
+      "    from the handler",
+      "      if  request input fails validation",
+      "        -> 422",
+      "      elif  note",
+      "        -> 200 note",
+      "      else",
+      "        -> 404",
+    ]);
+  });
+
+  it("prints Rails filter tests apart from the action's", async () => {
+    expect(
+      await printedOutcomes("wrapper-guards-ruby", {
+        lang: "ruby",
+        frameworks: ["rails"],
+      }),
+    ).toEqual([
+      "    from require_account, before the handler",
+      "      if  !(@account)",
+      "        -> 401",
+      "    from require_editor, before the handler",
+      "      if  !(@account.can_edit?)",
+      "        -> 403",
+      "    from the handler",
+      "      if  note",
+      "        -> 200",
+      "      else",
+      "        -> 404",
+    ]);
   });
 });
 
