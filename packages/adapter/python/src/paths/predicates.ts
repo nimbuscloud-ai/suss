@@ -11,10 +11,12 @@ import { constantOf, literalOf } from "@suss/values";
 
 import { allChildren, children, field } from "../ast.js";
 import { evaluatedValue } from "../values/evaluator.js";
+import { caseArmOf, patternTestText } from "./caseArms.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { PyNode } from "../parser.js";
+import type { CaseArm, PatternTest } from "./caseArms.js";
 
 /** Python's own spelling of each operator the IR models. */
 const COMPARISONS: Record<string, ComparisonOp> = {
@@ -149,12 +151,81 @@ function comparisonOf(
   };
 }
 
+type PatternReading<T> = {
+  [K in PatternTest["kind"]]: (
+    test: Extract<PatternTest, { kind: K }>,
+    facts: Database | undefined,
+    inputs: GuardInputs | undefined,
+  ) => T;
+};
+
+const PATTERN_PREDICATES: PatternReading<Predicate> = {
+  equals: (test, facts, inputs) => ({
+    type: "comparison",
+    left: valueRefOf(test.subject, facts, inputs),
+    op: "eq",
+    right: valueRefOf(test.pattern, facts, inputs),
+  }),
+  isNone: (test, facts, inputs) =>
+    nullCheckOf(test.subject, false, facts, inputs),
+  matches: (test) => ({
+    type: "opaque",
+    sourceText: patternTestText(test),
+    reason: "complexExpression",
+  }),
+};
+
+/** The values each test's predicate may read an input from, as `operandsOf` gives them for a comparison. */
+const PATTERN_OPERANDS: PatternReading<PyNode[]> = {
+  equals: (test) =>
+    [test.subject, test.pattern].filter((one) => SUBJECT_TYPES.has(one.type)),
+  isNone: (test) =>
+    SUBJECT_TYPES.has(test.subject.type) ? [test.subject] : [],
+  matches: () => [],
+};
+
+/** Any one of a case's tests picks it, and its guard must also be true. */
+function caseArmPredicate(
+  arm: CaseArm,
+  facts: Database | undefined,
+  inputs: GuardInputs | undefined,
+): Predicate {
+  const tests = arm.tests.map((test) =>
+    (
+      PATTERN_PREDICATES[test.kind] as (
+        one: PatternTest,
+        given: Database | undefined,
+        read: GuardInputs | undefined,
+      ) => Predicate
+    )(test, facts, inputs),
+  );
+  const guard =
+    arm.guard === null ? [] : [predicateOf(arm.guard, facts, inputs)];
+  return joined("and", [
+    ...(tests.length === 0 ? [] : [joined("or", tests)]),
+    ...guard,
+  ]);
+}
+
+/** Several predicates joined with `op`, or the one predicate when there is only one. */
+function joined(op: "and" | "or", operands: Predicate[]): Predicate {
+  const [only] = operands;
+  return operands.length === 1 && only !== undefined
+    ? only
+    : { type: "compound", op, operands };
+}
+
 /** A condition this does not model stays opaque, with its source text. */
 export function predicateOf(
   node: PyNode,
   facts?: Database | undefined,
   inputs?: GuardInputs | undefined,
 ): Predicate {
+  const arm = caseArmOf(node);
+  if (arm !== null) {
+    return caseArmPredicate(arm, facts, inputs);
+  }
+
   if (node.type === "parenthesized_expression") {
     const inner = node.namedChild(0);
     return inner == null ? opaqueOf(node) : predicateOf(inner, facts, inputs);
@@ -194,6 +265,13 @@ const SUBJECT_TYPES = new Set(["identifier", "attribute", "subscript"]);
  * can ask where all of them came from before it builds any predicate.
  */
 export function operandsOf(node: PyNode): PyNode[] {
+  const arm = caseArmOf(node);
+  if (arm !== null) {
+    const tested = arm.tests.flatMap((test) =>
+      (PATTERN_OPERANDS[test.kind] as (one: PatternTest) => PyNode[])(test),
+    );
+    return arm.guard === null ? tested : [...tested, ...operandsOf(arm.guard)];
+  }
   if (
     node.type === "parenthesized_expression" ||
     node.type === "not_operator"

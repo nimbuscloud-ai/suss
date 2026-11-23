@@ -200,6 +200,39 @@ describe("a method that calls Net::HTTP", () => {
 
     expect(requests).toEqual(["GET null", "DELETE null", "POST null"]);
   });
+
+  it("says which verb picks each request when a case on the verb picks one", async () => {
+    const root = path.resolve(
+      __dirname,
+      "../../../../fixtures/wrapper-request-method-ruby",
+    );
+    const { summaries } = await extractRubyProject({
+      files: [path.join(root, "app/http_client.rb")],
+      packs: [netHttpClient()],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    const picked = summaries.flatMap((summary) => {
+      const semantics = summary.identity.boundaryBinding?.semantics;
+      return summary.kind === "client" && semantics?.name === "rest"
+        ? [[semantics.method, summary.bindingFrom?.when]]
+        : [];
+    });
+    const methodIs = (value: string) => [
+      {
+        type: "comparison",
+        left: { type: "input", inputRef: "method", path: [] },
+        op: "eq",
+        right: { type: "literal", value },
+      },
+    ];
+
+    expect(picked).toEqual([
+      ["GET", methodIs("get")],
+      ["DELETE", methodIs("delete")],
+      ["POST", methodIs("post")],
+    ]);
+  });
 });
 
 describe("a helper that takes the method from its caller", () => {

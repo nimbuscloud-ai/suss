@@ -142,10 +142,12 @@ A route produces a transition for each place it returns or raises. To find those
 | `if` / `elif` / `else` | one `if` per test, with the elif chain nested into the else arm the way Python reads it |
 | `while`, `for` | `loop` |
 | `try` / `except` / `finally` | `try`, with every except arm as the catch body |
-| `match` / `case` | `switch`, one group per case, `case _` as the default group |
+| `match` / `case` | `switch`, one group per case that never falls into the next, with `case _` or a case that binds a bare name as the default group |
 | `return`, `raise` | `exit`, so each of them gets its own transition |
 | `break`, `continue` | `exit`, which the engine uses for reachability and does not report as an outcome |
 | anything else | `opaque` |
+
+A case's condition compares the subject with its pattern, so `case "put" | "patch"` under `match verb` reads `verb == "put" or verb == "patch"`. A literal or a dotted name is compared with `==`, and `None` with `is`. A class, a sequence or a mapping pattern matches some other way, which the condition vocabulary cannot say, so it stays opaque and quotes the source, `verb matches Point(x=0)`. A guard is joined with `and`. `paths/caseArms.ts` reads a case once for the lowering, which writes the text, and for `predicateOf`, which writes the comparison.
 
 A statement's exit kind comes from scanning its own subtree for a return or a raise. The scan stops at a nested `def` or `lambda`, because those belong to the function they declare. When the subtree has both, the raise wins, wherever each of them is.
 

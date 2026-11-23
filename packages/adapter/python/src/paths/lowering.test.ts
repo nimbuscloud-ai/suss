@@ -5,6 +5,7 @@ import { enumerateStructuredPaths } from "@suss/extractor";
 import { field } from "../ast.js";
 import { parsePython } from "../parser.js";
 import { lowerPythonBody } from "./lowering.js";
+import { operandsOf, predicateOf } from "./predicates.js";
 
 import type { PyNode } from "../parser.js";
 
@@ -120,6 +121,153 @@ describe("python lowering feeds the shared path engine", () => {
     expect(returns).toHaveLength(2);
     expect(result.byTerminal.has(returns[0] as PyNode)).toBe(true);
     expect(result.byTerminal.has(returns[1] as PyNode)).toBe(true);
+  });
+
+  it("runs one case and never the next, with the subject in each case's condition", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def send_it(verb):",
+        "    match verb:",
+        '        case "get":',
+        "            log_read()",
+        '        case "put" | "patch":',
+        "            log_write()",
+        "        case other:",
+        "            log_other(other)",
+        "    return 1",
+      ].join("\n"),
+    );
+    expect(
+      result.byTerminal
+        .get(returns[0] as PyNode)
+        ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+    ).toEqual([
+      [['verb == "get"', "positive"]],
+      [['verb == "put" or verb == "patch"', "positive"]],
+      [
+        ['verb == "get"', "negative"],
+        ['verb == "put" or verb == "patch"', "negative"],
+      ],
+    ]);
+  });
+
+  it("reads each case's condition as the subject compared with its pattern", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def read_reply(reply, strict):",
+        "    match reply.status:",
+        "        case 200:",
+        "            return 1",
+        '        case "gone" | "lost":',
+        "            return 2",
+        "        case None:",
+        "            return 3",
+        "        case Reply(code=500) if strict:",
+        "            return 4",
+        "        case code if code > 400:",
+        "            return 5",
+      ].join("\n"),
+    );
+    const read = returns.map((one) => {
+      const condition = result.byTerminal.get(one)?.[0]?.[0];
+      return [
+        condition?.sourceText,
+        condition?.expression === null || condition?.expression === undefined
+          ? null
+          : predicateOf(condition.expression),
+      ];
+    });
+    const status = {
+      type: "dependency",
+      name: "reply",
+      accessChain: ["status"],
+    };
+    const statusIs = (value: string | number) => ({
+      type: "comparison",
+      left: status,
+      op: "eq",
+      right: { type: "literal", value },
+    });
+    expect(read).toEqual([
+      ["reply.status == 200", statusIs(200)],
+      [
+        'reply.status == "gone" or reply.status == "lost"',
+        {
+          type: "compound",
+          op: "or",
+          operands: [statusIs("gone"), statusIs("lost")],
+        },
+      ],
+      [
+        "reply.status is None",
+        { type: "nullCheck", subject: status, negated: false },
+      ],
+      [
+        "reply.status matches Reply(code=500) and strict",
+        {
+          type: "compound",
+          op: "and",
+          operands: [
+            {
+              type: "opaque",
+              sourceText: "reply.status matches Reply(code=500)",
+              reason: "complexExpression",
+            },
+            {
+              type: "truthinessCheck",
+              subject: { type: "unresolved", sourceText: "strict" },
+              negated: false,
+            },
+          ],
+        },
+      ],
+      [
+        "code > 400",
+        {
+          type: "comparison",
+          left: { type: "unresolved", sourceText: "code" },
+          op: "gt",
+          right: { type: "literal", value: 400 },
+        },
+      ],
+    ]);
+  });
+
+  it("compares a named value or a bound literal, and quotes a sequence or a signed number", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def read_reply(reply, kind, strict):",
+        "    match reply:",
+        "        case Status.GONE:",
+        "            return 1",
+        '        case "lost" as why:',
+        "            return 2",
+        "        case -1:",
+        "            return 3",
+        "    match reply, kind:",
+        "        case 1, 2:",
+        "            return 4",
+        "        case (code, _) if strict:",
+        "            return 5",
+      ].join("\n"),
+    );
+    const read = returns.map((one) => {
+      const condition = result.byTerminal.get(one)?.[0]?.at(-1);
+      const expression = condition?.expression;
+      return [
+        condition?.sourceText,
+        expression === null || expression === undefined
+          ? []
+          : operandsOf(expression).map((node) => node.text),
+      ];
+    });
+    expect(read).toEqual([
+      ["reply == Status.GONE", ["reply"]],
+      ['reply == "lost"', ["reply"]],
+      ["reply matches -1", []],
+      ["reply, kind matches 1, 2", []],
+      ["reply, kind matches (code, _) and strict", ["strict"]],
+    ]);
   });
 
   it("lowers match and case, with the wildcard case as the default group", async () => {

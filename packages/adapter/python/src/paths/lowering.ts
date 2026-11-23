@@ -5,6 +5,7 @@
  */
 
 import { children, field, NodeMap, NodeSet, rangeOf } from "../ast.js";
+import { caseArmOf, caseArmText, matchesAnything } from "./caseArms.js";
 
 import type {
   CaseGroup,
@@ -177,19 +178,19 @@ class Lowerer {
     };
   }
 
+  /** Python runs one case of a `match` and never falls into the next, so each case ends with an implicit break. */
   private lowerMatch(node: PyNode): StructuredStatement<PyNode> {
     const cases = blockStatements(field(node, "body")).filter(
       (child) => child.type === "case_clause",
     );
     const groups: CaseGroup<PyNode>[] = cases.map((clause) => {
-      const pattern =
-        children(clause).find(
-          (child): child is PyNode =>
-            child !== null && child.type === "case_pattern",
-        ) ?? null;
+      const arm = caseArmOf(clause);
       return {
-        condition: pattern?.text.trim() === "_" ? null : handleOf(pattern),
-        hasTrailingBreak: false,
+        condition:
+          arm === null || matchesAnything(arm)
+            ? null
+            : { sourceText: caseArmText(arm), expression: clause },
+        hasTrailingBreak: true,
         body: this.lowerBlock(field(clause, "consequence")),
       };
     });
