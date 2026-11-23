@@ -44,6 +44,48 @@ export function spellArgument(
   return SPELLERS[argument.kind](argument as never, file);
 }
 
+/** A value the summaries record as a literal, such as a default or a value a condition compares with. */
+export type LiteralValue = string | number | boolean | null;
+
+/** A literal spelled the way a caller that wrote it out would be, so the two compare equal. */
+export function spellLiteral(value: LiteralValue, file: string): string {
+  return spellArgument(argumentOfLiteral(value), file).blanked;
+}
+
+function argumentOfLiteral(value: LiteralValue): RecordedArgument {
+  if (value === null) {
+    return { kind: "null" };
+  }
+  if (typeof value === "string") {
+    return { kind: "string", value };
+  }
+  if (typeof value === "number") {
+    return { kind: "number", value };
+  }
+  return { kind: "boolean", value };
+}
+
+/** The literal an argument writes out, or undefined for one computed at run time. */
+export function literalOf(
+  argument: RecordedArgument,
+): LiteralValue | undefined {
+  if (argument === null) {
+    return undefined;
+  }
+  return LITERAL_OF[argument.kind]?.(argument as never);
+}
+
+const LITERAL_OF: Partial<{
+  [K in NonNullable<RecordedArgument>["kind"]]: (
+    argument: Extract<NonNullable<RecordedArgument>, { kind: K }>,
+  ) => LiteralValue;
+}> = {
+  string: (argument) => argument.value,
+  number: (argument) => argument.value,
+  boolean: (argument) => argument.value,
+  null: () => null,
+};
+
 type Speller<K extends string> = (
   argument: Extract<NonNullable<RecordedArgument>, { kind: K }>,
   file: string,

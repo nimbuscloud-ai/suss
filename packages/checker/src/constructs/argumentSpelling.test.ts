@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { spellArgument } from "./argumentSpelling.js";
+import { literalOf, spellArgument, spellLiteral } from "./argumentSpelling.js";
+
+describe("spellLiteral", () => {
+  it("spells a default the way a caller that wrote the same value is spelled", () => {
+    expect(spellLiteral("get", "app/http.rb")).toBe(
+      spellArgument({ kind: "string", value: "get" }, "app/grants.rb").blanked,
+    );
+    expect(spellLiteral(null, "app/http.rb")).toBe("nil");
+    expect(spellLiteral(null, "app/http.py")).toBe("None");
+    expect(spellLiteral(10, "a.ts")).toBe("10");
+    expect(spellLiteral(false, "a.ts")).toBe("false");
+  });
+
+  it("reads a literal back out of an argument, and nothing out of a computed one", () => {
+    expect(literalOf({ kind: "string", value: "post" })).toBe("post");
+    expect(literalOf({ kind: "null" })).toBeNull();
+    expect(literalOf({ kind: "identifier", name: "verb" })).toBeUndefined();
+    expect(literalOf(null)).toBeUndefined();
+  });
+});
 
 describe("spellArgument", () => {
   it("keeps the fixed parts of a Ruby interpolated string and blanks each hole", () => {

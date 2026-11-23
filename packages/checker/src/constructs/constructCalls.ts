@@ -1,19 +1,22 @@
 /**
  * Every call one function makes into another, one entry per place the
  * call is written, and the facts and rules that say what each call
- * passes into a boundary.
+ * passes into a boundary and which request it makes.
  *
  * A call counts a parameter when the function uses it for a boundary
  * field or a column it selects rows by, or passes it on to a function
  * that does. Those are one-hop facts, `selects` and `forwards`, and the
  * `counted` rule closes over them, so `enabled?(key)` counts `key`
- * because the `lookup(key)` it calls selects rows by it. A call that leaves
- * a counted parameter out is recorded as leaving it out. The parameter
- * default that would fill it is not read yet.
+ * because the `lookup(key)` it calls selects rows by it. A call that
+ * leaves a counted parameter out passes its default when the source
+ * writes the default as a literal. The README in this folder says how a
+ * call is matched to the request it makes.
  */
 
 import {
+  bindingIs,
   originalIdOf,
+  predicateRefs,
   readWrapperMetadata,
   settlingSuffix,
   summaryIdentifier,
@@ -34,13 +37,19 @@ import {
 import { writtenFunctionOf } from "../calls/callFacts.js";
 import { argumentForParameter } from "../calls/passedArguments.js";
 import { containerParametersOf } from "../storage/containerParameters.js";
-import { spellArgument } from "./argumentSpelling.js";
+import { literalOf, spellArgument, spellLiteral } from "./argumentSpelling.js";
 
-import type { BehavioralSummary, Effect, Predicate } from "@suss/behavioral-ir";
+import type {
+  BehavioralSummary,
+  ComparisonOp,
+  Effect,
+  Predicate,
+  ValueRef,
+} from "@suss/behavioral-ir";
 import type { Rule } from "@suss/datalog";
 import type { FunctionKey } from "../calls/callFacts.js";
 import type { RecordedArgument } from "../calls/passedArguments.js";
-import type { SpelledArgument } from "./argumentSpelling.js";
+import type { LiteralValue, SpelledArgument } from "./argumentSpelling.js";
 
 /**
  * How a call reached its target. `written` is a call the run resolved,
@@ -69,6 +78,33 @@ export interface RecordedCall {
 /** What one call passes for one parameter of the function it calls. */
 export interface PassedValue extends SpelledArgument {
   parameter: string;
+  /** The value, when the call writes it out as a literal. */
+  literal?: LiteralValue;
+}
+
+/** A parameter default the source writes as a literal, and the same value as a caller would spell it. */
+export interface ParameterDefault {
+  literal: LiteralValue;
+  spelled: string;
+}
+
+/**
+ * A request a function makes: one client unit over it, and each
+ * condition on the function's inputs that picks that request. A
+ * condition is a parameter and a literal it must equal, or must not, or
+ * null when no literal decides it.
+ */
+export interface RequestUnit {
+  fn: FunctionKey;
+  unit: BehavioralSummary;
+  conditions: ReadonlyArray<LiteralTest | null>;
+}
+
+export interface LiteralTest {
+  parameter: string;
+  /** The literal as a caller would spell it. */
+  value: string;
+  equal: boolean;
 }
 
 export interface CallFactsForUse {
@@ -81,6 +117,9 @@ export interface CallFactsForUse {
   selects: ReadonlyArray<[FunctionKey, string]>;
   /** A function, its own parameter, and the function and parameter it passes it on to. */
   forwards: ReadonlyArray<[FunctionKey, string, FunctionKey, string]>;
+  /** Each function's parameters that have a literal default. */
+  defaults: ReadonlyMap<FunctionKey, ReadonlyMap<string, ParameterDefault>>;
+  requests: readonly RequestUnit[];
 }
 
 /** Every call between functions in these summaries, once per written call. */
@@ -184,6 +223,8 @@ export function readCallsForUse(
     passed,
     selects: selectsFacts(summaries, parameters),
     forwards,
+    defaults: defaultsByFunction(parameters),
+    requests: requestUnits(summaries),
   };
 }
 
@@ -212,6 +253,7 @@ interface Parameter {
   position: number;
   /** How many parameters share the position, which is more than one for a destructured object. */
   sharing: number;
+  default?: ParameterDefault;
 }
 
 /**
@@ -225,9 +267,7 @@ function parametersByFunction(
   const found = new Map<FunctionKey, Parameter[]>();
   for (const summary of summaries) {
     const inputs = summary.inputs.flatMap((input) =>
-      input.type === "parameter"
-        ? [{ name: input.name, position: input.position }]
-        : [],
+      input.type === "parameter" ? [input] : [],
     );
     const fn = writtenFunctionOf(summary);
     if ((found.get(fn)?.length ?? 0) >= inputs.length) {
@@ -236,18 +276,50 @@ function parametersByFunction(
     found.set(
       fn,
       inputs.map((input) => ({
-        ...input,
+        name: input.name,
+        position: input.position,
         sharing: inputs.filter((other) => other.position === input.position)
           .length,
+        ...(input.default?.type === "literal"
+          ? {
+              default: {
+                literal: input.default.value,
+                spelled: spellLiteral(
+                  input.default.value,
+                  summary.location.file,
+                ),
+              },
+            }
+          : {}),
       })),
     );
   }
   return found;
 }
 
+function defaultsByFunction(
+  parameters: ReadonlyMap<FunctionKey, readonly Parameter[]>,
+): Map<FunctionKey, Map<string, ParameterDefault>> {
+  const found = new Map<FunctionKey, Map<string, ParameterDefault>>();
+  for (const [fn, inputs] of parameters) {
+    const defaulted = new Map<string, ParameterDefault>();
+    for (const input of inputs) {
+      if (input.default !== undefined) {
+        defaulted.set(input.name, input.default);
+      }
+    }
+    if (defaulted.size > 0) {
+      found.set(fn, defaulted);
+    }
+  }
+  return found;
+}
+
 /**
  * What a call passes for each parameter. A parameter destructured out of
- * an object takes the field of that name.
+ * an object takes the field of that name. JavaScript fills a parameter
+ * the call passes `undefined` for with its default, so that call leaves
+ * it out.
  */
 function valuesPassed(
   call: RecordedCall,
@@ -259,12 +331,14 @@ function valuesPassed(
       argumentForParameter(call.args, parameter),
       parameter,
     );
-    if (value === undefined) {
+    if (value === undefined || value?.kind === "undefined") {
       continue;
     }
+    const literal = literalOf(value);
     values.push({
       parameter: parameter.name,
       ...spellArgument(value, call.caller.location.file),
+      ...(literal === undefined ? {} : { literal }),
     });
   }
   return values;
@@ -323,7 +397,106 @@ const SELECTOR_READERS: ReadonlyArray<
       ),
     ),
   containerParametersOf,
+  bindingFromParameters,
 ];
+
+/**
+ * The parameters a client takes its method and host from, and the ones
+ * the conditions that pick its request test. A host read out of a URL
+ * counts the URL's parameter.
+ */
+function bindingFromParameters(summary: BehavioralSummary): string[] {
+  const from = summary.bindingFrom;
+  if (from === undefined) {
+    return [];
+  }
+  return [
+    ...(from.method ?? []),
+    ...(from.host ?? []),
+    ...(from.when ?? []).flatMap(predicateRefs),
+  ].flatMap(rootInputOf);
+}
+
+function rootInputOf(ref: ValueRef): string[] {
+  if (ref.type === "derived") {
+    return rootInputOf(ref.from);
+  }
+  return ref.type === "input" ? [ref.inputRef] : [];
+}
+
+/**
+ * Every client unit, with the conditions that pick its request. When a
+ * function has several requests and one of them lists no condition, the
+ * function picks it by something the summaries do not read, so that
+ * request gets one condition no literal decides.
+ */
+function requestUnits(
+  summaries: ReadonlyArray<BehavioralSummary>,
+): RequestUnit[] {
+  const clients = summaries.filter(
+    (summary) =>
+      summary.kind === "client" && summary.receiverConstruction === undefined,
+  );
+  const perFunction = new Map<FunctionKey, number>();
+  for (const client of clients) {
+    const fn = writtenFunctionOf(client);
+    perFunction.set(fn, (perFunction.get(fn) ?? 0) + 1);
+  }
+  return clients.map((unit) => {
+    const fn = writtenFunctionOf(unit);
+    const when = unit.bindingFrom?.when;
+    const unread = when === undefined && (perFunction.get(fn) ?? 0) > 1;
+    return {
+      fn,
+      unit,
+      conditions: unread
+        ? [null]
+        : (when ?? []).map((one) => literalTest(one, unit.location.file)),
+    };
+  });
+}
+
+/** A condition read as a parameter it compares with a literal, or null when it is not one. */
+function literalTest(predicate: Predicate, file: string): LiteralTest | null {
+  if (predicate.type === "negation") {
+    const inner = literalTest(predicate.operand, file);
+    return inner === null ? null : { ...inner, equal: !inner.equal };
+  }
+  if (predicate.type !== "comparison") {
+    return null;
+  }
+  const equal = EQUALITY[predicate.op];
+  const sides =
+    parameterAndLiteral(predicate.left, predicate.right) ??
+    parameterAndLiteral(predicate.right, predicate.left);
+  if (equal === undefined || sides === null) {
+    return null;
+  }
+  return {
+    parameter: sides.parameter,
+    value: spellLiteral(sides.literal, file),
+    equal,
+  };
+}
+
+const EQUALITY: Partial<Record<ComparisonOp, boolean>> = {
+  eq: true,
+  neq: false,
+};
+
+function parameterAndLiteral(
+  subject: ValueRef,
+  other: ValueRef,
+): { parameter: string; literal: LiteralValue } | null {
+  if (
+    subject.type !== "input" ||
+    subject.path.length > 0 ||
+    other.type !== "literal"
+  ) {
+    return null;
+  }
+  return { parameter: subject.inputRef, literal: other.value };
+}
 
 // ---------------------------------------------------------------------------
 // Rules
@@ -332,10 +505,12 @@ const SELECTOR_READERS: ReadonlyArray<
 const F = v("f");
 const G = v("g");
 const C = v("c");
+const K = v("k");
 const N = v("n");
 const M = v("m");
 const O = v("o");
 const S = v("s");
+const U = v("u");
 const V = v("val");
 
 /**
@@ -359,6 +534,12 @@ const MEMBERS: Rule[] = [
   ),
 ];
 
+/**
+ * A call keys a counted parameter by what it passes, or by the default
+ * when it passes nothing and the default is a literal. `settled` says
+ * the call's value for the parameter is a literal, which is what lets a
+ * condition on it be decided.
+ */
 const COUNTED: Rule[] = [
   rule("counted", [F, N], [lit("selects", F, N)], "counted-selects"),
   rule(
@@ -368,6 +549,7 @@ const COUNTED: Rule[] = [
     "counted-forwards",
   ),
   rule("passed", [S, N], [lit("passes", S, F, N, V)], "passed"),
+  rule("defaulted", [F, N], [lit("default", F, N, V)], "defaulted"),
   rule(
     "keyed",
     [S, N, V],
@@ -375,10 +557,138 @@ const COUNTED: Rule[] = [
     "keyed",
   ),
   rule(
+    "keyed",
+    [S, N, V],
+    [
+      lit("site", S, F),
+      lit("counted", F, N),
+      notLit("passed", S, N),
+      lit("default", F, N, V),
+    ],
+    "keyed-default",
+  ),
+  rule(
     "leftOut",
     [S, N],
-    [lit("site", S, F), lit("counted", F, N), notLit("passed", S, N)],
+    [
+      lit("site", S, F),
+      lit("counted", F, N),
+      notLit("passed", S, N),
+      notLit("defaulted", F, N),
+    ],
     "left-out",
+  ),
+  rule("settled", [S, N], [lit("passesLiteral", S, N)], "settled-literal"),
+  rule(
+    "settled",
+    [S, N],
+    [lit("site", S, F), notLit("passed", S, N), lit("defaulted", F, N)],
+    "settled-default",
+  ),
+];
+
+/**
+ * A call makes request `u` when every condition that picks `u` is true
+ * of what it passes, and may make it when none is false but one is
+ * open: it tests a value the call does not settle, or no literal
+ * decides it.
+ */
+const REQUESTS: Rule[] = [
+  rule(
+    "isTrue",
+    [S, K],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      lit("requires", K, N, V),
+      lit("settled", S, N),
+      lit("keyed", S, N, V),
+    ],
+    "true-requires",
+  ),
+  rule(
+    "isTrue",
+    [S, K],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      lit("excludes", K, N, V),
+      lit("settled", S, N),
+      notLit("keyed", S, N, V),
+    ],
+    "true-excludes",
+  ),
+  rule(
+    "isFalse",
+    [S, K],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      lit("requires", K, N, V),
+      lit("settled", S, N),
+      notLit("keyed", S, N, V),
+    ],
+    "false-requires",
+  ),
+  rule(
+    "isFalse",
+    [S, K],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      lit("excludes", K, N, V),
+      lit("settled", S, N),
+      lit("keyed", S, N, V),
+    ],
+    "false-excludes",
+  ),
+  rule(
+    "ruledOut",
+    [S, U],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      lit("isFalse", S, K),
+    ],
+    "ruled-out",
+  ),
+  rule(
+    "open",
+    [S, U],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("condition", U, K),
+      notLit("isTrue", S, K),
+    ],
+    "open",
+  ),
+  rule(
+    "sends",
+    [S, U],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      notLit("ruledOut", S, U),
+      notLit("open", S, U),
+    ],
+    "sends",
+  ),
+  rule(
+    "maySend",
+    [S, U],
+    [
+      lit("site", S, F),
+      lit("request", F, U),
+      lit("open", S, U),
+      notLit("ruledOut", S, U),
+    ],
+    "may-send",
   ),
 ];
 
@@ -422,12 +732,17 @@ export function constructMembers(
   return new Set([...db.facts("member")].map((tuple) => String(tuple[0])));
 }
 
-/** What each call passes for the parameters that reach a boundary, and the ones it leaves out. */
+/**
+ * What each call passes for the parameters that reach a boundary, the
+ * ones it leaves out that have no default, and the requests it makes.
+ */
 export interface CallKeys {
   /** The counted parameters of each function, in parameter order. */
   counted: ReadonlyMap<FunctionKey, readonly string[]>;
   keyed: ReadonlyMap<string, ReadonlyMap<string, string>>;
   leftOut: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Each call's requests by unit id, true when it makes the request and false when it may. */
+  sends: ReadonlyMap<string, ReadonlyMap<string, boolean>>;
 }
 
 export function callKeys(
@@ -441,13 +756,22 @@ export function callKeys(
   for (const fact of facts.forwards) {
     db.add("forwards", fact);
   }
+  for (const [fn, defaulted] of facts.defaults) {
+    for (const [name, value] of defaulted) {
+      db.add("default", [fn, name, value.spelled]);
+    }
+  }
+  addRequestFacts(db, facts.requests);
   for (const call of calls) {
     db.add("site", [call.id, call.target]);
     for (const value of facts.passed.get(call.id) ?? []) {
       db.add("passes", [call.id, call.target, value.parameter, value.blanked]);
+      if (value.literal !== undefined) {
+        db.add("passesLiteral", [call.id, value.parameter]);
+      }
     }
   }
-  evaluate(db, COUNTED);
+  evaluate(db, [...COUNTED, ...REQUESTS]);
 
   const countedSet = new Map<FunctionKey, Set<string>>();
   for (const [fn, name] of db.facts("counted")) {
@@ -476,7 +800,42 @@ export function callKeys(
         ]),
       ].map(([site, names]) => [site, new Set(names.keys())]),
     ),
+    sends: requestsBySite(db),
   };
+}
+
+function addRequestFacts(db: Database, requests: readonly RequestUnit[]): void {
+  for (const request of requests) {
+    const unit = summaryIdentifier(request.unit);
+    db.add("request", [request.fn, unit]);
+    request.conditions.forEach((test, at) => {
+      const condition = `${unit}\u0000${at}`;
+      db.add("condition", [unit, condition]);
+      if (test !== null) {
+        db.add(test.equal ? "requires" : "excludes", [
+          condition,
+          test.parameter,
+          test.value,
+        ]);
+      }
+    });
+  }
+}
+
+function requestsBySite(db: Database): Map<string, Map<string, boolean>> {
+  const found = new Map<string, Map<string, boolean>>();
+  const add = (site: string, unit: string, certain: boolean): void => {
+    const units = found.get(site) ?? new Map<string, boolean>();
+    units.set(unit, certain);
+    found.set(site, units);
+  };
+  for (const [site, unit] of db.facts("sends")) {
+    add(String(site), String(unit), true);
+  }
+  for (const [site, unit] of db.facts("maySend")) {
+    add(String(site), String(unit), false);
+  }
+  return found;
 }
 
 function groupedBySite(
@@ -492,6 +851,38 @@ function groupedBySite(
     found.set(site, values);
   }
   return found;
+}
+
+/**
+ * The HTTP method a request sends for one call. A client that takes its
+ * method from a parameter sends what the call passes for it, or the
+ * default, upper-cased. Null when that value is not a literal string,
+ * or when the client records no method.
+ */
+export function requestMethod(
+  unit: BehavioralSummary,
+  passed: readonly PassedValue[],
+  defaults: ReadonlyMap<string, ParameterDefault> | undefined,
+): string | null {
+  const from = unit.bindingFrom?.method;
+  if (from === undefined) {
+    return bindingIs(unit.identity.boundaryBinding, "rest")
+      ? unit.identity.boundaryBinding.semantics.method
+      : null;
+  }
+  const parameters = new Set(
+    from.map((ref) =>
+      ref.type === "input" && ref.path.length === 0 ? ref.inputRef : null,
+    ),
+  );
+  const [parameter] = [...parameters];
+  if (parameters.size !== 1 || parameter === null || parameter === undefined) {
+    return null;
+  }
+  const given = passed.find((value) => value.parameter === parameter);
+  const literal =
+    given === undefined ? defaults?.get(parameter)?.literal : given.literal;
+  return typeof literal === "string" ? literal.toUpperCase() : null;
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   callKeys,
   constructMembers,
   readCallsForUse,
+  requestMethod,
   symbolOf,
 } from "./constructCalls.js";
 import { constructOutcomes, effectClassesOf } from "./constructOutcomes.js";
@@ -33,6 +34,7 @@ import type {
   CallFactsForUse,
   CallKeys,
   CallKind,
+  PassedValue,
   RecordedCall,
 } from "./constructCalls.js";
 import type { EffectClass, UsageOutcome } from "./constructOutcomes.js";
@@ -51,8 +53,23 @@ export interface UsageMember {
 /** One value a call passes for a parameter that reaches the boundary. */
 export interface UsageValue {
   parameter: string;
-  /** As the source writes it, or null when the call leaves the parameter out. */
+  /**
+   * As the source writes it. When the call leaves the parameter out, the
+   * parameter's default, or null when it has none suss can read.
+   */
   spelled: string | null;
+  /** Set when the value is the parameter's default. */
+  fromDefault?: true;
+}
+
+/** A request a call into a client helper makes. */
+export interface UsageRequest {
+  /** The client unit that makes it. */
+  unit: string;
+  /** The HTTP method, or null when the unit records none or the call passes one suss cannot settle. */
+  method: string | null;
+  /** Set when the call may make it: a condition that picks it tests a value suss cannot settle. */
+  possible?: true;
 }
 
 export interface UsageCall {
@@ -65,6 +82,8 @@ export interface UsageCall {
   through: string;
   count: number;
   values: UsageValue[];
+  /** The requests the call makes, for a call into a function with client units. */
+  requests: UsageRequest[];
   /** The group the call is in, the same string for every call in it. */
   group: string;
   conditions: Predicate[];
@@ -75,8 +94,10 @@ export interface UsageGroup {
   key: string;
   through: string;
   calls: number;
-  /** One entry per counted parameter, with computed parts as `_`. Null means the calls leave it out. */
+  /** One entry per counted parameter, with computed parts as `_`. Null means the calls leave out a parameter with no default. */
   values: Array<{ parameter: string; blanked: string | null }>;
+  /** The requests every call in the group makes, the same for each. */
+  requests: UsageRequest[];
   /** Each way the calls spell those values, most common first. */
   spellings: Array<{ spelled: string; calls: number }>;
 }
@@ -158,6 +179,7 @@ interface ConstructCall {
   count: number;
   values: UsageValue[];
   blanked: Array<string | null>;
+  requests: UsageRequest[];
   conditions: Predicate[];
   kind: CallKind | "touches";
 }
@@ -182,6 +204,7 @@ export function constructUsage(
       through: call.through,
       count: call.count,
       values: call.values,
+      requests: call.requests,
       group: groupKey(call),
       conditions: call.conditions,
       kind: call.kind,
@@ -269,11 +292,9 @@ function constructCall(
   const counted = keys.counted.get(call.target) ?? [];
   const keyed = keys.keyed.get(call.id);
   const leftOut = keys.leftOut.get(call.id);
+  const passed = forUse.passed.get(call.id) ?? [];
   const spelled = new Map(
-    (forUse.passed.get(call.id) ?? []).map((value) => [
-      value.parameter,
-      value.spelled,
-    ]),
+    passed.map((value) => [value.parameter, value.spelled]),
   );
   return {
     caller: call.caller,
@@ -281,18 +302,75 @@ function constructCall(
     callee: call.callee,
     line: call.line ?? call.caller.location.range.start,
     count: call.count,
-    values: counted.map((parameter) => ({
-      parameter,
-      spelled: leftOut?.has(parameter)
-        ? null
-        : (spelled.get(parameter) ?? null),
-    })),
-    blanked: counted.map((parameter) =>
-      leftOut?.has(parameter) ? null : (keyed?.get(parameter) ?? null),
+    values: counted.map((parameter) =>
+      usageValue(
+        parameter,
+        spelled.get(parameter),
+        leftOut?.has(parameter) === true ? undefined : keyed?.get(parameter),
+      ),
     ),
+    blanked: counted.map((parameter) =>
+      leftOut?.has(parameter) === true ? null : (keyed?.get(parameter) ?? null),
+    ),
+    requests: requestsOf(call, keys, forUse, passed, targetUnits),
     conditions: [...call.conditions],
     kind: call.kind,
   };
+}
+
+/**
+ * What the call writes for the parameter, or the default it takes when it
+ * writes nothing. `keyed` is undefined when it leaves out a parameter that
+ * has no default suss can read.
+ */
+function usageValue(
+  parameter: string,
+  written: string | undefined,
+  keyed: string | undefined,
+): UsageValue {
+  if (keyed === undefined) {
+    return { parameter, spelled: null };
+  }
+  return written === undefined
+    ? { parameter, spelled: keyed, fromDefault: true }
+    : { parameter, spelled: written };
+}
+
+/** The requests a call makes, certain ones first, each with the method it sends. */
+function requestsOf(
+  call: RecordedCall,
+  keys: CallKeys,
+  forUse: CallFactsForUse,
+  passed: readonly PassedValue[],
+  targetUnits: readonly BehavioralSummary[],
+): UsageRequest[] {
+  const sends = keys.sends.get(call.id);
+  if (sends === undefined) {
+    return [];
+  }
+  const byId = new Map(
+    targetUnits.map((unit) => [summaryIdentifier(unit), unit]),
+  );
+  const defaults = forUse.defaults.get(call.target);
+  return [...sends]
+    .flatMap(([id, certain]) => {
+      const unit = byId.get(id);
+      if (unit === undefined) {
+        return [];
+      }
+      return [
+        {
+          unit: id,
+          method: requestMethod(unit, passed, defaults),
+          ...(certain ? {} : { possible: true as const }),
+        },
+      ];
+    })
+    .sort(
+      (a, b) =>
+        Number(a.possible === true) - Number(b.possible === true) ||
+        a.unit.localeCompare(b.unit),
+    );
 }
 
 /**
@@ -331,6 +409,7 @@ function readBoundaryUsage(
       count: 1,
       values: [{ parameter: "by", spelled: selected }],
       blanked: [selected],
+      requests: [],
       conditions: [],
       kind: "touches",
     });
@@ -400,9 +479,25 @@ export function classNameOf(unit: BehavioralSummary): string | undefined {
 }
 
 function groupKey(call: ConstructCall): string {
-  return [call.through, ...call.blanked.map((value) => value ?? "")].join(
-    "\u0000",
-  );
+  return [
+    call.through,
+    ...call.blanked.map((value) => value ?? ""),
+    ...call.requests.map(
+      (request) =>
+        `${request.unit} ${request.method ?? ""}${request.possible === true ? "?" : ""}`,
+    ),
+  ].join("\u0000");
+}
+
+/** One call's values as the source writes them, with a default marked as one. */
+function spellingOf(values: readonly UsageValue[]): string {
+  return values
+    .map((value) =>
+      value.fromDefault === true
+        ? `${value.spelled} by default`
+        : (value.spelled ?? ""),
+    )
+    .join(", ");
 }
 
 /** The calls grouped by the member they go into and what they pass. */
@@ -422,12 +517,13 @@ function callGroups(calls: readonly ConstructCall[]): UsageGroup[] {
           parameter: value.parameter,
           blanked: call.blanked[at] ?? null,
         })),
+        requests: call.requests,
         spellings: [],
       },
       bySpelling: new Map<string, number>(),
     };
     found.group.calls += call.count;
-    const spelled = call.values.map((value) => value.spelled ?? "").join(", ");
+    const spelled = spellingOf(call.values);
     found.bySpelling.set(
       spelled,
       (found.bySpelling.get(spelled) ?? 0) + call.count,

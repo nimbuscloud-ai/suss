@@ -115,21 +115,36 @@ Setting (app/models/setting.rb:5) reads or writes storage (ruby-storage). 4 call
   SyncJob             1      bus:activejob SyncJob, POST /orders
 ```
 
-The calls are grouped by what each one passes for the parameters that reach the boundary. `lookup` selects rows by its `key`, and `enabled?` passes its own `key` on to `lookup`, so both count `key`. A parameter that reaches no boundary plays no part, since grouping on every argument would give one group per call. Each value prints as the source writes it. A part worked out at run time is a hole, and two calls whose values match with the holes blanked are one group, so the two `user:...:theme` keys above are one. A call that leaves a counted parameter out says `nothing for <parameter>`.
+The calls are grouped by what each one passes for the parameters that reach the boundary. `lookup` selects rows by its `key`, and `enabled?` passes its own `key` on to `lookup`, so both count `key`. A parameter that reaches no boundary plays no part, since grouping on every argument would give one group per call. Each value prints as the source writes it. A part worked out at run time is a hole, and two calls whose values match with the holes blanked are one group, so the two `user:...:theme` keys above are one. A call that leaves a counted parameter out gets the parameter's default when the source writes one as a literal, and says `nothing for <parameter>` otherwise.
+
+An HTTP helper that takes its method from a parameter groups its calls by the request each one makes:
+
+```
+$ suss ask "how is HttpClient.fetch used" --dir summaries/
+app/http_client.rb::HttpClient.fetch (app/http_client.rb:9) makes service calls (net-http). 4 calls from 1 file go into it.
+
+  Through  sends                         calls  passes
+  fetch    could be GET, DELETE or POST  1      verb
+  fetch    DELETE                        1      "delete"
+  fetch    GET                           1      "get" by default
+  fetch    POST                          1      "post"
+```
+
+When the helper picks its request with an `if` on the parameter, each request is a client of its own, and the summary records the tests on the parameter that pick it. A call makes a request when every one of those tests is true of what it passes, or of the default. When a test compares the parameter with something other than a literal, or the call passes a value suss cannot settle, such as a variable, the call could make any request no test rules out, and the row says so. A helper that hands the method straight to the library sends what the call passes, upper-cased. A Python or Ruby keyword argument fills the parameter of its name, wherever the call writes it.
 
 A function can have several summaries over the same lines, such as the client the net-http pack recognized and the summary reach built. They are one helper here. Its callers are the callers of either, and how it can fail comes from the pack's summary. A method of the same class that calls the helper is listed as a way through, the way `fetch_quietly` is for `fetch`.
 
 The reach is the reach `what reaches` uses. An entry point reached only through a call that picks its function at run time is listed after the others, as possible. Below the callers come the calls that run only under a condition, and then what suss could not follow around the helper: a call inside it that suss stopped at, a caller no entry point in these summaries reaches, and a call suss could not follow elsewhere that has the name of one of the helper's methods, with the entry points that reach the unit making it.
 
-An HTTP method or host that a client takes from a parameter, and a parameter's default, are not in the summaries yet, so a client's calls group only by which of its methods they go into. Which `rescue`, `except` or `catch` covers a call is not read either.
+A Ruby `case` or a Python `match` on the method is not read as a test on the parameter yet, so every call into a helper that picks its request that way could make any of them. Which `rescue`, `except` or `catch` covers a call is not read either.
 
 In `--json`, each entry in `items` has a `kind`:
 
 | `kind` | Fields |
 |---|---|
-| `group` | `through`, the method the calls go into; `calls`; `values`, one `{ parameter, value }` per counted parameter with holes as `_`, and `value: null` when the calls leave it out; `spellings`, each way the calls spell those values with its count. |
+| `group` | `through`, the method the calls go into; `calls`; `values`, one `{ parameter, value }` per counted parameter with holes as `_`, and `value: null` when the calls leave it out and it has no default; `requests`, each `{ unit, method, possible? }` the calls make, empty for a helper with no client; `spellings`, each way the calls spell those values with its count. |
 | `caller` | `owner`, the class or module, or the file for code in neither; `calls`; `units`; `files`; `reachedBy`, each `{ boundary, unit, through, possible? }`, certain ones first. |
-| `call` | `caller`, `file`, `line`, `call` as written, `through`, `count`, `values` as written, `group`, `conditions` as printed, and `possible: true` for a call that may run another function instead. |
+| `call` | `caller`, `file`, `line`, `call` as written, `through`, `count`, `values` as written with `fromDefault: true` on a default, `requests`, `group`, `conditions` as printed, and `possible: true` for a call that may run another function instead. |
 | `gap` | `gap`, which is `inside`, `unreached` or `unfollowed`; `unit`, `name`, `file`, `line`; `callee` for a call suss stopped at; and `reachedBy` for an `unfollowed` one. |
 
 The answer also has `construct`, with `label`, `file`, `line`, `members`, `touches` (each `{ class, recognition }`, where `class` is `service-call`, `storage-access`, `message-send`, `config-read` or `wrapper`), `outcomes` (`throws`, `returnsNothing` or `responds` with a status and its conditions), `calls`, `files` and `entryPoints`.

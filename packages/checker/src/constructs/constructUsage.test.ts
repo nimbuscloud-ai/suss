@@ -27,6 +27,9 @@ interface UnitSpec {
   kind?: BehavioralSummary["kind"];
   binding?: BehavioralSummary["identity"]["boundaryBinding"];
   parameters?: string[];
+  /** A literal default for some of the parameters. */
+  defaults?: Record<string, string | null>;
+  bindingFrom?: BehavioralSummary["bindingFrom"];
   effects?: Effect[];
   transitions?: Transition[];
   gaps?: BehavioralSummary["gaps"];
@@ -50,12 +53,23 @@ function unit(spec: UnitSpec): BehavioralSummary {
       boundaryBinding: spec.binding ?? null,
       id: `${file}::${spec.id}`,
     },
+    ...(spec.bindingFrom === undefined
+      ? {}
+      : { bindingFrom: spec.bindingFrom }),
     inputs: (spec.parameters ?? []).map((parameter, position) => ({
       type: "parameter" as const,
       name: parameter,
       position,
       role: parameter,
       shape: null,
+      ...(spec.defaults !== undefined && parameter in spec.defaults
+        ? {
+            default: {
+              type: "literal" as const,
+              value: spec.defaults[parameter] ?? null,
+            },
+          }
+        : {}),
     })),
     transitions: spec.transitions ?? [
       {
@@ -683,5 +697,210 @@ describe("constructUsage on a helper that touches storage only through another",
         throughHelpers: true,
       },
     ]);
+  });
+});
+
+/** `method == value`, as a client's `bindingFrom.when` records the test on its parameter. */
+function methodIs(value: string): Predicate {
+  return {
+    type: "comparison",
+    left: { type: "input", inputRef: "method", path: [] },
+    op: "eq",
+    right: { type: "literal", value },
+  };
+}
+
+function not(predicate: Predicate): Predicate {
+  return { type: "negation", operand: predicate };
+}
+
+/** One client unit per request a helper on lines 20 to 23 makes, the way a pack writes them. */
+function requestClient(
+  id: string,
+  method: string | null,
+  bindingFrom: BehavioralSummary["bindingFrom"],
+): BehavioralSummary {
+  return unit({
+    id,
+    file: "app/http.rb",
+    line: 20,
+    kind: "client",
+    binding: restBinding({
+      transport: "http",
+      method,
+      path: null,
+      recognition: "net-http",
+    }),
+    parameters: ["url", "method", "body"],
+    defaults: { method: "get", body: null },
+    ...(bindingFrom === undefined ? {} : { bindingFrom }),
+  });
+}
+
+/** The requests each caller's call makes, as `caller: METHOD`, with a `?` on a request it may make. */
+function requestsByCaller(
+  usage: ReturnType<typeof usageOf>,
+): Record<string, string[]> {
+  return Object.fromEntries(
+    usage.calls.map((one) => [
+      one.caller.slice(one.caller.lastIndexOf(".") + 1),
+      one.requests.map(
+        (request) =>
+          `${request.method ?? "?"}${request.possible === true ? "?" : ""}`,
+      ),
+    ]),
+  );
+}
+
+describe("constructUsage on a helper that picks its request by a parameter", () => {
+  const library = unit({
+    id: "Http.fetch",
+    file: "app/http.rb",
+    line: 20,
+    parameters: ["url", "method", "body"],
+    defaults: { method: "get", body: null },
+  });
+  const get = requestClient("fetch", "GET", { when: [methodIs("get")] });
+  const remove = requestClient("fetch@2", "DELETE", {
+    when: [not(methodIs("get")), methodIs("delete")],
+  });
+  const post = requestClient("fetch@3", "POST", {
+    when: [not(methodIs("get")), not(methodIs("delete"))],
+  });
+  const caller = (name: string, args: RecordedArgument[]) =>
+    unit({
+      id: `Grants.${name}`,
+      file: `app/grants_${name}.rb`,
+      effects: [call("Http.new.fetch", library, args, 2)],
+    });
+  const url: RecordedArgument = { kind: "string", value: "https://a/x" };
+  const summaries = [
+    library,
+    get,
+    remove,
+    post,
+    caller("list", [url]),
+    caller("show", [url, { kind: "string", value: "get" }]),
+    caller("create", [url, { kind: "string", value: "post" }]),
+    caller("revoke", [url, { kind: "string", value: "delete" }]),
+    caller("patch", [url, { kind: "string", value: "patch" }]),
+    caller("forward", [url, { kind: "identifier", name: "verb" }]),
+    caller("splat", [{ kind: "identifier", name: "*args" }]),
+    caller("named", [
+      url,
+      {
+        kind: "keywords",
+        fields: { method: { kind: "string", value: "delete" } },
+      },
+    ]),
+  ];
+  const usage = usageOf(summaries, [library]);
+
+  it("puts each call in the group of the request its argument or the default picks", () => {
+    expect(requestsByCaller(usage)).toMatchObject({
+      list: ["GET"],
+      show: ["GET"],
+      create: ["POST"],
+      revoke: ["DELETE"],
+      patch: ["POST"],
+      named: ["DELETE"],
+    });
+  });
+
+  it("says a call whose argument it cannot settle could make any of them", () => {
+    expect(requestsByCaller(usage)).toMatchObject({
+      forward: ["GET?", "DELETE?", "POST?"],
+      splat: ["GET?", "DELETE?", "POST?"],
+    });
+  });
+
+  it("groups a call that leaves the parameter out with one that passes the default", () => {
+    const listed = usage.calls.find((one) => one.caller.endsWith(".list"));
+    expect(listed?.values).toEqual([
+      { parameter: "method", spelled: '"get"', fromDefault: true },
+    ]);
+    const getGroup = usage.groups.find((group) =>
+      group.requests.some(
+        (request) => request.method === "GET" && request.possible !== true,
+      ),
+    );
+    expect(getGroup?.calls).toBe(2);
+    expect(getGroup?.spellings).toEqual([
+      { spelled: '"get"', calls: 1 },
+      { spelled: '"get" by default', calls: 1 },
+    ]);
+  });
+});
+
+describe("constructUsage on a helper that hands its method to the library", () => {
+  const send = requestClient("send", null, {
+    method: [{ type: "input", inputRef: "method", path: [] }],
+  });
+  const library = unit({
+    id: "Http.send",
+    file: "app/http.rb",
+    line: 20,
+    parameters: ["url", "method", "body"],
+    defaults: { method: "get", body: null },
+  });
+  const caller = (name: string, args: RecordedArgument[]) =>
+    unit({
+      id: `Grants.${name}`,
+      file: `app/grants_${name}.rb`,
+      effects: [call("Http.new.send", library, args, 2)],
+    });
+  const url: RecordedArgument = { kind: "string", value: "https://a/x" };
+  const usage = usageOf(
+    [
+      send,
+      library,
+      caller("audit", [url]),
+      caller("renew", [url, { kind: "string", value: "put" }]),
+      caller("forward", [url, { kind: "identifier", name: "verb" }]),
+    ],
+    [library],
+  );
+
+  it("sends the method the call passes, or the default, upper-cased", () => {
+    expect(requestsByCaller(usage)).toEqual({
+      audit: ["GET"],
+      renew: ["PUT"],
+      forward: ["?"],
+    });
+  });
+});
+
+describe("constructUsage on a helper whose requests nothing it reads picks between", () => {
+  it("says every call could make any of them", () => {
+    const library = unit({
+      id: "Http.fetch",
+      file: "app/http.rb",
+      line: 20,
+      parameters: ["url", "method"],
+      defaults: { method: "get" },
+    });
+    const summaries = [
+      library,
+      requestClient("fetch", "GET", undefined),
+      requestClient("fetch@2", "POST", undefined),
+      unit({
+        id: "Grants.create",
+        file: "app/grants.rb",
+        effects: [
+          call(
+            "Http.new.fetch",
+            library,
+            [
+              { kind: "string", value: "https://a" },
+              { kind: "string", value: "post" },
+            ],
+            2,
+          ),
+        ],
+      }),
+    ];
+    expect(requestsByCaller(usageOf(summaries, [library]))).toEqual({
+      create: ["GET?", "POST?"],
+    });
   });
 });
