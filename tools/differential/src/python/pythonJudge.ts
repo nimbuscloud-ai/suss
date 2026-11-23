@@ -51,7 +51,21 @@ function restSemanticsOf(summary: BehavioralSummary): RestSemantics | null {
 }
 
 function declaredStatus(summary: BehavioralSummary): number | null {
-  for (const transition of summary.transitions) {
+  // A generated route's body has no branches, so a transition with a
+  // condition, such as the response to a request that fails validation,
+  // is not the one a well-formed request takes.
+  const unconditioned = summary.transitions.filter(
+    (transition) => transition.conditions.length === 0,
+  );
+  return (
+    firstLiteralStatus(unconditioned) ?? firstLiteralStatus(summary.transitions)
+  );
+}
+
+function firstLiteralStatus(
+  transitions: BehavioralSummary["transitions"],
+): number | null {
+  for (const transition of transitions) {
     if (transition.output.type !== "response") {
       continue;
     }

@@ -140,6 +140,42 @@ describe("the map model", () => {
     expect(create.outcomes.find((o) => o.status === 400)?.line).toBe(7);
   });
 
+  it("marks an outcome an error handler adds, so the page says it happens on a throw", () => {
+    const rescued = transition("notFound:404", { status: 404 });
+    const route = unit({
+      kind: "handler",
+      file: "app/controllers/notes.rb",
+      name: "show",
+      line: 3,
+      binding: rest("GET", "/notes/{id}"),
+      transitions: [
+        transition("show:200", { status: 200 }),
+        transition("requireAccount:401", {
+          status: 401,
+          conditions: [opaque("!@account")],
+          wrapper: "requireAccount",
+        }),
+        {
+          ...rescued,
+          metadata: {
+            wrappers: {
+              from: { file: "app.rb", name: "notFound", onThrow: true },
+            },
+          },
+        },
+      ],
+    });
+
+    const outcomes = entry(modelOf([route]), "GET", "/notes/{id}").outcomes;
+    expect(
+      outcomes.map((o) => [o.status, o.wrapper, o.onThrow, o.conditions]),
+    ).toEqual([
+      [200, null, false, []],
+      [401, "requireAccount", false, ["!@account"]],
+      [404, "notFound", true, []],
+    ]);
+  });
+
   it("gives a route the same reach `suss ask` gives its handler", () => {
     const model = modelOf(shop);
 

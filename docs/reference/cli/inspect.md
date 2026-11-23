@@ -76,6 +76,23 @@ fixtures/express/handlers.ts
 4 summaries.
 ```
 
+When middleware, a filter or a dependency runs in front of a route, each one's outcomes print under a `from <wrapper>, before the handler` line, with the tests that wrapper makes. The route's own outcomes follow under `from the handler`, and an error handler's come last, under `from <wrapper>, on a throw`. Each block tests only what its own code reads, so a filter's redirect never prints under a test the route makes.
+
+```
+└─ GET /notes/{id}  (rails handler | line 8 | wrapped by require_account (app/controllers/notes_controller.rb), require_editor (app/controllers/notes_controller.rb))
+       from require_account, before the handler
+         if  !(@account)
+           -> 401
+       from require_editor, before the handler
+         if  !(@account.can_edit?)
+           -> 403
+       from the handler
+         if  note
+           -> 200
+         else
+           -> 404
+```
+
 ## Reading a diff
 
 `--diff` reports what the code now does differently. Add a comment to a file and the transitions come out at new offsets, but the diff prints nothing, because the line a handler starts on has nothing to do with how it behaves.

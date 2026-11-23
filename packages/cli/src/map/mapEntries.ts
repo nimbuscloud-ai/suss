@@ -257,6 +257,7 @@ function outcomeOf(
   names: ReadonlyMap<string, string>,
 ): MapOutcome {
   const output = transition.output;
+  const wrapper = readWrapperMetadata(transition)?.from;
   return {
     status: statusOf(transition),
     output: output.type,
@@ -270,7 +271,8 @@ function outcomeOf(
     ),
     unit,
     line: transition.location.start,
-    wrapper: readWrapperMetadata(transition)?.from?.name ?? null,
+    wrapper: wrapper?.name ?? null,
+    onThrow: wrapper?.onThrow === true,
   };
 }
 
