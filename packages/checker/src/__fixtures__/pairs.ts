@@ -2,6 +2,7 @@ import {
   CATCH_ENTRY_TEXT,
   functionCallBinding,
   readHttpMetadata,
+  restBinding,
   withHttpMetadata,
 } from "@suss/behavioral-ir";
 
@@ -328,5 +329,51 @@ export function consumer(
     gaps: [],
     confidence: { source: "inferred_static", level: "high" },
     ...(metadata !== undefined ? { metadata } : {}),
+  };
+}
+
+/** A route that returns 200, at a method and path. */
+export function providerWithPath(
+  name: string,
+  method: string | null,
+  path: string,
+): BehavioralSummary {
+  const base = provider(name, [
+    transition("t-200", { output: response(200), isDefault: true }),
+  ]);
+  return {
+    ...base,
+    identity: {
+      ...base.identity,
+      boundaryBinding: restBinding({
+        transport: "http",
+        method,
+        path,
+        recognition: "ts-rest",
+      }),
+    },
+  };
+}
+
+/** A fetch call to a method and path. */
+export function consumerWithPath(
+  name: string,
+  method: string,
+  path: string,
+): BehavioralSummary {
+  const base = consumer(name, [
+    transition("ct-200", { output: { type: "return", value: null } }),
+  ]);
+  return {
+    ...base,
+    identity: {
+      ...base.identity,
+      boundaryBinding: restBinding({
+        transport: "http",
+        method,
+        path,
+        recognition: "fetch",
+      }),
+    },
   };
 }

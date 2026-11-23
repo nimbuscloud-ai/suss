@@ -29,7 +29,7 @@ import {
   unfollowedCalls,
 } from "./ask.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Gap } from "@suss/behavioral-ir";
 
 describe("hiddenBehindLine", () => {
   it("says the one stopped call by its callee", () => {
@@ -319,6 +319,72 @@ describe("suss ask", () => {
     expect(answer("what writes aws.dynamodb:editions").output).toContain(
       "a writer could be hidden behind",
     );
+  });
+
+  it("leaves out a call suss did not follow in code nowhere near the store", () => {
+    fs.writeFileSync(
+      path.join(dir, "chart.json"),
+      JSON.stringify([
+        {
+          ...dao,
+          location: { ...dao.location, file: "src/chart.ts" },
+          identity: {
+            ...dao.identity,
+            name: "drawChart",
+            id: "repo::src/chart.ts::drawChart",
+          },
+          transitions: [],
+          gaps: [
+            {
+              ...(dao.gaps[0] as Gap),
+              callee: "canvas.render",
+            },
+          ],
+        },
+      ]),
+    );
+    const { output } = answer("what writes aws.dynamodb:editions");
+
+    expect(output).toContain("unfollowed call to loadCursor in the code at");
+    expect(output).not.toContain("canvas.render");
+  });
+
+  it("warns a route's callers only about requests whose URL suss could not read", () => {
+    // The dao's unfollowed call is in code that reads a table, and no
+    // call inside it can be a request to the route.
+    expect(answer("what calls GET /editions").output).not.toContain(
+      "could be hidden",
+    );
+
+    fs.writeFileSync(
+      path.join(dir, "unread.json"),
+      JSON.stringify([
+        {
+          ...routeClient,
+          location: { ...routeClient.location, file: "web/anywhere.ts" },
+          identity: {
+            ...routeClient.identity,
+            name: "goAnywhere",
+            id: "repo::web/anywhere.ts::goAnywhere",
+            boundaryBinding: restBinding({
+              transport: "http",
+              recognition: "fetch",
+              method: "GET",
+              path: null,
+            }),
+          },
+        },
+      ]),
+    );
+    expect(answer("what calls GET /editions").output).toContain(
+      `warning: a caller of GET /editions could be one of 1 request here whose URL suss could not read: web/anywhere.ts:${routeClient.location.range.start}.`,
+    );
+  });
+
+  it("answers about the route written out, and not a longer one sharing its words", () => {
+    const { output } = answer("what can I project from GET /editions");
+
+    expect(output).not.toContain("comments");
   });
 
   it("lists the boundaries a file reaches", () => {
@@ -648,6 +714,71 @@ describe("suss ask over a folder holding a file that is not summaries", () => {
     expect(() =>
       ask({ question: "what reads aws.dynamodb:editions", dir }),
     ).toThrow(/Nothing in .* is a summaries file/);
+  });
+});
+
+describe("suss ask over a folder an incomplete extract wrote", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "suss-ask-note-"));
+    fs.writeFileSync(path.join(dir, "code.json"), JSON.stringify([dao]));
+    fs.writeFileSync(
+      path.join(dir, "code.incomplete.json"),
+      JSON.stringify({
+        schemaVersion: 7,
+        packsNeedingConfig: [
+          {
+            pack: "ledger-orm",
+            option: "storageSystem",
+            example: '{"storageSystem":"postgresql"}',
+          },
+        ],
+      }),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function asked(question: string): {
+    answer: ReturnType<typeof answerQuestion>["answer"];
+    errors: string;
+  } {
+    const errors: string[] = [];
+    const stderr = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      errors.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const { answer } = answerQuestion({
+        question,
+        dir,
+        json: true,
+        output: path.join(dir, "answer.txt"),
+      });
+      return { answer, errors: errors.join("") };
+    } finally {
+      process.stderr.write = stderr;
+    }
+  }
+
+  it("reads the note for what it says, without calling it a bad summaries file", () => {
+    const { answer, errors } = asked("what reads aws.dynamodb:editions");
+
+    expect(answer?.found).toBe(true);
+    expect(errors).toBe("");
+  });
+
+  it("says the pack that read nothing, instead of asking for the code again", () => {
+    const { answer } = asked("what writes postgresql:ledger");
+
+    expect(answer?.found).toBe(false);
+    expect(answer?.needs).toEqual([
+      'The ledger-orm pack read nothing, because storageSystem is not set, so whatever it reads is missing here. Write a JSON file such as {"storageSystem":"postgresql"}, pass it to the extract as -f ledger-orm=<config.json>, then ask again.',
+    ]);
   });
 });
 
@@ -1301,6 +1432,35 @@ describe("suss ask what calls", () => {
     expect(output).toContain("could be hidden behind");
   });
 
+  /** `stopped`, with its unfollowed call recorded under a name. */
+  function stoppedAt(callee: string): BehavioralSummary {
+    return {
+      ...stopped,
+      gaps: [{ ...(stopped.gaps[0] as Gap), callee }],
+    };
+  }
+
+  it("says a caller could be hiding behind a call that uses the function's name", () => {
+    const { output } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      stoppedAt("store.readRow"),
+    ]);
+
+    expect(output).toContain(
+      "warning: a caller of repo::src/orderStore.ts::readRow could be hidden behind an unfollowed call to store.readRow",
+    );
+  });
+
+  it("says nothing of an unfollowed call that uses another name", () => {
+    const { output } = askCalls("what calls src/orderStore.ts", [
+      wrapper,
+      stoppedAt("chart.render"),
+    ]);
+
+    expect(output).toContain("Nothing in these summaries calls");
+    expect(output).not.toContain("could be hidden");
+  });
+
   it("exits 1 for a unit no summary spells", () => {
     const { output, code } = askCalls("what calls src/nowhere.ts", [wrapper]);
 
@@ -1750,6 +1910,18 @@ describe("suss ask what reaches, over a chain", () => {
     expect(output).toContain("POST /orders");
     expect(output).toContain("orderService");
     expect(output).toContain("writeOrder");
+  });
+
+  it("warns that a call suss did not follow in the code a route calls could hide a boundary", () => {
+    expect(answer("what does POST /orders reach").output).toContain(
+      "warning: a boundary it reaches could be hidden behind an unfollowed call to loadCursor in the code it calls.",
+    );
+  });
+
+  it("says nothing of calls suss did not follow when the subject calls no code", () => {
+    expect(answer("what does src/writeOrder.ts reach").output).not.toContain(
+      "in the code it calls",
+    );
   });
 
   it("says so when the subject is not in these summaries", () => {
