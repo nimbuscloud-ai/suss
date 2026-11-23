@@ -505,10 +505,51 @@ describe("python value facts", () => {
     const db = await factsFor(source);
     const [funcKey] = rows(db, "func")[0] ?? [];
     const records = `:${source.indexOf('event["Records"]')}-${source.indexOf(":\n        handle")}`;
-    expect(rows(db, "elementOf")).toEqual([[`${funcKey}#record`, records]]);
-    // The body reads the target on the key elementOf gives it.
+    const loop = `:${source.indexOf("for record")}-${source.indexOf('"])') + 3}#record`;
+    expect(rows(db, "elementOf")).toEqual([
+      [`${funcKey}#record`, records],
+      [loop, records],
+    ]);
+    // The body reads the target on the loop's own key.
     expect(rows(db, "readsEntry").filter((row) => row[2] === "body")).toEqual([
-      [expect.any(String), `${funcKey}#record`, "body"],
+      [expect.any(String), loop, "body"],
+    ]);
+  });
+
+  it("keeps two for statements over one name in a function apart", async () => {
+    const source = [
+      "def register(api):",
+      "    for item in first:",
+      "        api.add(item)",
+      "    for item in second:",
+      "        api.add(item)",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const firstLoop = `:${source.indexOf("for item in first")}-${source.indexOf("item)\n    for") + 5}#item`;
+    const secondLoop = `:${source.indexOf("for item in second")}-${source.lastIndexOf("item)") + 5}#item`;
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    const looped = rows(db, "elementOf").filter(
+      (row) => row[0] !== `${funcKey}#item`,
+    );
+    expect(looped).toEqual([
+      [firstLoop, "#first"],
+      [secondLoop, "#second"],
+    ]);
+  });
+
+  it("reads a loop variable the body writes again on the function's key", async () => {
+    const source = [
+      "def handler(rows):",
+      "    for row in rows:",
+      "        row = clean(row)",
+      "        save(row)",
+      "",
+    ].join("\n");
+    const db = await factsFor(source);
+    const [funcKey] = rows(db, "func")[0] ?? [];
+    expect(rows(db, "elementOf")).toEqual([
+      [`${funcKey}#row`, `${funcKey}#rows`],
     ]);
   });
 
@@ -1375,7 +1416,12 @@ describe("python value facts", () => {
       ].join("\n"),
     );
     const [funcKey] = rows(db, "func")[0] ?? [];
-    expect(rows(db, "writesUnstated")).toEqual([[`${funcKey}#q`]]);
+    // The loop's own key for `q` inside its body is stated apart.
+    expect(
+      rows(db, "writesUnstated").filter((row) =>
+        String(row[0]).startsWith(`${funcKey}#`),
+      ),
+    ).toEqual([[`${funcKey}#q`]]);
     expect(db.size("mayHold")).toBe(1);
     expect(db.size("writesAllStated")).toBe(0);
   });
