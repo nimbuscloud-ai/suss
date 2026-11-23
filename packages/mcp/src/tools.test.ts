@@ -267,6 +267,47 @@ describe("the tools, on a project bigger than one answer", () => {
     project.close();
   }, 60_000);
 
+  it("says how a helper is used, through the same tool", async () => {
+    const project = await projectWith(0);
+    fs.writeFileSync(
+      path.join(project.root, "src/store.ts"),
+      [
+        "export function lookup(key: string) {",
+        "  return process.env[key];",
+        "}",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      path.join(project.root, "src/app.ts"),
+      [
+        'import express from "express";',
+        'import { lookup } from "./store";',
+        "const app = express();",
+        'app.get("/a", (req, res) => { res.json({ a: lookup("A_FLAG") }); });',
+        'app.get("/b", (req, res) => { res.json({ b: lookup("B_FLAG") }); });',
+      ].join("\n"),
+    );
+    await project.start();
+
+    const result = await askTool(project, { question: "how is lookup used" });
+    const answer = result.structuredContent as {
+      found: boolean;
+      shape: string;
+      items: Array<{ kind: string; reachedBy?: Array<{ boundary: string }> }>;
+      construct: { calls: number };
+    };
+
+    expect(answer.found).toBe(true);
+    expect(answer.shape).toBe("usedBy");
+    expect(answer.construct.calls).toBe(2);
+    const reached = answer.items
+      .filter((item) => item.kind === "caller")
+      .flatMap((item) => (item.reachedBy ?? []).map((entry) => entry.boundary));
+    expect(reached.sort()).toEqual(["GET /a", "GET /b"]);
+
+    project.close();
+  }, 60_000);
+
   it("lists a failed extract entry in the status text", () => {
     const project = {
       root: "/nowhere",

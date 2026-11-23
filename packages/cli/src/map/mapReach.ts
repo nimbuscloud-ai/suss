@@ -9,15 +9,17 @@
  */
 
 import { bindingIs } from "@suss/behavioral-ir";
-import { functionOf } from "@suss/checker";
+import {
+  functionOf,
+  touchesOfUnits,
+  touchesReached,
+  touchLabel,
+} from "@suss/checker";
 
-import { touchLabel } from "../boundaryReach.js";
-import { oneTouchPerCall, touchesOfUnits } from "../target.js";
-import { touchesReached } from "../unitReach.js";
+import { oneTouchPerCall } from "../target.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { CallPath, FunctionKey } from "@suss/checker";
-import type { TouchedBoundary } from "../boundaryReach.js";
+import type { CallPath, FunctionKey, TouchedBoundary } from "@suss/checker";
 import type { LoadedSummaries } from "../loadedSummaries.js";
 import type {
   BoundaryTable,

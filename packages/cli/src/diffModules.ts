@@ -18,9 +18,8 @@ import {
   isModuleName,
   summaryIdentifier,
 } from "@suss/behavioral-ir";
-import { functionOf, readCallFacts } from "@suss/checker";
+import { boundariesTouchedBy, functionOf, readCallFacts } from "@suss/checker";
 
-import { boundariesTouchedBy } from "./boundaryReach.js";
 import { sentenceList } from "./sentenceList.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";

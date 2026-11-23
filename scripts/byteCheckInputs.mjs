@@ -368,6 +368,25 @@ export const FIXTURE_INPUTS = [
     ...packs("apollo-client=fixtures/graphql-two-endpoints/apollo.json"),
   ]),
   fixture("hono", [...dir("fixtures/hono"), ...packs("hono")]),
+  fixture("how-is-used-python", [
+    ...lang("python"),
+    ...dir("fixtures/how-is-used-python"),
+    ...packs("fastapi", "celery", "httpx", withConfig("sqlalchemy", POSTGRES)),
+  ]),
+  fixture("how-is-used-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/how-is-used-ruby"),
+    ...packs(
+      "activejob",
+      railsIn("fixtures/how-is-used-ruby"),
+      "net-http",
+      withConfig("activerecord", POSTGRES),
+    ),
+  ]),
+  fixture("how-is-used-typescript", [
+    ...project("fixtures/how-is-used-typescript/tsconfig.json"),
+    ...packs("express", "axios", "bullmq", "prisma", "node"),
+  ]),
   fixture("hono-openapi", [...dir("fixtures/hono-openapi"), ...packs("hono")]),
   fixture("inherited-receiver", [
     ...dir("fixtures/inherited-receiver"),

@@ -11,12 +11,14 @@
  */
 
 import { bindingIs, OWN_BINDING, summaryIdentifier } from "@suss/behavioral-ir";
-import { pairGraphqlOperations, productionCode } from "@suss/checker";
-
-import { boundarySpelling } from "./boundaryReach.js";
+import {
+  boundarySpelling,
+  pairGraphqlOperations,
+  productionCode,
+} from "@suss/checker";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
-import type { TouchedBoundary } from "./boundaryReach.js";
+import type { TouchedBoundary } from "@suss/checker";
 
 interface Touch {
   summary: BehavioralSummary;

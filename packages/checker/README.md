@@ -37,6 +37,10 @@ Walking those edges is a job the engine does well. You follow an edge to a node,
 
 `readCallFacts` turns the calls a set of summaries records into one-hop datalog facts. From those facts it works out which functions end up calling into a target and which ones a function ends up calling, with the shortest call path for each. `suss ask` runs its reach questions on these facts, and `inspect --diff` walks the edges they give. They live here so a check that needs to know what reaches what can use them without going through the CLI. Working out which functions a typed spelling means stays in the CLI, next to the resolver `--at` uses.
 
+## How a construct is used
+
+`constructUsage` takes a helper the team wrote, or a boundary, and gives back every call into it, grouped by what each call passes into the boundary, with the callers and the entry points that reach them. `suss ask "how is <unit> used"` prints it. The reach helpers ask uses, such as `ownBoundariesOf` and `shortestFirst`, live here too, so the map and MCP get the answer the CLI gives. `src/constructs/README.md` explains how calls are grouped.
+
 ## What each comparison assumes about the protocol
 
 Comparing two sides of a boundary means assuming something about how the protocol behaves. Reporting an unhandled 404 assumes the status the handler wrote is the status the caller receives, and a middleware or a gateway can make that false. [`docs/theory/protocol-assumptions.md`](../../docs/theory/protocol-assumptions.md) lists every such assumption per protocol. It explains what a finding means once an assumption stops being true, and links the test that pins today's behaviour.

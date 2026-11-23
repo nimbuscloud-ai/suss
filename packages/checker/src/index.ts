@@ -93,6 +93,21 @@ export {
   readCallFacts,
   writtenFunctionOf,
 } from "./calls/callFacts.js";
+export {
+  type ConstructSubject,
+  type ConstructUsage,
+  classNameOf,
+  constructUsage,
+  type EffectClass,
+  type UsageCall,
+  type UsageCaller,
+  type UsageEntryPoint,
+  type UsageGap,
+  type UsageGroup,
+  type UsageMember,
+  type UsageOutcome,
+  type UsageValue,
+} from "./constructs/constructUsage.js";
 export { checkConsumerContract } from "./consumer/consumerContract.js";
 export { checkConsumerSatisfaction } from "./consumer/consumerSatisfaction.js";
 export { checkContractAgreement } from "./contract/contractAgreement.js";
@@ -173,6 +188,43 @@ export {
 } from "./pairing/pairing.js";
 export { checkSemanticBridging } from "./pairing/semanticBridging.js";
 export { productionCode } from "./pairing/testCode.js";
+export { accessDetail } from "./reach/accessDetail.js";
+export {
+  type Access,
+  bindingTokens,
+  boundariesTouchedBy,
+  boundarySpelling,
+  effectLine,
+  interactionDetail,
+  NO_ACCESS,
+  namesBoundary,
+  namesBoundaryExactly,
+  type Relation,
+  relationsOf,
+  spellingTokens,
+  type TouchedBoundary,
+  touchLabel,
+} from "./reach/boundaryReach.js";
+export { ownBoundariesOf } from "./reach/ownBoundaries.js";
+export {
+  reachTargetOfTouches,
+  reachTargetOfUnits,
+  representativeUnit,
+} from "./reach/reachTarget.js";
+export {
+  providesKeyOf,
+  type TargetTouch,
+  touchesOf,
+  touchesOfUnits,
+  unitsServing,
+} from "./reach/touches.js";
+export {
+  type ReachedTouch,
+  reachedFunctions,
+  servesItself,
+  shortestFirst,
+  touchesReached,
+} from "./reach/unitReach.js";
 export { checkRenderProps } from "./render/renderProps.js";
 export {
   checkRuntimeConfig,

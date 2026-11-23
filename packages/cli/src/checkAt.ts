@@ -13,8 +13,8 @@
  */
 
 import { summaryIdentifier, summaryRef } from "@suss/behavioral-ir";
+import { namesBoundary, spellingTokens } from "@suss/checker";
 
-import { namesBoundary, spellingTokens } from "./boundaryReach.js";
 import {
   type CheckedDirectory,
   checkDirectory,
