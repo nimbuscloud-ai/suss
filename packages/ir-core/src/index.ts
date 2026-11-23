@@ -179,6 +179,7 @@ export {
   namesBoundary,
   namesBoundaryExactly,
   resourceNameIn,
+  spelledInFull,
   spellingTokens,
 } from "./boundarySpelling.js";
 export {

@@ -29,6 +29,7 @@ export {
   bindingTokens,
   namesBoundary,
   namesBoundaryExactly,
+  spelledInFull,
   spellingTokens,
 } from "@suss/ir-core";
 

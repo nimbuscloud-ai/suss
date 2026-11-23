@@ -10,7 +10,9 @@ import {
 
 import {
   consumer,
+  consumerWithPath,
   provider,
+  providerWithPath,
   response,
   transition,
 } from "../__fixtures__/pairs.js";
@@ -117,50 +119,6 @@ describe("boundaryKey", () => {
 // ---------------------------------------------------------------------------
 // pairSummaries
 // ---------------------------------------------------------------------------
-
-function providerWithPath(
-  name: string,
-  method: string | null,
-  path: string,
-): BehavioralSummary {
-  const base = provider(name, [
-    transition("t-200", { output: response(200), isDefault: true }),
-  ]);
-  return {
-    ...base,
-    identity: {
-      ...base.identity,
-      boundaryBinding: restBinding({
-        transport: "http",
-        method,
-        path,
-        recognition: "ts-rest",
-      }),
-    },
-  };
-}
-
-function consumerWithPath(
-  name: string,
-  method: string,
-  path: string,
-): BehavioralSummary {
-  const base = consumer(name, [
-    transition("ct-200", { output: { type: "return", value: null } }),
-  ]);
-  return {
-    ...base,
-    identity: {
-      ...base.identity,
-      boundaryBinding: restBinding({
-        transport: "http",
-        method,
-        path,
-        recognition: "fetch",
-      }),
-    },
-  };
-}
 
 /** A code handler bound to a channel: the side that answers. */
 function handlerOnChannel(

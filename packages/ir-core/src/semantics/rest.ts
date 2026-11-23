@@ -163,6 +163,26 @@ export function pathShape(path: string): string {
 }
 
 /**
+ * A route as a person writes it out: one word for the method, then an
+ * absolute path, `POST /orders/{id}`. Null for any other text.
+ */
+function routeSpelling(raw: string): { method: string; path: string } | null {
+  const found = /^(\S+) +(\/.*)$/.exec(raw.trim());
+  if (found === null) {
+    return null;
+  }
+  return {
+    method: (found[1] as string).toUpperCase(),
+    path: found[2] as string,
+  };
+}
+
+/** The method as a label prints it, `ANY` when the source gave none. */
+function methodLabel(semantics: RestSemantics): string {
+  return semantics.method === null ? "ANY" : semantics.method.toUpperCase();
+}
+
+/**
  * Whether two REST methods mean the same thing. Equal methods agree,
  * and `"*"` agrees with any given method, because a handler that
  * responds to every method responds to this one. A null method means
@@ -347,11 +367,9 @@ export const restSemantics = defineBoundarySemantics({
       if (semantics.method === null && semantics.path === null) {
         return null;
       }
-      const method =
-        semantics.method === null ? "ANY" : semantics.method.toUpperCase();
       const path =
         semantics.path === null ? "?" : normalizePath(semantics.path);
-      return `${method} ${path}`;
+      return `${methodLabel(semantics)} ${path}`;
     },
     /**
      * With both halves present, the method goes through `methodsAgree`
@@ -411,15 +429,34 @@ export const restSemantics = defineBoundarySemantics({
     },
     nameReference: baseUrlReference,
     ruleBoundary: {
-      // "METHOD /path": one token, a space, then an absolute path.
       claims(raw) {
-        return /^\S+ +\//.test(raw.trim());
+        return routeSpelling(raw) !== null;
       },
       normalize(raw) {
-        const trimmed = raw.trim();
-        const spaceIdx = trimmed.indexOf(" ");
-        const method = trimmed.slice(0, spaceIdx).toUpperCase();
-        return `${method} ${normalizePath(trimmed.slice(spaceIdx + 1).trim())}`;
+        const route = routeSpelling(raw);
+        return route === null
+          ? raw.trim()
+          : `${route.method} ${normalizePath(route.path)}`;
+      },
+    },
+    /**
+     * A route written out picks out the routes with its method and its
+     * path, whatever each one calls its parameters, the same way pairing
+     * puts `{id}` and `:orderId` in one bucket. `POST /orders` leaves out
+     * `POST /orders/{id}/cancel`, which only shares its words.
+     */
+    spelledInFull: {
+      claims(raw) {
+        return routeSpelling(raw) !== null;
+      },
+      picksOut(raw, semantics) {
+        const route = routeSpelling(raw);
+        return (
+          route !== null &&
+          semantics.path !== null &&
+          route.method === methodLabel(semantics) &&
+          pathShape(route.path) === pathShape(semantics.path)
+        );
       },
     },
   },
