@@ -301,6 +301,7 @@
     "@suss/manifest-aws": "0.40.1",
     "@suss/recognize": "0.40.1",
     "@suss/sql": "0.40.1",
+    "yaml": "^2.4.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

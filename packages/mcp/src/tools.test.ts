@@ -316,6 +316,7 @@ describe("the tools, on a project bigger than one answer", () => {
         summaryDir: "/nowhere/.suss",
         ran: ["extract tsconfig.json"],
         failed: ["contract openapi.yaml: unreadable"],
+        packHealth: "",
       }),
       building: () => false,
     } as unknown as Project;
@@ -323,7 +324,35 @@ describe("the tools, on a project bigger than one answer", () => {
     const text = textOf(statusTool(project));
     expect(text).toContain("ran: extract tsconfig.json");
     expect(text).toContain("failed: contract openapi.yaml: unreadable");
+    expect(text).not.toContain("Pack health");
   });
+
+  it("repeats the pack health block the extracts printed on stderr", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-health-"));
+    const files: Record<string, string> = {
+      "Gemfile.lock":
+        "GEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
+      "config/routes.rb":
+        "Rails.application.routes.draw do\n  get '/widgets', to: 'widgets#index'\nend\n",
+      "app/models/widget.rb": "class Widget < ApplicationRecord\nend\n",
+      "app/controllers/widgets_controller.rb":
+        "class WidgetsController < ApplicationController\n  def index\n    render json: Widget.all\n  end\nend\n",
+    };
+    for (const [name, text] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+      fs.writeFileSync(path.join(root, name), text);
+    }
+    const project = new Project({ root, watch: false });
+    await project.start();
+
+    const text = textOf(statusTool(project));
+    expect(text).toMatch(
+      /no-config\s+activerecord\s+reads nothing until storageSystem is set/,
+    );
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
 
   it("says only that a build is in flight when the first one has not finished", () => {
     const project = {
@@ -333,6 +362,7 @@ describe("the tools, on a project bigger than one answer", () => {
         summaryDir: "/nowhere/.suss",
         ran: [],
         failed: [],
+        packHealth: "",
       }),
       building: () => true,
       hasBuilt: () => false,
@@ -353,6 +383,7 @@ describe("the tools, on a project bigger than one answer", () => {
         summaryDir: "/nowhere/.suss",
         ran: ["extract tsconfig.json"],
         failed: [],
+        packHealth: "",
       }),
       building: () => true,
       hasBuilt: () => true,

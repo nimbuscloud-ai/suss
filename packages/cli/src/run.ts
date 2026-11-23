@@ -81,7 +81,7 @@ import type { ReadLimits } from "./readLimits.js";
 
 export const USAGE = `
 Usage:
-  suss init [directory] [--plain | --write [--overwrite]]
+  suss init [directory] [--plain | --json | --write [--overwrite]]
   suss extract [-p <tsconfig> | --dir <directory>] [--lang typescript|python|ruby] [-f <framework>[=<config.json>] ...] [-o <output.json>] [--files <f1> <f2> ...] [--gaps strict|permissive|silent]
   suss extract --out-dir <directory> [--dir <project>]
   suss inspect [<summaries.json> | --dir <directory>]
@@ -159,7 +159,9 @@ Options (a bare check or map, and extract --out-dir, which run every read):
 
 Options (init):
   --plain          Print the commands instead of asking, even in a terminal
-  --write          Print the commands, then write suss.json and each pack's
+  --json           Print everything init found as JSON, including why each
+                   pack was picked, and write nothing
+  --write         Print the commands, then write suss.json and each pack's
                    config file without asking, so an agent can finish
                    setting a project up. A suss.json that is already there
                    is left alone.
@@ -535,6 +537,7 @@ async function runInit(args: string[]): Promise<number> {
     args,
     options: {
       plain: { type: "boolean" },
+      json: { type: "boolean" },
       write: { type: "boolean" },
       overwrite: { type: "boolean" },
     },
@@ -545,11 +548,17 @@ async function runInit(args: string[]): Promise<number> {
       `--overwrite replaces a ${PROJECT_FILE} that --write would leave alone, so it needs --write. Try: suss init --write --overwrite`,
     );
   }
+  if (values.json === true && values.write === true) {
+    throw new UsageError(
+      "--json prints what init found and writes nothing, so it does not go with --write. Run them one after the other.",
+    );
+  }
 
   const dir = positionals[0];
   return await initInteractive({
     ...(dir !== undefined ? { dir } : {}),
     ...(values.plain === true ? { plain: true } : {}),
+    ...(values.json === true ? { json: true } : {}),
     ...(values.write === true ? { write: true } : {}),
     ...(values.overwrite === true ? { overwrite: true } : {}),
   });

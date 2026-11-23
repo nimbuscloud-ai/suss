@@ -13,6 +13,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { SUMMARY_SCHEMA_VERSION } from "@suss/behavioral-ir";
+import {
+  formatPackHealth,
+  packConfigCheck,
+  packPathCheck,
+} from "@suss/extractor";
 
 import { contract } from "./contract.js";
 import {
@@ -21,6 +26,7 @@ import {
   packSpecFrom,
   splitSpec,
 } from "./extract.js";
+import { readExtractNote } from "./extractNote.js";
 import { valuesFor } from "./init.js";
 import { findInitTargets } from "./initTargets.js";
 import {
@@ -36,6 +42,7 @@ import { errorLineOf, readInChild } from "./readInChild.js";
 import { durationText } from "./readLimits.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
 import type { ContractSource } from "./contract.js";
 import type { InitReport } from "./init.js";
 import type { KeptAdapters } from "./keptAdapters.js";
@@ -74,6 +81,10 @@ export interface ProjectReadReport {
    */
   readonly empty: string[];
   readonly declared: boolean;
+  /** Packs an extract left out because an option was missing, from the note beside its summaries. */
+  readonly packsNeedingConfig: PackConfigNeed[];
+  /** Paths in a pack's config where nothing exists, from the same note. */
+  readonly packPathsMissing: PackPathMissing[];
 }
 
 /**
@@ -119,13 +130,15 @@ function withSettledConfig(entry: ReadEntry, report: InitReport): ReadEntry {
   return {
     ...entry,
     packs: entry.packs.map((spec) => {
-      const configuration = report.suggestions.find(
-        (one) => one.name === spec,
-      )?.configuration;
+      const suggestion = report.suggestions.find((one) => one.name === spec);
       const values =
-        configuration === undefined
+        suggestion?.configuration === undefined
           ? null
-          : valuesFor(configuration, report.root);
+          : valuesFor(
+              suggestion.configuration,
+              report.root,
+              suggestion.language,
+            );
       return values === null ? spec : `${spec}=${JSON.stringify(values)}`;
     }),
   };
@@ -285,6 +298,23 @@ export function packFlags(packs: readonly string[]): string {
 }
 
 /**
+ * The pack health block an extract prints on stderr, for the problems a
+ * user can fix, built again from the notes the reads left. A server whose
+ * stderr nobody reads repeats it in its status. Empty when nothing fired.
+ */
+export function packHealthOf(
+  report: Pick<ProjectReadReport, "packsNeedingConfig" | "packPathsMissing">,
+): string {
+  return formatPackHealth(
+    [
+      packConfigCheck(report.packsNeedingConfig),
+      packPathCheck(report.packPathsMissing),
+    ],
+    ["run"],
+  );
+}
+
+/**
  * The line a command prints before it reads a project, so the user knows
  * whether the packs came from `suss.json` or from detection.
  */
@@ -412,6 +442,8 @@ function reportOf(
     failed: [],
     empty: [],
     declared: reads.declared,
+    packsNeedingConfig: [],
+    packPathsMissing: [],
   };
   for (const [index, entry] of reads.reads.entries()) {
     const result = results[index] as EntryResult;
@@ -421,6 +453,13 @@ function reportOf(
       continue;
     }
 
+    const note = readExtractNote(
+      incompletenessPathFor(
+        path.join(summaryDir, readOutputName(index, entry)),
+      ),
+    );
+    report.packsNeedingConfig.push(...(note.packsNeedingConfig ?? []));
+    report.packPathsMissing.push(...(note.packPathsMissing ?? []));
     report.ran.push(command);
     report.counts.push(result.summaries);
     if (entry.kind === "extract" && result.summaries === 0) {

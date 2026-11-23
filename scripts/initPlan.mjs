@@ -10,8 +10,11 @@
 
 import { spawnSync } from "node:child_process";
 
-/** A config file init said to write, and the JSON to put in it. */
-const CONFIG_LINE = /^\s*Write that to (\S+):\s*$/;
+/**
+ * A config file init said to write, and the JSON to put in it. The line
+ * ends at the colon, or goes on to say `suss init --write` writes it too.
+ */
+const CONFIG_LINE = /^\s*Write (?:this|that) to ([^\s,:]+)[,:]/;
 /** Three spaces and `suss`, which is how init prints a command. */
 const COMMAND_LINE = /^ {3}(suss (?:extract|contract|check) .+)$/;
 

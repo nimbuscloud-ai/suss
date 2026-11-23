@@ -50,6 +50,7 @@
     "@suss/adapter-ruby": "0.40.1",
     "@suss/extractor": "0.40.1",
     "@suss/recognize": "0.40.1",
+    "yaml": "^2.4.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {

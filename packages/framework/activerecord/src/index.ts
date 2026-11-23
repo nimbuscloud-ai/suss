@@ -406,6 +406,7 @@ export const declares: PackDeclaration = {
     required: true,
     why: "which database is behind the connection: postgresql, mysql, or sqlite. ActiveRecord talks to all of them and database.yml settles which, so the pack cannot.",
     readFromProject: storageSystemFromDatabaseYml,
+    databaseOption: "storageSystem",
   },
 };
 

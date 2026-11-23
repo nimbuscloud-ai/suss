@@ -66,12 +66,10 @@ export interface ProjectFile {
  * The file to write for what init found, or null when it found nothing.
  * `directory` is where the project is, relative to the root the file is
  * written at, and goes in front of each contract's and config's path.
- * The packs in `leftOut` are not listed.
  */
 export function projectFileFor(
   report: InitReport,
   directory = ".",
-  leftOut: ReadonlySet<string> = new Set(),
 ): ProjectFile | null {
   const contracts: ContractEntry[] = report.suggestions
     .filter((one) => one.kind === "contract" && one.file !== undefined)
@@ -83,11 +81,7 @@ export function projectFileFor(
 
   const byLanguage = new Map<string, string[]>();
   for (const one of report.suggestions) {
-    if (
-      one.kind === "contract" ||
-      one.language === undefined ||
-      leftOut.has(one.name)
-    ) {
+    if (one.kind === "contract" || one.language === undefined) {
       continue;
     }
     byLanguage.set(one.language, [

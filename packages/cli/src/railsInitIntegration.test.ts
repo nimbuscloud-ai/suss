@@ -110,17 +110,36 @@ describe("init --write on a Rails app with a GraphQL API", () => {
     expect(JSON.stringify(summaries)).toContain('"postgresql"');
   });
 
-  it("leaves activerecord out, and says why, when database.yml does not say which database", async () => {
+  it("takes the database from the driver gem when there is no database.yml", async () => {
     fs.rmSync(path.join(project, "config", "database.yml"));
 
     const init = await quietly(["init", project, "--write"]);
 
     expect(init.exit).toBe(0);
-    expect(init.stdout).toContain("Left activerecord out of suss.json");
-    expect(init.stdout).toContain("suss.activerecord.json");
-    expect(rubyPacks()).not.toContainEqual(
-      expect.stringContaining("activerecord"),
+    expect(init.stdout).toContain(
+      'Wrote suss.activerecord.json for the activerecord pack: {"storageSystem":"postgresql"}, from pg in Gemfile.lock.',
     );
+    expect(rubyPacks()).toContain("activerecord=suss.activerecord.json");
+  });
+
+  it("still lists activerecord, and says what to write, when the app declares no database", async () => {
+    fs.rmSync(path.join(project, "config", "database.yml"));
+    const lock = path.join(project, "Gemfile.lock");
+    fs.writeFileSync(
+      lock,
+      fs
+        .readFileSync(lock, "utf8")
+        .split("\n")
+        .filter((line) => !/^\s+pg\b/.test(line))
+        .join("\n"),
+    );
+
+    const init = await quietly(["init", project, "--write"]);
+
+    expect(init.exit).toBe(0);
+    expect(init.stdout).toContain("Listed activerecord in suss.json");
+    expect(init.stdout).toContain("suss.activerecord.json");
+    expect(rubyPacks()).toContain("activerecord");
     expect(fs.existsSync(path.join(project, "suss.activerecord.json"))).toBe(
       false,
     );
@@ -133,6 +152,7 @@ describe("init --write on a Rails app with a GraphQL API", () => {
       project,
     ]);
     expect(extract.stderr).not.toContain("failed:");
+    expect(extract.stderr).toMatch(/no-config\s+activerecord/);
     expect(extract.exit).toBe(0);
   });
 

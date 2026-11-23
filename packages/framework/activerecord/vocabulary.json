@@ -99,5 +99,7 @@
   "mysql": "suss: the storage system a provider summary spells for MySQL, which the mysql2 and trilogy adapters connect to",
   "sqlite": "suss: the storage system a provider summary spells for SQLite, which the sqlite3 adapter connects to",
   "included": "ActiveSupport: ActiveSupport::Concern#included, which evaluates its block against the class doing the including",
-  "with_options": "ActiveSupport: Object#with_options, which runs its block with extra keywords on whatever it is written in"
+  "with_options": "ActiveSupport: Object#with_options, which runs its block with extra keywords on whatever it is written in",
+  "development": "Rails: the environment Rails runs in when nothing sets RAILS_ENV, whose database.yml entry decides the database",
+  "adapter": "Rails: the database.yml key that says which database a connection uses"
 }

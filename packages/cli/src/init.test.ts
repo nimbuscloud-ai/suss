@@ -9,6 +9,7 @@ import {
   formatInitReport,
   inspectProject,
   readCommands,
+  settledValues,
   withReadableCode,
   withReadableContracts,
 } from "./init.js";
@@ -377,12 +378,166 @@ describe("inspectProject", () => {
     const output = formatInitReport(await inspectProject(dir));
 
     expect(output).toContain(
-      "activerecord reads suss.activerecord.json, and `suss init --write` writes this to it:",
+      "activerecord reads suss.activerecord.json. The value comes from the adapter in config/database.yml.",
+    );
+    expect(output).toContain(
+      "Write this to suss.activerecord.json, or run `suss init --write`:",
     );
     expect(output).toContain('{"storageSystem":"postgresql"}');
     expect(output).toContain('{"root":"app","routesFile":"config/routes.rb"}');
     expect(output).not.toContain("reads nothing until you tell it");
     expect(output).not.toContain("engines/*");
+  });
+
+  it("takes a Rails app's database from the sample database.yml it checks in, over its driver gems", async () => {
+    fs.writeFileSync(
+      path.join(dir, "Gemfile.lock"),
+      "DEPENDENCIES\n  rails (~> 7.1)\n  sqlite3\n  pg\n",
+    );
+    fs.mkdirSync(path.join(dir, "config"));
+    fs.writeFileSync(
+      path.join(dir, "config", "database.yml.sample"),
+      "local: &local\n  adapter: sqlite3\ndevelopment:\n  primary:\n    <<: *local\n",
+    );
+    const report = await inspectProject(dir);
+    const activerecord = report.suggestions.find(
+      (one) => one.name === "activerecord",
+    );
+
+    expect(
+      activerecord?.configuration === undefined
+        ? null
+        : settledValues(activerecord.configuration, dir, "ruby"),
+    ).toEqual({
+      values: { storageSystem: "sqlite" },
+      from: "the development adapter in config/database.yml.sample",
+      choice:
+        "The project declares more than one database, and init took sqlite from the development adapter in config/database.yml.sample over postgresql from pg in Gemfile.lock.",
+    });
+    expect(formatInitReport(report)).toContain(
+      "-f activerecord=suss.activerecord.json",
+    );
+  });
+
+  it("takes the database from the driver each language's manifest declares", async () => {
+    const cases = [
+      {
+        files: {
+          "pyproject.toml":
+            '[project]\nname = "svc"\ndependencies = ["fastapi", "sqlmodel", "psycopg[binary]"]\n',
+        },
+        pack: "sqlmodel",
+        language: "python" as const,
+        expected: { storageSystem: "postgresql" },
+        from: "psycopg in pyproject.toml",
+      },
+      {
+        files: {
+          "requirements.txt": "fastapi\nsqlalchemy\naiosqlite\n",
+        },
+        pack: "sqlalchemy",
+        language: "python" as const,
+        expected: { storageSystem: "sqlite" },
+        from: "aiosqlite in requirements.txt",
+      },
+      {
+        files: {
+          "package.json": JSON.stringify({
+            dependencies: { "drizzle-orm": "1", "better-sqlite3": "9" },
+          }),
+        },
+        pack: "drizzle",
+        language: "typescript" as const,
+        expected: { storageSystem: "sqlite" },
+        from: "better-sqlite3 in dependencies",
+      },
+    ];
+    for (const one of cases) {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-init-db-"));
+      for (const [name, text] of Object.entries(one.files)) {
+        fs.writeFileSync(path.join(root, name), text);
+      }
+      const configuration = (await inspectProject(root)).suggestions.find(
+        (suggestion) => suggestion.name === one.pack,
+      )?.configuration;
+
+      expect(
+        configuration === undefined
+          ? null
+          : settledValues(configuration, root, one.language),
+        one.pack,
+      ).toEqual({ values: one.expected, from: one.from });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("takes the database from a DATABASE_URL in an environment file over a driver", async () => {
+    fs.writeFileSync(
+      path.join(dir, "requirements.txt"),
+      "fastapi\nsqlalchemy\npsycopg2-binary\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, ".env.example"),
+      "SECRET=x\nDATABASE_URL=mysql+pymysql://app@db/app\n",
+    );
+    const configuration = (await inspectProject(dir)).suggestions.find(
+      (suggestion) => suggestion.name === "sqlalchemy",
+    )?.configuration;
+
+    expect(
+      configuration === undefined
+        ? null
+        : settledValues(configuration, dir, "python")?.values,
+    ).toEqual({ storageSystem: "mysql" });
+  });
+
+  it("leaves a database driver another language declares out of the choice", async () => {
+    fs.writeFileSync(
+      path.join(dir, "requirements.txt"),
+      "fastapi\nsqlalchemy\naiosqlite\n",
+    );
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ dependencies: { pg: "8" } }),
+    );
+    const configuration = (await inspectProject(dir)).suggestions.find(
+      (suggestion) => suggestion.name === "sqlalchemy",
+    )?.configuration;
+
+    expect(
+      configuration === undefined
+        ? null
+        : settledValues(configuration, dir, "python"),
+    ).toEqual({
+      values: { storageSystem: "sqlite" },
+      from: "aiosqlite in requirements.txt",
+    });
+  });
+
+  it("passes a pack its config file only when the report says what to write to it", async () => {
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ dependencies: { "drizzle-orm": "1", hono: "4" } }),
+    );
+    fs.mkdirSync(path.join(dir, "src"));
+    fs.writeFileSync(path.join(dir, "src", "index.ts"), "export {};\n");
+    const report = await inspectProject(dir);
+    const output = formatInitReport(report);
+
+    expect(output).toMatch(/-f drizzle(?!=)/);
+    expect(output).not.toContain("suss.drizzle.json");
+
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        dependencies: { "drizzle-orm": "1", hono: "4", mysql2: "3" },
+      }),
+    );
+    const withDriver = formatInitReport(await inspectProject(dir));
+    expect(withDriver).toContain(
+      "Write this to suss.drizzle.json, or run `suss init --write`:",
+    );
+    expect(withDriver).toContain("-f drizzle=suss.drizzle.json");
   });
 
   it("says a pack's config file is already there instead of printing values", async () => {
