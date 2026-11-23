@@ -26,5 +26,8 @@
   "mongodb": "typeorm: a driver type with no storage system in suss",
   "nothing": "suss: what a reader says instead of a name when nothing settles it",
   "read": "suss: access kind",
-  "write": "suss: access kind"
+  "write": "suss: access kind",
+  "__tests__": "Jest and Vitest: the folder name they look for tests in, whose connections are often to a database the app does not run on",
+  "test": "language: the folder name projects keep tests in, whose connections are often to a database the app does not run on",
+  "tests": "language: the folder name projects keep tests in, whose connections are often to a database the app does not run on"
 }

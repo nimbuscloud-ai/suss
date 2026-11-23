@@ -175,8 +175,10 @@ when the documents are somewhere other than `intent/`.
 
 `suss_status` shows which extract and contract commands ran, which of
 them failed, and whether they came from a `suss.json` or the server
-picked them itself. Call it when an answer looks thinner than you would
-expect from the code.
+picked them itself. It also repeats the pack health block the extracts
+printed, such as a database pack that reads nothing until it is told
+which database is behind the connection. Call it when an answer looks
+thinner than you would expect from the code.
 
 Every tool is marked read-only, and none of them changes anything in
 your tree, so the host does not have to ask you before it calls one.

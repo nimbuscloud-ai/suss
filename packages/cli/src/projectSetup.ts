@@ -5,16 +5,16 @@
  * The guided run calls this once the user accepts, and `init --write`
  * calls it without asking. Both write one `suss.json` at the root that
  * lists every project init set up, and the config file for each pack
- * that takes one. A pack that needs a value init cannot work out is left
- * out of `suss.json` with a note, since listing it would stop the whole
- * extract for its language. Whether an existing `suss.json` may be
- * replaced is up to the caller.
+ * that takes one. A pack that needs a value init cannot work out is
+ * still listed, with a note, so every later run reports it as a pack that
+ * reads nothing yet. Whether an existing `suss.json` may be replaced is
+ * up to the caller.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-import { configurationNeed, valuesFor } from "./init.js";
+import { configurationNeed, settledValues } from "./init.js";
 import {
   PROJECT_FILE,
   projectFileFor,
@@ -80,29 +80,8 @@ export function writeProjectSetup(
 export function setupReads(
   targets: readonly SetupTarget[],
 ): ProjectFile["read"] {
-  return targets.flatMap((target) => {
-    const leftOut = new Set(
-      target.report.suggestions
-        .filter(
-          (suggestion) =>
-            suggestion.configuration !== undefined &&
-            !isListed(target, suggestion.configuration),
-        )
-        .map((suggestion) => suggestion.name),
-    );
-    return projectFileFor(target.report, target.directory, leftOut)?.read ?? [];
-  });
-}
-
-/** A pack that needs a value init cannot work out is left out, since listing it would stop the whole extract for its language. */
-function isListed(
-  target: SetupTarget,
-  configuration: PackConfiguration,
-): boolean {
-  return (
-    !configuration.required ||
-    fs.existsSync(path.join(target.report.root, configuration.file)) ||
-    valuesFor(configuration, target.report.root) !== null
+  return targets.flatMap(
+    (target) => projectFileFor(target.report, target.directory)?.read ?? [],
   );
 }
 
@@ -125,20 +104,26 @@ function configurePack(
     };
   }
 
-  const values = valuesFor(configuration, target.report.root);
-  if (values !== null) {
-    fs.writeFileSync(file, `${JSON.stringify(values, null, 2)}\n`);
+  const settled = settledValues(
+    configuration,
+    target.report.root,
+    suggestion.language,
+  );
+  if (settled !== null) {
+    fs.writeFileSync(file, `${JSON.stringify(settled.values, null, 2)}\n`);
+    const from = settled.from === undefined ? "" : `, from ${settled.from}`;
+    const choice = settled.choice === undefined ? "" : ` ${settled.choice}`;
     return {
       tone: "done",
-      text: `Wrote ${shown} for the ${pack} pack: ${JSON.stringify(values)}.`,
+      text: `Wrote ${shown} for the ${pack} pack: ${JSON.stringify(settled.values)}${from}.${choice}`,
     };
   }
 
-  if (isListed(target, configuration)) {
+  if (!configuration.required) {
     return null;
   }
   return {
     tone: "note",
-    text: `Left ${pack} out of ${PROJECT_FILE}. It ${configurationNeed(configuration)} ${configuration.why} Write that to ${shown}, as in ${JSON.stringify(configuration.example)}, then run \`suss init --write --overwrite\` to list the pack.`,
+    text: `Listed ${pack} in ${PROJECT_FILE} without a config file, so every run reports that it ${configurationNeed(configuration)} ${configuration.why} Write that to ${shown}, as in ${JSON.stringify(configuration.example)}, then run \`suss init --write --overwrite\` to pass the pack its file.`,
   };
 }

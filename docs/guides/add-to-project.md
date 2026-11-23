@@ -59,9 +59,12 @@ npx @suss/cli init --plain
 3. Compare them
 
    suss check --dir summaries/
+
+   It exits non-zero on an error, so these commands work as a CI step.
+   A finding you accept goes in .sussignore, and check prints the rule to paste.
 ```
 
-Two more steps follow: accepting a finding, and running the same two commands in CI.
+`--json` prints everything `init` found instead, including why it picked each pack, for a script or an agent to read.
 
 ## What `init` writes
 

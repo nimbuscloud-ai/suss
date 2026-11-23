@@ -110,16 +110,10 @@ The error gives a file and a line for each side, so the fix is a two-line diff i
 At a repo root, `init` reads the workspace declaration, from `package.json` workspaces, `pnpm-workspace.yaml`, `lerna.json` or `turbo.json`, and reports on each package under it:
 
 ```
-════ services/catalog ════
+✓ Found 2 projects to read in /home/dana/shop
 
-✓ Found 3 things to read
-
-  Your code
-    hono             hono in dependencies
-    fetch            TypeScript sources, and fetch reads what the language itself ships
-
-  What your code reaches
-    node             TypeScript sources, and node reads what the language itself ships
+  services/catalog     hono, fetch, node
+  services/storefront  react, fetch, node
 
 1. Install suss
 
@@ -127,10 +121,15 @@ At a repo root, `init` reads the workspace declaration, from `package.json` work
 
 2. Read each side into one folder
 
-   suss extract -f hono -f fetch -f node -o summaries/code.json
+   suss extract --dir services/catalog -f hono -f fetch -f node -o summaries/services-catalog-code.json
+   suss extract --dir services/storefront -f react -f fetch -f node -o summaries/services-storefront-code.json
+
+3. Compare them
+
+   suss check --dir summaries/
 ```
 
-You get one block per package, each with the extract command that package needs. Without `--plain`, `init` asks which packages to set up and then writes one `suss.json` for all of them. When the output is piped or the run is in CI, it prints the commands instead.
+You get one line per package with the packs it needs, and one set of steps with every package's extract command in it. Without `--plain`, `init` asks which packages to set up and then writes one `suss.json` for all of them. When the output is piped or the run is in CI, it prints the commands instead.
 
 ## Two services that serve the same path
 

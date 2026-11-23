@@ -41,6 +41,7 @@ import {
   exitCodeOf,
 } from "./checkOutcome.js";
 import { coveringTestLookup } from "./coveringTests.js";
+import { readExtractNote } from "./extractNote.js";
 import { behaviorDiffText } from "./inspect.js";
 import { languageOfFile } from "./language.js";
 import {
@@ -78,6 +79,7 @@ import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
 import type { BaseRevision } from "./checkBase.js";
 import type { CheckOutcome } from "./checkOutcome.js";
+import type { ExtractNote } from "./extractNote.js";
 import type { ReadFailure } from "./projectFile.js";
 
 /**
@@ -322,31 +324,12 @@ export interface CheckedDirectory {
   readsFailed: ReadFailure[];
 }
 
-/** The parts of an extract's note that `check` reports on. */
-interface PackConfigNote {
-  packsNeedingConfig?: PackConfigNeed[];
-  packPathsMissing?: PackPathMissing[];
-  readFailed?: ReadFailure;
-}
-
-/**
- * Every extract note in the directory, in the order given. A note that
- * does not parse counts as empty, since the note's job is to warn and a
- * bad one should not stop the check.
- */
+/** Every extract note in the directory, in the order given. */
 function packConfigNotesIn(
   dir: string,
   notes: readonly string[],
-): PackConfigNote[] {
-  return notes.map((note) => {
-    try {
-      return JSON.parse(
-        fs.readFileSync(path.join(dir, note), "utf8"),
-      ) as PackConfigNote;
-    } catch {
-      return {};
-    }
-  });
+): ExtractNote[] {
+  return notes.map((note) => readExtractNote(path.join(dir, note)));
 }
 
 /**
