@@ -27,6 +27,7 @@ import { copingAt, keysSuppliedAt } from "./envReads.js";
 import { decoderCalled, encoderCalled } from "./facts/languageWords.js";
 import {
   anchorCallsOf,
+  callConstructionOrigins,
   containedValues,
   environmentsAt,
   handedNamesAt,
@@ -38,7 +39,7 @@ import {
   writtenValueOf,
   writtenValuesOf,
 } from "./facts/resolve.js";
-import { callArguments, callSplats } from "./facts/values.js";
+import { callArguments, callSplats, readKey } from "./facts/values.js";
 import {
   isClassName,
   modelNamed,
@@ -296,15 +297,32 @@ function calleePathOf(db: Database, call: string): string | null {
     : importPathOf(db, String(row[1]));
 }
 
-/** Where the class of the call's receiver came from, as its annotation or the call that built it says. */
+/**
+ * Where the class of the call's receiver came from, as its annotation or
+ * the call that built it says. A receiver that is itself a call, as in
+ * `Session().add(x)`, is the class that call makes.
+ */
 function receiverClassesOf(
   call: string,
   db: Database,
 ): readonly SubjectOrigin[] {
-  const receiver = receiverNamed(nodeOfResolutionKey(call, db));
+  const node = nodeOfResolutionKey(call, db);
+  const made = receiverCallOf(node);
+  if (made !== null) {
+    return callConstructionOrigins(db, readKey(fileOfKey(call), made, null));
+  }
+  const receiver = receiverNamed(node);
   return receiver === null
     ? []
     : receiverTypeOrigins(receiver, { facts: db, filePath: fileOfKey(call) });
+}
+
+/** The call a method is called on, `Session()` in `Session().add(x)`, or null. */
+function receiverCallOf(call: PyNode | null): PyNode | null {
+  const callee = call?.type === "call" ? field(call, "function") : null;
+  const receiver =
+    callee?.type === "attribute" ? field(callee, "object") : null;
+  return receiver?.type === "call" ? receiver : null;
 }
 
 /**

@@ -20,11 +20,12 @@ import {
   parameterNameAndType,
 } from "./ast.js";
 import {
+  callConstructionOrigins,
   declaredTypeOrigins,
   originsOf,
   subjectConstructions,
 } from "./facts/resolve.js";
-import { nameKeyIn } from "./facts/values.js";
+import { nameKeyIn, readKey } from "./facts/values.js";
 import { constructionBehind, moduleOf } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
@@ -143,7 +144,10 @@ export function receiverTypeOrigins(
 ): readonly SubjectOrigin[] {
   const stated = statedTypeNode(receiver.text, receiver);
   if (stated !== null) {
-    return statedOrigins(stated, options);
+    return [
+      ...statedOrigins(stated, options),
+      ...openedCallOrigins(stated, options),
+    ];
   }
   const key = nameKeyIn(
     options.filePath,
@@ -154,9 +158,33 @@ export function receiverTypeOrigins(
   if (declared.length > 0) {
     return declared;
   }
+  // The rules also see a call of what a library call built, such as
+  // `SessionLocal()` after `SessionLocal = sessionmaker()`, which the
+  // callee's own import does not say.
+  const ruled = subjectConstructions(options.facts, [key]).get(key)?.origins;
   const built = constructionBehind(receiver, options.facts);
   if (built.type === "oneCall") {
-    return [built.construction.origin];
+    return [built.construction.origin, ...(ruled ?? [])];
   }
-  return subjectConstructions(options.facts, [key]).get(key)?.origins ?? [];
+  return ruled ?? [];
+}
+
+/**
+ * Where the class `with factory() as db` opens came from, as the rules
+ * settle the call, when the type the source states is that call's
+ * callee. The callee names the class for `with Session() as db`, and for
+ * `with SessionLocal() as db` only the rules know what it makes.
+ */
+function openedCallOrigins(
+  stated: PyNode,
+  options: ReceiverTypeOptions,
+): readonly SubjectOrigin[] {
+  const call = stated.parent;
+  if (call?.type !== "call" || field(call, "function")?.id !== stated.id) {
+    return [];
+  }
+  return callConstructionOrigins(
+    options.facts,
+    readKey(options.filePath, call, enclosingFunction(call)),
+  );
 }

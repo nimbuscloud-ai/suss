@@ -21,6 +21,13 @@ describe("the facts a pack states about its own library", () => {
         { module: "sqlalchemy", name: "select", argument: 0 },
       ],
       entersAsSelf: [{ module: "httpx", name: "Client" }],
+      makesWhenCalled: [
+        {
+          module: "sqlalchemy.orm",
+          name: "sessionmaker",
+          makes: { module: "sqlalchemy.orm", name: "Session" },
+        },
+      ],
       unwrapsByName: [
         { module: "@sentry/aws-serverless", name: "wrapHandler", argument: 0 },
       ],
@@ -41,6 +48,9 @@ describe("the facts a pack states about its own library", () => {
       ["sqlalchemy", "select", "0"],
     ]);
     expect(rows(db, "entersAsSelf")).toEqual([["httpx", "Client"]]);
+    expect(rows(db, "makesWhenCalled")).toEqual([
+      ["sqlalchemy.orm", "sessionmaker", "sqlalchemy.orm", "Session"],
+    ]);
     expect(rows(db, "unwrapsByName")).toEqual([
       ["@sentry/aws-serverless", "wrapHandler", "0"],
     ]);

@@ -194,7 +194,7 @@ src/handler.ts
        -> return
          + src/helpers.formatPayload →
          + logger.info
-         + src/helpers.formatPayload →
+         + utils.formatPayload
 
 2 summaries.
 "

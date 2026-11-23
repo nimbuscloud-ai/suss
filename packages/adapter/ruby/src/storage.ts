@@ -31,13 +31,15 @@ import {
   classBehind,
   classSettledOn,
   declaredName,
+  enclosingClassKey,
   reachesBase,
 } from "./baseClass.js";
-import { callsUnder, claimedIn } from "./claims.js";
+import { callSitesUnder, claimedIn } from "./claims.js";
 import { rubyFactSource } from "./factSource.js";
 import { RUBY_PROGRAM } from "./facts/resolve.js";
 import { nodeId, readKey } from "./facts/values.js";
 import { loaderPick } from "./loaders.js";
+import { isBareMethodCall, localNamesIn } from "./paths/bareCalls.js";
 import {
   NOWHERE,
   rawSqlEffects,
@@ -70,8 +72,11 @@ function receiverOf(node: RbNode): RbNode | null {
   return node.type === "call" ? field(node, "receiver") : null;
 }
 
-/** The method name of a call, `where` in `Order.where(id: 1)`. */
+/** The method name of a call, `where` in `Order.where(id: 1)`, or the name of one written alone, `save`. */
 function methodOf(node: RbNode): string {
+  if (node.type === "identifier") {
+    return node.text;
+  }
   return field(node, "method")?.text ?? "";
 }
 
@@ -147,8 +152,14 @@ function modelPattern(
 
 type StorageKind = "read" | "write";
 
-/** The calls in a chain, from the outermost call to the one the chain starts at. */
+/**
+ * The calls in a chain, from the outermost call to the one the chain
+ * starts at. A call written as a name alone is a chain of one.
+ */
 function chainLinks(call: RbNode): RbNode[] {
+  if (call.type === "identifier") {
+    return [call];
+  }
   const links: RbNode[] = [];
   let current: RbNode | null = call;
   while (current !== null && current.type === "call") {
@@ -463,9 +474,43 @@ function settledReceiver(
 }
 
 /**
+ * Whether a chain starts at a call written with no receiver, and every
+ * call between that one and `call` gives back the model, as `where(x)`
+ * does in `where(x).update_all(y)`. Ruby sends such a chain to `self`.
+ */
+function startsAtSelf(call: RbNode, options: RbStorageOptions): boolean {
+  const links = chainLinks(call);
+  const first = links.at(-1);
+  if (first === undefined || receiverOf(first) !== null) {
+    return false;
+  }
+  return links
+    .slice(1)
+    .every((link) =>
+      options.patterns.some((pattern) =>
+        pattern.givesBack.includes(methodOf(link)),
+      ),
+    );
+}
+
+/** The class a call on `self` runs on, the one it is written inside, reported under the name that class is declared with. */
+function ownClassReceiver(
+  call: RbNode,
+  file: string,
+  facts: Database,
+): CallReceiver | undefined {
+  const classKey = enclosingClassKey(call, file);
+  const container =
+    classKey === null ? undefined : declaredName(facts, classKey);
+  return classKey === null || container === undefined
+    ? undefined
+    : { classKey, container };
+}
+
+/**
  * The class a chain was called on. When the chain starts at a constant,
- * the constant bindings give the class. Any other receiver goes to the
- * rules.
+ * the constant bindings give the class, and when it starts on `self`,
+ * the class it is written in does. Any other receiver goes to the rules.
  */
 function receiverClass(
   call: RbNode,
@@ -476,6 +521,9 @@ function receiverClass(
   const constant = rootConstant(call);
   if (constant !== null) {
     return constantReceiver(constant, file, options.facts);
+  }
+  if (startsAtSelf(call, options)) {
+    return ownClassReceiver(call, file, options.facts);
   }
   const receiver = receiverOf(call);
   if (receiver === null) {
@@ -489,8 +537,12 @@ function receiverClass(
  * whose method the library defines. Anything after it is a method on the
  * result, which the reach walk follows, so for `Order.find(id)&.summary`
  * this returns the `find`. Null when the library defines none of them.
+ * A name written alone counts only as a write.
  */
 function libraryCallIn(call: RbNode, options: RbStorageOptions): RbNode | null {
+  if (call.type === "identifier") {
+    return writesWhenAlone(call, options) ? call : null;
+  }
   return (
     chainLinks(call).find((link) =>
       someLibraryDefines(options, methodOf(link)),
@@ -803,6 +855,37 @@ export function methodStorage(
   return found;
 }
 
+/**
+ * Whether a call written as a name alone, `save` inside a model, is one
+ * a storage pattern lists as a write. A read written that way is left
+ * out, since a model's column reader can share its name with a query
+ * method, as a column `order` would.
+ */
+function writesWhenAlone(
+  identifier: RbNode,
+  options: RbStorageOptions,
+): boolean {
+  return options.patterns.some((pattern) =>
+    pattern.writes.includes(identifier.text),
+  );
+}
+
+/** The calls under a node the storage patterns read, a write written as a name alone included. */
+function storageCallsUnder(
+  node: RbNode,
+  method: RbNode,
+  options: RbStorageOptions,
+): RbNode[] {
+  const locals = localNamesIn(method);
+  return callSitesUnder(
+    node,
+    claimedIn(method, options.facts),
+    (identifier) =>
+      isBareMethodCall(identifier, locals) &&
+      writesWhenAlone(identifier, options),
+  );
+}
+
 function recognizeMethodStorage(
   method: RbNode,
   file: string,
@@ -810,7 +893,7 @@ function recognizeMethodStorage(
 ): SlottedEffects {
   const slots: EffectSlot[] = [];
   const effects = storageEffects(
-    callsUnder(method, claimedIn(method, options.facts)),
+    storageCallsUnder(method, method, options),
     file,
     {
       ...options,
@@ -875,7 +958,7 @@ export function claimedBlockStorage(
   options: RbStorageOptions,
 ): EffectAt[] {
   return storageEffects(
-    callsUnder(block, claimedIn(method, options.facts)),
+    storageCallsUnder(block, method, options),
     file,
     options,
     method,
@@ -897,7 +980,13 @@ export function storageEffects(
 ): EffectAt[] {
   return [
     ...patternEffects(calls, file, options, enclosing),
-    ...declaredEffects(calls, file, options),
+    // A name written alone is here only because a storage pattern lists
+    // it as a write, so the declared hooks see the calls they always did.
+    ...declaredEffects(
+      calls.filter((call) => call.type === "call"),
+      file,
+      options,
+    ),
   ];
 }
 

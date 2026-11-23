@@ -2,6 +2,8 @@
   "sqlalchemy": "SQLAlchemy: the package a query type is imported from, and this pack's name",
   "Query": "SQLAlchemy: what a query against mapped classes comes back as",
   "Session": "SQLAlchemy: the unit of work a query runs inside",
+  "sessionmaker": "sqlalchemy.orm.sessionmaker: a factory whose instances make a Session when called",
+  "scoped_session": "sqlalchemy.orm.scoped_session: a registry that makes, or hands back, the thread's Session when called",
   "Select": "SQLAlchemy: the 2.0 select() construct",
   "Update": "SQLAlchemy: the 2.0 update() construct",
   "Delete": "SQLAlchemy: the 2.0 delete() construct",

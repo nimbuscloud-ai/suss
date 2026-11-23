@@ -8,7 +8,6 @@ import { z } from "zod";
 
 import { storageSystemOption } from "@suss/extractor";
 import {
-  modelWords,
   PACK_VERSION,
   queryChains,
   rawStatements,
@@ -18,6 +17,7 @@ import {
   SQLALCHEMY_TYPES,
   sqlalchemyClassBodies,
   statementChains,
+  storageWords,
   withStatements,
 } from "@suss/framework-sqlalchemy";
 import { classBody, imported } from "@suss/recognize";
@@ -130,7 +130,7 @@ export function withSqlmodel(
   return withStatements(pack, [
     ...sqlmodelRawStatements(options),
     queryChains("sqlmodel-queries", SQLMODEL_TYPES, options, {
-      words: modelWords(SQLMODEL_MODEL_CALLS),
+      words: storageWords(SQLMODEL_MODEL_CALLS),
       classBodies: sqlmodelClassBodies(),
     }),
     statementChains("sqlmodel-statements", STATEMENT_MODULES, options),

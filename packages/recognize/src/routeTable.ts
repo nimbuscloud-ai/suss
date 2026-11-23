@@ -2111,7 +2111,7 @@ function serveAt(
       : baseForOn(scope.expansion, on);
   const served =
     handler === null
-      ? bareRoute(role, args, scope, walk)
+      ? bareRoute(role, handlerPicks, args, scope, walk)
       : stated(handler, role.path, args, scope, walk);
   if (served === null) {
     return;
@@ -2164,6 +2164,7 @@ function baseForOn(expansion: Expansion, on: string | null): string {
 /** Where an entry that states no handler routes to, with its namespace joined. */
 function bareRoute(
   role: ServesRole,
+  handlerPicks: readonly EntryPick[],
   args: EntryArgs,
   scope: Scope,
   walk: Walk,
@@ -2173,8 +2174,22 @@ function bareRoute(
   if (bare === undefined || path === null) {
     return null;
   }
-  const action =
-    pickedWord(args, bare.action, scope) ?? actionFromPath(path, bare.wordRule);
+  const statedAction = pickedWord(args, bare.action, scope);
+  const inPath =
+    bare.handlerInPath !== undefined &&
+    [bare.action, ...handlerPicks].every(
+      (pick) => picked(args, pick) === undefined,
+    )
+      ? handlerSpelledBy(path, bare.handlerInPath, bare.wordRule)
+      : null;
+  if (inPath !== null) {
+    return {
+      controllerKey: joinKey(walk, scope.namespace, inPath.controllerKey),
+      action: inPath.action,
+      path,
+    };
+  }
+  const action = statedAction ?? actionFromPath(path, bare.wordRule);
   const controller = pickedWord(args, bare.controller, scope);
   const controllerKey =
     controller !== null
@@ -2197,6 +2212,32 @@ function actionFromPath(
   const [from, to] = rule.replace;
   const word = new RegExp(`^[\\w${escapeForClass(from)}]+$`);
   return word.test(path) ? path.replaceAll(from, to) : null;
+}
+
+/**
+ * The controller and action a path of two or more words joined by `/`
+ * spells, `stories` and `recent` for `/stories/recent`, or null for a
+ * path with anything else in it, such as a parameter's colon.
+ */
+function handlerSpelledBy(
+  path: string,
+  inPath: { readonly optionalSuffix: string },
+  rule: { readonly replace: readonly [string, string] },
+): { controllerKey: string; action: string } | null {
+  const [from, to] = rule.replace;
+  const written = path.endsWith(inPath.optionalSuffix)
+    ? path.slice(0, -inPath.optionalSuffix.length)
+    : path;
+  const word = `[\\w${escapeForClass(from)}]+`;
+  const trimmed = written.replace(/^\//, "");
+  if (!new RegExp(`^${word}(/${word})+$`).test(trimmed)) {
+    return null;
+  }
+  const last = trimmed.lastIndexOf("/");
+  return {
+    controllerKey: trimmed.slice(0, last).replaceAll(from, to),
+    action: trimmed.slice(last + 1).replaceAll(from, to),
+  };
 }
 
 function escapeForClass(text: string): string {

@@ -20,6 +20,13 @@ describe("pooledWords", () => {
           givesBackOneOfArgument: [
             { base: "Model", method: "get", argument: 0 },
           ],
+          makesWhenCalled: [
+            {
+              module: "orm",
+              name: "factory",
+              makes: { module: "orm", name: "Session" },
+            },
+          ],
         },
       },
     ]);
@@ -31,6 +38,13 @@ describe("pooledWords", () => {
       ],
       givesBackOneOfArgument: [{ base: "Model", method: "get", argument: 0 }],
       givesBackOneOfImport: [{ module: "orm", name: "select", argument: 0 }],
+      makesWhenCalled: [
+        {
+          module: "orm",
+          name: "factory",
+          makes: { module: "orm", name: "Session" },
+        },
+      ],
     });
   });
 });

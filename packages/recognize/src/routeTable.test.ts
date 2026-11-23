@@ -361,6 +361,64 @@ describe("composeRoutes", () => {
     expect(set.routesFor("", "loose")).toEqual([]);
   });
 
+  it("routes an entry with no handler and no action to the handler its path spells, when the role says its path names one", () => {
+    const verb = VERB("GET");
+    const spelled: RouteTableDeclaration = {
+      ...TABLE,
+      roles: {
+        ...TABLE.roles,
+        get: {
+          ...verb,
+          bare: {
+            ...(verb.bare as NonNullable<ServesRole["bare"]>),
+            handlerInPath: { optionalSuffix: "(.:format)" },
+          },
+        },
+      },
+    };
+    const set = composeRoutes(
+      spelled,
+      sources([
+        module(
+          root(
+            "Rails.application",
+            "draw",
+            call("get", { args: [word("/orders/refresh-totals")] }),
+            call("get", { args: [word("daily/report(.:format)")] }),
+            call("namespace", {
+              args: [word("admin")],
+              block: [call("get", { args: [word("audit/log-entries")] })],
+            }),
+            call("get", { args: [word("/orders/:id/print")] }),
+            call("get", {
+              args: [word("/orders/pending")],
+              keywords: { action: word("index"), controller: word("orders") },
+            }),
+            call("get", {
+              args: [word("/orders/archive")],
+              keywords: { to: word("redirect") },
+            }),
+          ),
+        ),
+      ]),
+    );
+    expect(set.routesFor("orders", "refresh_totals")).toEqual([
+      { method: "GET", path: "/orders/refresh-totals" },
+    ]);
+    expect(set.routesFor("daily", "report")).toEqual([
+      { method: "GET", path: "/daily/report(.:format)" },
+    ]);
+    expect(set.routesFor("admin/audit", "log_entries")).toEqual([
+      { method: "GET", path: "/admin/audit/log-entries" },
+    ]);
+    expect(set.routesFor("orders", "print")).toEqual([]);
+    expect(set.routesFor("orders", "pending")).toEqual([]);
+    expect(set.routesFor("orders", "index")).toEqual([
+      { method: "GET", path: "/orders/pending" },
+    ]);
+    expect(set.routesFor("orders", "archive")).toEqual([]);
+  });
+
   it("leaves an expansion for a scope that adds a segment, and keeps it for one that adds nothing", () => {
     const set = compose(
       call("resources", {
