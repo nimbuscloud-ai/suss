@@ -15,7 +15,7 @@ suss ask "<question>" [--dir <directory> | <summaries.json>] [--project <directo
 | Flag or argument | Default | What it does |
 |---|---|---|
 | `"<question>"` | none | One of the eleven forms below. Run `suss ask` with no question to print the list and exit `0`. |
-| `--dir <path>` | none | The folder of summary files to read. |
+| `--dir <path>` | none | The folder of summary files to read. A note an incomplete extract left in it is read for what it says, not as summaries. Given neither `--dir` nor a file, `ask` reads the project first, the way a bare `suss check` does, and answers from what it read. |
 | `<summaries.json>` | none | One summary file, as a second positional argument after the question. |
 | `--project <path>` | the working directory | Where the source is, for a why question. A why question reads source as well as summaries, and reports it when the two do not line up. It loads the packs a bare `suss extract` of that directory would load, the ones `suss.json` lists or the ones `suss init` would pick, so a step only a pack declares, such as a finder giving back its model, is explained too. |
 | `--cache-dir <path>` | `.suss/cache` under the project, or `SUSS_CACHE_DIR` | Where the extraction cache goes when a why question reads source. See [Where suss writes](/reference/cli/#where-suss-writes). |
@@ -73,7 +73,11 @@ Five of the forms have a symbol spelling, for a question you type often. The ope
 
 ### Spelling the subject
 
-A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them all so you can narrow it. A spelling that exactly matches one boundary's name picks that boundary, so `GET /articles` is the collection route and not the comments route under it.
+A boundary is spelled the way reports spell it, and a shorter spelling covers more, exactly as under [`check --at`](/reference/cli/check#reporting-on-one-thing): `dynamodb:editions` covers every index on that table. When a spelling covers several boundaries at once, suss lists them all so you can narrow it. A spelling that exactly matches one boundary's name picks that boundary.
+
+A route written out in full, a method and a path such as `GET /articles`, means that route and no other. It matches a route with the same method and the same path, whatever each side calls its parameters, the way `check` pairs a client with a route: `POST /comments/{id}/delete` is the route a client writes as `/comments/{commentId}/delete`. `GET /articles` leaves out `GET /articles/{slug}/comments` and `GET /admin/articles`, which only share its words. Write the path alone, `/articles`, to cover every route with those words.
+
+For a route or a GraphQL field, `what calls` lists every consumer `check` pairs with it, with the path each one wrote. A client that requests `/search.json` is listed under the Rails route `GET /search`, which serves both.
 
 A unit is spelled the way `--at` spells one: a file, a `file:line`, a summary id, or a function name. A package export such as `fn:@suss/datalog::evaluate` resolves to the function behind it, so that spelling, the bare name, and `what reads` on the export all give one answer. A bare name that is two functions in different places is refused, with both listed.
 
@@ -156,7 +160,7 @@ The answer also has `construct`, with `label`, `file`, `line`, `members`, `touch
 }
 ```
 
-`shape` is which of the eleven was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `usedBy`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` lists what this run would need in order to report more. `caveats` lists what could make the answer wrong, such as a unit suss could not fully read. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
+`shape` is which of the eleven was asked: `declares`, `reads`, `writes`, `invokes`, `calls`, `reaches`, `reachedBy`, `provides`, `usedBy`, `whyReaches` or `whyResolves`. `found` is false when the subject is not in these summaries at all. Each entry in `items` has the fields that shape reports, plus `provides` when the unit serves a boundary of its own. `needs` lists what this run would need in order to report more, such as a pack the extract left out for want of an option. `caveats` lists what could make the answer wrong: a listed unit suss could not fully read, a request whose URL suss could not read when the subject is a route, a call suss could not follow that uses the subject's name for `what calls <unit>`, and a call it could not follow in the code the subject calls for `what does <unit> reach`. A why answer adds the chain, the hops with their resolution steps, and what the re-evaluation cost.
 
 A question suss does not recognize writes `{ question, answer: null, message }` instead.
 
