@@ -12,6 +12,7 @@ import {
   SQLALCHEMY_MODEL_CALLS,
   SQLALCHEMY_TYPES,
   sqlalchemyFramework,
+  storageWords,
   withSqlalchemy,
 } from "./index.js";
 
@@ -87,7 +88,12 @@ describe("the SQLAlchemy pack", () => {
 
   it("carries its words and class bodies onto a route pack it composes with, and stamps its own build", () => {
     const composed = withSqlalchemy(routePack, { storageSystem: "sqlite" });
-    expect(composed.words).toEqual(modelWords(SQLALCHEMY_MODEL_CALLS));
+    expect(composed.words).toEqual(storageWords(SQLALCHEMY_MODEL_CALLS));
+    expect(composed.words?.makesWhenCalled).toContainEqual({
+      module: "sqlalchemy.orm",
+      name: "sessionmaker",
+      makes: { module: "sqlalchemy.orm", name: "Session" },
+    });
     expect(composed.classBodies).toHaveLength(1);
     expect(composed.version).toBeUndefined();
     expect(sqlalchemyFramework({ storageSystem: "sqlite" }).version).toBe(

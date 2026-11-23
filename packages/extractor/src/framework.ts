@@ -1652,6 +1652,15 @@ export interface PackWords {
     readonly name: string;
     readonly argument: number;
   }[];
+  /**
+   * Calling one of the class `module` exports under `name` makes one of
+   * `makes`, as calling what `sessionmaker(...)` returned makes a `Session`.
+   */
+  readonly makesWhenCalled?: readonly {
+    readonly module: string;
+    readonly name: string;
+    readonly makes: { readonly module: string; readonly name: string };
+  }[];
 }
 
 /** Every pack's own words, pooled in the order the packs are listed. */
@@ -1666,6 +1675,7 @@ export function pooledWords(
     givesBackOneOfImport: packs.flatMap(
       (pack) => pack.words?.givesBackOneOfImport ?? [],
     ),
+    makesWhenCalled: packs.flatMap((pack) => pack.words?.makesWhenCalled ?? []),
   };
 }
 

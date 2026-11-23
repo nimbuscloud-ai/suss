@@ -3022,6 +3022,21 @@ export const RESOLUTION_QUESTIONS = [
       lit("comesFrom", v("c"), v("m"), v("n")),
     ],
   ),
+  // Calling what a library call built, which the pack says makes one of
+  // another class, as `factory()` does after `factory = sessionmaker()`.
+  rule(
+    "wantedSubjectConstruction",
+    [v("x"), v("r"), v("m"), v("n")],
+    [
+      lit("wantedSubject", v("x")),
+      lit("isWrittenAs", v("x"), v("r")),
+      lit("call", v("r"), v("c")),
+      lit("isWrittenAs", v("c"), v("b")),
+      lit("call", v("b"), v("f")),
+      lit("comesFrom", v("f"), v("bm"), v("bn")),
+      lit("makesWhenCalled", v("bm"), v("bn"), v("m"), v("n")),
+    ],
+  ),
 
   // The export table of one module, keyed by the module asked about.
   // The moduleExport rules flatten re-export chains of any length, and

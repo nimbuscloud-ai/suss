@@ -524,6 +524,10 @@ givesBackOneOfImport(mod, n, k)  the same, for the function n that
                             (Python)
 entersAsSelf(mod, n)        entering one of module mod's n gives back
                             that same object (Python)
+makesWhenCalled(mod, n, mod2, n2)  calling one of module mod's n makes
+                            one of module mod2's n2, so a subject
+                            written as a call of what a call of mod's
+                            n built is that construction (Python)
 unwrapsByName(mod, n, k)    calling the n that module mod exports gives
                             back its argument at k. The TypeScript store
                             adds Object.assign under GLOBAL_MODULE on

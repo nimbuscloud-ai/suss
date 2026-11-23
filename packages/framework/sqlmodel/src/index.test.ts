@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
 import { fastapiRoutes, ROUTER_UNREAD } from "@suss/framework-fastapi";
-import { modelWords } from "@suss/framework-sqlalchemy";
+import { storageWords } from "@suss/framework-sqlalchemy";
 
 import {
   SQLMODEL_MODEL_CALLS,
@@ -87,7 +87,7 @@ describe("the SQLModel pack", () => {
   });
 
   it("states its words on the pack a run loads, and on a route pack it composes with", () => {
-    const words = modelWords(SQLMODEL_MODEL_CALLS);
+    const words = storageWords(SQLMODEL_MODEL_CALLS);
     expect(sqlmodelFramework({ storageSystem: "postgresql" }).words).toEqual(
       words,
     );
