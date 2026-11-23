@@ -37,6 +37,7 @@ export type { InputRead } from "./inputReads.js";
 
 import type {
   BehavioralSummary,
+  BindingFrom,
   BoundaryBinding,
   CodeUnitKind,
   ConfidenceInfo,
@@ -64,6 +65,7 @@ import type { FailureDelivery, RedirectDelivery } from "./framework.js";
 import type { ConditionSource } from "./paths/structuredStatement.js";
 import type { DefaultedReading, Reading } from "./reading.js";
 
+export { requestBindingFrom, type SourcesOfValues } from "./bindingFrom.js";
 export {
   callSiteKey,
   locatedBeforeGroupId,
@@ -155,9 +157,11 @@ export {
 export { redirectDeliveryWhenSet } from "./redirectOption.js";
 export { isListedTestFile, matchesTestFileName } from "./testFiles.js";
 export {
+  comesFromInput,
   type SourceSpelling,
   sourceRefsOf,
   type WalkEnd,
+  writtenValueRef,
 } from "./valueSources.js";
 
 export type {
@@ -230,6 +234,7 @@ export type {
   RunsPick,
   SharedInclude,
   SkipRules,
+  StatedRequest,
   SubclassOfMatch,
   TerminalExtraction,
   TerminalMatch,
@@ -320,6 +325,15 @@ export interface RawParameter {
   /** Which field of the role's value the parameter is, when the library hands over one field. */
   field?: string;
   typeText: string | null;
+  /** What the parameter takes when a caller passes nothing for it. */
+  default?: ValueRef;
+}
+
+/** A summary's `bindingFrom`, with its conditions as the adapter read them. */
+export interface RawBindingFrom {
+  method?: ValueRef[];
+  host?: ValueRef[];
+  when?: RawCondition[];
 }
 
 export interface RawCondition {
@@ -525,6 +539,8 @@ export interface RawCodeStructure {
   /** Null when the unit is not on any cross-unit boundary, which is the
    * ordinary case for helpers and pure utilities. */
   boundaryBinding: BoundaryBinding | null;
+  /** Where the binding's values came from, when the unit takes one from its parameters. */
+  bindingFrom?: RawBindingFrom;
   deployableUnit?: DeployableUnit;
   parameters: RawParameter[];
   branches: RawBranch[];
@@ -928,6 +944,9 @@ export function assembleSummary(
         ? { deployableUnit: raw.deployableUnit }
         : {}),
     },
+    ...(raw.bindingFrom === undefined
+      ? {}
+      : { bindingFrom: bindingFromOf(raw.bindingFrom) }),
     inputs,
     transitions,
     gaps,
@@ -1357,6 +1376,17 @@ export function paramToInput(param: RawParameter): Input {
     role: param.role,
     ...(param.field === undefined ? {} : { field: param.field }),
     shape: param.typeText ? { type: "ref", name: param.typeText } : null,
+    ...(param.default === undefined ? {} : { default: param.default }),
+  };
+}
+
+function bindingFromOf(raw: RawBindingFrom): BindingFrom {
+  return {
+    ...(raw.method === undefined ? {} : { method: raw.method }),
+    ...(raw.host === undefined ? {} : { host: raw.host }),
+    ...(raw.when === undefined
+      ? {}
+      : { when: raw.when.map(rawConditionToPredicate) }),
   };
 }
 

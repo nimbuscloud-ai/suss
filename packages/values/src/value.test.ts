@@ -21,6 +21,7 @@ import {
   textPiece,
   truthOf,
   unbounded,
+  writtenLiteralOf,
 } from "./value.js";
 
 describe("normalizePieces", () => {
@@ -149,6 +150,16 @@ describe("constantOf and truthOf", () => {
     expect(truthOf(text("a"))).toBe(true);
     expect(truthOf(hole("flag"))).toBeNull();
     expect(truthOf({ kind: "constant", options: [true, false] })).toBeNull();
+  });
+});
+
+describe("writtenLiteralOf", () => {
+  it("reads a constant or a string the source writes out, and nothing else", () => {
+    expect(writtenLiteralOf(constant(10))).toBe(10);
+    expect(writtenLiteralOf(constant(null))).toBeNull();
+    expect(writtenLiteralOf(text("get"))).toBe("get");
+    expect(writtenLiteralOf(hole("method"))).toBeUndefined();
+    expect(writtenLiteralOf(record([]))).toBeUndefined();
   });
 });
 
