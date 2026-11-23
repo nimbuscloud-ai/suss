@@ -86,6 +86,8 @@ export interface MapOutcome {
   line: number;
   /** The middleware or filter whose body produced this outcome, when one did. */
   wrapper: string | null;
+  /** True when that wrapper is an error handler, which runs only when the request throws. */
+  onThrow: boolean;
 }
 
 /** A boundary an entry point's reach crosses, or a table or variable on the page. */

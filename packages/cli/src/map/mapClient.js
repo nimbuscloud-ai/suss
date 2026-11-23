@@ -1114,6 +1114,23 @@
     box.innerHTML = raw.f.map((fi) => findingCallout(rows[fi])).join("") + more;
   }
 
+  /**
+   * When one outcome happens. An error handler's outcome happens on a
+   * throw, which is not what "otherwise" would say about it.
+   */
+  function outcomeWhen(o, count) {
+    const tests = o[3].length ? conditionHtml(o[3]) : null;
+    if (o[8] === 1) {
+      return tests === null
+        ? `<span class="muted">on a throw</span>`
+        : `<span class="muted">on a throw,</span> ${tests}`;
+    }
+    if (tests !== null) {
+      return tests;
+    }
+    return `<span class="muted">${count === 1 ? "always" : "otherwise"}</span>`;
+  }
+
   /** One line per outcome: its status, when it happens and what it gives, then where. */
   function outcomeRows(raw) {
     const sorted = raw.o
@@ -1123,9 +1140,7 @@
       );
     return sorted.map((o) => {
       const parts = [
-        o[3].length
-          ? conditionHtml(o[3])
-          : `<span class="muted">${sorted.length === 1 ? "always" : "otherwise"}</span>`,
+        outcomeWhen(o, sorted.length),
         // A GraphQL field's outcome gives the type it resolves to, in place
         // of a status it does not have.
         o[7] !== null && o[7] !== undefined
