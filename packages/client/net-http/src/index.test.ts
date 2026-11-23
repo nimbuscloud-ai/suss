@@ -8,7 +8,7 @@ import { extractRubyProject } from "@suss/adapter-ruby";
 
 import { NET_HTTP, NET_HTTP_CONNECTION, netHttpClient } from "./index.js";
 
-import type { BehavioralSummary } from "@suss/behavioral-ir";
+import type { BehavioralSummary, Predicate } from "@suss/behavioral-ir";
 
 let projectDir: string | null = null;
 
@@ -199,6 +199,127 @@ describe("a method that calls Net::HTTP", () => {
     });
 
     expect(requests).toEqual(["GET null", "DELETE null", "POST null"]);
+  });
+});
+
+describe("a helper that takes the method from its caller", () => {
+  const root = path.resolve(
+    __dirname,
+    "../../../../fixtures/request-method-parameter-ruby",
+  );
+
+  async function fixtureSummaries(): Promise<BehavioralSummary[]> {
+    const { summaries } = await extractRubyProject({
+      files: ["app/http_client.rb", "app/grants.rb", "bin/sync_grants.rb"].map(
+        (file) => path.join(root, file),
+      ),
+      packs: [netHttpClient()],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    return summaries;
+  }
+
+  /** Whether a condition on `input` is true when the input is `value`. */
+  function holdsWith(predicate: Predicate, input: string, value: unknown) {
+    if (predicate.type === "negation") {
+      return !holdsWith(predicate.operand, input, value);
+    }
+    if (
+      predicate.type !== "comparison" ||
+      predicate.left.type !== "input" ||
+      predicate.left.inputRef !== input ||
+      predicate.right.type !== "literal"
+    ) {
+      throw new Error(`unexpected condition ${JSON.stringify(predicate)}`);
+    }
+    return predicate.right.value === value;
+  }
+
+  it("says which value of the parameter picks each request, and the parameter's default", async () => {
+    const clients = (await fixtureSummaries()).filter(
+      (summary) =>
+        summary.kind === "client" && summary.identity.name === "fetch",
+    );
+
+    expect(clients).toHaveLength(3);
+    for (const client of clients) {
+      expect(client.inputs[1]).toMatchObject({
+        name: "method",
+        position: 1,
+        default: { type: "literal", value: "get" },
+      });
+    }
+    const picked = (value: string) =>
+      clients
+        .filter((client) =>
+          (client.bindingFrom?.when ?? []).every((one) =>
+            holdsWith(one, "method", value),
+          ),
+        )
+        .map((client) => {
+          const semantics = client.identity.boundaryBinding?.semantics;
+          return semantics?.name === "rest" ? semantics.method : null;
+        });
+    expect([picked("get"), picked("delete"), picked("post")]).toEqual([
+      ["GET"],
+      ["DELETE"],
+      ["POST"],
+    ]);
+  });
+
+  it("gives every caller's call a method from its argument or the default", async () => {
+    const summaries = await fixtureSummaries();
+    const fetch = summaries.find(
+      (summary) =>
+        summary.identity.id === "app/http_client.rb::HttpClient.fetch",
+    );
+    const fallback = fetch?.inputs[1];
+    const sent = summaries
+      .filter((summary) => summary.location.file === "app/grants.rb")
+      .flatMap((caller) =>
+        caller.transitions.flatMap((transition) =>
+          transition.effects.flatMap((effect) =>
+            effect.type === "invocation" &&
+            effect.summary === fetch?.identity.id
+              ? [[caller.identity.name, effect.args[1]]]
+              : [],
+          ),
+        ),
+      )
+      .map(([caller, passed]) => [
+        caller,
+        passed === undefined && fallback?.type === "parameter"
+          ? fallback.default
+          : passed,
+      ]);
+
+    expect(sent).toEqual([
+      ["list", { type: "literal", value: "get" }],
+      ["create", { kind: "string", value: "post" }],
+      ["revoke", { kind: "string", value: "delete" }],
+    ]);
+  });
+
+  it("reads send_request, whose method the helper's caller passes", async () => {
+    const helper = (await fixtureSummaries()).find(
+      (summary) =>
+        summary.kind === "client" && summary.identity.name === "send_raw",
+    );
+
+    expect(helper?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: null,
+      path: null,
+      host: "api.example.com:443",
+    });
+    expect(helper?.bindingFrom).toEqual({
+      method: [{ type: "input", inputRef: "verb", path: [] }],
+    });
+    expect(helper?.inputs[1]).toMatchObject({
+      name: "verb",
+      default: { type: "literal", value: "GET" },
+    });
   });
 });
 

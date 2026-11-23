@@ -78,6 +78,38 @@ describe("a method that calls Faraday", () => {
     expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
   });
 
+  it("reads run_request, whose method a caller of the helper passes", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def send_request(url, verb = :get, body = nil)",
+        "    Faraday.new.run_request(verb, url, body, {})",
+        "  end",
+        "",
+        "  def create(body)",
+        '    Faraday.new.run_request(:post, "https://api.example.com/orders", body, {})',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const [helper, create] = units;
+
+    expect(boundary(units)).toEqual({ method: null, path: null });
+    expect(helper?.bindingFrom?.method).toEqual([
+      { type: "input", inputRef: "verb", path: [] },
+    ]);
+    expect(helper?.parameters.map((one) => [one.name, one.default])).toEqual([
+      ["url", undefined],
+      ["verb", { type: "literal", value: "get" }],
+      ["body", { type: "literal", value: null }],
+    ]);
+    expect(boundary([create as RawCodeStructure])).toEqual({
+      method: "POST",
+      path: "/orders",
+    });
+    expect(create?.bindingFrom).toBeUndefined();
+  });
+
   it("serves a connection's relative paths under the path its own URL states", async () => {
     const units = await unitsIn(
       [

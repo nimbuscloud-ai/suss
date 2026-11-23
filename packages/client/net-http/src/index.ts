@@ -22,7 +22,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { RequestMethod, UrlArgument } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "2";
+const PACK_VERSION = "3";
 
 /** Methods that send a request without a request object. */
 const VERB_METHODS: Record<string, string> = {
@@ -94,7 +94,12 @@ export const NET_HTTP = httpRequests({
 export const NET_HTTP_CONNECTION = httpRequests({
   client: constructedFrom({ from: ["Net::HTTP"], named: ["HTTP"] }),
 })
-  .methods({ ...verbs(VERB_METHODS, URL_FIRST), request: REQUEST_OBJECT })
+  .methods({
+    ...verbs(VERB_METHODS, URL_FIRST),
+    request: REQUEST_OBJECT,
+    // `send_request("PATCH", path, data)` sends the method it is given.
+    send_request: { sends: { from: { at: 0 } }, url: { at: 1 } },
+  })
   // Net::HTTP sends the path as the request target exactly as written.
   .baseUrl({ at: 0, reads: "host", port: { at: 1 }, joins: "asWritten" })
   .response(RESPONSE)

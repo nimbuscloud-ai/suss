@@ -22,7 +22,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { OneArgument, RequestMethod } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "2";
+const PACK_VERSION = "3";
 
 const URL_FIRST: OneArgument = { at: 0, keyword: "url" };
 

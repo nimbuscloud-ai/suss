@@ -32,7 +32,7 @@ import type {
 } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "1";
+const PACK_VERSION = "2";
 
 /**
  * A project function that builds an axios instance the way

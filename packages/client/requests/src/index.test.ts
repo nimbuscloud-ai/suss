@@ -97,6 +97,77 @@ describe("a function that calls requests", () => {
     expect(boundary(units).method).toBe("PATCH");
   });
 
+  it("says the method and the host come from the helper's parameters, and lists them with their defaults", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        'def send(url, method="GET"):',
+        "    return requests.request(method, url)",
+      ].join("\n"),
+    );
+
+    expect(boundary(units)).toEqual({ method: null, path: null });
+    expect(units[0]?.bindingFrom).toEqual({
+      method: [{ type: "input", inputRef: "method", path: [] }],
+      host: [
+        {
+          type: "derived",
+          from: { type: "input", inputRef: "url", path: [] },
+          derivation: { type: "propertyAccess", property: "host" },
+        },
+      ],
+    });
+    expect(units[0]?.parameters).toEqual([
+      { name: "url", position: 0, role: "url", typeText: null },
+      {
+        name: "method",
+        position: 1,
+        role: "method",
+        typeText: null,
+        default: { type: "literal", value: "GET" },
+      },
+    ]);
+  });
+
+  it("says which value of the parameter picks each request a helper sends", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        'def fetch(url, method="get"):',
+        '    if method == "delete":',
+        "        return requests.delete(url)",
+        "    return requests.get(url)",
+      ].join("\n"),
+    );
+    const methodIs = {
+      type: "comparison",
+      left: { type: "input", inputRef: "method", path: [] },
+      op: "eq",
+      right: { type: "literal", value: "delete" },
+    };
+
+    expect(units.map((unit) => unit.bindingFrom?.when)).toEqual([
+      [expect.objectContaining({ structured: methodIs, polarity: "positive" })],
+      [expect.objectContaining({ structured: methodIs, polarity: "negative" })],
+    ]);
+  });
+
+  it("records nothing about where a request came from when the call writes it out", async () => {
+    const units = await unitsIn(
+      [
+        "import requests",
+        "",
+        "def fetch_orders():",
+        '    return requests.get("https://api.example.com/orders")',
+      ].join("\n"),
+    );
+
+    expect(units[0]?.bindingFrom).toBeUndefined();
+    expect(units[0]?.parameters).toEqual([]);
+  });
+
   it("reads a call on a session the package built", async () => {
     const units = await unitsIn(
       [
