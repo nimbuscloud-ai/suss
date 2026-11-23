@@ -177,6 +177,27 @@ describe("ruby invocation effects", () => {
     ]);
   });
 
+  it("leaves a comment out of the arguments, and keeps a computed key under its text", async () => {
+    const effects = await effectsFor([
+      "def bump(key)",
+      "  update!(",
+      "    count: 1,",
+      "    # the key the caller picked:",
+      "    key => 2",
+      "  )",
+      "end",
+    ]);
+    expect(effects[0]?.args).toEqual([
+      {
+        kind: "keywords",
+        fields: {
+          count: { kind: "number", value: 1 },
+          key: { kind: "number", value: 2 },
+        },
+      },
+    ]);
+  });
+
   it("reads a keyword written with no value as the local or the call it spells", async () => {
     const effects = await effectsFor([
       "def total",

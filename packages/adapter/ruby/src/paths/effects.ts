@@ -10,10 +10,11 @@ import { constantOf, literalOf } from "@suss/values";
 import {
   children,
   field,
+  hashKeyName,
   isLambdaArgument,
   MODULE_SCOPE_STOPS,
-  namedPairs,
   OWN_BODY_TYPES,
+  pairValue,
   rangeOf,
   readAsType,
   runsInPlace,
@@ -356,25 +357,26 @@ export function argOf(node: RbNode, facts: Database | undefined): EffectArg {
 /**
  * The positional arguments in order, then the keyword arguments in one
  * entry by name, since a keyword fills the parameter of its name and
- * not the one at its place.
+ * not the one at its place. A key the call computes goes under its text.
  */
 function argsOf(call: RbNode, facts: Database | undefined): EffectArg[] {
-  const args = field(call, "arguments");
-  if (args === null) {
-    return [];
-  }
-  const positional = children(args)
+  const written = children(field(call, "arguments")).filter(
+    (child) => child.type !== "comment",
+  );
+  const positional = written
     .filter((child) => child.type !== "pair")
     .map((child) => argOf(child, facts));
-  const pairs = namedPairs(call);
-  if (pairs.length === 0) {
-    return positional;
-  }
   const fields: Record<string, EffectArg> = {};
-  for (const pair of pairs) {
-    fields[pair.name] = argOf(pair.value, facts);
+  for (const pair of written) {
+    const key = pair.type === "pair" ? field(pair, "key") : null;
+    const value = key === null ? null : pairValue(pair);
+    if (key !== null && value !== null) {
+      fields[hashKeyName(key) ?? key.text] = argOf(value, facts);
+    }
   }
-  return [...positional, { kind: "keywords", fields }];
+  return Object.keys(fields).length === 0
+    ? positional
+    : [...positional, { kind: "keywords", fields }];
 }
 
 /** The statement a call is written in, which is the node the lowering keys on. */

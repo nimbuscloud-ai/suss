@@ -175,7 +175,9 @@ function argumentNodes(call: PyNode): PyNode[] {
  * not the one at its place.
  */
 function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
-  const written = children(field(call, "arguments"));
+  const written = children(field(call, "arguments")).filter(
+    (child) => child.type !== "comment",
+  );
   const positional = written
     .filter((child) => child.type !== "keyword_argument")
     .map((child) => argOf(child, facts));

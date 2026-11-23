@@ -208,7 +208,12 @@ describe("python invocation effects", () => {
   it("records keyword arguments by name, after the positional ones", async () => {
     const effects = await effectsFor([
       "def get(self):",
-      '    publish(payload, retries=3, queue="orders")',
+      "    publish(",
+      "        payload,",
+      "        # retried by the worker:",
+      "        retries=3,",
+      '        queue="orders",',
+      "    )",
     ]);
     const [effect] = effects;
     expect(effect?.type === "invocation" && effect.args).toEqual([
