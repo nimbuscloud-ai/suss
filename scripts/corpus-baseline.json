@@ -15,20 +15,20 @@
     "directus-api": {
       "pin": "193a65a807a4b7557c7705e54b975eb0e1c53ecf",
       "commands": 2,
-      "summaries": 2433,
-      "boundaries": 2303
+      "summaries": 2436,
+      "boundaries": 2306
     },
     "twenty-server": {
       "pin": "0288021c9c0f76f0424e327dce984d1657271ef8",
       "commands": 2,
-      "summaries": 7014,
-      "boundaries": 6854
+      "summaries": 7582,
+      "boundaries": 7420
     },
     "twenty-front": {
       "pin": "0288021c9c0f76f0424e327dce984d1657271ef8",
-      "commands": 2,
-      "summaries": 11536,
-      "boundaries": 10633
+      "commands": 3,
+      "summaries": 12532,
+      "boundaries": 11622
     }
   }
 }
