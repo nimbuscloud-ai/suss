@@ -24,6 +24,8 @@ export interface ReadStop<N> {
   readonly node: N | null;
   /** The properties read off it on the way to the value, outermost first. */
   readonly path: readonly string[];
+  /** Whether the walk ended at an expression written out, such as a literal default. */
+  readonly written?: boolean;
 }
 
 /** A node whose value is taken from another value. */
@@ -50,6 +52,12 @@ export interface ResponseReading<N> {
   isRequest(node: N): boolean;
   /** The value a node is taken from, or null when it is not such a node. */
   hopOf(node: N): ReadHop<N> | null;
+  /**
+   * Whether `stop` is written later in the same file than `read`. The
+   * walk follows a name to its last write, so a name written twice
+   * leads an early read to a value it never sees.
+   */
+  writtenAfter(stop: N, read: N): boolean;
 }
 
 /** Past this many steps from a value back to the request, the value is left unplaced. */
@@ -138,18 +146,37 @@ export function placesInResponse<N>(
     ask([value]);
     let agreed: readonly string[] | null = null;
     for (const stop of stops.get(reading.idOf(value)) ?? []) {
-      const end =
-        stop.node === null ? null : (endPlace(stop.node, depth + 1) ?? null);
-      if (end === null) {
+      const end = stopPlace(stop, value, depth);
+      if (end === "skip") {
         continue;
       }
-      const here = [...end, ...stop.path];
-      if (agreed !== null && !samePath(agreed, here)) {
+      const here = end === null ? null : [...end, ...stop.path];
+      if (here === null || (agreed !== null && !samePath(agreed, here))) {
         return null;
       }
       agreed = here;
     }
     return agreed;
+  };
+
+  // A write after the read is a value the read never sees, and a value
+  // written out, such as a literal default, is not another response.
+  const stopPlace = (
+    stop: ReadStop<N>,
+    value: N,
+    depth: number,
+  ): readonly string[] | null | "skip" => {
+    if (stop.node === null) {
+      return null;
+    }
+    if (reading.writtenAfter(stop.node, value)) {
+      return "skip";
+    }
+    const end = endPlace(stop.node, depth + 1);
+    if (end === undefined) {
+      return stop.written === true ? "skip" : null;
+    }
+    return end;
   };
 
   const placeOf = (value: N, depth: number): readonly string[] | null => {

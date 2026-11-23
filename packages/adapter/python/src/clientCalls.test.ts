@@ -454,6 +454,36 @@ describe("a function that calls a request function", () => {
     ]);
   });
 
+  it("puts a read of a reused name on no request but the one it can only have held", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def both():",
+        '    resp = httpclient.get("/invoices")',
+        '    payer = resp.json()["payer_name"]',
+        '    resp = httpclient.get("/receipts")',
+        '    return payer, resp.json()["total"]',
+      ].join("\n"),
+      httpclient({ body: ["json"] }),
+    );
+
+    const fields = units.map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      const path = semantics?.name === "rest" ? semantics.path : null;
+      const read = unit.branches.flatMap((branch) =>
+        branch.expectedInput?.type === "record" &&
+        branch.expectedInput.properties.json?.type === "record"
+          ? Object.keys(branch.expectedInput.properties.json.properties)
+          : [],
+      );
+      return `${path}: ${read.join(",")}`;
+    });
+    // The first read comes before the second request is written. The
+    // last could be either response to the walk, so it goes on neither.
+    expect(fields).toEqual(["/invoices: payer_name", "/receipts: "]);
+  });
+
   it("reads whether one call follows redirects off the pack's keyword", async () => {
     const units = await unitsIn(
       [

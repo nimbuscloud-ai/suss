@@ -12,7 +12,8 @@ import type { ReadHop, ReadStop, ResponseReading } from "./responseReads.js";
 
 /**
  * A made-up program: `request` is the call, a node named `x.m` is the
- * member `m` of `x`, and every other node's walk ends where `walks` says.
+ * member `m` of `x`, every other node's walk ends where `walks` says, and
+ * a node whose name starts with `later` is written after every read.
  */
 function reading(
   walks: Record<string, ReadStop<string>[]>,
@@ -24,13 +25,14 @@ function reading(
       asked.push([...values]);
       return new Map(values.map((value) => [value, walks[value] ?? []]));
     },
-    isRequest: (node) => node === "request",
+    isRequest: (node) => node === "request" || node === "laterRequest",
     hopOf: (node): ReadHop<string> | null => {
       const dot = node.lastIndexOf(".");
       return dot === -1
         ? null
         : { from: node.slice(0, dot), segments: [node.slice(dot + 1)] };
     },
+    writtenAfter: (stop) => stop.startsWith("later"),
   };
 }
 
@@ -68,18 +70,32 @@ describe("placesInResponse", () => {
     expect(asked).toEqual([["invoice", "receipt"]]);
   });
 
-  it("places a value one of whose walks ends somewhere else", () => {
+  it("places a value whose other walk ends at a literal default", () => {
     const placeOf = placesInResponse(
       ["body"],
       reading({
         body: [
           { node: "request", path: ["data"] },
-          { node: "fallback", path: [] },
+          { node: "fallback", path: [], written: true },
         ],
       }),
     );
 
     expect(placeOf("body")).toEqual(["data"]);
+  });
+
+  it("leaves a value unplaced when another walk ends at some other call", () => {
+    const placeOf = placesInResponse(
+      ["resp"],
+      reading({
+        resp: [
+          { node: "request", path: [] },
+          { node: "otherRequest", path: [] },
+        ],
+      }),
+    );
+
+    expect(placeOf("resp")).toBeNull();
   });
 
   it("leaves a value unplaced when its walks reach two places in the response", () => {
@@ -112,6 +128,17 @@ describe("placesInResponse", () => {
     );
 
     expect(placeOf("loop")).toBeNull();
+  });
+
+  it("leaves a read unplaced when its walk ends at a write that comes after it", () => {
+    // `resp = get(a); a = resp["x"]; resp = get(b)`: the walk follows the
+    // name to its last write, which the first read never sees.
+    const placeOf = placesInResponse(
+      ["resp"],
+      reading({ resp: [{ node: "laterRequest", path: [] }] }),
+    );
+
+    expect(placeOf("resp")).toBeNull();
   });
 
   it("places a member of the request without asking the walk", () => {

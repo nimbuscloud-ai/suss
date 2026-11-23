@@ -96,7 +96,18 @@ JSON.parse(response.body)["customer_name"]
 - **The request.** `isRequest` says which node is the call whose response this is. In a TypeScript helper the response was handed to, it is the helper's parameter instead.
 - **The steps.** `hopOf` says which nodes are a value taken from another: a body member such as `res.json()` or `response.body`, a decoder such as `JSON.parse(text)`, a key read such as `order["lines"]`, and in TypeScript the parameter of a `.then` callback. The adapter follows these itself, so only a name at the end of the steps costs a question, and every name a body reads is asked about at once.
 
-A value whose walk ends at the response along two different paths has no place, so the reads off it are left out. A value one of whose walks ends somewhere else, such as a literal default in `resp.json() if resp.ok else {}`, still has its place, since the caller reads the field off the response on the paths where it is the response. A read at a key the source computes leaves the key out of the walk's path, so a value read that way has no place either.
+A value whose walk ends at the response along two different paths has no place, so the reads off it are left out. So does a value one of whose walks ends at anything else that could be a response, such as another call. A walk that ends at an expression written out, such as the literal default in `resp.json() if resp.ok else {}`, does not count against the place, since the caller reads the field off the response on the paths where it is the response. A read at a key the source computes leaves the key out of the walk's path, so a value read that way has no place either.
+
+The walk follows a name to its writes without regard to order, so a name a function writes twice leads every read of it to both:
+
+```python
+resp = requests.get(f"{BASE}/invoices")
+payer = resp.json()["payer_name"]
+resp = requests.get(f"{BASE}/receipts")
+return payer, resp.json()["total"]
+```
+
+A write later in the file than the read is a value the read never sees, so `writtenAfter` drops it, and `payer_name` goes on the invoices request. `total` could be either response as far as the walk can tell, so it goes on neither.
 
 Each read goes on the branches `readsOn` in `effectGuards.ts` puts it on, which is `firesOn` with one guard stricter. A call stays on a branch that says nothing about its guard, and for a call that is right. A read kept that way is wrong when the guard is a status test:
 

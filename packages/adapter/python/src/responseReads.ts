@@ -123,23 +123,21 @@ function keyRead(
 
 function responseReading(reads: ResponseReads): ResponseReading<PyNode> {
   const { facts } = reads;
+  // A name is keyed by its scope, so two reads of it share a key; the
+  // position keeps them apart.
   const idOf = (node: PyNode): string =>
-    resolutionKeyOf(node, facts) ??
-    `${node.type}:${node.startIndex}:${node.endIndex}`;
+    `${resolutionKeyOf(node, facts) ?? node.type}@${node.startIndex}:${node.endIndex}`;
   const requestId = idOf(reads.request);
   return {
     idOf,
     stopsOf: (values, endsAt) => {
-      const keys = new Map<string, PyNode>();
-      for (const value of values) {
+      const keyed = values.flatMap((value) => {
         const key = resolutionKeyOf(value, facts);
-        if (key !== null) {
-          keys.set(key, value);
-        }
-      }
+        return key === null ? [] : [{ value, key }];
+      });
       const leaves = sourcesOf(
         facts,
-        [...keys.keys()],
+        [...new Set(keyed.map(({ key }) => key))],
         "wantedInputRead",
         (member) => {
           const node = nodeOfResolutionKey(member, facts);
@@ -147,7 +145,7 @@ function responseReading(reads: ResponseReads): ResponseReading<PyNode> {
         },
       );
       return new Map(
-        [...keys].map(([key, value]) => [
+        keyed.map(({ value, key }) => [
           idOf(value),
           (leaves.get(key) ?? []).map((leaf) => ({
             // A key computed on the way is missing from the path.
@@ -156,12 +154,16 @@ function responseReading(reads: ResponseReads): ResponseReading<PyNode> {
                 ? nodeOfResolutionKey(leaf.key, facts)
                 : null,
             path: leaf.path,
+            written: leaf.end.is === "written",
           })),
         ]),
       );
     },
     isRequest: (node) => idOf(node) === requestId,
     hopOf: (node) => HOPS[node.type]?.(node, reads) ?? null,
+    writtenAfter: (stop, read) =>
+      stop.tree.rootNode.id === read.tree.rootNode.id &&
+      stop.startIndex > read.endIndex,
   };
 }
 

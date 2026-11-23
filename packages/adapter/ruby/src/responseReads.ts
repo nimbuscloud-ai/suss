@@ -138,22 +138,21 @@ function keyRead(
 
 function responseReading(reads: ResponseReads): ResponseReading<RbNode> {
   const { facts } = reads;
+  // A local is keyed by its method, so two reads of it share a key; the
+  // position keeps them apart.
   const idOf = (node: RbNode): string =>
-    resolutionKeyOf(node) ?? `${node.type}:${node.startIndex}:${node.endIndex}`;
+    `${resolutionKeyOf(node) ?? node.type}@${node.startIndex}:${node.endIndex}`;
   const requestId = idOf(reads.request);
   return {
     idOf,
     stopsOf: (values, endsAt) => {
-      const keys = new Map<string, RbNode>();
-      for (const value of values) {
+      const keyed = values.flatMap((value) => {
         const key = resolutionKeyOf(value);
-        if (key !== null) {
-          keys.set(key, value);
-        }
-      }
+        return key === null ? [] : [{ value, key }];
+      });
       const leaves = sourcesOf(
         facts,
-        [...keys.keys()],
+        [...new Set(keyed.map(({ key }) => key))],
         "wantedInputRead",
         (member) => {
           const node = nodeOfResolutionKey(member, facts);
@@ -161,7 +160,7 @@ function responseReading(reads: ResponseReads): ResponseReading<RbNode> {
         },
       );
       return new Map(
-        [...keys].map(([key, value]) => [
+        keyed.map(({ value, key }) => [
           idOf(value),
           (leaves.get(key) ?? []).map((leaf) => ({
             // A key computed on the way is missing from the path.
@@ -170,12 +169,15 @@ function responseReading(reads: ResponseReads): ResponseReading<RbNode> {
                 ? nodeOfResolutionKey(leaf.key, facts)
                 : null,
             path: leaf.path,
+            written: leaf.end.is === "written",
           })),
         ]),
       );
     },
     isRequest: (node) => idOf(node) === requestId,
     hopOf: (node) => HOPS[node.type]?.(node, reads) ?? null,
+    writtenAfter: (stop, read) =>
+      stop.tree === read.tree && stop.startIndex > read.endIndex,
   };
 }
 

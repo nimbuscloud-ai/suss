@@ -132,6 +132,7 @@ function responseReading(
             // place the path gives would be wrong.
             node: leaf.computedAt === null ? node : null,
             path: leaf.path,
+            written: leaf.end.is === "written",
           })),
         );
       }
@@ -139,6 +140,9 @@ function responseReading(
     },
     isRequest: (node) => isResponse(peeledNode(node)),
     hopOf: (node) => hopOf(peeledNode(node), bodyMethods),
+    writtenAfter: (stop, read) =>
+      stop.getSourceFile() === read.getSourceFile() &&
+      stop.getStart() > read.getEnd(),
   };
 }
 
