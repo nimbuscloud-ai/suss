@@ -143,13 +143,17 @@ function callerNames(
   if (parameter === null) {
     return [];
   }
+  const parameters = summary.inputs.flatMap((input) =>
+    input.type === "parameter" ? [input] : [],
+  );
   const names: GroundedName[] = [];
   for (const call of callsInto.get(id) ?? []) {
     const passed = valueAt(
-      argumentForParameter(call.args, {
-        name: reference.root,
-        position: parameter.position,
-      }) ?? null,
+      argumentForParameter(
+        call.args,
+        { name: reference.root, position: parameter.position },
+        parameters,
+      ) ?? null,
       reference.fields,
     );
     const name = passed === null ? null : nameOf(passed);

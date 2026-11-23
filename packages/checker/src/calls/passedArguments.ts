@@ -6,11 +6,10 @@
  * The adapters record a call's positional arguments in the order it
  * writes them. Python and Ruby record the keyword arguments after them,
  * in one `keywords` entry keyed by the name the call writes before each
- * one, since a keyword says which parameter it fills and its place in
- * the call does not. A parameter takes the keyword argument written with
- * its name, and otherwise the positional argument at its place. A
- * parameter past the last positional argument with no keyword argument
- * for it was left out.
+ * one. A parameter takes the keyword argument written with its name, and
+ * otherwise the positional argument at its place. When no parameter has
+ * the name of any keyword, the call is Ruby's, passing an options hash
+ * by place, and the keywords fill the next place as one hash.
  */
 
 /** What a summary records for one argument, as the adapters write it. */
@@ -35,20 +34,21 @@ export interface ParameterPlace {
 }
 
 /**
- * The argument the call passes for the parameter, or undefined when it
- * passes none. A splat, `*args`, can fill any parameter from its place
- * on, so each of those gets the splat, a value suss cannot read.
+ * The argument the call passes for one of the callee's parameters, or
+ * undefined when it passes none. A splat, `*args`, can fill any
+ * parameter from its place on, so each of those gets the splat, a value
+ * suss cannot read.
  */
 export function argumentForParameter(
   args: readonly RecordedArgument[],
   parameter: ParameterPlace,
+  parameters: readonly ParameterPlace[],
 ): RecordedArgument | undefined {
   const last = args.at(-1);
-  const keywords = last?.kind === "keywords" ? last.fields : undefined;
-  if (keywords !== undefined && Object.hasOwn(keywords, parameter.name)) {
-    return keywords[parameter.name];
+  if (last?.kind === "keywords" && Object.hasOwn(last.fields, parameter.name)) {
+    return last.fields[parameter.name];
   }
-  const positional = keywords === undefined ? args : args.slice(0, -1);
+  const positional = positionalArguments(args, parameters);
   const splat = positional.findIndex(
     (arg) => arg?.kind === "identifier" && arg.name.startsWith("*"),
   );
@@ -56,4 +56,19 @@ export function argumentForParameter(
     return positional[splat];
   }
   return positional[parameter.position];
+}
+
+/** The arguments a call passes by place, with an options hash as the last one. */
+function positionalArguments(
+  args: readonly RecordedArgument[],
+  parameters: readonly ParameterPlace[],
+): readonly RecordedArgument[] {
+  const last = args.at(-1);
+  if (last?.kind !== "keywords") {
+    return args;
+  }
+  const named = parameters.some((one) => Object.hasOwn(last.fields, one.name));
+  return named
+    ? args.slice(0, -1)
+    : [...args.slice(0, -1), { kind: "object", fields: last.fields }];
 }

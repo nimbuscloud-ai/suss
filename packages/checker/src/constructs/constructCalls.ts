@@ -328,7 +328,7 @@ function valuesPassed(
   const values: PassedValue[] = [];
   for (const parameter of parameters) {
     const value = argumentFor(
-      argumentForParameter(call.args, parameter),
+      argumentForParameter(call.args, parameter, parameters),
       parameter,
     );
     if (value === undefined || value?.kind === "undefined") {
