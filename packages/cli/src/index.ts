@@ -111,6 +111,7 @@ export {
   type DeclaredReads,
   declaredReads,
   type ProjectReadReport,
+  packHealthOf,
   type ReadEntry,
   readProjectInto,
   whereReadsCameFrom,

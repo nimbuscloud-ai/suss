@@ -167,6 +167,7 @@ export const declares: PackDeclaration = {
     example: { storageSystem: "postgresql" },
     required: true,
     why: "which database is behind the engine: postgresql, mysql, or sqlite. SQLModel talks to all of them and the connection URL settles which, so the pack cannot.",
+    databaseOption: "storageSystem",
   },
 };
 

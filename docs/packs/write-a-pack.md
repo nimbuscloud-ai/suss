@@ -213,12 +213,17 @@ configuration: {
   required: true,
   why: "which database is behind the connection: postgresql, mysql, or sqlite.",
   readFromProject: storageSystemFromDatabaseYml,
+  databaseOption: "storageSystem",
 },
 ```
 
-`suss init` writes `file` for the project when it can fill the values in, and lists the pack in `suss.json`. It fills them from two places. `defaults` is for values that every project the library's own generator makes has, and init writes them as they are. `readFromProject` is for a value the project has already written down in a file the library itself reads, such as Rails' `config/database.yml`. Init calls it with the project root, and what it returns goes over the defaults. When a required value comes from neither, init leaves the pack out and prints `example` for the user to fill in.
+`suss init` writes `file` for the project when it can fill the values in, and lists the pack in `suss.json`. It fills them from three places. `defaults` is for values that every project the library's own generator makes has, and init writes them as they are. `readFromProject` is for a value the project has already written down in a file the library itself reads, such as Rails' `config/database.yml`. Init calls it with the project root, and it returns the values and where it found them, as in `{ values: { storageSystem: "sqlite" }, from: "the development adapter in config/database.yml" }`. Init prints where each value came from, so the user can check it.
 
-Write `readFromProject` only when the library says where that file lives, for the same reason a pack hardcodes only what the library defines. The function should read that one file and return. It returns null when the file is missing or does not settle the value, for example when `database.yml` lists two adapters. Init then asks the user, where a guess would have been written into the project and never looked at again.
+`databaseOption` is the option that says which database is behind the connection, for a library that talks to several. When `readFromProject` does not settle it, init works it out from what every stack declares: the database driver in the project's manifest, such as `pg` in `Gemfile.lock` or `psycopg` in `pyproject.toml`, and the scheme of a `DATABASE_URL` in `.env.example` or the other environment files. When the project declares more than one database, init takes the one `readFromProject` gave, then the `DATABASE_URL`, then the first driver, and prints a line saying which it took over which.
+
+What `readFromProject` returns goes over the database init worked out, which goes over the defaults. When a required value comes from none of them, init still lists the pack, and every run reports that it reads nothing until the value is set, with `example` to fill in.
+
+Write `readFromProject` only when the library says where that file lives, for the same reason a pack hardcodes only what the library defines. The function should read that file, or the copy a project checks in for it such as `database.yml.sample`, and return. It returns null when the file is missing or does not settle the value, such as an adapter written as ERB.
 
 When an option is a file or directory path, list it under `paths`, as the Rails pack does with `paths: ["root", "routesFile", "engineRoots", "routesFiles"]`. The pack also declares `configDirectory` in its options schema, and resolves a relative path against it. The CLI fills that in with the config file's folder. When it loads the pack, the CLI checks each listed path and reports any that points at nothing, so a config file kept outside the project does not leave the pack quietly reading an empty directory. A test fails when a pack takes `configDirectory` and lists no `paths`.
 

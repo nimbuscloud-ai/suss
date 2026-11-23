@@ -83,9 +83,9 @@ Each list shows the first few; counts has the totals.
 
 To read what one boundary does, use suss_ask with "what can I project from <boundary>".`;
 
-export const STATUS_DESCRIPTION = `What this server is answering from: which extract and contract commands ran, which failed, and whether a suss.json chose them or suss picked them the way \`suss init\` would.
+export const STATUS_DESCRIPTION = `What this server is answering from: which extract and contract commands ran, which failed, and whether a suss.json chose them or suss picked them the way \`suss init\` would. It also repeats the pack health block the extracts printed, such as a pack that reads nothing until an option is set.
 
-Reach for this when an answer looks thinner than the code suggests it should be. A project nothing matched has nothing extracted, and a contract that failed to read means one side of every boundary it declares is missing from every answer.`;
+Reach for this when an answer looks thinner than the code suggests it should be. A project nothing matched has nothing extracted, a contract that failed to read means one side of every boundary it declares is missing from every answer, and a pack listed under pack health has left its boundaries out.`;
 
 export async function askTool(
   project: Project,
@@ -335,6 +335,7 @@ function reportLines(root: string, report: BuildReport): string[] {
     ...(report.configured ? [] : [whereReadsCameFrom(root, false)]),
     ...report.ran.map((one) => `  ran: ${one}`),
     ...report.failed.map((one) => `  failed: ${one}`),
+    ...(report.packHealth === "" ? [] : [report.packHealth.trimEnd()]),
   ];
 }
 

@@ -26,6 +26,7 @@ import {
   contentByBoundary,
   contractsCoveredByAnother,
 } from "./contractCopies.js";
+import { databasesDeclaredIn } from "./declaredDatabase.js";
 import {
   readPythonDependencies,
   readRubyDependencies,
@@ -52,7 +53,11 @@ import {
 import { bold, cyan, dim, green, yellow } from "./style.js";
 import { dependenciesThroughLocalPackages } from "./workspaces.js";
 
-import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
+import type {
+  PackConfiguration,
+  PackDeclaration,
+  ProjectValues,
+} from "@suss/ir-core";
 import type { ContractSource } from "./contract.js";
 import type { ContentByBoundary } from "./contractCopies.js";
 import type { UnreadDependencies } from "./dependencyManifests.js";
@@ -1063,7 +1068,7 @@ export interface ReadCommand {
    * another pack finds first, so run on its own it comes back empty.
    */
   effectsOnly: boolean;
-  /** Config files, from the directory init ran in, that a pack here cannot run without. */
+  /** The config files the command passes, from the directory init ran in, which have to be written before it runs. */
   needsConfig: string[];
 }
 
@@ -1097,12 +1102,16 @@ export function readCommands(
     if (language !== "typescript" || mixed) {
       args.push("--lang", language);
     }
+    const configs = items.flatMap((item) =>
+      passesItsConfig(item, report.root)
+        ? [{ item, file: path.join(directory, item.configuration?.file ?? "") }]
+        : [],
+    );
     for (const item of items) {
+      const config = configs.find((one) => one.item === item);
       args.push(
         "-f",
-        item.configuration === undefined
-          ? item.name
-          : `${item.name}=${path.join(directory, item.configuration.file)}`,
+        config === undefined ? item.name : `${item.name}=${config.file}`,
       );
     }
     const name = languages.length === 1 ? "code" : language;
@@ -1114,9 +1123,7 @@ export function readCommands(
       effectsOnly: !items.some(
         (item) => countsForProject(item) && item.kind !== "effects",
       ),
-      needsConfig: items
-        .filter((item) => item.configuration?.required === true)
-        .map((item) => path.join(directory, item.configuration?.file ?? "")),
+      needsConfig: configs.map((config) => config.file),
     };
   });
 
@@ -1141,6 +1148,24 @@ export function readCommands(
   );
 
   return [...extracts, ...contractCommands];
+}
+
+/**
+ * Whether a printed command passes the pack its config file. It does when
+ * the file is there, or when the report above the command says what to
+ * write to it, so every command runs once the report is followed. A pack
+ * that runs on its own defaults gets no file.
+ */
+function passesItsConfig(item: PackSuggestion, projectRoot: string): boolean {
+  const configuration = item.configuration;
+  if (configuration === undefined) {
+    return false;
+  }
+  return (
+    configuration.required ||
+    fs.existsSync(path.join(projectRoot, configuration.file)) ||
+    settledValues(configuration, projectRoot, item.language) !== null
+  );
 }
 
 const KIND_ORDER: Record<PackSuggestion["kind"], number> = {
@@ -1178,18 +1203,47 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     return `${lines.join("\n")}\n`;
   }
 
-  const frameworks = suggestions.filter((s) => s.kind === "framework");
-  const clients = suggestions.filter((s) => s.kind === "client");
-  const contracts = suggestions.filter((s) => s.kind === "contract");
-  const effects = suggestions.filter((s) => s.kind === "effects");
-
   lines.push(
     `${green("✓")} Found ${bold(describeCount(suggestions.length, "thing"))} to read in ${report.root}`,
   );
   lines.push("");
+  lines.push(...packGroupLines(report));
+  lines.push(...setupStepLines([{ report, directory }]));
+
+  const readsTypeScript = readCommands(report, directory).some(
+    (command) => !command.effectsOnly && command.language === "typescript",
+  );
+  if (report.tsconfig === null && readsTypeScript) {
+    lines.push("");
+    lines.push(
+      dim(
+        "   No tsconfig here, so suss reads the directory. Pass -p to point it",
+      ),
+    );
+    lines.push(dim("   at a particular one instead."));
+  }
+
+  lines.push(...notReadLines(report));
+
+  return `${lines.join("\n")}\n`;
+}
+
+/** The packs a project needs, grouped by what each reads, with why each was picked. */
+function packGroupLines(report: InitReport): string[] {
+  const { suggestions } = report;
+  const contracts = suggestions.filter((s) => s.kind === "contract");
+  const lines: string[] = [];
   for (const group of [
-    { label: "Your code", items: [...frameworks, ...clients] },
-    { label: "What your code reaches", items: effects },
+    {
+      label: "Your code",
+      items: suggestions.filter(
+        (s) => s.kind === "framework" || s.kind === "client",
+      ),
+    },
+    {
+      label: "What your code reaches",
+      items: suggestions.filter((s) => s.kind === "effects"),
+    },
     {
       label: "Declared contracts",
       items: contracts.filter((s) => s.calledThrough === undefined),
@@ -1208,92 +1262,79 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     }
     lines.push("");
   }
+  return lines;
+}
 
+/** A project and where it is from the directory init ran in. */
+export interface ProjectAt {
+  report: InitReport;
+  directory: string;
+}
+
+/**
+ * Install, read and compare, once for every project given, since they
+ * all read into one `summaries/` folder that one check compares.
+ */
+export function setupStepLines(projects: ReadonlyArray<ProjectAt>): string[] {
   // The packs ship inside @suss/cli, so the CLI is the only install.
-  // Step 2 gives the pack names to pass.
-  lines.push(bold("1. Install suss"));
-  lines.push("");
-  lines.push("   npm install --save-dev @suss/cli");
-  lines.push("");
+  const lines = [
+    bold("1. Install suss"),
+    "",
+    "   npm install --save-dev @suss/cli",
+    "",
+    bold("2. Read each side into one folder"),
+    "",
+  ];
 
-  lines.push(bold("2. Read each side into one folder"));
-  lines.push("");
-  const commands = readCommands(report, directory);
-  const runnable = commands.filter((command) => !command.effectsOnly);
-  if (runnable.some((command) => command.args[0] === "extract")) {
-    lines.push(
-      ...configurationLines(
-        [...frameworks, ...clients, ...effects],
-        report.root,
-        directory,
-      ),
+  const commands = projects.map(({ report, directory }) => ({
+    report,
+    directory,
+    commands: readCommands(report, directory),
+  }));
+  for (const { report, directory, commands: own } of commands) {
+    const extracts = own.some(
+      (command) => !command.effectsOnly && command.args[0] === "extract",
     );
+    if (extracts) {
+      lines.push(
+        ...configurationLines(
+          inReportOrder(
+            report.suggestions.filter((s) => s.kind !== "contract"),
+          ),
+          report.root,
+          directory,
+        ),
+      );
+    }
   }
   // One extract per language, because each pack works with one
   // language's adapter.
-  for (const command of runnable) {
-    lines.push(`   suss ${command.args.join(" ")}`);
+  for (const { commands: own } of commands) {
+    for (const command of own.filter((one) => !one.effectsOnly)) {
+      lines.push(`   suss ${command.args.join(" ")}`);
+    }
   }
-  for (const command of commands.filter((one) => one.effectsOnly)) {
-    lines.push(...effectsOnlyLines(command, effects));
-  }
-  lines.push("");
-
-  lines.push(bold("3. Compare them"));
-  lines.push("");
-  lines.push("   suss check --dir summaries/");
-  lines.push("");
-
-  lines.push(bold("4. Decide what to do about the findings"));
-  lines.push("");
-  lines.push(
-    dim(
-      "   Anything you have reviewed and accepted goes in .sussignore at the",
-    ),
-  );
-  lines.push(
-    dim(
-      "   repo root, with a reason, so the next person knows it was a choice:",
-    ),
-  );
-  lines.push("");
-  lines.push(dim('   { "version": 1,'));
-  lines.push(dim('     "rules": [{ "kind": "unhandledProviderCase",'));
-  lines.push(
-    dim('                 "boundary": "GET /legacy/*", "effect": "hide",'),
-  );
-  lines.push(
-    dim('                 "reason": "legacy route, retiring in Q3" }] }'),
-  );
-  lines.push("");
-
-  lines.push(bold("5. Run it on every change"));
-  lines.push("");
-  lines.push(
-    dim(
-      "   `check` exits non-zero on an error, so the two commands above work",
-    ),
-  );
-  lines.push(
-    dim("   as a CI step unchanged. Add --fail-on warning to gate harder."),
-  );
-
-  const readsTypeScript = runnable.some(
-    (command) => command.language === "typescript",
-  );
-  if (report.tsconfig === null && readsTypeScript) {
-    lines.push("");
-    lines.push(
-      dim(
-        "   No tsconfig here, so suss reads the directory. Pass -p to point it",
-      ),
-    );
-    lines.push(dim("   at a particular one instead."));
+  for (const { report, commands: own } of commands) {
+    const effects = report.suggestions.filter((s) => s.kind === "effects");
+    for (const command of own.filter((one) => one.effectsOnly)) {
+      lines.push(...effectsOnlyLines(command, effects));
+    }
   }
 
-  lines.push(...notReadLines(report));
-
-  return `${lines.join("\n")}\n`;
+  return [
+    ...lines,
+    "",
+    bold("3. Compare them"),
+    "",
+    "   suss check --dir summaries/",
+    "",
+    dim(
+      "   It exits non-zero on an error, so these commands work as a CI step.",
+    ),
+    dim(
+      "   A finding you accept goes in .sussignore, and check prints the rule to paste.",
+    ),
+  ];
 }
 
 /** The opening of a report with no command to print. */
@@ -1320,7 +1361,7 @@ function nothingToReadLines(report: InitReport): string[] {
 }
 
 /** Everything init found and prints no command for, with why. */
-function notReadLines(report: InitReport): string[] {
+export function notReadLines(report: InitReport): string[] {
   return [
     ...recognizedWithoutPackLines(report),
     ...unreadLines(report),
@@ -1375,57 +1416,154 @@ function configurationLines(
       continue;
     }
 
-    lines.push(
-      ...packConfigurationLines(
-        item.name,
-        configuration,
-        projectRoot,
-        path.join(directory, configuration.file),
-      ),
+    const said = packConfigurationLines(
+      item,
+      configuration,
+      projectRoot,
+      path.join(directory, configuration.file),
     );
-    lines.push("");
+    if (said.length > 0) {
+      lines.push(...said, "");
+    }
   }
   return lines;
 }
 
+/**
+ * What to write to a pack's config file before the command that passes
+ * it runs. Every value comes with where the project states it, since a
+ * value init worked out is one the user should be able to check.
+ */
 function packConfigurationLines(
-  pack: string,
+  item: PackSuggestion,
   configuration: PackConfiguration,
   projectRoot: string,
   shown: string,
 ): string[] {
   if (fs.existsSync(path.join(projectRoot, configuration.file))) {
-    return [`   ${cyan(pack)} reads ${shown}, which is already here.`];
+    return [`   ${cyan(item.name)} reads ${shown}, which is already here.`];
   }
 
-  const values = valuesFor(configuration, projectRoot);
-  if (values !== null) {
+  const settled = settledValues(configuration, projectRoot, item.language);
+  if (settled !== null) {
     return [
-      `   ${cyan(pack)} reads ${shown}, and \`suss init --write\` writes this to it:`,
-      dim(`     ${JSON.stringify(values)}`),
+      `   ${cyan(item.name)} reads ${shown}.${settled.from === undefined ? "" : ` The value comes from ${settled.from}.`}`,
+      ...(settled.choice === undefined
+        ? []
+        : [`   ${yellow("!")} ${settled.choice}`]),
+      dim(`   Write this to ${shown}, or run \`suss init --write\`:`),
+      dim(`     ${JSON.stringify(settled.values)}`),
     ];
   }
 
+  if (!configuration.required) {
+    return [];
+  }
   return [
-    `   ${cyan(pack)} ${configurationNeed(configuration)} ${configuration.why}`,
+    `   ${cyan(item.name)} ${configurationNeed(configuration)} ${configuration.why}`,
     dim(`   Write that to ${shown}:`),
     dim(`     ${JSON.stringify(configuration.example)}`),
   ];
 }
 
+/** The values init writes for a pack, and where the project states them. */
+export interface SettledValues {
+  values: Record<string, unknown>;
+  /** Where the project states them. Absent when they are the pack's own defaults. */
+  from?: string;
+  /** Set when the project declares more than one database: which one init took, in a sentence. */
+  choice?: string;
+}
+
 /**
- * The values init writes for a pack: what the project says, over the
- * pack's defaults. Null when there is neither.
+ * The values init writes for a pack: what the pack reads from the
+ * project, then the database the project declares, over the pack's
+ * defaults. Null when there is none of them. `language` keeps a
+ * database driver another language's manifest lists out of the choice.
  */
+export function settledValues(
+  configuration: PackConfiguration,
+  projectRoot: string,
+  language?: Language,
+): SettledValues | null {
+  const read = configuration.readFromProject?.(projectRoot) ?? null;
+  const database = databaseFor(configuration, projectRoot, language, read);
+  if (
+    read === null &&
+    database === null &&
+    configuration.defaults === undefined
+  ) {
+    return null;
+  }
+
+  const from = read?.from ?? database?.from;
+  return {
+    values: {
+      ...configuration.defaults,
+      ...database?.values,
+      ...read?.values,
+    },
+    ...(from === undefined ? {} : { from }),
+    ...(database?.choice === undefined ? {} : { choice: database.choice }),
+  };
+}
+
 export function valuesFor(
   configuration: PackConfiguration,
   projectRoot: string,
+  language?: Language,
 ): Record<string, unknown> | null {
-  const read = configuration.readFromProject?.(projectRoot) ?? null;
-  if (read === null && configuration.defaults === undefined) {
+  return settledValues(configuration, projectRoot, language)?.values ?? null;
+}
+
+/**
+ * The database for a pack that takes one: what the pack read from the
+ * library's own settings, else the first one the project declares.
+ */
+function databaseFor(
+  configuration: PackConfiguration,
+  projectRoot: string,
+  language: Language | undefined,
+  read: ProjectValues | null,
+): (ProjectValues & { choice?: string }) | null {
+  const option = configuration.databaseOption;
+  if (option === undefined) {
     return null;
   }
-  return { ...configuration.defaults, ...read };
+
+  const stated = read?.values[option];
+  const found = [
+    ...(typeof stated === "string" && read !== null
+      ? [{ storageSystem: stated, from: read.from }]
+      : []),
+    ...databasesDeclaredIn(
+      projectRoot,
+      declaredLibraries(projectRoot).named.filter(
+        (library) =>
+          language === undefined || LANGUAGE_OF[library.ecosystem] === language,
+      ),
+    ),
+  ];
+  const [picked, ...rest] = found;
+  if (picked === undefined) {
+    return null;
+  }
+
+  const others = rest.filter(
+    (other, index) =>
+      other.storageSystem !== picked.storageSystem &&
+      rest.findIndex((one) => one.storageSystem === other.storageSystem) ===
+        index,
+  );
+  return {
+    values: { [option]: picked.storageSystem },
+    from: picked.from,
+    ...(others.length === 0
+      ? {}
+      : {
+          choice: `The project declares more than one database, and init took ${picked.storageSystem} from ${picked.from} over ${others.map((other) => `${other.storageSystem} from ${other.from}`).join(" and ")}.`,
+        }),
+  };
 }
 
 /** How much a pack reads without its config, as the start of a sentence that `why` finishes. */

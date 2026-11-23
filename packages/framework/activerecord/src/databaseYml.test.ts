@@ -16,9 +16,13 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-function databaseYml(contents: string): void {
+function databaseYml(contents: string, name = "database.yml"): void {
   fs.mkdirSync(path.join(root, "config"), { recursive: true });
-  fs.writeFileSync(path.join(root, "config", "database.yml"), contents);
+  fs.writeFileSync(path.join(root, "config", name), contents);
+}
+
+function systemOf(): unknown {
+  return storageSystemFromDatabaseYml(root)?.values.storageSystem ?? null;
 }
 
 describe("the database a Rails app connects to, from config/database.yml", () => {
@@ -38,7 +42,8 @@ describe("the database a Rails app connects to, from config/database.yml", () =>
     );
 
     expect(storageSystemFromDatabaseYml(root)).toEqual({
-      storageSystem: "postgresql",
+      values: { storageSystem: "postgresql" },
+      from: "the development adapter in config/database.yml",
     });
   });
 
@@ -50,24 +55,81 @@ describe("the database a Rails app connects to, from config/database.yml", () =>
       ["postgresql # the primary database", "postgresql"],
     ]) {
       databaseYml(`production:\n  adapter: ${adapter}\n`);
-      expect(storageSystemFromDatabaseYml(root), adapter).toEqual({
-        storageSystem: system,
-      });
+      expect(systemOf(), adapter).toBe(system);
     }
   });
 
-  it("does not say when environments use different kinds of database", () => {
+  it("takes the development database when environments use different kinds", () => {
     databaseYml(
       "development:\n  adapter: sqlite3\nproduction:\n  adapter: postgresql\n",
     );
 
-    expect(storageSystemFromDatabaseYml(root)).toBeNull();
+    expect(storageSystemFromDatabaseYml(root)).toEqual({
+      values: { storageSystem: "sqlite" },
+      from: "the development adapter in config/database.yml",
+    });
+  });
+
+  it("reads each database of a multi-database environment through its anchor", () => {
+    databaseYml(
+      [
+        "local: &local",
+        "  adapter: sqlite3",
+        "development:",
+        "  primary:",
+        "    <<: *local",
+        "    database: db/primary.sqlite3",
+        "  jobs:",
+        "    <<: *local",
+        "    database: db/jobs.sqlite3",
+        "production:",
+        "  primary:",
+        "    adapter: postgresql",
+      ].join("\n"),
+    );
+
+    expect(systemOf()).toBe("sqlite");
+  });
+
+  it("reads the sample a project checks in when database.yml is not there", () => {
+    databaseYml("development:\n  adapter: mysql2\n", "database.yml.sample");
+
+    expect(storageSystemFromDatabaseYml(root)).toEqual({
+      values: { storageSystem: "mysql" },
+      from: "the development adapter in config/database.yml.sample",
+    });
   });
 
   it("does not say when the adapter comes from the environment", () => {
     databaseYml('production:\n  adapter: <%= ENV["DB_ADAPTER"] %>\n');
 
     expect(storageSystemFromDatabaseYml(root)).toBeNull();
+  });
+
+  it("does not say when environments other than development disagree", () => {
+    databaseYml("test:\n  adapter: sqlite3\nproduction:\n  adapter: mysql2\n");
+
+    expect(storageSystemFromDatabaseYml(root)).toBeNull();
+  });
+
+  it("passes over a key whose value is not a block of settings", () => {
+    databaseYml(
+      "version: 2\ndevelopment:\n  adapter: postgresql\nproduction:\n",
+    );
+
+    expect(systemOf()).toBe("postgresql");
+  });
+
+  it("does not say when the file is not a mapping of environments", () => {
+    databaseYml("- adapter: postgresql\n");
+
+    expect(storageSystemFromDatabaseYml(root)).toBeNull();
+  });
+
+  it("reads the adapter lines of a file whose YAML does not parse", () => {
+    databaseYml("production:\n  adapter: postgresql\n  pool: [\n");
+
+    expect(systemOf()).toBe("postgresql");
   });
 
   it("does not say when there is no file, or the file has no adapter", () => {

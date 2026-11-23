@@ -75,7 +75,7 @@ Pack health (1):
   no-config  graphql-ruby  reads nothing until root is set, for example {"root":"app/graphql"}. Write that to a JSON file and pass -f graphql-ruby=<config.json>.
 ```
 
-Four packs cannot find anything until the project says one thing about itself: `graphql-ruby` needs `root`, the directory its classes are looked up under, and `activerecord`, `sqlalchemy` and `sqlmodel` need `storageSystem`, which database is behind the connection. Named with a bare `-f` and no config file, the pack is left out of the run and this line says so. When no other pack in the run produced a summary, the run exits non-zero. Otherwise it succeeds with the pack's boundaries missing, which is why the line prints either way.
+Four packs cannot find anything until the project says one thing about itself: `graphql-ruby` needs `root`, the directory its classes are looked up under, and `activerecord`, `sqlalchemy` and `sqlmodel` need `storageSystem`, which database is behind the connection. Named with a bare `-f` and no config file, the pack is left out of the run and this line says so. When no other pack in the run produced a summary, the run exits non-zero. Otherwise it succeeds with the pack's boundaries missing, which is why the line prints either way. The MCP server's `suss_status` repeats the line. `suss init` writes `storageSystem` for you whenever the project declares its database, in `database.yml`, a driver dependency or a `DATABASE_URL`, so this line for one of the database packs means it found none of them.
 
 Write the example into a file and name it:
 

@@ -40,7 +40,8 @@ describe("storageSystemFromDataSource", () => {
       "src/app.module.ts": FOR_ROOT('{ type: "mysql", host: "db" }'),
     });
     expect(storageSystemFromDataSource(root)).toEqual({
-      storageSystem: "mysql",
+      values: { storageSystem: "mysql" },
+      from: `the connection type in ${path.join("src", "app.module.ts")}`,
     });
   });
 
@@ -57,7 +58,7 @@ describe("storageSystemFromDataSource", () => {
         export default new DataSource({ type: "aurora-postgres" });
       `,
     });
-    expect(storageSystemFromDataSource(root)).toEqual({
+    expect(storageSystemFromDataSource(root)?.values).toEqual({
       storageSystem: "postgresql",
     });
   });
@@ -85,8 +86,20 @@ describe("storageSystemFromDataSource", () => {
       "src/other.ts": 'export const shape = { type: "mysql" };',
       "src/app.module.ts": FOR_ROOT('{ type: "better-sqlite3" }'),
     });
-    expect(storageSystemFromDataSource(root)).toEqual({
+    expect(storageSystemFromDataSource(root)?.values).toEqual({
       storageSystem: "sqlite",
+    });
+  });
+
+  it("leaves out the connections tests make", () => {
+    const root = projectOf({
+      "src/__tests__/legacy.ts": FOR_ROOT('{ type: "sqlite" }'),
+      "src/orders.module.spec.ts": FOR_ROOT('{ type: "mysql" }'),
+      "src/app.module.ts": FOR_ROOT('{ type: "postgres" }'),
+    });
+    expect(storageSystemFromDataSource(root)).toEqual({
+      values: { storageSystem: "postgresql" },
+      from: `the connection type in ${path.join("src", "app.module.ts")}`,
     });
   });
 
