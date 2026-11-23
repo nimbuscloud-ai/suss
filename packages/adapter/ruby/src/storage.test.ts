@@ -6,7 +6,7 @@ import { addPackWords } from "@suss/resolution";
 
 import { parseRuby } from "./parser.js";
 import { packWordsOf, RunFacts } from "./project.js";
-import { storageClaims, storageEffects } from "./storage.js";
+import { methodStorage, storageClaims, storageEffects } from "./storage.js";
 
 import type { RbLoaderPattern, RbStoragePattern } from "./pack.js";
 import type { RbNode } from "./parser.js";
@@ -864,6 +864,108 @@ describe("the database work a Ruby body does", () => {
           method,
         ),
       ).toBe(true);
+    });
+  });
+
+  describe("a call a model makes on itself with no receiver", () => {
+    /** The database work one method of `source` does, read the way a unit's body is read. */
+    async function ownWorkIn(method: string, source: string) {
+      const { db, root } = await factsFor({
+        "models.rb": MODELS,
+        "use.rb": source,
+      });
+      emitGivesBack(db);
+      return methodStorage(methodNamed(root, method), "use.rb", {
+        facts: db,
+        patterns: [ACTIVE_RECORD],
+      }).effects.map((one) => one.effect);
+    }
+
+    const INVOICE = [
+      "class Invoice < ApplicationRecord",
+      "  def settle",
+      "    update status: 1",
+      "  end",
+      "",
+      "  def archive",
+      "    save",
+      "  end",
+      "",
+      "  class << self",
+      "    def close_stale",
+      "      where(state: 1).update_all(state: 2)",
+      "    end",
+      "  end",
+      "",
+      "  def label",
+      "    order",
+      "  end",
+      "",
+      "  def recount",
+      "    save = 1",
+      "    save",
+      "  end",
+      "end",
+      "",
+    ].join("\n");
+
+    it("records a write called with arguments on the model it is written in", async () => {
+      const effects = await ownWorkIn("settle", INVOICE);
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Invoice");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "write",
+        operation: "update",
+        fields: ["status"],
+      });
+    });
+
+    it("records a write written as a name alone", async () => {
+      const effects = await ownWorkIn("archive", INVOICE);
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Invoice");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "write",
+        operation: "save",
+      });
+    });
+
+    it("records a chain a class method starts on the model", async () => {
+      const effects = await ownWorkIn("close_stale", INVOICE);
+
+      expect(effects).toHaveLength(1);
+      expect(containerOf(effects[0])).toBe("Invoice");
+      expect(accessOf(effects[0])).toMatchObject({
+        kind: "write",
+        operation: "update_all",
+        selector: ["state"],
+      });
+    });
+
+    it("says nothing about a read written as a name alone, which a column reader could be", async () => {
+      expect(await ownWorkIn("label", INVOICE)).toEqual([]);
+    });
+
+    it("says nothing about a local spelled like a write", async () => {
+      expect(await ownWorkIn("recount", INVOICE)).toEqual([]);
+    });
+
+    it("says nothing about the same calls in a class that is no model", async () => {
+      const effects = await ownWorkIn(
+        "archive",
+        [
+          "class Archiver",
+          "  def archive",
+          "    save",
+          "    update status: 1",
+          "  end",
+          "end",
+          "",
+        ].join("\n"),
+      );
+      expect(effects).toEqual([]);
     });
   });
 });

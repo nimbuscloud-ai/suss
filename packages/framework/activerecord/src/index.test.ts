@@ -26,6 +26,18 @@ describe("the ActiveRecord pack", () => {
     expect(pattern?.writes).toContain("save!");
   });
 
+  it("counts the writes that skip callbacks as writes that run none", () => {
+    const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
+    for (const write of ["update_column", "update_columns", "increment!"]) {
+      expect(pattern?.writes).toContain(write);
+      expect(pattern?.callbacks?.eventOf[write]).toBeUndefined();
+    }
+    expect(pattern?.callbacks?.eventOf.update_attribute).toEqual([
+      "create",
+      "update",
+    ]);
+  });
+
   it("says which methods give back one of the model", () => {
     const [pattern] = activeRecordStorage({ storageSystem: "postgresql" });
     expect(pattern?.givesBack).toContain("find");
