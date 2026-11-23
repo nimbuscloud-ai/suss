@@ -23,6 +23,7 @@ import {
 import { claimedLambdas } from "../lambdaClaims.js";
 import { guardInputs } from "../provenance.js";
 import { askWrittenValues, evaluatedValue } from "../values/evaluator.js";
+import { caseTestedNodes } from "./caseArms.js";
 import { lowerPythonBody } from "./lowering.js";
 import { type GuardInputs, operandsOf, predicateOf } from "./predicates.js";
 
@@ -286,8 +287,12 @@ function effectValueNodes(
   const found = argumentNodes(call).flatMap((node) => askedNodesUnder(node));
   for (const path of gating ?? []) {
     for (const condition of path) {
-      if (condition.expression !== null) {
-        askedNodesUnder(condition.expression, found);
+      const expression = condition.expression;
+      // A case's handle is the whole clause, and only its test is read.
+      for (const tested of expression === null
+        ? []
+        : (caseTestedNodes(expression) ?? [expression])) {
+        askedNodesUnder(tested, found);
       }
     }
   }
