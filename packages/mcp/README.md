@@ -42,7 +42,7 @@ In a host that reads a config file:
 | `suss_boundaries` | The boundaries, split into the ones with both sides and the ones with only one. |
 | `suss_stub_draft` | A draft stub for a package suss cannot read into, built from how this project calls it. |
 | `suss_intent_outcomes` | Every outcome the boundary intent documents declare, as the `link` a PRD scenario writes. |
-| `suss_status` | Which commands ran, which failed, and whether the project has a `suss.json`. |
+| `suss_status` | Which commands ran, which failed, whether the project has a `suss.json`, and the pack health block the extracts printed. |
 
 Every tool only reads. None of them change a file, and each is marked
 read-only, so a host never has to ask a person before calling one.
