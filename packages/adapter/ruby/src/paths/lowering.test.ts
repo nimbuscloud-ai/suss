@@ -5,6 +5,7 @@ import { enumerateStructuredPaths } from "@suss/extractor";
 import { field } from "../ast.js";
 import { parseRuby } from "../parser.js";
 import { lowerRubyBody } from "./lowering.js";
+import { operandsOf, predicateOf } from "./predicates.js";
 
 import type { RbNode } from "../parser.js";
 
@@ -144,6 +145,305 @@ describe("ruby lowering feeds the shared path engine", () => {
     expect(returns).toHaveLength(2);
     expect(result.byTerminal.has(returns[0] as RbNode)).toBe(true);
     expect(result.byTerminal.has(returns[1] as RbNode)).toBe(true);
+  });
+
+  it("runs one when arm and never the next, with the subject in each arm's condition", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def send_it(verb)",
+        "  case verb",
+        "  when :get",
+        "    log_read",
+        "  when :put, :patch",
+        "    log_write",
+        "  else",
+        "    log_other",
+        "  end",
+        "  return 1",
+        "end",
+      ].join("\n"),
+    );
+    expect(
+      result.byTerminal
+        .get(returns[0] as RbNode)
+        ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+    ).toEqual([
+      [["verb == :get", "positive"]],
+      [["verb == :put || verb == :patch", "positive"]],
+      [
+        ["verb == :get", "negative"],
+        ["verb == :put || verb == :patch", "negative"],
+      ],
+    ]);
+  });
+
+  it("reads each arm's condition as the subject compared with its patterns", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def send_it(verb)",
+        "  case verb",
+        "  when :get then return 1",
+        "  when :put, :patch then return 2",
+        "  when Integer then return 3",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const [get, write, number] = returns.map((one) => {
+      const expression = result.byTerminal.get(one)?.[0]?.[0]?.expression;
+      return expression === null || expression === undefined
+        ? null
+        : predicateOf(expression);
+    });
+    const verbIs = (symbol: string) => ({
+      type: "comparison",
+      left: { type: "unresolved", sourceText: "verb" },
+      op: "eq",
+      right: { type: "unresolved", sourceText: symbol },
+    });
+    expect(get).toEqual(verbIs(":get"));
+    expect(write).toEqual({
+      type: "compound",
+      op: "or",
+      operands: [verbIs(":put"), verbIs(":patch")],
+    });
+    expect(number).toEqual({
+      type: "opaque",
+      sourceText: "Integer === verb",
+      reason: "complexExpression",
+    });
+  });
+
+  it("reads a case with no subject as an elsif chain on each arm's own test", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def size_of(n)",
+        "  case",
+        "  when n > 10",
+        "    return :big",
+        "  when n > 1, n < -1",
+        "    return :medium",
+        "  end",
+        "  return :small",
+        "end",
+      ].join("\n"),
+    );
+    const conditions = (at: number) =>
+      result.byTerminal
+        .get(returns[at] as RbNode)
+        ?.map((path) => path.map((c) => [c.sourceText, c.polarity]));
+    expect(conditions(1)).toEqual([
+      [
+        ["n > 10", "negative"],
+        ["n > 1 || n < -1", "positive"],
+      ],
+    ]);
+    expect(conditions(2)).toEqual([
+      [
+        ["n > 10", "negative"],
+        ["n > 1 || n < -1", "negative"],
+      ],
+    ]);
+    const medium = result.byTerminal.get(returns[1] as RbNode)?.[0]?.[1];
+    expect(
+      medium?.expression === null || medium?.expression === undefined
+        ? null
+        : predicateOf(medium.expression).type,
+    ).toBe("compound");
+  });
+
+  it("reads an in arm as the pattern it matches, under its guard, and raises when none matches", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def read_reply(reply, strict)",
+        "  case reply",
+        "  in {status: 200} if strict",
+        "    return 1",
+        "  in :gone | :lost",
+        "    return 2",
+        "  end",
+        "  return 3",
+        "end",
+      ].join("\n"),
+    );
+    expect(
+      returns.map((one) =>
+        result.byTerminal
+          .get(one)
+          ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+      ),
+    ).toEqual([
+      [[["reply in {status: 200} && strict", "positive"]]],
+      [[["reply == :gone || reply == :lost", "positive"]]],
+      undefined,
+    ]);
+  });
+
+  it("reads a case with no subject exactly as the elsif chain it stands for", async () => {
+    const read = async (branch: string[]) => {
+      const { returns, result } = await pathsFor(
+        [
+          "def size_of(n, ready)",
+          "  if ready",
+          ...branch,
+          "  end",
+          "  return :done if n == 0",
+          "  return :other",
+          "end",
+        ].join("\n"),
+      );
+      return returns.map((one) =>
+        result.byTerminal
+          .get(one)
+          ?.map((path) =>
+            path.map((c) => [c.sourceText, c.polarity, c.source]),
+          ),
+      );
+    };
+    const chained = await read([
+      "    case",
+      "    when n > 10 then log_big",
+      "    when n < 0 then raise ArgumentError",
+      "    else log_small",
+      "    end",
+    ]);
+    expect(chained).toEqual(
+      await read([
+        "    if n > 10 then log_big",
+        "    elsif n < 0 then raise ArgumentError",
+        "    else log_small",
+        "    end",
+      ]),
+    );
+    expect(chained[1]?.[0]?.[0]).toEqual(["ready", "positive", "explicit"]);
+  });
+
+  it("joins an in arm's guard onto its patterns, an unless guard negated", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def read_reply(reply, strict)",
+        "  case reply",
+        "  in :gone | :lost unless strict",
+        "    return 1",
+        "  in Integer => code if code > 400",
+        "    return 2",
+        "  in other if strict",
+        "    return 3",
+        "  else",
+        "    return 4",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const arms = returns.slice(0, 3).map((one) => {
+      const condition = result.byTerminal.get(one)?.[0]?.[0];
+      const expression = condition?.expression;
+      return [
+        condition?.sourceText,
+        expression === null || expression === undefined
+          ? null
+          : predicateOf(expression),
+        expression === null || expression === undefined
+          ? []
+          : operandsOf(expression).map((node) => node.text),
+      ];
+    });
+    const replyIs = (symbol: string) => ({
+      type: "comparison",
+      left: { type: "unresolved", sourceText: "reply" },
+      op: "eq",
+      right: { type: "unresolved", sourceText: symbol },
+    });
+    const strict = {
+      type: "truthinessCheck",
+      subject: { type: "unresolved", sourceText: "strict" },
+      negated: false,
+    };
+    expect(arms).toEqual([
+      [
+        "(reply == :gone || reply == :lost) && !(strict)",
+        {
+          type: "compound",
+          op: "and",
+          operands: [
+            {
+              type: "compound",
+              op: "or",
+              operands: [replyIs(":gone"), replyIs(":lost")],
+            },
+            { type: "negation", operand: strict },
+          ],
+        },
+        ["reply", ":gone", "reply", ":lost", "strict"],
+      ],
+      [
+        "reply in Integer => code && code > 400",
+        {
+          type: "compound",
+          op: "and",
+          operands: [
+            {
+              type: "opaque",
+              sourceText: "reply in Integer => code",
+              reason: "complexExpression",
+            },
+            {
+              type: "comparison",
+              left: { type: "unresolved", sourceText: "code" },
+              op: "gt",
+              right: { type: "literal", value: 400 },
+            },
+          ],
+        },
+        ["code", "400"],
+      ],
+      ["strict", strict, ["strict"]],
+    ]);
+  });
+
+  it("reads the values each when arm compares, for a reader asking where they came from", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def route(verb, n)",
+        "  case verb",
+        "  when :get then return 1",
+        "  when Integer then return 2",
+        "  end",
+        "  case",
+        "  when n > 1 then return 3",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect(
+      returns.map((one) => {
+        const path = result.byTerminal.get(one)?.[0] ?? [];
+        const expression = path[path.length - 1]?.expression;
+        return expression === null || expression === undefined
+          ? []
+          : operandsOf(expression).map((node) => node.text);
+      }),
+    ).toEqual([["verb", ":get"], [], ["n", "1"]]);
+  });
+
+  it("reads an in arm that binds a bare name as the arm that matches anything else", async () => {
+    const { returns, result } = await pathsFor(
+      [
+        "def read_reply(reply)",
+        "  case reply",
+        "  in :gone",
+        "    return 1",
+        "  in other",
+        "    return 2",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect(
+      result.byTerminal
+        .get(returns[1] as RbNode)
+        ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+    ).toEqual([[["reply == :gone", "negative"]]]);
   });
 
   it("lowers case and when, with else as the default group", async () => {

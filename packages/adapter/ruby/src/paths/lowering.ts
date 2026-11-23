@@ -13,6 +13,12 @@ import {
   OWN_BODY_TYPES,
   rangeOf,
 } from "../ast.js";
+import {
+  caseArmOf,
+  caseArmText,
+  matchesAnything,
+  whenArmOf,
+} from "./caseArms.js";
 
 import type {
   CaseGroup,
@@ -127,6 +133,24 @@ function callHeaderOf(call: RbNode, block: RbNode): ConditionHandle<RbNode> {
     sourceText: header === "" ? call.text : header,
     expression: call,
   };
+}
+
+/**
+ * `case ... in` with no `else` raises when no arm matches, so that path
+ * ends there.
+ */
+const NO_PATTERN_MATCHED: CaseGroup<RbNode> = {
+  condition: null,
+  hasTrailingBreak: true,
+  body: [{ kind: "exit", exit: "throw", exitKind: "throw" }],
+};
+
+/** A throw anywhere wins over a return anywhere, as the engine expects. */
+function strongestExit(kinds: readonly ExitKind[]): ExitKind {
+  if (kinds.includes("throw")) {
+    return "throw";
+  }
+  return kinds.includes("return") ? "return" : null;
 }
 
 /** `then`, `else` and a bare body all read as a list of statements. */
@@ -347,25 +371,81 @@ class Lowerer {
     };
   }
 
+  /**
+   * Ruby runs one arm of a `case` and never falls into the next, so each
+   * arm is a group that ends with an implicit break. With no subject,
+   * each arm tests a condition of its own in order, which is what an
+   * `elsif` chain does, so it lowers the same way.
+   */
   private lowerCase(node: RbNode): StructuredStatement<RbNode> {
-    const groups: CaseGroup<RbNode>[] = [];
-    for (const child of children(node)) {
-      if (child.type === "when") {
-        groups.push({
-          condition: handleOf(field(child, "pattern")),
-          hasTrailingBreak: false,
-          body: this.lowerBlock(field(child, "body")),
-        });
-      }
-      if (child.type === "else") {
-        groups.push({
-          condition: null,
-          hasTrailingBreak: false,
-          body: this.lowerBlock(child),
-        });
-      }
+    const arms = children(node).filter(
+      (child) => child.type === "when" || child.type === "in_clause",
+    );
+    const otherwise = children(node).find((child) => child.type === "else");
+    const [first, ...rest] = arms;
+    if (field(node, "value") === null) {
+      return first === undefined
+        ? { kind: "opaque", exitKind: this.exitKindOf(node) }
+        : this.lowerArmChain(first, rest, otherwise ?? null);
     }
-    return { kind: "switch", groups, exitKind: this.exitKindOf(node) };
+
+    const groups = arms.map((arm) => this.caseGroupOf(arm));
+    if (otherwise !== undefined) {
+      groups.push({
+        condition: null,
+        hasTrailingBreak: true,
+        body: this.lowerBlock(otherwise),
+      });
+    }
+    // An arm that matches anything leaves the ones after it unreachable.
+    const fallback = groups.findIndex((group) => group.condition === null);
+    const reachable = fallback === -1 ? groups : groups.slice(0, fallback + 1);
+    const raisesUnmatched = fallback === -1 && node.type === "case_match";
+    return {
+      kind: "switch",
+      groups: raisesUnmatched ? [...reachable, NO_PATTERN_MATCHED] : reachable,
+      exitKind: this.exitKindOf(node),
+    };
+  }
+
+  private caseGroupOf(arm: RbNode): CaseGroup<RbNode> {
+    const read = caseArmOf(arm);
+    return {
+      condition:
+        read === null || matchesAnything(read)
+          ? null
+          : { sourceText: caseArmText(read), expression: arm },
+      hasTrailingBreak: true,
+      body: this.lowerBlock(field(arm, "body")),
+    };
+  }
+
+  /** One arm as an `if`, with the arms after it nested in its else arm. */
+  private lowerArmChain(
+    arm: RbNode,
+    rest: readonly RbNode[],
+    otherwise: RbNode | null,
+  ): StructuredStatement<RbNode> {
+    const covered = [arm, ...rest, ...(otherwise === null ? [] : [otherwise])];
+    return {
+      kind: "if",
+      condition: { sourceText: caseArmText(whenArmOf(arm)), expression: arm },
+      thenBody: this.lowerBlock(field(arm, "body")),
+      elseBody: this.lowerChainTail(rest, otherwise),
+      exitKind: strongestExit(covered.map((node) => this.exitKindOf(node))),
+    };
+  }
+
+  /** What runs when an arm's test fails: the next arm, the else body, or nothing. */
+  private lowerChainTail(
+    rest: readonly RbNode[],
+    otherwise: RbNode | null,
+  ): StatementBlock<RbNode> | null {
+    const [next, ...after] = rest;
+    if (next !== undefined) {
+      return [this.lowerArmChain(next, after, otherwise)];
+    }
+    return otherwise === null ? null : this.lowerBlock(otherwise);
   }
 
   /**

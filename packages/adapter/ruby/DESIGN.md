@@ -125,9 +125,12 @@ The adapter lowers a method body into the statement form that the shared path en
 | `while`, `until`, `for` | `loop` |
 | a call with a `do` block, such as `items.each do \|i\|` | `loop`, because the block runs once per iteration |
 | `begin` / `rescue` / `ensure` | `try` |
-| `case` / `when` / `else` | `switch`, with `else` as the default group |
-| `return`, `raise`, `break`, `next` | `exit` |
+| `case` / `when` / `else` | `switch`, one group per `when` that never falls into the next, with `else` as the default group |
+| `case` with no subject | one `if` per `when`, nested the way an elsif chain is, since each arm tests a condition of its own in order |
+| `case` / `in` | `switch`, where an arm that binds a bare name with no guard is the default group. With no default, a value no arm matches raises, so that path ends || `return`, `raise`, `break`, `next` | `exit` |
 | anything else | `opaque` |
+
+A `when` arm's condition compares the case's subject with each of its patterns, so `when :put, :patch` under `case method` reads `method == :put || method == :patch`, one comparison per pattern. `when` compares with `===`, which for a literal is `==`. A class, a range, a regex or a name compares some other way, which the condition vocabulary cannot say, so that pattern stays opaque and quotes the source, `Integer === value`. An `in` arm reads the same, with a pattern other than a literal quoted as `value in {status: 200}`, and its guard joined on with `&&`. `paths/caseArms.ts` reads an arm once for the lowering, which writes the text, and for `predicateOf`, which writes the comparison.
 
 Three things differ from Python, and they are why Ruby has its own lowering instead of sharing one:
 

@@ -179,4 +179,26 @@ describe("where a Rails action's values came from", () => {
       },
     });
   });
+
+  it("writes the subject of a case on params as a read of the request", async () => {
+    write("app/controllers/orders_controller.rb", [
+      "class OrdersController < ApplicationController",
+      "  def index",
+      "    case params[:scope]",
+      '    when "mine"',
+      "      head :unauthorized",
+      "    end",
+      "  end",
+      "end",
+      "",
+    ]);
+
+    const action = await actionNamed("index");
+    expect(action.transitions.flatMap((t) => t.conditions)[0]).toEqual({
+      type: "comparison",
+      left: { type: "input", inputRef: "params", path: ["scope"] },
+      op: "eq",
+      right: { type: "literal", value: "mine" },
+    });
+  });
 });
