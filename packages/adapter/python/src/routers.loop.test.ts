@@ -144,6 +144,50 @@ describe("a loop over a call that registers routers", () => {
     ).toEqual([]);
   });
 
+  it("gives each of two loops over one name in a function its own list", async () => {
+    const paths = await pathsOf({
+      "endpoint/__init__.py": "",
+      "endpoint/orders.py": ordersModule,
+      "endpoint/invoices.py": [
+        "from flask_restx import Namespace, Resource",
+        "",
+        'ns = Namespace("invoices", path="/invoices")',
+        "",
+        "",
+        '@ns.route("/<int:invoice_id>")',
+        "class InvoiceDetail(Resource):",
+        "    def get(self, invoice_id):",
+        "        pass",
+        "",
+      ].join("\n"),
+      "app.py": [
+        "from flask import Blueprint",
+        "from flask_restx import Api",
+        "",
+        "from endpoint.invoices import ns as invoices_ns",
+        "from endpoint.orders import ns as orders_ns",
+        "",
+        'bp = Blueprint("api", __name__, url_prefix="/api/v1")',
+        "api = Api(bp)",
+        "",
+        "",
+        "def register():",
+        "    for namespace in [orders_ns]:",
+        "        api.add_namespace(namespace)",
+        "    for namespace in [invoices_ns]:",
+        "        api.add_namespace(namespace)",
+        "",
+        "",
+        "register()",
+        "",
+      ].join("\n"),
+    });
+    expect(paths.sort()).toEqual([
+      "/api/v1/invoices/{invoice_id}",
+      "/api/v1/orders/{order_id}",
+    ]);
+  });
+
   it("points at the loop whose list it cannot mount", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-"));
     const files: Record<string, string> = {
