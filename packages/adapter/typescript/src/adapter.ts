@@ -2294,7 +2294,11 @@ function sinkMethod(
     return undefined;
   }
   const record = sinkArgumentValue(sink, m.position, bindings, resolution);
-  if (record?.kind !== "record") {
+  // `fetch(url)` with no options sends with the library's default.
+  if (record === undefined) {
+    return m.default;
+  }
+  if (record.kind !== "record") {
     return undefined;
   }
   const value = fieldValue(record, m.property);
