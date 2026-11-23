@@ -26,6 +26,7 @@ import { lowerRubyBody } from "./lowering.js";
 import type { Effect } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
+  ConditionInfo,
   EffectArg,
   EffectSite,
   PlacedEffect,
@@ -500,6 +501,19 @@ function sitesIn(
       lowerRubyBody(body, statements, [], undefined, read.claimed),
     firstLine: (node) => rangeOf(node).start,
   });
+}
+
+/**
+ * The paths through a method to the statement one call is written in,
+ * for a reader that builds the conditions on them itself.
+ */
+export function pathsToCall(
+  definitionNode: RbNode,
+  call: RbNode,
+  facts: Database | undefined,
+): readonly ConditionInfo<RbNode>[][] | undefined {
+  const read = methodBody(definitionNode, facts);
+  return read === null ? undefined : sitesIn(read, [call]).pathsTo(call);
 }
 
 /**

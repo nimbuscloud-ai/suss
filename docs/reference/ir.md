@@ -19,6 +19,7 @@ interface BehavioralSummary {
   kind: CodeUnitKind;
   location: SourceLocation;
   identity: CodeUnitIdentity;
+  bindingFrom?: { method?: ValueRef[]; host?: ValueRef[]; when?: Predicate[] };
   inputs: Input[];
   transitions: Transition[];
   gaps: Gap[];
@@ -34,6 +35,7 @@ suss writes one of these per code unit. It is flat JSON with no cycles, apart fr
 
 - **`schemaVersion`** is absent on a summary written by 0.3.x, which the parsers read as version 1. Version 6 is current. [Summary format](/reference/summary-format#versions) lists what each version changed.
 - **`definitions`** is the table a `ref` shape points into, keyed the way `typeDefinitionKey` in `@suss/ir-core` builds a key. `withDefinitionsInlined` puts a definition back into a shape, and every comparison reads the inlined form. It substitutes definitions down to `MAX_SHAPE_DEPTH` levels below the top of a shape, so an extractor can leave out a type that no ref that close to a top points at. The TypeScript adapter does, and a ref to a type it left out has `from` and no `def`, the same as a ref where its walk stopped at that depth.
+- **`bindingFrom`** is set on a client whose request takes its method or host from one of the function's own parameters. Its binding has the method the library sends when none is given, and `method` says the method is really that parameter, so a reader puts each caller's argument, or the parameter's default, in its place. `host` does the same for the host, as the `host` of a URL parameter when the request reads its host out of a URL. `when` lists the conditions on the parameters that pick this request, for a helper that sends a different request for each verb it is passed. The unit then lists the function's parameters under `inputs`. [Summary format](/reference/summary-format#where-a-clients-method-came-from) has an example.
 - **`inputReads`** records what the unit read out of the values it was given, once each, as an input name and a property path.
 - **`receiverClass`** is set on a summary of a method running on a subclass that inherits it, when the method does something else there than on the class it is written in. `BaseService.call` doing `new(...).call` runs the subclass's `call` when the caller sent it to `Invoices::CreateService`, so that caller links to a summary with `receiverClass` set to `Invoices::CreateService`. `location` is still where the method is written, and the export path starts with the subclass. The summary without it describes the method on its own class.
 - **`metadata`** takes framework-specific data that does not fit the universal structure. Keys are namespaced by boundary semantics: HTTP-scoped entries go under `metadata.http.*`, GraphQL under `metadata.graphql.*`. Semantics-neutral keys such as `metadata.derivedFromWrapper` stay at the top level. A tool that does not need any of it can ignore the field.
@@ -389,7 +391,8 @@ Adding a class is an additive IR change. Each class maps one to one onto a `bind
 ```typescript
 type Input =
   | { type: "parameter"; name: string; position: number;
-      role: string | null; shape: TypeShape | null }
+      role: string | null; field?: string; shape: TypeShape | null;
+      default?: ValueRef }
   | { type: "injection"; name: string; mechanism: string; shape: TypeShape | null }
   | { type: "hookReturn"; hook: string; destructuredFields: string[] }
   | { type: "contextValue"; context: string; accessedFields: string[] }
@@ -399,6 +402,8 @@ type Input =
 An `Input` is one way a value reaches a code unit. An HTTP handler usually has only `parameter` inputs; the rest are mostly for components and hooks.
 
 `role` records what the parameter means to the framework (`"request"`, `"response"`, `"pathParams"`, `"requestBody"`), and `InputMappingPattern` in the pack sets it. When suss cannot work out a parameter's role, it writes null and records a gap saying why. A role often depends on something the reader had to work out first. If the route's path went unread, for instance, there is no way to separate a path parameter from a query parameter.
+
+`default` is what the parameter takes when a caller passes nothing for it, as the source writes it. A default that settles to a string, a number, a boolean or null is a `literal`, so Ruby's `method = :get` is `{ "type": "literal", "value": "get" }`, the way a caller's `:get` argument is written. A default the program works out when it runs, such as `Time.now` or `{}`, is an `unresolved` that quotes it. A name a destructured parameter binds has the default written beside it, so `{ method = "get" } = {}` gives `method` the default `"get"`.
 
 `const [user, setUser] = useUser()` produces a `hookReturn` input with `destructuredFields: ["user", "setUser"]`. The React pack discovers components, hooks and event handlers and fills these in.
 

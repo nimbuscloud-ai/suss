@@ -74,6 +74,27 @@ describe("a function that calls aiohttp", () => {
     expect(boundary(units)).toEqual({ method: "POST", path: "/orders" });
   });
 
+  it("says the method comes from the helper's parameter, with its default", async () => {
+    const units = await unitsIn(
+      [
+        "import aiohttp",
+        "",
+        'async def send(url, method="GET"):',
+        "    async with aiohttp.ClientSession() as session:",
+        "        return await session.request(method, url)",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).method).toBeNull();
+    expect(units[0]?.bindingFrom?.method).toEqual([
+      { type: "input", inputRef: "method", path: [] },
+    ]);
+    expect(units[0]?.parameters[1]?.default).toEqual({
+      type: "literal",
+      value: "GET",
+    });
+  });
+
   it("says nothing about a session this run cannot see built", async () => {
     const units = await unitsIn(
       [

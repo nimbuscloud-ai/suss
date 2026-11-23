@@ -256,6 +256,38 @@ describe("webFetchPack — integration", () => {
 });
 
 describe("webFetchPack — fixtures", () => {
+  it("says a helper's method and host come from its parameters, with the method's default", async () => {
+    const fixturesDir = path.resolve(
+      __dirname,
+      "../../../../fixtures/request-method-parameter",
+    );
+    const project = createFixtureProject(fixturesDir, "httpClient.ts");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const send = summaries.find((s) => s.identity.name === "send");
+
+    expect(send?.identity.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: null,
+    });
+    expect(send?.bindingFrom?.method).toEqual([
+      { type: "input", inputRef: "method", path: [] },
+    ]);
+    expect(
+      send?.inputs.map(
+        (input) => input.type === "parameter" && [input.name, input.default],
+      ),
+    ).toEqual([
+      ["url", undefined],
+      ["method", { type: "literal", value: "GET" }],
+      ["body", undefined],
+    ]);
+  });
+
   it("sends each caller of a wrapper with the method that caller passes", async () => {
     const fixturesDir = path.resolve(
       __dirname,

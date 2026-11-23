@@ -254,6 +254,14 @@ export function constantOf(value: Value): Constant | undefined {
   return forced.options[0];
 }
 
+/** The one string, number, boolean or null a value is, or undefined for anything else. */
+export function writtenLiteralOf(
+  value: Value,
+): string | number | boolean | null | undefined {
+  const constant = constantOf(value);
+  return constant !== undefined ? constant : (literalOf(value) ?? undefined);
+}
+
 /** The one constant a value settles on, where a default taken over an unread value does not settle. */
 export function settledConstantOf(value: Value): Constant | undefined {
   return takenOverUnread(value) ? undefined : constantOf(value);

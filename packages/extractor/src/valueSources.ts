@@ -99,6 +99,31 @@ function refOf<L extends WalkEnd>(
 }
 
 /**
+ * A value written in the source, such as a parameter's default: the
+ * literal it settles to, or else a hole quoting what was written.
+ */
+export function writtenValueRef(
+  literal: string | number | boolean | null | undefined,
+  text: string,
+): ValueRef {
+  return literal === undefined
+    ? { type: "unresolved", sourceText: quoted(text, text) }
+    : { type: "literal", value: literal };
+}
+
+/** Whether one of the references comes from an input, directly or through a derivation. */
+export function comesFromInput(refs: readonly ValueRef[]): boolean {
+  return refs.some(isFromInput);
+}
+
+function isFromInput(ref: ValueRef): boolean {
+  if (ref.type === "input") {
+    return true;
+  }
+  return ref.type === "derived" && isFromInput(ref.from);
+}
+
+/**
  * The source on one line and cut short. A key that is not a node is a
  * name, keyed on its scope and the name after a `#`.
  */

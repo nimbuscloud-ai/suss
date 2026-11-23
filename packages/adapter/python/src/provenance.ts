@@ -10,7 +10,8 @@
  */
 
 import { sourceRefsOf } from "@suss/extractor";
-import { constantOf, literalOf } from "@suss/values";
+import { valueKeyOf } from "@suss/recognize/ops";
+import { writtenLiteralOf } from "@suss/values";
 
 import { children, field, NodeMap, stripDecorators } from "./ast.js";
 import { askSourceQuestions, sourcesOf } from "./facts/resolve.js";
@@ -24,7 +25,12 @@ import {
 
 import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawProvenance, SourceSpelling } from "@suss/extractor";
+import type {
+  RawProvenance,
+  SourceSpelling,
+  SourcesOfValues,
+  ValueOps,
+} from "@suss/extractor";
 import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 import type { RequestObject } from "./pack.js";
 import type { PyNode } from "./parser.js";
@@ -151,6 +157,35 @@ export function slotProvenance(
   }));
 }
 
+/**
+ * Asks where the values a file's request hooks handed back came from, as
+ * one question, so each unit's own question finds them asked.
+ */
+export function askSourcesOfValues(
+  values: readonly ValueOps[],
+  facts: Database,
+): void {
+  askSourceQuestions(
+    facts,
+    [...new Set(values.flatMap((value) => valueKeyOf(value) ?? []))],
+    "wantedSource",
+  );
+}
+
+/** Where each value a request hook handed back came from, as one question. */
+export function sourcesOfValues(context: SourceContext): SourcesOfValues {
+  return (values) => {
+    const keys = values.flatMap((value) => valueKeyOf(value) ?? []);
+    const found = keySources(keys, context);
+    return new Map(
+      values.map((value) => {
+        const key = valueKeyOf(value);
+        return [value, key === null ? [] : (found.get(key) ?? [])];
+      }),
+    );
+  };
+}
+
 /** Where each value came from, asked as one question. */
 export function valueSources(
   values: readonly PyNode[],
@@ -239,7 +274,5 @@ function literalAt(
   if (node === null) {
     return undefined;
   }
-  const value = evaluatedValue(node, facts);
-  const constant = constantOf(value);
-  return constant !== undefined ? constant : (literalOf(value) ?? undefined);
+  return writtenLiteralOf(evaluatedValue(node, facts));
 }

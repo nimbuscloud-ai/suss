@@ -67,6 +67,7 @@ import {
   evaluatedValue,
   moduleOf,
   nodeOfResolutionKey,
+  parameterDefaults,
 } from "./values/evaluator.js";
 import { originOf } from "./values/origin.js";
 
@@ -74,6 +75,7 @@ import type {
   DispatchTable,
   Effect,
   TypeShape,
+  ValueRef,
   WrapperReference,
 } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -1292,6 +1294,7 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
       module,
       sources: pattern.parameterSources ?? {},
       aliasKeyword: pattern.parameterAliasKeyword,
+      defaults: parameterDefaults(definitionNode, options.facts),
     },
     skipReceiverParam,
   );
@@ -1628,6 +1631,8 @@ interface ParameterReading {
   module: ModuleBinding;
   sources: Readonly<Record<string, ParameterSource>>;
   aliasKeyword: string | undefined;
+  /** What each parameter takes when nothing is passed for it, by name. */
+  defaults: ReadonlyMap<string, ValueRef>;
 }
 
 function readParameters(
@@ -1678,11 +1683,13 @@ function readParameter(
       ? annotationToShape(typeNode, reading.scope, reading.ctx)
       : null;
   const typeText = typeNode !== null ? typeNode.text : null;
+  const fallback = reading.defaults.get(name);
+  const withDefault = fallback === undefined ? {} : { default: fallback };
   if (
     isInjectedParameter(param, reading) ||
     isInjectedType(typeNode, reading)
   ) {
-    return { name, position, role: null, typeText };
+    return { name, position, role: null, typeText, ...withDefault };
   }
   const declared = declaringCall(
     param,
@@ -1707,6 +1714,7 @@ function readParameter(
     role,
     ...(which === null ? {} : { field: which }),
     typeText,
+    ...withDefault,
   };
 }
 

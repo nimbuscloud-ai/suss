@@ -98,6 +98,73 @@ function paths(units: RawCodeStructure[]): string[] {
     .sort();
 }
 
+describe("a method whose request comes from its parameters", () => {
+  it("says which value of the parameter picks each request, and lists the parameters with their defaults", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def send_it(url, verb = :get)",
+        "    if verb == :post",
+        "      HttpClient.post(url)",
+        "    else",
+        "      HttpClient.get(url)",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const verbIsPost = {
+      type: "comparison",
+      left: { type: "input", inputRef: "verb", path: [] },
+      op: "eq",
+      right: { type: "literal", value: "post" },
+    };
+    const urlHost = {
+      type: "derived",
+      from: { type: "input", inputRef: "url", path: [] },
+      derivation: { type: "propertyAccess", property: "host" },
+    };
+
+    expect(
+      units.map((unit) => ({
+        host: unit.bindingFrom?.host,
+        when: unit.bindingFrom?.when?.map((one) => [
+          one.polarity,
+          one.structured,
+        ]),
+      })),
+    ).toEqual([
+      { host: [urlHost], when: [["positive", verbIsPost]] },
+      { host: [urlHost], when: [["negative", verbIsPost]] },
+    ]);
+    expect(units[0]?.parameters).toEqual([
+      { name: "url", position: 0, role: "url", typeText: null },
+      {
+        name: "verb",
+        position: 1,
+        role: "verb",
+        typeText: null,
+        default: { type: "literal", value: "get" },
+      },
+    ]);
+  });
+
+  it("records nothing for a method with no parameters", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    HttpClient.get("https://api.example.com/orders")',
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+
+    expect(units[0]?.bindingFrom).toBeUndefined();
+    expect(units[0]?.parameters).toEqual([]);
+  });
+});
+
 describe("a method that calls a request method", () => {
   it("is a client of the boundary the call states", async () => {
     const units = await unitsIn(

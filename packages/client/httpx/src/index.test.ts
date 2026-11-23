@@ -98,6 +98,26 @@ describe("a function that calls httpx", () => {
     expect(boundary(units).method).toBe("PATCH");
   });
 
+  it("says the method comes from a keyword-only parameter, with its default", async () => {
+    const units = await unitsIn(
+      [
+        "import httpx",
+        "",
+        'def send(url, *, method="GET"):',
+        "    return httpx.request(method, url)",
+      ].join("\n"),
+    );
+
+    expect(boundary(units).method).toBeNull();
+    expect(units[0]?.bindingFrom?.method).toEqual([
+      { type: "input", inputRef: "method", path: [] },
+    ]);
+    expect(units[0]?.parameters.map((one) => [one.name, one.default])).toEqual([
+      ["url", undefined],
+      ["method", { type: "literal", value: "GET" }],
+    ]);
+  });
+
   it("says nothing about a call on another library", async () => {
     const units = await unitsIn(
       [

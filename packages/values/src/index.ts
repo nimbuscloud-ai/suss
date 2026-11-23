@@ -108,4 +108,5 @@ export {
   truthOf,
   unbounded,
   type Value,
+  writtenLiteralOf,
 } from "./value.js";

@@ -589,6 +589,20 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/react-router"),
     ...packs("react-router"),
   ]),
+  fixture("request-method-parameter", [
+    ...dir("fixtures/request-method-parameter"),
+    ...packs("express", "fetch", "axios"),
+  ]),
+  fixture("request-method-parameter-python", [
+    ...lang("python"),
+    ...dir("fixtures/request-method-parameter-python"),
+    ...packs("requests", "httpx", "aiohttp"),
+  ]),
+  fixture("request-method-parameter-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/request-method-parameter-ruby"),
+    ...packs("net-http", "faraday"),
+  ]),
   // The pack's tests read one file's effects directly. From the CLI the
   // rails pack finds the controller actions that reach them.
   fixture("ruby-bigquery", [

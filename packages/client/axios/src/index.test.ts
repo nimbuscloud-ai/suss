@@ -101,6 +101,56 @@ describe("axiosPack — integration", () => {
     });
   });
 
+  it("says the method and the host of a helper come from its parameters, and lists them with their defaults", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "httpClient.ts",
+      `
+      import axios from "axios";
+
+      export function call(url: string, method = "get") {
+        return axios({ url, method });
+      }
+
+      export function listOrders() {
+        return axios({ url: "https://api.example.com/orders", method: "get" });
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [axiosPack()],
+    });
+    const summaries = await adapter.extractAll();
+    const helper = summaries.find((s) => s.identity.name === "call");
+    const caller = summaries.find((s) => s.identity.name === "listOrders");
+
+    expect(helper?.bindingFrom).toEqual({
+      method: [{ type: "input", inputRef: "method", path: [] }],
+      host: [
+        {
+          type: "derived",
+          from: { type: "input", inputRef: "url", path: [] },
+          derivation: { type: "propertyAccess", property: "host" },
+        },
+      ],
+    });
+    expect(helper?.inputs).toEqual([
+      { type: "parameter", name: "url", position: 0, role: "url", shape: null },
+      {
+        type: "parameter",
+        name: "method",
+        position: 1,
+        role: "method",
+        shape: null,
+        default: { type: "literal", value: "get" },
+      },
+    ]);
+    expect(caller?.bindingFrom).toBeUndefined();
+    expect(caller?.inputs).toEqual([]);
+  });
+
   it("reads maxRedirects off the call's config and off the instance's", async () => {
     const project = createTestProject();
     project.createSourceFile(

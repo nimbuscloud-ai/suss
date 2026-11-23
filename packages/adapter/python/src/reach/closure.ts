@@ -66,7 +66,11 @@ import {
   invocationSites,
 } from "../paths/effects.js";
 import { askFileSources } from "../provenance.js";
-import { askWrittenValues, forgetEvaluations } from "../values/evaluator.js";
+import {
+  askWrittenValues,
+  forgetEvaluations,
+  parameterDefaults,
+} from "../values/evaluator.js";
 import {
   onOwnReceiver,
   receiverConstructions,
@@ -89,6 +93,7 @@ import type {
   ParameterCall,
   ReceiverOf,
   UnfollowedCall,
+  ValueRef,
 } from "@suss/behavioral-ir";
 import type {
   ExtractorOptions,
@@ -1098,7 +1103,11 @@ export function libraryUnit(
     options.facts,
   );
   const range = rangeOf(node);
-  const parameters = positionalParameters(node, exportPath.length > 1);
+  const parameters = positionalParameters(
+    node,
+    exportPath.length > 1,
+    parameterDefaults(node, options.facts),
+  );
   const flags = argparseFlagReads(
     node,
     file.module,
@@ -1174,8 +1183,16 @@ function withImpliedCalls(
   };
 }
 
-/** Every parameter by position, with its own name for a role, as the TypeScript walk writes a reached function's. */
-function positionalParameters(node: PyNode, isMethod: boolean): RawParameter[] {
+/**
+ * Every parameter by position, with its own name for a role, as the
+ * TypeScript walk writes a reached function's, and with the defaults
+ * given for them.
+ */
+export function positionalParameters(
+  node: PyNode,
+  isMethod: boolean,
+  defaults: ReadonlyMap<string, ValueRef> = new Map(),
+): RawParameter[] {
   const parameters = field(node, "parameters");
   if (parameters === null) {
     return [];
@@ -1191,7 +1208,14 @@ function positionalParameters(node: PyNode, isMethod: boolean): RawParameter[] {
       position += 1;
       continue;
     }
-    out.push({ name, position, role: name, typeText: null });
+    const fallback = defaults.get(name);
+    out.push({
+      name,
+      position,
+      role: name,
+      typeText: null,
+      ...(fallback === undefined ? {} : { default: fallback }),
+    });
     position += 1;
   }
   return out;
