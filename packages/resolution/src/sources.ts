@@ -65,6 +65,7 @@ export function askSources(
   keys: readonly string[],
   program: OnDemandRules = resolutionProgram(),
   question: SourceQuestion = "wantedSource",
+  endsAt?: (member: string) => boolean,
 ): Map<string, SourceLeaf[]> {
   const found = new Map<string, SourceLeaf[]>();
   if (keys.length === 0) {
@@ -72,7 +73,7 @@ export function askSources(
   }
   askResolution(db, keys, question, program);
   for (const key of keys) {
-    found.set(key, sourceLeavesOf(db, key));
+    found.set(key, sourceLeavesOf(db, key, endsAt));
   }
   return found;
 }
@@ -81,9 +82,16 @@ export function askSources(
  * Every place the walk from `key` ended, for a store that has already
  * asked `wantedSource` about it. A parameter always ends the walk, even
  * when a step leads on from it, since the step goes into the caller's
- * code or a declared type rather than to the value.
+ * code or a declared type rather than to the value. So does a member
+ * `endsAt` picks, for a caller that knows what that member is: a client
+ * reading a response stops at the request, which Python also reads as
+ * an entry of the client module.
  */
-export function sourceLeavesOf(db: Database, key: string): SourceLeaf[] {
+export function sourceLeavesOf(
+  db: Database,
+  key: string,
+  endsAt: (member: string) => boolean = () => false,
+): SourceLeaf[] {
   const steps = stepsFrom(db, key);
   const parameters = new Map<string, string>();
   for (const row of db.lookup("wantedSourceParam", 0, key)) {
@@ -103,7 +111,7 @@ export function sourceLeavesOf(db: Database, key: string): SourceLeaf[] {
       continue;
     }
     const out = steps.get(here.key) ?? [];
-    if (out.length === 0) {
+    if (out.length === 0 || endsAt(here.key)) {
       leaves.push({ ...here, end: endOf(db, key, here.key) });
       continue;
     }

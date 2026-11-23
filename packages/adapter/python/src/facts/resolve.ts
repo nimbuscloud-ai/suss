@@ -85,13 +85,14 @@ export function askSourceQuestions(
   }
 }
 
-/** Where each of these values came from, asked as one question. */
+/** Where each of these values came from, asked as one question. `endsAt` ends a walk at a member the caller knows. */
 export function sourcesOf(
   db: Database,
   keys: readonly string[],
   question: SourceQuestion = "wantedSource",
+  endsAt?: (member: string) => boolean,
 ): Map<string, SourceLeaf[]> {
-  return askSources(db, keys, programFor(db), question);
+  return askSources(db, keys, programFor(db), question, endsAt);
 }
 
 /**

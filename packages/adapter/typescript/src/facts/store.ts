@@ -53,6 +53,7 @@ import {
   resolutionUnderProgram,
   RESOLUTION_RULES as SHARED_RULES,
   type SourceLeaf,
+  type SourceQuestion,
   sourceLeavesOf,
   stateHandedIn,
   type ValueUses,
@@ -163,7 +164,7 @@ type Question =
   | typeof ELEMENTS_RUN_QUESTION
   | "wantedSubject"
   | "wantedUses"
-  | "wantedSource";
+  | SourceQuestion;
 
 /** One place a value's walk ended, with the nodes the store keyed it by. */
 export interface SourceFound {
@@ -689,22 +690,29 @@ export class ResolutionStore {
   }
 
   /**
-   * Where each value came from, asked as one question: every place the
-   * walk from it ended, with the node there and, for a parameter, the
-   * function it belongs to.
+   * Where each value came from, asked as one question, with the node each walk ended at.
+   * `wantedInputRead` stops at a call, and `endsAt` at a node the caller knows.
    */
-  sourcesOf(values: readonly Node[]): Map<Node, SourceFound[]> {
+  sourcesOf(
+    values: readonly Node[],
+    question: SourceQuestion = "wantedSource",
+    endsAt: (node: Node) => boolean = () => false,
+  ): Map<Node, SourceFound[]> {
     const found = new Map<Node, SourceFound[]>();
     if (values.length === 0) {
       return found;
     }
     const targets = new Map(values.map((value) => [value, factKeyOf(value)]));
-    this.askAboutAll([...new Set(targets.values())], "wantedSource", () => {
+    const endsAtKey = (member: string): boolean => {
+      const node = this.table.byId.get(member);
+      return node !== undefined && endsAt(node);
+    };
+    this.askAboutAll([...new Set(targets.values())], question, () => {
       this.derive();
       for (const [value, target] of targets) {
         found.set(
           value,
-          sourceLeavesOf(this.db, nodeId(target)).map((leaf) => ({
+          sourceLeavesOf(this.db, nodeId(target), endsAtKey).map((leaf) => ({
             leaf,
             node: this.table.byId.get(leaf.key) ?? null,
             computedAt:
