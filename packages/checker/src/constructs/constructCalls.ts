@@ -88,16 +88,23 @@ export interface ParameterDefault {
   spelled: string;
 }
 
-/**
- * A request a function makes: one client unit over it, and each
- * condition on the function's inputs that picks that request. A
- * condition is a parameter and a literal it must equal, or must not, or
- * null when no literal decides it.
- */
+/** A request a function makes: one client unit over it, and the conditions it is made under. */
 export interface RequestUnit {
   fn: FunctionKey;
   unit: BehavioralSummary;
-  conditions: ReadonlyArray<LiteralTest | null>;
+  conditions: readonly RequestCondition[];
+}
+
+export interface RequestCondition {
+  /** As the client records it, or null for one the summaries do not read. */
+  predicate: Predicate | null;
+  /** A parameter and a literal it must equal, or must not, or null when no literal decides the condition. */
+  test: LiteralTest | null;
+  /**
+   * False for a condition every request of the function is made under.
+   * It says whether the function makes a request, and not which one.
+   */
+  chooses: boolean;
 }
 
 export interface LiteralTest {
@@ -212,6 +219,7 @@ export function readCallsForUse(
     }
   }
 
+  const requests = requestUnits(summaries);
   return {
     calls: [...calls.values()],
     parameters: new Map(
@@ -221,10 +229,10 @@ export function readCallsForUse(
       ]),
     ),
     passed,
-    selects: selectsFacts(summaries, parameters),
+    selects: selectsFacts(summaries, requests, parameters),
     forwards,
     defaults: defaultsByFunction(parameters),
-    requests: requestUnits(summaries),
+    requests,
   };
 }
 
@@ -358,25 +366,29 @@ function argumentFor(
 }
 
 /**
- * The parameters each function uses for a column it selects rows by or
- * for the container it reaches. A container written as a reference,
- * `{location.table}`, is taken from the parameter the reference starts at.
+ * The parameters each function uses for a column it selects rows by, for
+ * the container it reaches, or for the request it makes. A container
+ * written as a reference, `{location.table}`, is taken from the parameter
+ * the reference starts at.
  */
 function selectsFacts(
   summaries: ReadonlyArray<BehavioralSummary>,
+  requests: readonly RequestUnit[],
   parameters: ReadonlyMap<FunctionKey, readonly Parameter[]>,
 ): Array<[FunctionKey, string]> {
+  const read = summaries.flatMap((summary) =>
+    SELECTOR_READERS.flatMap((reader) => reader(summary)).map(
+      (name): [FunctionKey, string] => [writtenFunctionOf(summary), name],
+    ),
+  );
   const found = new Set<string>();
   const facts: Array<[FunctionKey, string]> = [];
-  for (const summary of summaries) {
-    const fn = writtenFunctionOf(summary);
-    const named = new Set((parameters.get(fn) ?? []).map((one) => one.name));
-    for (const name of SELECTOR_READERS.flatMap((read) => read(summary))) {
-      const key = `${fn}\u0000${name}`;
-      if (named.has(name) && !found.has(key)) {
-        found.add(key);
-        facts.push([fn, name]);
-      }
+  for (const [fn, name] of [...read, ...choosingParameters(requests)]) {
+    const key = `${fn}\u0000${name}`;
+    const named = (parameters.get(fn) ?? []).some((one) => one.name === name);
+    if (named && !found.has(key)) {
+      found.add(key);
+      facts.push([fn, name]);
     }
   }
   return facts;
@@ -401,20 +413,12 @@ const SELECTOR_READERS: ReadonlyArray<
 ];
 
 /**
- * The parameters a client takes its method and host from, and the ones
- * the conditions that pick its request test. A host read out of a URL
- * counts the URL's parameter.
+ * The parameters a client takes its method and host from. A host read
+ * out of a URL counts the URL's parameter.
  */
 function bindingFromParameters(summary: BehavioralSummary): string[] {
   const from = summary.bindingFrom;
-  if (from === undefined) {
-    return [];
-  }
-  return [
-    ...(from.method ?? []),
-    ...(from.host ?? []),
-    ...(from.when ?? []).flatMap(predicateRefs),
-  ].flatMap(rootInputOf);
+  return [...(from?.method ?? []), ...(from?.host ?? [])].flatMap(rootInputOf);
 }
 
 function rootInputOf(ref: ValueRef): string[] {
@@ -425,35 +429,70 @@ function rootInputOf(ref: ValueRef): string[] {
 }
 
 /**
- * Every client unit, with the conditions that pick its request. When a
- * function has several requests and one of them lists no condition, the
- * function picks it by something the summaries do not read, so that
- * request gets one condition no literal decides.
+ * Every client unit, with the conditions its request is made under. A
+ * condition every request of the function shares, such as a timeout
+ * around all of them, chooses none of them. When a function has several
+ * requests and one of them has no condition of its own, the function
+ * picks it by something the summaries do not read, so that request gets
+ * one choosing condition no literal decides.
  */
 function requestUnits(
   summaries: ReadonlyArray<BehavioralSummary>,
 ): RequestUnit[] {
-  const clients = summaries.filter(
-    (summary) =>
-      summary.kind === "client" && summary.receiverConstruction === undefined,
-  );
-  const perFunction = new Map<FunctionKey, number>();
-  for (const client of clients) {
-    const fn = writtenFunctionOf(client);
-    perFunction.set(fn, (perFunction.get(fn) ?? 0) + 1);
+  const byFunction = new Map<FunctionKey, BehavioralSummary[]>();
+  for (const summary of summaries) {
+    if (
+      summary.kind === "client" &&
+      summary.receiverConstruction === undefined
+    ) {
+      const fn = writtenFunctionOf(summary);
+      byFunction.set(fn, [...(byFunction.get(fn) ?? []), summary]);
+    }
   }
-  return clients.map((unit) => {
-    const fn = writtenFunctionOf(unit);
-    const when = unit.bindingFrom?.when;
-    const unread = when === undefined && (perFunction.get(fn) ?? 0) > 1;
-    return {
-      fn,
-      unit,
-      conditions: unread
-        ? [null]
-        : (when ?? []).map((one) => literalTest(one, unit.location.file)),
-    };
+  return [...byFunction].flatMap(([fn, units]) => {
+    const shared = sharedConditions(units);
+    return units.map((unit) => {
+      const conditions = (unit.bindingFrom?.when ?? []).map((one) => ({
+        predicate: one,
+        test: literalTest(one, unit.location.file),
+        chooses: !shared.has(JSON.stringify(one)),
+      }));
+      const unread = units.length > 1 && !conditions.some((one) => one.chooses);
+      return {
+        fn,
+        unit,
+        conditions: unread
+          ? [...conditions, { predicate: null, test: null, chooses: true }]
+          : conditions,
+      };
+    });
   });
+}
+
+/** The conditions every one of the units lists, each as its JSON. */
+function sharedConditions(units: readonly BehavioralSummary[]): Set<string> {
+  const [first, ...rest] = units.map(
+    (unit) =>
+      new Set((unit.bindingFrom?.when ?? []).map((one) => JSON.stringify(one))),
+  );
+  return new Set(
+    [...(first ?? [])].filter((key) => rest.every((keys) => keys.has(key))),
+  );
+}
+
+/** The parameters each function's choosing conditions test, which decide the request a call makes. */
+function choosingParameters(
+  requests: readonly RequestUnit[],
+): Array<[FunctionKey, string]> {
+  return requests.flatMap((request) =>
+    request.conditions.flatMap((condition) =>
+      condition.chooses && condition.predicate !== null
+        ? predicateRefs(condition.predicate)
+            .flatMap(rootInputOf)
+            .map((name): [FunctionKey, string] => [request.fn, name])
+        : [],
+    ),
+  );
 }
 
 /** A condition read as a parameter it compares with a literal, or null when it is not one. */
@@ -535,10 +574,10 @@ const MEMBERS: Rule[] = [
 ];
 
 /**
- * A call keys a counted parameter by what it passes, or by the default
- * when it passes nothing and the default is a literal. `settled` says
- * the call's value for the parameter is a literal, which is what lets a
- * condition on it be decided.
+ * A call gives a parameter what it passes, or the default when it passes
+ * nothing and the default is a literal, and is keyed by what it gives
+ * the counted ones. `settled` says the value is a literal, which is what
+ * lets a condition on it be decided.
  */
 const COUNTED: Rule[] = [
   rule("counted", [F, N], [lit("selects", F, N)], "counted-selects"),
@@ -550,22 +589,18 @@ const COUNTED: Rule[] = [
   ),
   rule("passed", [S, N], [lit("passes", S, F, N, V)], "passed"),
   rule("defaulted", [F, N], [lit("default", F, N, V)], "defaulted"),
+  rule("given", [S, N, V], [lit("passes", S, F, N, V)], "given"),
   rule(
-    "keyed",
+    "given",
     [S, N, V],
-    [lit("site", S, F), lit("counted", F, N), lit("passes", S, F, N, V)],
-    "keyed",
+    [lit("site", S, F), notLit("passed", S, N), lit("default", F, N, V)],
+    "given-default",
   ),
   rule(
     "keyed",
     [S, N, V],
-    [
-      lit("site", S, F),
-      lit("counted", F, N),
-      notLit("passed", S, N),
-      lit("default", F, N, V),
-    ],
-    "keyed-default",
+    [lit("site", S, F), lit("counted", F, N), lit("given", S, N, V)],
+    "keyed",
   ),
   rule(
     "leftOut",
@@ -588,10 +623,10 @@ const COUNTED: Rule[] = [
 ];
 
 /**
- * A call makes request `u` when every condition that picks `u` is true
- * of what it passes, and may make it when none is false but one is
- * open: it tests a value the call does not settle, or no literal
- * decides it.
+ * A call makes request `u` when no condition `u` is made under is false
+ * of what it passes, and every condition that chooses `u` is true of it.
+ * It may make `u` when a choosing condition is open: it tests a value
+ * the call does not settle, or no literal decides it.
  */
 const REQUESTS: Rule[] = [
   rule(
@@ -603,7 +638,7 @@ const REQUESTS: Rule[] = [
       lit("condition", U, K),
       lit("requires", K, N, V),
       lit("settled", S, N),
-      lit("keyed", S, N, V),
+      lit("given", S, N, V),
     ],
     "true-requires",
   ),
@@ -616,7 +651,7 @@ const REQUESTS: Rule[] = [
       lit("condition", U, K),
       lit("excludes", K, N, V),
       lit("settled", S, N),
-      notLit("keyed", S, N, V),
+      notLit("given", S, N, V),
     ],
     "true-excludes",
   ),
@@ -629,7 +664,7 @@ const REQUESTS: Rule[] = [
       lit("condition", U, K),
       lit("requires", K, N, V),
       lit("settled", S, N),
-      notLit("keyed", S, N, V),
+      notLit("given", S, N, V),
     ],
     "false-requires",
   ),
@@ -642,7 +677,7 @@ const REQUESTS: Rule[] = [
       lit("condition", U, K),
       lit("excludes", K, N, V),
       lit("settled", S, N),
-      lit("keyed", S, N, V),
+      lit("given", S, N, V),
     ],
     "false-excludes",
   ),
@@ -663,7 +698,7 @@ const REQUESTS: Rule[] = [
     [
       lit("site", S, F),
       lit("request", F, U),
-      lit("condition", U, K),
+      lit("chooses", U, K),
       notLit("isTrue", S, K),
     ],
     "open",
@@ -808,9 +843,12 @@ function addRequestFacts(db: Database, requests: readonly RequestUnit[]): void {
   for (const request of requests) {
     const unit = summaryIdentifier(request.unit);
     db.add("request", [request.fn, unit]);
-    request.conditions.forEach((test, at) => {
+    request.conditions.forEach(({ test, chooses }, at) => {
       const condition = `${unit}\u0000${at}`;
       db.add("condition", [unit, condition]);
+      if (chooses) {
+        db.add("chooses", [unit, condition]);
+      }
       if (test !== null) {
         db.add(test.equal ? "requires" : "excludes", [
           condition,

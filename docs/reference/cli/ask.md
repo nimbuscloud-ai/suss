@@ -130,13 +130,13 @@ app/http_client.rb::HttpClient.fetch (app/http_client.rb:9) makes service calls 
   fetch    POST                          1      "post"
 ```
 
-When the helper picks its request with an `if` on the parameter, each request is a client of its own, and the summary records the tests on the parameter that pick it. A call makes a request when every one of those tests is true of what it passes, or of the default. When a test compares the parameter with something other than a literal, or the call passes a value suss cannot settle, such as a variable, the call could make any request no test rules out, and the row says so. A helper that hands the method straight to the library sends what the call passes, upper-cased. A Python or Ruby keyword argument fills the parameter of its name, wherever the call writes it.
+When the helper picks its request with an `if`, a `case` or a `match` on the parameter, each request is a client of its own, and the summary records the tests that pick it. A call makes a request when every one of those tests is true of what it passes, or of the default. A test every request shares, such as a timeout around the whole body, can rule a request out and does not choose between them. When a test compares the parameter with something other than a literal, or the call passes a value suss cannot settle, such as a variable, the call could make any request no test rules out, and the row says so. A helper that hands the method straight to the library sends what the call passes, upper-cased. A Python or Ruby keyword argument fills the parameter of its name, wherever the call writes it.
 
 A function can have several summaries over the same lines, such as the client the net-http pack recognized and the summary reach built. They are one helper here. Its callers are the callers of either, and how it can fail comes from the pack's summary. A method of the same class that calls the helper is listed as a way through, the way `fetch_quietly` is for `fetch`.
 
 The reach is the reach `what reaches` uses. An entry point reached only through a call that picks its function at run time is listed after the others, as possible. Below the callers come the calls that run only under a condition, and then what suss could not follow around the helper: a call inside it that suss stopped at, a caller no entry point in these summaries reaches, and a call suss could not follow elsewhere that has the name of one of the helper's methods, with the entry points that reach the unit making it.
 
-A Ruby `case` or a Python `match` on the method is not read as a test on the parameter yet, so every call into a helper that picks its request that way could make any of them. Which `rescue`, `except` or `catch` covers a call is not read either.
+Which `rescue`, `except` or `catch` covers a call is not read yet.
 
 In `--json`, each entry in `items` has a `kind`:
 

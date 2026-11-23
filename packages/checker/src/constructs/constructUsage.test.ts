@@ -904,3 +904,82 @@ describe("constructUsage on a helper whose requests nothing it reads picks betwe
     });
   });
 });
+
+describe("constructUsage on a helper whose requests all run under the same checks", () => {
+  /** A check every request waits on, such as a timeout around the whole body. */
+  const timeout: Predicate = {
+    type: "opaque",
+    sourceText: "some iteration of: Timeout.timeout(timeout)",
+    reason: "complexExpression",
+  };
+  const underLimit: Predicate = not({
+    type: "comparison",
+    left: { type: "input", inputRef: "body", path: [] },
+    op: "lte",
+    right: { type: "literal", value: 0 },
+  });
+  const library = unit({
+    id: "Http.fetch",
+    file: "app/http.rb",
+    line: 20,
+    parameters: ["url", "method", "body"],
+    defaults: { method: "get", body: null },
+  });
+  const callWith = (name: string, method: string) =>
+    unit({
+      id: `Grants.${name}`,
+      file: `app/grants_${name}.rb`,
+      effects: [
+        call(
+          "Http.new.fetch",
+          library,
+          [
+            { kind: "string", value: "https://a" },
+            { kind: "string", value: method },
+          ],
+          2,
+        ),
+      ],
+    });
+
+  it("picks the request by the checks that differ, and lets the shared ones only rule it out", () => {
+    const usage = usageOf(
+      [
+        library,
+        requestClient("fetch", "GET", {
+          when: [timeout, underLimit, methodIs("get")],
+        }),
+        requestClient("fetch@2", "POST", {
+          when: [timeout, underLimit, methodIs("post")],
+        }),
+        callWith("show", "get"),
+        callWith("create", "post"),
+      ],
+      [library],
+    );
+    expect(requestsByCaller(usage)).toEqual({
+      show: ["GET"],
+      create: ["POST"],
+    });
+    expect(usage.groups.map((group) => group.values)).toEqual([
+      [{ parameter: "method", blanked: '"get"' }],
+      [{ parameter: "method", blanked: '"post"' }],
+    ]);
+  });
+
+  it("rules out the only request when the call fails its check", () => {
+    const usage = usageOf(
+      [
+        library,
+        requestClient("fetch", "GET", { when: [methodIs("get")] }),
+        callWith("show", "get"),
+        callWith("create", "post"),
+      ],
+      [library],
+    );
+    expect(requestsByCaller(usage)).toEqual({
+      show: ["GET"],
+      create: [],
+    });
+  });
+});
