@@ -1203,18 +1203,47 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     return `${lines.join("\n")}\n`;
   }
 
-  const frameworks = suggestions.filter((s) => s.kind === "framework");
-  const clients = suggestions.filter((s) => s.kind === "client");
-  const contracts = suggestions.filter((s) => s.kind === "contract");
-  const effects = suggestions.filter((s) => s.kind === "effects");
-
   lines.push(
     `${green("✓")} Found ${bold(describeCount(suggestions.length, "thing"))} to read in ${report.root}`,
   );
   lines.push("");
+  lines.push(...packGroupLines(report));
+  lines.push(...setupStepLines([{ report, directory }]));
+
+  const readsTypeScript = readCommands(report, directory).some(
+    (command) => !command.effectsOnly && command.language === "typescript",
+  );
+  if (report.tsconfig === null && readsTypeScript) {
+    lines.push("");
+    lines.push(
+      dim(
+        "   No tsconfig here, so suss reads the directory. Pass -p to point it",
+      ),
+    );
+    lines.push(dim("   at a particular one instead."));
+  }
+
+  lines.push(...notReadLines(report));
+
+  return `${lines.join("\n")}\n`;
+}
+
+/** The packs a project needs, grouped by what each reads, with why each was picked. */
+function packGroupLines(report: InitReport): string[] {
+  const { suggestions } = report;
+  const contracts = suggestions.filter((s) => s.kind === "contract");
+  const lines: string[] = [];
   for (const group of [
-    { label: "Your code", items: [...frameworks, ...clients] },
-    { label: "What your code reaches", items: effects },
+    {
+      label: "Your code",
+      items: suggestions.filter(
+        (s) => s.kind === "framework" || s.kind === "client",
+      ),
+    },
+    {
+      label: "What your code reaches",
+      items: suggestions.filter((s) => s.kind === "effects"),
+    },
     {
       label: "Declared contracts",
       items: contracts.filter((s) => s.calledThrough === undefined),
@@ -1233,92 +1262,79 @@ export function formatInitReport(report: InitReport, directory = "."): string {
     }
     lines.push("");
   }
+  return lines;
+}
 
+/** A project and where it is from the directory init ran in. */
+export interface ProjectAt {
+  report: InitReport;
+  directory: string;
+}
+
+/**
+ * Install, read and compare, once for every project given, since they
+ * all read into one `summaries/` folder that one check compares.
+ */
+export function setupStepLines(projects: ReadonlyArray<ProjectAt>): string[] {
   // The packs ship inside @suss/cli, so the CLI is the only install.
-  // Step 2 gives the pack names to pass.
-  lines.push(bold("1. Install suss"));
-  lines.push("");
-  lines.push("   npm install --save-dev @suss/cli");
-  lines.push("");
+  const lines = [
+    bold("1. Install suss"),
+    "",
+    "   npm install --save-dev @suss/cli",
+    "",
+    bold("2. Read each side into one folder"),
+    "",
+  ];
 
-  lines.push(bold("2. Read each side into one folder"));
-  lines.push("");
-  const commands = readCommands(report, directory);
-  const runnable = commands.filter((command) => !command.effectsOnly);
-  if (runnable.some((command) => command.args[0] === "extract")) {
-    lines.push(
-      ...configurationLines(
-        [...frameworks, ...clients, ...effects],
-        report.root,
-        directory,
-      ),
+  const commands = projects.map(({ report, directory }) => ({
+    report,
+    directory,
+    commands: readCommands(report, directory),
+  }));
+  for (const { report, directory, commands: own } of commands) {
+    const extracts = own.some(
+      (command) => !command.effectsOnly && command.args[0] === "extract",
     );
+    if (extracts) {
+      lines.push(
+        ...configurationLines(
+          inReportOrder(
+            report.suggestions.filter((s) => s.kind !== "contract"),
+          ),
+          report.root,
+          directory,
+        ),
+      );
+    }
   }
   // One extract per language, because each pack works with one
   // language's adapter.
-  for (const command of runnable) {
-    lines.push(`   suss ${command.args.join(" ")}`);
+  for (const { commands: own } of commands) {
+    for (const command of own.filter((one) => !one.effectsOnly)) {
+      lines.push(`   suss ${command.args.join(" ")}`);
+    }
   }
-  for (const command of commands.filter((one) => one.effectsOnly)) {
-    lines.push(...effectsOnlyLines(command, effects));
-  }
-  lines.push("");
-
-  lines.push(bold("3. Compare them"));
-  lines.push("");
-  lines.push("   suss check --dir summaries/");
-  lines.push("");
-
-  lines.push(bold("4. Decide what to do about the findings"));
-  lines.push("");
-  lines.push(
-    dim(
-      "   Anything you have reviewed and accepted goes in .sussignore at the",
-    ),
-  );
-  lines.push(
-    dim(
-      "   repo root, with a reason, so the next person knows it was a choice:",
-    ),
-  );
-  lines.push("");
-  lines.push(dim('   { "version": 1,'));
-  lines.push(dim('     "rules": [{ "kind": "unhandledProviderCase",'));
-  lines.push(
-    dim('                 "boundary": "GET /legacy/*", "effect": "hide",'),
-  );
-  lines.push(
-    dim('                 "reason": "legacy route, retiring in Q3" }] }'),
-  );
-  lines.push("");
-
-  lines.push(bold("5. Run it on every change"));
-  lines.push("");
-  lines.push(
-    dim(
-      "   `check` exits non-zero on an error, so the two commands above work",
-    ),
-  );
-  lines.push(
-    dim("   as a CI step unchanged. Add --fail-on warning to gate harder."),
-  );
-
-  const readsTypeScript = runnable.some(
-    (command) => command.language === "typescript",
-  );
-  if (report.tsconfig === null && readsTypeScript) {
-    lines.push("");
-    lines.push(
-      dim(
-        "   No tsconfig here, so suss reads the directory. Pass -p to point it",
-      ),
-    );
-    lines.push(dim("   at a particular one instead."));
+  for (const { report, commands: own } of commands) {
+    const effects = report.suggestions.filter((s) => s.kind === "effects");
+    for (const command of own.filter((one) => one.effectsOnly)) {
+      lines.push(...effectsOnlyLines(command, effects));
+    }
   }
 
-  lines.push(...notReadLines(report));
-
-  return `${lines.join("\n")}\n`;
+  return [
+    ...lines,
+    "",
+    bold("3. Compare them"),
+    "",
+    "   suss check --dir summaries/",
+    "",
+    dim(
+      "   It exits non-zero on an error, so these commands work as a CI step.",
+    ),
+    dim(
+      "   A finding you accept goes in .sussignore, and check prints the rule to paste.",
+    ),
+  ];
 }
 
 /** The opening of a report with no command to print. */
@@ -1345,7 +1361,7 @@ function nothingToReadLines(report: InitReport): string[] {
 }
 
 /** Everything init found and prints no command for, with why. */
-function notReadLines(report: InitReport): string[] {
+export function notReadLines(report: InitReport): string[] {
   return [
     ...recognizedWithoutPackLines(report),
     ...unreadLines(report),
