@@ -54,6 +54,7 @@ Runtime config:
   process.env.STRIPE_API_KEY read by chargeCard is not declared in the environment of a deployment that runs it. At runtime it resolves to undefined there, changing which execution paths the code takes.
   read: src/lib/payments.ts::chargeCard (src/lib/payments.ts:14)
   not declared by: Checkout, Refund
+  boundary: @suss/runtime-node (os)
   to silence this one, add to the rules in .sussignore.yml:
     - kind: boundaryFieldUnknown
       boundary: "runtime-config STRIPE_API_KEY"
@@ -63,6 +64,17 @@ Runtime config:
 ```
 
 One finding covers one read, however many deployments run it without the variable. The rule it prints accepts the variable in the deployments the finding lists, and keeps matching when the code that reads it moves to another file. A deployment the rule leaves out, including one added later, is still reported. A deployment runs a read when a call from its handler reaches the function that makes it, so a client file every handler imports is charged only to the handlers that call into it. A read in a file a deployment loads that no call reaches is listed under `unchecked.runtimeConfig` instead.
+
+A read the code already copes with is not reported. That is a read with a fallback, as in `process.env.STRIPE_API_KEY ?? ""`, or one whose value is used only after a presence test, when the path a missing value takes returns instead of throwing:
+
+```ts
+const key = process.env.STRIPE_API_KEY;
+if (!key) {
+  return { statusCode: 500, body: "payments are not configured" };
+}
+```
+
+The summary marks such a read `defaulted: true` on its `config-read` effect, and the check leaves it out, since the code says what happens when the variable is missing. To see the finding, read the variable where the code uses it without a test, as `chargeCard` does above.
 
 GraphQL:
 
