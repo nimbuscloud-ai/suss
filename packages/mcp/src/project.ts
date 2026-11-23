@@ -22,6 +22,7 @@ import {
   declaredReads,
   KeptAdapters,
   loadedSummaries,
+  packHealthOf,
   readProjectInto,
   readSummariesFromDir,
 } from "@suss/cli";
@@ -67,6 +68,11 @@ export interface BuildReport {
   empty: string[];
   /** False when the project has no `suss.json`, so detection picked the reads. */
   configured: boolean;
+  /**
+   * The pack health block the extracts printed on stderr, such as a pack
+   * that reads nothing until an option is set. Empty when nothing fired.
+   */
+  packHealth: string;
 }
 
 /**
@@ -125,6 +131,7 @@ export class Project {
       failed: [],
       empty: [],
       configured: false,
+      packHealth: "",
     };
     this.watchWanted = options.watch !== false;
     this.settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
@@ -263,18 +270,16 @@ export class Project {
     const reads = await declaredReads(this.root);
     // An entry that fails this time must not leave last time's summaries.
     clearEarlierReads(this.summaryDir);
-    const { ran, failed, empty } = await readProjectInto(
-      this.root,
-      this.summaryDir,
-      reads,
-      { kept: this.kept },
-    );
+    const read = await readProjectInto(this.root, this.summaryDir, reads, {
+      kept: this.kept,
+    });
     return this.finished({
       summaryDir: this.summaryDir,
-      ran,
-      failed,
-      empty,
+      ran: read.ran,
+      failed: read.failed,
+      empty: read.empty,
       configured: reads.declared,
+      packHealth: packHealthOf(read),
     });
   }
 
@@ -369,6 +374,7 @@ export class Project {
         failed: [messageOf(error)],
         empty: [],
         configured: this.report.configured,
+        packHealth: "",
       });
     }
     this.afterBuild();
