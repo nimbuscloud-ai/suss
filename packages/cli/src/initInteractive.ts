@@ -20,26 +20,30 @@ import * as p from "@clack/prompts";
 
 import {
   declaredPacks,
-  formatInitReport,
   readCommands,
   recognizedWithoutPackSentence,
   unnamedLanguageSentence,
   unnamedLanguages,
 } from "./init.js";
+import { formatInitTargets, initJson } from "./initReports.js";
 import { findInitTargets } from "./initTargets.js";
 import { run } from "./processRun.js";
 import { PROJECT_FILE, projectFileFor } from "./projectFile.js";
 import { writeProjectSetup } from "./projectSetup.js";
 import { DEFAULT_SUPPRESSIONS_FILENAMES } from "./suppressionsLoader.js";
+import { unreadSourceUnder } from "./unreadSource.js";
 
 import type { PackSuggestion } from "./init.js";
 import type { InitTarget } from "./initTargets.js";
 import type { SetupLine } from "./projectSetup.js";
+import type { UnreadSource } from "./unreadSource.js";
 
 export interface InteractiveInitOptions {
   dir?: string;
   /** Force the printed form even with a terminal attached. */
   plain?: boolean;
+  /** Print what init found as JSON, and write nothing. */
+  json?: boolean;
   /**
    * Print the commands, then write the setup without asking. An agent
    * setting a project up has no terminal to answer the guided form in.
@@ -54,9 +58,17 @@ export async function initInteractive(
 ): Promise<number> {
   const root = path.resolve(options.dir ?? process.cwd());
   const targets = await findInitTargets(root);
+  const unread = await unreadSourceUnder(root, targets);
+
+  if (options.json === true) {
+    process.stdout.write(
+      `${JSON.stringify(initJson(root, targets, unread), null, 2)}\n`,
+    );
+    return 0;
+  }
 
   if (options.write === true) {
-    process.stdout.write(printable(root, targets));
+    process.stdout.write(formatInitTargets(root, targets, unread));
     process.stdout.write(
       writtenWithoutAsking(root, targets, options.overwrite === true),
     );
@@ -64,7 +76,7 @@ export async function initInteractive(
   }
 
   if (options.plain === true || !p.isTTY(process.stdout) || p.isCI()) {
-    process.stdout.write(printable(root, targets));
+    process.stdout.write(formatInitTargets(root, targets, unread));
     return 0;
   }
 
@@ -84,12 +96,14 @@ export async function initInteractive(
     reportRecognizedWithoutPack(targets);
     reportUnread(targets);
     reportUnnamedLanguages(targets);
+    reportUnreadSource(unread);
     p.outro("Nothing to set up.");
     return 0;
   }
 
   reportRecognizedWithoutPack(targets);
   reportUnread(targets);
+  reportUnreadSource(unread);
 
   const chosen = await chooseTargets(withPacks);
   if (chosen === null) {
@@ -136,6 +150,12 @@ function reportUnread(targets: InitTarget[]): void {
   }
 }
 
+function reportUnreadSource(unread: readonly UnreadSource[]): void {
+  for (const entry of unread) {
+    p.log.warn(`${entry.directory}: ${entry.reasons.join("; ")}`);
+  }
+}
+
 function reportUnnamedLanguages(targets: InitTarget[]): void {
   const uncovered = targets.flatMap((target) =>
     unnamedLanguages(target.report),
@@ -176,25 +196,6 @@ function writtenWithoutAsking(
 
   const lines = writeProjectSetup(root, withPacks).map((line) => line.text);
   return `\n${lines.join("\n")}\n`;
-}
-
-function printable(root: string, targets: InitTarget[]): string {
-  if (targets.length === 0) {
-    return formatInitReport({
-      root,
-      tsconfig: null,
-      suggestions: [],
-    });
-  }
-  if (targets.length === 1 && targets[0]?.directory === ".") {
-    return formatInitReport(targets[0].report);
-  }
-  return targets
-    .map(
-      (t) =>
-        `${"═".repeat(4)} ${t.directory} ${"═".repeat(4)}\n\n${formatInitReport(t.report, t.directory)}`,
-    )
-    .join("\n");
 }
 
 async function chooseTargets(
