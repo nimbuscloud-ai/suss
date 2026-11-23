@@ -38,6 +38,7 @@ import {
   raiseEndings,
   throughResponseHelpers,
 } from "./responseHandOff.js";
+import { type ResponseReads, withResponseReads } from "./responseReads.js";
 import { returnPathBranches } from "./responseStatus.js";
 import {
   askWrittenValues,
@@ -288,6 +289,12 @@ function clientUnit(
       readHelper: (helper) =>
         callerBranches(helper, { facts: options.facts, statusMembers }),
     },
+    reads: {
+      request: request.call,
+      bodyMembers: accessors.bodyAccessors ?? [],
+      statusMembers,
+      facts: options.facts,
+    },
   };
   const { claim } = request;
   const bindingFrom = takesParameters(method)
@@ -376,7 +383,7 @@ function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
   const effects = sites.map((site) => site.effect);
   const keepsArms = (condition: RbNode): boolean =>
     testsStatus(predicateOf(condition), reading.statusMembers);
-  const found = returnPathBranches(
+  const paths = returnPathBranches(
     method,
     sites,
     [],
@@ -384,6 +391,10 @@ function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
     keepsArms,
     raiseEndings(method, reading.facts),
   ) ?? [returnBranch(rangeOf(method), effects)];
+  const found =
+    reading.reads === undefined
+      ? paths
+      : withResponseReads(paths, method, reading.reads);
   return reading.handOff === undefined
     ? found
     : throughResponseHelpers(found, sites, reading.handOff);
@@ -395,6 +406,8 @@ interface CallerReading {
   statusMembers: StatusMembers;
   /** Unset for a helper, whose own hand-offs are not followed. */
   handOff?: HandOffOptions;
+  /** Unset for a helper, which reads what it was handed rather than the response. */
+  reads?: ResponseReads;
 }
 
 /** The response members the pack declares for the body, the status and the success flag. */

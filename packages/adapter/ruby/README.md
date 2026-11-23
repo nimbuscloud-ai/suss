@@ -26,6 +26,7 @@ npx @suss/cli check --dir summaries/
 - Rails controller actions, bound to the method and path that `config/routes.rb` gives each one. It records every status an action can respond with, and the `before_action` filters that run before it.
 - graphql-ruby's class-based field DSL, including `mutation:` and `resolver:` wiring. It finds the method behind a field wherever the class's ancestry defines it, and the `ready?` and `authorized?` hooks a wired class runs before it.
 - ActiveRecord calls, what a file reads from the environment, and what a body calls out to. These are recorded as facts that the checker's rules run over.
+- The body fields a client reads off a response, through whatever name it gave the parsed body: `JSON.parse(response.body)["customer_name"]`, `order.fetch(:customer_name)`, `order.dig("customer", "name")`, or `response.body["customer_name"]` when a middleware parsed the body. A read counts when its keys settle to strings. The extractor's DESIGN.md says how a value is followed back to the request.
 - SQL a project wrote itself and passed to a database client. `@suss/sql` parses it into the tables it touches.
 
 How each of those is decided, and where it stops: [how the Ruby adapter reads a project](./DESIGN.md).

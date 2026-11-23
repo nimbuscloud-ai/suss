@@ -235,6 +235,8 @@ The path runs on a response the provider sends, reads a field that response's bo
 - The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A guard is read the way round it is written, so the `else` of `res.status === 200` and the code after `if (res.ok) return` never run on a 200. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
 
+A read counts whatever name the consumer gave the body on the way. In TypeScript that is `const order = await res.json()` and then `order.customerName`, a destructured `{ customerName }`, a `.then((order) => order.customerName)`, axios's `data`, or the value a project helper returns from `res.json()`. In Python it is `resp.json()["customer_name"]` or `.get("customer_name")`, directly or through a name, and in Ruby `JSON.parse(response.body)["customer_name"]`, `fetch` or `dig`. A method called on a field, such as `order.lines.map(...)`, reads `lines` and nothing more.
+
 **Legitimate when:** the provider sends the field through a path suss could not read, a wrapper or a spread it flattened away. Suppress.
 
 **A bug when:** a rename or a copy-paste left the consumer reading a field this endpoint never sends. Fix the read, or fix the provider.

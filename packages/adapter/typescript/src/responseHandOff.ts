@@ -31,6 +31,7 @@ import type { RawBranch, ResponsePropertyMapping } from "@suss/extractor";
 import type { CallExpression } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
+import type { ResponseMembers } from "./shapes/fieldAccesses.js";
 
 export interface ResponseHandOffOptions {
   /** The callee text the caller's own conditions use for the response. */
@@ -38,7 +39,7 @@ export interface ResponseHandOffOptions {
   /** The callee texts they use for its parsed body, such as `res.json`. */
   bodyCallees: readonly string[];
   /** The pack's response members, to tell a body field from a status read. */
-  responseSemantics: ResponsePropertyMapping[] | undefined;
+  members: ResponseMembers;
   resolution: ResolutionStore;
 }
 
@@ -135,7 +136,6 @@ function fieldsReadInHelper(
   passed: ReadonlyMap<string, ValueRef>,
   options: ResponseHandOffOptions,
 ): (TypeShape | null)[] {
-  const locations = branches.map((branch) => branch.location);
   let fields: (TypeShape | null)[] = branches.map(() => null);
   for (const [parameter, ref] of passed) {
     const prefix = placeInResponse(ref, options);
@@ -146,11 +146,12 @@ function fieldsReadInHelper(
       parameter,
       prefix,
       helper,
-      locations,
-      options.responseSemantics,
+      branches,
+      options.resolution,
+      options.members,
     );
     fields = fields.map((known, index) =>
-      mergeReadShapes(known, read[index]?.expectedInput ?? null),
+      mergeReadShapes(known, read[index] ?? null),
     );
   }
   return fields;

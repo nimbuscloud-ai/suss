@@ -1,54 +1,52 @@
-// fieldAccesses.ts: Collect property accesses on the API response variable
-//
-// After a consumer branches on status, it reads fields from the response body.
-// This module traces those accesses and builds a TypeShape representing what
-// the consumer expects the response to contain within each branch.
+// fieldAccesses.ts: the response fields a client reads on each branch,
+// with each value's place in the response asked of the resolution store.
+// The README beside this file says which reads count.
+
+import { type CallExpression, Node } from "ts-morph";
 
 import {
-  type CallExpression,
-  type Expression,
-  type IfStatement,
-  Node,
-  type ParameterDeclaration,
-} from "ts-morph";
+  decidesResponse,
+  placesInResponse,
+  readShapeOf,
+  readsOn,
+} from "@suss/extractor";
 
-import { endLineOf, startLineOf } from "../lines.js";
+import { factKeyOf, nodeId } from "../facts/extract.js";
 import {
   callbackReturnExpression,
   thenLikeCall,
   thenParameterLink,
 } from "../promiseThen.js";
+import { siteOf } from "../resolve/invocationEffects.js";
 import { isDescentStop } from "../walk/descent.js";
 import { peelValue } from "../walk/unwrap.js";
 
-import type { TypeShape } from "@suss/behavioral-ir";
-import type { ResponsePropertyMapping } from "@suss/extractor";
+import type { StatusMembers, TypeShape } from "@suss/behavioral-ir";
+import type {
+  BranchEnding,
+  EffectSite,
+  ReadHop,
+  ReadStop,
+  ResponsePropertyMapping,
+  ResponseReading,
+} from "@suss/extractor";
+import type { ParameterDeclaration } from "ts-morph";
+import type { ResolutionStore } from "../facts/store.js";
 
 // ---------------------------------------------------------------------------
-// Find the response accessor from the API call site
+// Find the response binding at the call site
 // ---------------------------------------------------------------------------
 
 /**
- * How the consumer reaches the response from a call site.
+ * How the consumer binds the response at the call site.
  *
- * - `identifier`: classic `const res = await fetch(...)` form. Field accesses
- *   are walked as `res.x.y` chains.
- * - `destructured`: `const { data, status } = await axios.get(...)` form.
- *   `bindings` maps each local binding name back to the underlying response
- *   property it refers to (`{ data: "data", code: "status" }` for
- *   `{ data, status: code }`). Standalone uses of a local name resolve to
- *   the bound property; chained uses (`data.id`) extend that path.
- * - `thenChain`: `fetch(url).then(res => res.json()).then(data => ...)`
- *   form, where the response never binds to a variable. `bindings` maps
- *   each `.then` callback parameter to the property chain (rooted at the
- *   response) its resolved value stands for: `res → []` (the response
- *   itself), `data → ["json"]` (the parsed body). A read like `data.name`
- *   becomes `["json", "name"]`, and `res.status` becomes `["status"]`.
+ * - `identifier`: `const res = await fetch(...)`.
+ * - `destructured`: `const { data, status: code } = await axios.get(...)`.
+ *   `bindings` maps each local name to the response property it reads.
  */
 export type ResponseAccessor =
   | { kind: "identifier"; name: string }
-  | { kind: "destructured"; bindings: Map<string, string> }
-  | { kind: "thenChain"; bindings: Map<ParameterDeclaration, string[]> };
+  | { kind: "destructured"; bindings: Map<string, string> };
 
 /**
  * Given a call expression like `fetch(url)` or `client.getUser(params)`,
@@ -105,288 +103,239 @@ export function findResponseVariable(callExpr: CallExpression): string | null {
   return accessor?.kind === "identifier" ? accessor.name : null;
 }
 
+// ---------------------------------------------------------------------------
+// Where a value is in the response
+// ---------------------------------------------------------------------------
+
 /**
- * Build a `thenChain` accessor for a response that flows through Promise
- * `.then` callbacks instead of a variable binding
- * (`fetch(url).then(res => res.json()).then(data => use(data))`).
- *
- * Every `.then` / `.catch` callback parameter inside `func` that has a
- * `derivedFrom` link (via `thenParameterLink`) is resolved to the property
- * chain, rooted at the response call, that its value stands for. `res`
- * binds to the response itself (`[]`); `res.json()` flowing into the next
- * callback's `data` binds to `["json"]`. This covers the outer chain
- * (`.then(res=>res.json()).then(data=>...)`) and inner chains rooted at an
- * already-bound parameter (`res.json().then(data=>...)`) uniformly,
- * because each parameter resolves through its own link back to the
- * response call.
+ * How the store's walk is read for one response. `isResponse` says which
+ * node is the response: the request call, or the parameter a helper was
+ * handed it in. A call of one of the pack's body methods is the body of
+ * the value it is called on, and a `.then` callback's parameter is what
+ * the promise it is chained on resolves to.
  */
-function buildThenChainAccessor(
-  callExpr: CallExpression,
-  func: Node,
-): ResponseAccessor | null {
-  const bindings = new Map<ParameterDeclaration, string[]>();
-  for (const node of ownDescendants(func)) {
-    if (
-      !Node.isParameterDeclaration(node) ||
-      !Node.isIdentifier(node.getNameNode())
-    ) {
-      continue;
-    }
-    const prefix = prefixOfThenParam(node, callExpr, 0);
-    if (prefix !== null) {
-      bindings.set(node, prefix);
-    }
-  }
-  if (bindings.size === 0) {
-    return null;
-  }
-  return { kind: "thenChain", bindings };
+function responseReading(
+  isResponse: (node: Node) => boolean,
+  bodyMethods: ReadonlySet<string>,
+  resolution: ResolutionStore,
+): ResponseReading<Node> {
+  return {
+    idOf: (node) => nodeId(factKeyOf(node)),
+    stopsOf: (values, endsAt) => {
+      const found = resolution.sourcesOf(values, "wantedInputRead", endsAt);
+      const stops = new Map<string, ReadStop<Node>[]>();
+      for (const value of values) {
+        stops.set(
+          nodeId(factKeyOf(value)),
+          (found.get(value) ?? []).map(({ leaf, node }) => ({
+            // A key computed on the way is missing from the path, so the
+            // place the path gives would be wrong.
+            node: leaf.computedAt === null ? node : null,
+            path: leaf.path,
+          })),
+        );
+      }
+      return stops;
+    },
+    isRequest: (node) => isResponse(peeledNode(node)),
+    hopOf: (node) => hopOf(peeledNode(node), bodyMethods),
+  };
 }
 
-const MAX_PREFIX_DEPTH = 8;
-
-/**
- * The property chain (rooted at `responseCall`) that a `.then` callback
- * parameter's resolved value stands for. Null when `param` isn't a
- * `.then`-bound parameter or its upstream can't be pinned to a chain.
- */
-function prefixOfThenParam(
-  param: ParameterDeclaration,
-  responseCall: CallExpression,
-  depth: number,
-): string[] | null {
-  if (depth >= MAX_PREFIX_DEPTH) {
-    return null;
-  }
-  const link = thenParameterLink(param);
-  if (link === null || link.method === "catch") {
-    return null;
-  }
-  return prefixOfExpr(link.upstream, responseCall, depth + 1);
+function peeledNode(node: Node): Node {
+  return Node.isExpression(node) ? peelValue(node) : node;
 }
 
-/**
- * The property chain (rooted at `responseCall`) that a promise-producing
- * expression's resolved value stands for. The response call itself
- * resolves to `[]`. A `.then` call resolves to its callback's return,
- * relative to the callback parameter. A member expression rooted at a
- * `.then`-bound parameter (`res.json()`, `res.body`) extends that
- * parameter's prefix. Null when the expression can't be pinned.
- */
-function prefixOfExpr(
-  expr: Expression,
-  responseCall: CallExpression,
-  depth: number,
-): string[] | null {
-  if (depth >= MAX_PREFIX_DEPTH) {
-    return null;
-  }
-  const node = peelValue(expr);
-  if (node === responseCall) {
-    return [];
-  }
+function hopOf(
+  node: Node,
+  bodyMethods: ReadonlySet<string>,
+): ReadHop<Node> | null {
   if (Node.isCallExpression(node)) {
-    const hop = thenLikeCall(node);
-    if (hop !== null) {
-      if (hop.method === "catch") {
-        return null;
-      }
-      const receiverPrefix = prefixOfExpr(
-        hop.receiver,
-        responseCall,
-        depth + 1,
-      );
-      if (receiverPrefix === null) {
-        return null;
-      }
-      const callback = node.getArguments()[0];
-      const paramName = firstCallbackParamName(callback);
-      const ret = callbackReturnExpression(callback);
-      if (paramName === null || ret === null) {
-        return null;
-      }
-      const segments = chainRootedAt(ret, paramName);
-      return segments === null ? null : [...receiverPrefix, ...segments];
-    }
+    return callHop(node, bodyMethods);
   }
-  return prefixOfMemberExpr(node, responseCall, depth);
-}
-
-/**
- * The property chain of a member expression rooted at a `.then`-bound
- * parameter: `res.json()` → `[...prefix(res), "json"]`, `res.body` →
- * `[...prefix(res), "body"]`. Null when the root isn't such a parameter.
- */
-function prefixOfMemberExpr(
-  expr: Node,
-  responseCall: CallExpression,
-  depth: number,
-): string[] | null {
-  const chain = memberChain(expr);
-  if (chain === null) {
+  const parameter = parameterDeclarationOf(node);
+  if (parameter === null) {
     return null;
   }
-  const decl = chain.root.getSymbol()?.getDeclarations()?.[0];
-  if (decl === undefined || !Node.isParameterDeclaration(decl)) {
-    return null;
-  }
-  const base = prefixOfThenParam(decl, responseCall, depth + 1);
-  return base === null ? null : [...base, ...chain.segments];
+  const link = thenParameterLink(parameter);
+  return link === null || link.method === "catch"
+    ? null
+    : { from: link.upstream, segments: [] };
 }
 
-function firstCallbackParamName(callback: Node | undefined): string | null {
+/** `res.json()` is the `json` of `res`, and `p.then(cb)` is what `cb` returns. */
+function callHop(
+  call: CallExpression,
+  bodyMethods: ReadonlySet<string>,
+): ReadHop<Node> | null {
+  const chained = thenLikeCall(call);
+  if (chained !== null) {
+    const returned =
+      chained.method === "then"
+        ? callbackReturnExpression(call.getArguments()[0])
+        : null;
+    return returned === null ? null : { from: returned, segments: [] };
+  }
+  const callee = call.getExpression();
   if (
-    callback === undefined ||
-    !(Node.isArrowFunction(callback) || Node.isFunctionExpression(callback))
+    !Node.isPropertyAccessExpression(callee) ||
+    !bodyMethods.has(callee.getName())
   ) {
     return null;
   }
-  const param = callback.getParameters()[0];
-  if (param === undefined) {
-    return null;
-  }
-  const nameNode = param.getNameNode();
-  return Node.isIdentifier(nameNode) ? nameNode.getText() : null;
+  return { from: callee.getExpression(), segments: [callee.getName()] };
 }
 
-/**
- * The property segments of `expr` when it is a chain rooted at the
- * identifier `rootName`, e.g. `res.json` → `["json"]`, `data.body.name`
- * → `["body", "name"]`, bare `res` → `[]`. A single trailing call is
- * unwrapped so `res.json()` reads the same as `res.json`. Null when the
- * chain isn't rooted at `rootName`.
- */
-function chainRootedAt(expr: Expression, rootName: string): string[] | null {
-  const chain = memberChain(expr);
-  if (chain === null) {
-    return null;
+function parameterDeclarationOf(node: Node): ParameterDeclaration | null {
+  if (Node.isParameterDeclaration(node)) {
+    return node;
   }
-  return Node.isIdentifier(chain.root) && chain.root.getText() === rootName
-    ? chain.segments
+  const parent = node.getParent();
+  return Node.isIdentifier(node) &&
+    parent !== undefined &&
+    Node.isParameterDeclaration(parent)
+    ? parent
     : null;
 }
 
-/**
- * Split a member expression into its root node and property segments.
- * `res.json()` → `{ root: res, segments: ["json"] }`; `data.a.b` →
- * `{ root: data, segments: ["a", "b"] }`; bare `res` →
- * `{ root: res, segments: [] }`. A single trailing call is unwrapped.
- */
-function memberChain(expr: Node): { root: Node; segments: string[] } | null {
-  let node = Node.isExpression(expr) ? peelValue(expr) : expr;
-  if (Node.isCallExpression(node)) {
-    node = node.getExpression();
-  }
-  const segments: string[] = [];
-  while (Node.isPropertyAccessExpression(node)) {
-    segments.unshift(node.getName());
-    node = node.getExpression();
-  }
-  return { root: node, segments };
-}
-
 // ---------------------------------------------------------------------------
-// Collect property access paths within a subtree
+// The reads a function makes
 // ---------------------------------------------------------------------------
 
-interface AccessPath {
-  /** Property chain from the root variable, e.g. ["body", "name"] for res.body.name */
-  chain: string[];
+/** A value read in the body, and the properties read off it, outermost first. */
+interface ValueRead {
+  root: Node;
+  segments: string[];
+  /** Whether the last property is called as a method rather than read. */
+  called: boolean;
 }
 
 /**
- * Walk `subtree` and collect access paths the consumer reads from the
- * response, normalized to chains rooted at the response object.
- *
- * Identifier accessor: `result.body.name` → chain `["body", "name"]`.
- * Destructured accessor: given `const { data, status: code } = ...`,
- *   the consumer's `data.id` → `["data", "id"]`, bare `code` → `["status"]`.
- * thenChain accessor: given `.then(res => res.json()).then(data => ...)`,
- *   the consumer's `data.name` → `["json", "name"]`, `res.status` → `["status"]`.
+ * Every read in `subtree` that could be a read of the response: a name
+ * the function declares, or a parenthesized call such as
+ * `(await res.json())`, with the properties read off it.
  */
-function collectPropertyAccesses(
+function valueReadsIn(
   subtree: Node,
-  accessor: ResponseAccessor,
-): AccessPath[] {
-  const paths: AccessPath[] = [];
-  const seen = new Set<string>();
-
-  function pushChain(chain: string[]) {
-    const key = chain.join(".");
-    if (!seen.has(key)) {
-      seen.add(key);
-      paths.push({ chain });
-    }
-  }
-
-  if (accessor.kind === "identifier") {
-    const varName = accessor.name;
-    for (const node of ownDescendants(subtree)) {
-      if (!Node.isPropertyAccessExpression(node)) {
-        continue;
-      }
-      const chain: string[] = [];
-      let current: Node = node;
-      while (Node.isPropertyAccessExpression(current)) {
-        chain.unshift(current.getName());
-        current = current.getExpression();
-      }
-      if (Node.isIdentifier(current) && current.getText() === varName) {
-        pushChain(chain);
-      }
-    }
-    return paths;
-  }
-
-  // Destructured and thenChain accessors both map a local binding to a
-  // property prefix rooted at the response. Walk every Identifier that
-  // reads one and extend its prefix with the property chain read off it.
-  const prefixOf =
-    accessor.kind === "destructured"
-      ? (read: Node): string[] | undefined => {
-          const source = accessor.bindings.get(read.getText());
-          return source === undefined ? undefined : [source];
-        }
-      : (read: Node): string[] | undefined =>
-          thenParameterRead(read, accessor.bindings);
-
+  declared: ReadonlySet<string>,
+): ValueRead[] {
+  const reads: ValueRead[] = [];
   for (const node of ownDescendants(subtree)) {
-    if (!Node.isIdentifier(node)) {
-      continue;
+    if (isReadRoot(node, declared)) {
+      reads.push(readOff(node));
     }
-    const prefix = prefixOf(node);
-    if (prefix === undefined) {
-      continue;
-    }
-    // Skip the binding's own declaration site (a destructured element or a
-    // callback parameter name): it isn't a read of the response.
-    if (isBindingDeclarationSite(node)) {
-      continue;
-    }
-    // Find the topmost property-access chain rooted on this identifier
-    // (so for `data.id.name`, walk from the bare identifier up through both
-    // property-accesses), then collect the segment names in source order.
-    let chainTop: Node = node;
-    let parent = chainTop.getParent();
-    while (
-      parent !== undefined &&
-      Node.isPropertyAccessExpression(parent) &&
-      parent.getExpression() === chainTop
-    ) {
-      chainTop = parent;
-      parent = chainTop.getParent();
-    }
-
-    const segments: string[] = [];
-    let current: Node = chainTop;
-    while (Node.isPropertyAccessExpression(current)) {
-      segments.push(current.getName());
-      current = current.getExpression();
-    }
-    segments.reverse();
-    pushChain([...prefix, ...segments]);
   }
-  return paths;
+  return reads;
+}
+
+function isReadRoot(node: Node, declared: ReadonlySet<string>): boolean {
+  if (Node.isIdentifier(node)) {
+    return declared.has(node.getText()) && isNameRead(node);
+  }
+  const parent = node.getParent();
+  return (
+    Node.isParenthesizedExpression(node) &&
+    parent !== undefined &&
+    Node.isPropertyAccessExpression(parent) &&
+    parent.getExpression() === node &&
+    Node.isCallExpression(peelValue(node))
+  );
+}
+
+/** Whether a name is read here, rather than declared or used as a property name. */
+function isNameRead(node: Node): boolean {
+  const parent = node.getParent();
+  if (parent === undefined || isBindingDeclarationSite(node)) {
+    return false;
+  }
+  if (
+    Node.isPropertyAccessExpression(parent) ||
+    Node.isVariableDeclaration(parent) ||
+    Node.isPropertyAssignment(parent)
+  ) {
+    return parent.getNameNode() !== node;
+  }
+  return true;
+}
+
+function readOff(root: Node): ValueRead {
+  const segments: string[] = [];
+  let top: Node = root;
+  let parent = top.getParent();
+  while (
+    parent !== undefined &&
+    Node.isPropertyAccessExpression(parent) &&
+    parent.getExpression() === top
+  ) {
+    segments.push(parent.getName());
+    top = parent;
+    parent = top.getParent();
+  }
+  const called =
+    segments.length > 0 &&
+    parent !== undefined &&
+    Node.isCallExpression(parent) &&
+    parent.getExpression() === top;
+  return { root, segments, called };
+}
+
+/**
+ * The response members a read takes. A method called on the response
+ * itself, such as `res.json()`, is one of its members. A method called
+ * on anything inside it, such as `items.map(...)`, is not a field.
+ */
+function fieldsOfRead(place: readonly string[], read: ValueRead): string[] {
+  const onResponse = place.length === 0 && read.segments.length === 1;
+  const segments =
+    read.called && !onResponse ? read.segments.slice(0, -1) : read.segments;
+  return [...place, ...segments];
+}
+
+/** The names a function declares for values: its variables, destructured names and parameters. */
+function declaredNamesIn(func: Node): Set<string> {
+  const names = new Set<string>();
+  const visit = (node: Node): void => {
+    if (
+      Node.isVariableDeclaration(node) ||
+      Node.isParameterDeclaration(node) ||
+      Node.isBindingElement(node)
+    ) {
+      const name = node.getNameNode();
+      if (Node.isIdentifier(name)) {
+        names.add(name.getText());
+      }
+    }
+  };
+  visit(func);
+  for (const node of ownDescendants(func)) {
+    visit(node);
+  }
+  return names;
+}
+
+/** A response field `func` reads, as the members read off the response, and where the read is written. */
+interface FieldRead {
+  chain: string[];
+  site: EffectSite;
+}
+
+function storeReads(
+  func: Node,
+  isResponse: (node: Node) => boolean,
+  bodyMethods: ReadonlySet<string>,
+  resolution: ResolutionStore,
+): FieldRead[] {
+  const reads = valueReadsIn(func, declaredNamesIn(func));
+  const placeOf = placesInResponse(
+    reads.map((read) => read.root),
+    responseReading(isResponse, bodyMethods, resolution),
+  );
+  return reads.flatMap((read) => {
+    const place = placeOf(read.root);
+    return place === null
+      ? []
+      : [{ chain: fieldsOfRead(place, read), site: siteOf(read.root, func) }];
+  });
 }
 
 /**
@@ -442,213 +391,40 @@ function ownDescendants(root: Node): Node[] {
   return found;
 }
 
-/**
- * The prefix of the `.then` parameter an identifier reads. Two callbacks
- * often reuse one parameter name for different values, so the read is
- * matched to the parameter it refers to, and never by its name alone.
- */
-function thenParameterRead(
-  read: Node,
-  bindings: ReadonlyMap<ParameterDeclaration, string[]>,
-): string[] | undefined {
-  const name = read.getText();
-  const candidates = [...bindings.keys()].filter(
-    (parameter) => parameter.getName() === name,
-  );
-  if (candidates.length === 0) {
-    return undefined;
-  }
-  const declared = read.getSymbol()?.getDeclarations() ?? [];
-  const parameter = candidates.find((one) => declared.includes(one));
-  return parameter === undefined ? undefined : bindings.get(parameter);
-}
-
-// ---------------------------------------------------------------------------
-// Build TypeShape from access paths
-// ---------------------------------------------------------------------------
-
-/**
- * Given a set of access paths, build a TypeShape representing the consumed
- * fields. Paths that share a prefix are merged into nested records.
- *
- * Example: [["body", "name"], ["body", "email"]] produces:
- * { type: "record", properties: { body: { type: "record", properties: {
- *   name: { type: "unknown" }, email: { type: "unknown" } } } } }
- *
- * Leaf types are `unknown` because we're recording *which* fields are accessed,
- * not what types the consumer expects them to be. The checker compares field
- * presence, not leaf types: a missing field is a definite mismatch, while
- * a present field with the wrong type is caught by the existing body-shape
- * matcher against the contract.
- */
-function buildShapeFromPaths(paths: AccessPath[]): TypeShape | null {
-  if (paths.length === 0) {
-    return null;
-  }
-
-  // Group paths by first segment
-  const groups = new Map<string, string[][]>();
-  const leaves = new Set<string>();
-
-  for (const { chain } of paths) {
-    if (chain.length === 0) {
-      continue;
-    }
-    const [head, ...tail] = chain;
-    if (tail.length === 0) {
-      leaves.add(head);
-    } else {
-      if (!groups.has(head)) {
-        groups.set(head, []);
-      }
-      groups.get(head)?.push(tail);
-    }
-  }
-
-  const properties: Record<string, TypeShape> = {};
-
-  // Leaves: accessed but not descended into further
-  for (const leaf of leaves) {
-    if (!groups.has(leaf)) {
-      properties[leaf] = { type: "unknown" };
-    }
-    // If it's also a group, the nested shape takes priority (below)
-  }
-
-  // Groups: descended into
-  for (const [key, tails] of groups) {
-    const nested = buildShapeFromPaths(tails.map((t) => ({ chain: t })));
-    properties[key] = nested ?? { type: "unknown" };
-  }
-
-  if (Object.keys(properties).length === 0) {
-    return null;
-  }
-
-  return { type: "record", properties };
-}
-
-// ---------------------------------------------------------------------------
-// Per-branch field access extraction
-// ---------------------------------------------------------------------------
-
-function lineRangeKey(start: number, end: number): string {
-  return `${start}:${end}`;
-}
-
-/**
- * The last descendant of `func` occupying each line range. Every branch of
- * one function looks its terminal up here, so the walk happens once rather
- * than once per branch.
- */
-function nodesByLineRange(func: Node): Map<string, Node> {
-  const byRange = new Map<string, Node>();
-  func.forEachDescendant((node) => {
-    byRange.set(lineRangeKey(startLineOf(node), endLineOf(node)), node);
-  });
-  return byRange;
-}
-
-/**
- * Find the AST subtree for a given branch by matching the terminal's source
- * location back to the AST. Returns the nearest containing if-branch or
- * the function body for default transitions.
- */
-function findBranchSubtree(
-  func: Node,
-  byLineRange: Map<string, Node>,
-  terminalStartLine: number,
-  terminalEndLine: number,
-): Node {
-  const terminalNode =
-    byLineRange.get(lineRangeKey(terminalStartLine, terminalEndLine)) ?? null;
-
-  if (terminalNode === null) {
-    return func;
-  }
-
-  // Walk up from the terminal to find the nearest if-then/else block
-  let current: Node = terminalNode;
-  while (current !== func) {
-    const parent = current.getParent();
-    if (parent === undefined) {
-      break;
-    }
-
-    if (Node.isIfStatement(parent)) {
-      const ifStmt = parent as IfStatement;
-      const thenBlock = ifStmt.getThenStatement();
-      const elseBlock = ifStmt.getElseStatement();
-
-      if (thenBlock !== undefined && isDescendantOf(terminalNode, thenBlock)) {
-        return thenBlock;
-      }
-      if (elseBlock !== undefined && isDescendantOf(terminalNode, elseBlock)) {
-        return elseBlock;
-      }
-    }
-
-    current = parent;
-  }
-
-  // Default: use the whole function body
-  return func;
-}
-
-function isDescendantOf(node: Node, ancestor: Node): boolean {
-  let current: Node | undefined = node;
-  while (current !== undefined) {
-    if (current === ancestor) {
-      return true;
-    }
-    current = current.getParent();
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
-export interface BranchFieldAccesses {
-  /** Terminal location (start, end lines): used to match back to transitions */
-  terminalLocation: { start: number; end: number };
-  /** The shape of fields the consumer reads from the response in this branch */
-  expectedInput: TypeShape | null;
+/** What the pack says about the response a client reads. */
+export interface ResponseMembers {
+  responseSemantics?: ResponsePropertyMapping[] | undefined;
+  /** The members a test on which decides which response a branch sees. */
+  statusMembers: StatusMembers;
 }
 
 /**
- * For a client function, collect the fields accessed on the response variable
- * within each branch. Returns one entry per branch (matched by terminal location).
- *
- * @param callExpr The API call expression (fetch(), client.getUser())
- * @param func The enclosing function
- * @param branchLocations Terminal locations from the extracted branches
- * @param responseSemantics Optional response property mappings from the pack ,
- *   used to filter non-body properties instead of a hardcoded list
+ * For a client function, the fields each branch reads off the response,
+ * in the order the branches were given. A read goes on the branches
+ * `readsOn` puts it on. Without a store nothing says where a value came
+ * from, so no branch reads anything.
  */
 export function collectClientFieldAccesses(
   callExpr: CallExpression,
   func: Node,
-  branchLocations: Array<{ start: number; end: number }>,
-  responseSemantics?: ResponsePropertyMapping[],
-): BranchFieldAccesses[] {
-  if (branchLocations.length === 0) {
-    return [];
+  branches: readonly BranchEnding[],
+  members: ResponseMembers,
+  resolution?: ResolutionStore,
+): (TypeShape | null)[] {
+  if (resolution === undefined) {
+    return branches.map(() => null);
   }
-
-  // Prefer the variable-binding accessor (`const res = await fetch(...)`);
-  // fall back to the `.then` chain accessor when the response never binds
-  // to a variable (`fetch(url).then(res => res.json()).then(...)`).
-  const accessor =
-    findResponseAccessor(callExpr) ?? buildThenChainAccessor(callExpr, func);
-  return accessesPerBranch(
-    accessor,
-    [],
+  const reads = storeReads(
     func,
-    branchLocations,
-    responseSemantics,
+    (node) => node === callExpr,
+    bodyMethodsOf(members.responseSemantics),
+    resolution,
   );
+  return readsPerBranch(reads, [], branches, members);
 }
 
 /**
@@ -661,50 +437,57 @@ export function collectParameterFieldAccesses(
   parameter: string,
   prefix: readonly string[],
   func: Node,
-  branchLocations: Array<{ start: number; end: number }>,
-  responseSemantics?: ResponsePropertyMapping[],
-): BranchFieldAccesses[] {
-  return accessesPerBranch(
-    { kind: "identifier", name: parameter },
-    prefix,
-    func,
-    branchLocations,
-    responseSemantics,
+  branches: readonly BranchEnding[],
+  resolution: ResolutionStore,
+  members: ResponseMembers,
+): (TypeShape | null)[] {
+  const handed = (node: Node): boolean => {
+    const declaration = parameterDeclarationOf(node);
+    return (
+      declaration !== null &&
+      declaration.getParent() === func &&
+      declaration.getName() === parameter
+    );
+  };
+  const bodyMethods =
+    prefix.length === 0
+      ? bodyMethodsOf(members.responseSemantics)
+      : new Set<string>();
+  const reads = storeReads(func, handed, bodyMethods, resolution);
+  return readsPerBranch(reads, prefix, branches, members);
+}
+
+function bodyMethodsOf(semantics?: ResponsePropertyMapping[]): Set<string> {
+  return new Set(
+    (semantics ?? [])
+      .filter((m) => m.access === "method" && m.semantics.type === "body")
+      .map((m) => m.name),
   );
 }
 
-function accessesPerBranch(
-  accessor: ResponseAccessor | null,
+function readsPerBranch(
+  reads: readonly FieldRead[],
   prefix: readonly string[],
-  func: Node,
-  branchLocations: Array<{ start: number; end: number }>,
-  responseSemantics?: ResponsePropertyMapping[],
-): BranchFieldAccesses[] {
-  if (accessor === null) {
-    return branchLocations.map((loc) => ({
-      terminalLocation: loc,
-      expectedInput: null,
-    }));
-  }
-
+  branches: readonly BranchEnding[],
+  members: ResponseMembers,
+): (TypeShape | null)[] {
   // A status, success flag or header read off the response is not a body
   // field. Off the parsed body, every name is one.
   const nonBodyProps =
     prefix.length === 0
-      ? buildNonBodyPropertySet(responseSemantics)
+      ? buildNonBodyPropertySet(members.responseSemantics)
       : new Set<string>();
-
-  const byLineRange = nodesByLineRange(func);
-
-  return branchLocations.map((loc) => {
-    const subtree = findBranchSubtree(func, byLineRange, loc.start, loc.end);
-    const bodyAccesses = collectPropertyAccesses(subtree, accessor)
-      .filter((a) => a.chain.length > 0 && !nonBodyProps.has(a.chain[0]))
-      .map((a) => ({ chain: [...prefix, ...a.chain] }));
-
-    const expectedInput = buildShapeFromPaths(bodyAccesses);
-    return { terminalLocation: loc, expectedInput };
-  });
+  const bodyReads = reads.filter(
+    ({ chain }) => chain.length > 0 && !nonBodyProps.has(chain[0] ?? ""),
+  );
+  const decides = decidesResponse(members.statusMembers);
+  return branches.map((branch) =>
+    readShapeOf(
+      bodyReads
+        .filter(({ site }) => readsOn(site, branch, decides))
+        .map(({ chain }) => [...prefix, ...chain]),
+    ),
+  );
 }
 
 function buildNonBodyPropertySet(

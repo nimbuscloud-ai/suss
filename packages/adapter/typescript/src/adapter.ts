@@ -129,6 +129,7 @@ import {
   clientResponseFieldsOfPack,
   clientResponseFieldsThroughWrapper,
   keepsStatusArms,
+  responseMembersOf,
   wrapperStatusPaths,
 } from "./clientResponseFields.js";
 import { readContract, readContractForClientCall } from "./contract.js";
@@ -1015,7 +1016,7 @@ function readCodeStructure(
             unit.callSite.callExpression,
             pack.responseSemantics,
           ),
-          responseSemantics: pack.responseSemantics,
+          members: responseMembersOf(pack),
           resolution,
         };
   const extracted = extractRawBranches(
@@ -1062,18 +1063,18 @@ function readCodeStructure(
       );
     }
 
-    const branchLocations = branches.map((b) => b.location);
     const fieldAccesses = collectClientFieldAccesses(
       unit.callSite.callExpression,
       func,
-      branchLocations,
-      pack.responseSemantics,
+      branches,
+      responseMembersOf(pack),
+      resolution,
     );
     for (let i = 0; i < branches.length; i++) {
       const branch = branches[i] as RawBranch;
       const expectedInput = mergeReadShapes(
         branch.expectedInput ?? null,
-        fieldAccesses[i]?.expectedInput ?? null,
+        fieldAccesses[i] ?? null,
       );
       if (expectedInput !== null) {
         branches[i] = { ...branch, expectedInput };
