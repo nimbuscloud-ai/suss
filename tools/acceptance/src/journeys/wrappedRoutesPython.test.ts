@@ -39,7 +39,9 @@ describe("read a FastAPI service whose statuses come from around the handler", (
     expect(inspect.stdout).toContain(
       "on_error (tenants_api/main.py) on a throw",
     );
-    expect(inspect.stdout).toContain("429  (from rate_limit)");
+    expect(inspect.stdout).toMatch(
+      /from rate_limit, before the handler\n\s+if {2}request\.headers\.get\("x-burst"\) != null\n\s+-> 429\n/,
+    );
   });
 
   it("points the route at the app's dependency, the middleware, the router's and its own dependency, and the error handler", () => {
@@ -77,7 +79,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
         { file: "tenants_api/main.py", name: "on_error", onThrow: true },
       ],
     });
-    expect(statusesOf(audit)).toEqual([429, 401, 400, 200, 422]);
+    expect(statusesOf(audit)).toEqual([429, 401, 400, 422, 200]);
   });
 
   it("puts the statuses on the wrappers that produce them", () => {
@@ -98,9 +100,9 @@ describe("read a FastAPI service whose statuses come from around the handler", (
 
     expect(
       statusesOf(routeFor(summaries, "GET", "/v1/tenants/{tenant_id}")),
-    ).toEqual([429, 401, 400, 404, 200, 422]);
+    ).toEqual([429, 401, 400, 422, 404, 200]);
     const create = routeFor(summaries, "POST", "/v1/tenants");
-    expect(statusesOf(create)).toEqual([429, 401, 400, 403, 201, 422, 500]);
+    expect(statusesOf(create)).toEqual([429, 401, 400, 403, 422, 201, 500]);
     expect(fromOf(create)).toEqual([
       "rate_limit",
       "require_caller",
@@ -113,7 +115,7 @@ describe("read a FastAPI service whose statuses come from around the handler", (
     ]);
     expect(
       statusesOf(routeFor(summaries, "DELETE", "/v1/tenants/{tenant_id}")),
-    ).toEqual([429, 401, 400, 403, 204, 422]);
+    ).toEqual([429, 401, 400, 403, 422, 204]);
   });
 });
 
