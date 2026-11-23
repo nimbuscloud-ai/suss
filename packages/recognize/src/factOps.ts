@@ -1463,6 +1463,12 @@ class FactValue implements ValueOps {
     return func === null ? null : parameterPosition(this.key, func, this.facts);
   }
 
+  parameterNamed(fn: ValueOps): string | null {
+    const written = keysOfValues.get(fn) ?? null;
+    const func = written === null ? null : functionBehind(written, this.facts);
+    return func === null ? null : parameterName(this.key, func, this.facts);
+  }
+
   declaration(): Declaration | null {
     return declarationAt(this.key, this.facts, new Set());
   }
@@ -1663,6 +1669,22 @@ function passesParametersInOrder(
         parameterPosition(String(row[2]), func, source) === Number(row[1]),
     )
   );
+}
+
+/** The name of `func`'s parameter the value at `key` is, through `binds`, or null. */
+function parameterName(
+  key: string,
+  func: string,
+  source: FactSource,
+): string | null {
+  const declared = new Set([
+    key,
+    ...source.db.lookup("binds", 0, key).map((row) => String(row[1])),
+  ]);
+  const row = source.db
+    .lookup("paramNamed", 0, func)
+    .find((one) => declared.has(String(one[2])));
+  return row === undefined ? null : String(row[1]);
 }
 
 function parameterPosition(

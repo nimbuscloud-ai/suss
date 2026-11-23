@@ -67,15 +67,16 @@ export function urlOrHostFirst(
 }
 
 /**
- * The host and port a client's construction states, as a base URL with
- * no path, or null when it states no host suss can read.
+ * The host and port a client's construction states, with `host` the
+ * value it states the host as, as a base URL with no path, or null when
+ * it states no host suss can read.
  */
 export function hostBase(
   built: CallOps,
   link: BaseUrlLink,
   site: string | undefined,
+  host: ValueOps,
 ): UrlTarget | null {
-  const host = statedValue(built, link.at);
   const port = link.port === undefined ? null : statedValue(built, link.port);
   const read = hostNamed(host, port, site);
   return read === undefined ? null : { path: "", host: read };
