@@ -18,7 +18,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
-import { ask, preloadForQuestion } from "./ask.js";
+import { ask, preloadForQuestion, readsSummaries } from "./ask.js";
 import {
   CACHE_DIR_ENV,
   COMMANDS_WITH_CACHE_DIR,
@@ -117,7 +117,8 @@ Commands:
             Given nothing, it reads the current project first. --at
             reports on one file, line, boundary, or summary instead of
             the whole folder
-  ask       Answer one question about one boundary from summaries on disk
+  ask       Answer one question about one boundary from summaries on disk.
+            Given none, it reads the current project first.
   map       Read the project, check it, and write one HTML page showing
             its routes, GraphQL fields, tables and env vars, opened from
             disk with no network. Start here on a new project.
@@ -298,8 +299,12 @@ Options (ask):
                                          the chain from a written name
                                          to the function it comes to
   A boundary is written the way reports write it, and a shorter spelling
-  matches more: "dynamodb:editions" covers every index on that table.
-  --dir            Folder of summary files to read, instead of one file
+  matches more: "dynamodb:editions" covers every index on that table. A
+  route written out in full, such as "POST /orders", matches only that
+  route.
+  --dir            Folder of summary files to read, instead of one file.
+                   Given neither, ask reads the project first, the way
+                   a bare check does
   --project        Where the source is, for a why question (default: cwd)
   --all            List every unit an answer picked out. Without it a
                    long answer stops after ten and says how many are
@@ -1430,16 +1435,26 @@ async function runAsk(args: string[]): Promise<number> {
   const whyPacks = await preloadForQuestion(question, values.project);
 
   const file = positionals[1];
-  return ask({
+  const asked = {
     question,
-    ...(values.dir !== undefined ? { dir: values.dir } : {}),
     ...(values.project !== undefined ? { project: values.project } : {}),
     ...(whyPacks !== undefined ? { whyPacks } : {}),
     ...(file !== undefined ? { file } : {}),
     ...(values.json === true ? { json: true } : {}),
     ...(values.all === true ? { all: true } : {}),
     ...(values.output !== undefined ? { output: values.output } : {}),
-  });
+  };
+  if (values.dir !== undefined) {
+    return ask({ ...asked, dir: values.dir });
+  }
+  // With no summaries given, read the project first, as a bare check does.
+  if (file === undefined && readsSummaries(question)) {
+    return await withProjectRead(
+      (dir) => ask({ ...asked, dir }),
+      path.resolve(values.project ?? process.cwd()),
+    );
+  }
+  return ask(asked);
 }
 
 async function runCorroborate(args: string[]): Promise<number> {

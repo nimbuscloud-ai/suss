@@ -254,6 +254,16 @@ export async function preloadForQuestion(
   return await preloadWhyQuestion(path.resolve(project ?? process.cwd()));
 }
 
+/**
+ * Whether answering the question reads summaries. A question that does
+ * not parse gets the list of questions, and a why-resolve question reads
+ * only the source.
+ */
+export function readsSummaries(raw: string): boolean {
+  const question = parseQuestion(raw);
+  return question !== null && question.shape !== "whyResolves";
+}
+
 export function parseQuestion(raw: string): ParsedQuestion | null {
   // Expand symbols first, because the shorthand can end in a `?` that
   // the written form strips as punctuation.
