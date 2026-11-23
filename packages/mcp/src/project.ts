@@ -23,6 +23,7 @@ import {
   KeptAdapters,
   loadedSummaries,
   packHealthOf,
+  packsNeedingConfigIn,
   readProjectInto,
   readSummariesFromDir,
 } from "@suss/cli";
@@ -250,7 +251,10 @@ export class Project {
    * on a large project, and an agent asks many questions between edits.
    */
   summaries(): LoadedSummaries {
-    this.loaded ??= loadedSummaries(readSummariesFromDir(this.summaryDir));
+    this.loaded ??= loadedSummaries(
+      readSummariesFromDir(this.summaryDir),
+      packsNeedingConfigIn(this.summaryDir),
+    );
     return this.loaded;
   }
 

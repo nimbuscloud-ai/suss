@@ -4,14 +4,17 @@
  * The callers come from the one-hop call facts. A call the run resolved
  * and a call recorded on the caller's binding count the same, and the
  * question finds the same function however it spells the name. A call
- * suss could not follow can still hide a caller, so the answer says when
- * the run recorded any. Without that caveat an empty list would look like
- * "nothing calls this" even when a caller was missed.
+ * suss could not follow can still hide a caller when it uses the
+ * function's name, so the answer says when the run recorded one. Without
+ * that caveat an empty list would look like "nothing calls this" even
+ * when a caller was missed.
  */
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 import {
   boundarySpelling,
+  calledMethod,
+  methodName,
   providesKeyOf,
   representativeUnit,
   writtenFunctionOf,
@@ -46,6 +49,7 @@ export function answerCalls(
   const { label } = spelled;
   const { items, callers, calls } = directCalls(facts, spelled.target, label);
   const needs = alsoDeclaredLines(spelled.units, spelled.alsoDeclaredBy);
+  const names = calledAs(spelled.units, label);
   if (items.length === 0) {
     return {
       shape: "calls",
@@ -53,7 +57,7 @@ export function answerCalls(
       headline: `Nothing in these summaries calls ${label}.`,
       items: [],
       needs,
-      caveats: unfollowedCaveat(summaries, label),
+      caveats: unfollowedCaveat(summaries, label, names),
       found: true,
     };
   }
@@ -66,10 +70,24 @@ export function answerCalls(
     needs,
     caveats: [
       ...gapCaveats(callers),
-      ...unfollowedCaveat(summaries, label, callers),
+      ...unfollowedCaveat(summaries, label, names, callers),
     ],
     found: true,
   };
+}
+
+/**
+ * The names a call would use to run the subject: each unit's own name,
+ * or for a package export, the name it is exported under.
+ */
+function calledAs(
+  units: ReadonlyArray<BehavioralSummary>,
+  label: string,
+): ReadonlySet<string> {
+  if (units.length > 0) {
+    return new Set(units.map((unit) => methodName(unit.identity.name)));
+  }
+  return new Set([methodName(label.slice(label.lastIndexOf("::") + 2))]);
 }
 
 /**
@@ -162,20 +180,29 @@ function callVerb(calls: readonly DirectCall[], callers: number): string {
 }
 
 /**
- * Warns that a call suss could not follow may hide a caller. Units the
- * answer already lists print their own gap lines, so they are left out.
+ * Warns that a call suss could not follow may hide a caller. A call that
+ * uses another name is not one, and a call with no recorded name could
+ * be. Units the answer already lists print their own gap lines, so they
+ * are left out.
  */
 function unfollowedCaveat(
   summaries: ReadonlyArray<BehavioralSummary>,
   label: string,
+  names: ReadonlySet<string>,
   listed: ReadonlyArray<BehavioralSummary> = [],
 ): string[] {
   const already = new Set(listed);
-  const stopped = summaries.filter(
-    (summary) =>
-      !already.has(summary) &&
-      summary.gaps.some((gap) => gap.type === "unfollowedCall"),
-  );
+  const stopped = summaries
+    .filter((summary) => !already.has(summary))
+    .map((summary) => ({
+      ...summary,
+      gaps: summary.gaps.filter(
+        (gap) =>
+          gap.type === "unfollowedCall" &&
+          (gap.callee === undefined || names.has(calledMethod(gap.callee))),
+      ),
+    }))
+    .filter((summary) => summary.gaps.length > 0);
   if (stopped.length === 0) {
     return [];
   }

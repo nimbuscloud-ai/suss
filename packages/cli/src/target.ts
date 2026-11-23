@@ -28,12 +28,13 @@ import {
   namesBoundaryExactly,
   providesKeyOf,
   type Relation,
+  spelledInFull,
   type TargetTouch,
   touchesOf,
   touchLabel,
 } from "@suss/checker";
 
-import { operationTouchesAt } from "./graphqlFieldCallers.js";
+import { pairedTouchesAt } from "./pairedCallers.js";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 
@@ -249,14 +250,15 @@ function lineTarget(
  * `POST /articles` picks the collection route and not the comments route
  * under it. Without a single exact match there is no way to choose, and
  * picking one silently could produce a report about a boundary the user
- * did not mean.
+ * did not mean. A route written out in full matches only routes that
+ * pair as one, so every label it matches is that one route.
  */
 function narrowedToOne(
   spec: string,
   matching: readonly TargetTouch[],
 ): TargetTouch[] | null {
   const labels = new Set(matching.map((touch) => touch.touched.label));
-  if (labels.size === 1) {
+  if (labels.size === 1 || spelledInFull(spec)) {
     return [...matching];
   }
   const exact = matching.filter((touch) =>
@@ -270,10 +272,44 @@ function boundaryMatches(
   spec: string,
   summaries: ReadonlyArray<BehavioralSummary>,
 ): TargetTouch[] {
-  const named = touchesOf(summaries).filter((touch) =>
+  return touchesOf(summaries).filter((touch) =>
     namesBoundary(spec, touch.touched.binding),
   );
-  return [...named, ...operationTouchesAt(named, summaries)];
+}
+
+/** The touches, and after them every consumer `check` pairs with a provider among them that they leave out. */
+function withPairedConsumers(
+  touches: readonly TargetTouch[],
+  summaries: ReadonlyArray<BehavioralSummary>,
+): TargetTouch[] {
+  const keyOf = (touch: TargetTouch) =>
+    [
+      summaryIdentifier(touch.summary),
+      touch.touched.label,
+      touch.touched.relation,
+      touch.touched.callee ?? "",
+    ].join("\u0000");
+  const listed = new Set(touches.map(keyOf));
+  return [
+    ...touches,
+    ...pairedTouchesAt(touches, summaries).filter(
+      (touch) => !listed.has(keyOf(touch)),
+    ),
+  ];
+}
+
+/**
+ * The touches whose binding the spelling picks out, narrowed to the one
+ * boundary it means, or null when it could mean several boundaries or
+ * none. The consumers `check` pairs with that boundary are left to
+ * `pairedTouchesAt`, since their own bindings may spell it differently.
+ */
+export function touchesNamedBy(
+  spec: string,
+  summaries: ReadonlyArray<BehavioralSummary>,
+): TargetTouch[] | null {
+  const matching = boundaryMatches(spec, summaries);
+  return matching.length === 0 ? null : narrowedToOne(spec, matching);
 }
 
 function labelsOf(touches: readonly TargetTouch[]): string[] {
@@ -338,8 +374,8 @@ function boundaryTarget(
     };
   }
 
-  const touches = narrowedToOne(spec, matching);
-  if (touches === null) {
+  const named = narrowedToOne(spec, matching);
+  if (named === null) {
     return {
       matched: false,
       spelledAs: spec,
@@ -347,6 +383,7 @@ function boundaryTarget(
     };
   }
 
+  const touches = withPairedConsumers(named, summaries);
   const units = [...new Set(touches.map((touch) => touch.summary))];
   const labels = [...new Set(touches.map((touch) => touch.touched.label))];
   return {

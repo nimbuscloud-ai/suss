@@ -13,6 +13,7 @@
  */
 
 import { displayLabel } from "./boundaryKey.js";
+import { allBehaviors, behaviorOf } from "./semantics/registry.js";
 
 import type { BoundaryBinding } from "./index.js";
 
@@ -77,6 +78,35 @@ export function bindingTokens(binding: BoundaryBinding): Set<string> {
 }
 
 /**
+ * Whether some protocol reads the text as one of its boundaries written
+ * out in full, such as the route `POST /orders/{id}`.
+ */
+export function spelledInFull(subject: string): boolean {
+  return allBehaviors().some(
+    (behavior) => behavior.spelledInFull?.claims(subject) === true,
+  );
+}
+
+/**
+ * Whether a boundary written out in full picks out this binding, or
+ * null when no protocol reads the text that way and the words decide.
+ */
+function pickedOutInFull(
+  subject: string,
+  binding: BoundaryBinding,
+): boolean | null {
+  if (!spelledInFull(subject)) {
+    return null;
+  }
+  const own = behaviorOf(binding.semantics).spelledInFull;
+  return (
+    own !== undefined &&
+    own.claims(subject) &&
+    own.picksOut(subject, binding.semantics)
+  );
+}
+
+/**
  * Whether the typed text has every word of this boundary's label and
  * nothing more. `POST /articles` matches the collection route exactly,
  * and only partly matches `POST /articles/{slug}/comments`.
@@ -85,6 +115,10 @@ export function namesBoundaryExactly(
   subject: string,
   binding: BoundaryBinding,
 ): boolean {
+  const inFull = pickedOutInFull(subject, binding);
+  if (inFull !== null) {
+    return inFull;
+  }
   const wanted = new Set(spellingTokens(subject));
   if (wanted.size === 0) {
     return false;
@@ -96,11 +130,20 @@ export function namesBoundaryExactly(
   return [...spelled].every((token) => wanted.has(token));
 }
 
-/** Whether the typed text picks out this boundary: every word in it is one of the boundary's words. */
+/**
+ * Whether the typed text picks out this boundary: every word in it is
+ * one of the boundary's words. A boundary written out in full picks out
+ * only the boundaries its protocol says it does, so `POST /orders` is
+ * not a partial spelling of `POST /orders/{id}/cancel`.
+ */
 export function namesBoundary(
   subject: string,
   binding: BoundaryBinding,
 ): boolean {
+  const inFull = pickedOutInFull(subject, binding);
+  if (inFull !== null) {
+    return inFull;
+  }
   const wanted = spellingTokens(subject);
   if (wanted.length === 0) {
     return false;

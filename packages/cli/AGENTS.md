@@ -85,6 +85,9 @@ file read, and nothing is extracted again.
 suss ask "what writes aws.dynamodb:orders" --dir .suss --json
 ```
 
+Without `--dir` or a summaries file, `ask` reads the project first,
+the way a bare `check` does, and then answers.
+
 It takes eleven questions, worded like this:
 
 - `what can I project from <boundary>`, also `what does <boundary> declare`
@@ -104,7 +107,12 @@ Run `suss ask` with no question and it prints this list back.
 `what calls` on a route, a table or a queue lists every unit that
 calls it from outside, the same units `what reads` and `what writes`
 list, and says what each one does there. Units that call the code
-serving it as a function come after them.
+serving it as a function come after them. For a route it lists every
+client `check` pairs with the route, so the two never disagree.
+
+A route written out in full, such as `POST /orders`, means that route
+alone: the same method and path, whatever each side calls its
+parameters. `POST /orders/{id}/cancel` is a different route.
 
 `how is` takes a helper, a class or a boundary, such as `how is
 Outbound.fetch used` or `how is Setting used`. It lists every call into

@@ -50,10 +50,8 @@ import {
   unreadArtifacts,
 } from "./projectFile.js";
 import { readSummaries } from "./summaryFile.js";
-import {
-  DEFAULT_SUPPRESSIONS_FILENAMES,
-  loadSuppressionsOrEmpty,
-} from "./suppressionsLoader.js";
+import { isExtractNote, summaryFilesAmong } from "./summaryFolder.js";
+import { loadSuppressionsOrEmpty } from "./suppressionsLoader.js";
 import { UsageError } from "./usageError.js";
 
 import type {
@@ -429,7 +427,7 @@ export function checkDirectory(options: {
 
   // Agreement over an incomplete extract covers only part of the code.
   // A note for a read that failed outright becomes a run finding instead.
-  const notes = entries.filter((f) => f.endsWith(".incomplete.json"));
+  const notes = entries.filter(isExtractNote);
   const packConfigNotes = packConfigNotesIn(resolved, notes);
   for (const [at, note] of notes.entries()) {
     if (packConfigNotes[at]?.readFailed !== undefined) {
@@ -484,19 +482,6 @@ export function checkDirectory(options: {
       note.readFailed === undefined ? [] : [note.readFailed],
     ),
   };
-}
-
-/**
- * The suppressions file can live in a summaries folder too, and so can
- * extract's incompleteness note. Neither is a summaries file.
- */
-function summaryFilesAmong(entries: readonly string[]): string[] {
-  return entries.filter(
-    (f) =>
-      f.endsWith(".json") &&
-      !f.endsWith(".incomplete.json") &&
-      !DEFAULT_SUPPRESSIONS_FILENAMES.includes(f),
-  );
 }
 
 interface CheckedFiles {

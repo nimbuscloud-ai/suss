@@ -603,6 +603,20 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/request-method-parameter-ruby"),
     ...packs("net-http", "faraday"),
   ]),
+  fixture("route-callers-python", [
+    ...lang("python"),
+    ...dir("fixtures/route-callers-python"),
+    ...packs("fastapi", "httpx"),
+  ]),
+  fixture("route-callers-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/route-callers-ruby"),
+    ...packs(railsIn("fixtures/route-callers-ruby"), "net-http"),
+  ]),
+  fixture("route-callers-typescript", [
+    ...project("fixtures/route-callers-typescript/tsconfig.json"),
+    ...packs("express", "fetch"),
+  ]),
   // The pack's tests read one file's effects directly. From the CLI the
   // rails pack finds the controller actions that reach them.
   fixture("ruby-bigquery", [
