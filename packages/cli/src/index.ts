@@ -125,6 +125,7 @@ export {
   stubDraftResult,
 } from "./stubDraftCommand.js";
 export { loadStubs, type StubFile, stubOverlayOf } from "./stubs.js";
+export { packsNeedingConfigIn } from "./summaryFolder.js";
 
 export type { Answer, AnswerJson, QuestionShape } from "./ask.js";
 export type {

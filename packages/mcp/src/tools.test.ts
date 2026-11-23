@@ -25,6 +25,28 @@ function textOf(result: { content: Array<{ type: string }> }): string {
     .join("");
 }
 
+/**
+ * A Rails app whose database nothing in it settles, so the activerecord
+ * pack reads nothing and the extract leaves a note saying so.
+ */
+function railsAppWithoutItsDatabase(prefix: string): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const files: Record<string, string> = {
+    "Gemfile.lock":
+      "GEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
+    "config/routes.rb":
+      "Rails.application.routes.draw do\n  get '/widgets', to: 'widgets#index'\nend\n",
+    "app/models/widget.rb": "class Widget < ApplicationRecord\nend\n",
+    "app/controllers/widgets_controller.rb":
+      "class WidgetsController < ApplicationController\n  def index\n    render json: Widget.all\n  end\nend\n",
+  };
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    fs.writeFileSync(path.join(root, name), text);
+  }
+  return root;
+}
+
 /** A project with more boundaries than one answer shows. */
 function manyRoutes(root: string, count: number): void {
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -328,20 +350,7 @@ describe("the tools, on a project bigger than one answer", () => {
   });
 
   it("repeats the pack health block the extracts printed on stderr", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-tools-health-"));
-    const files: Record<string, string> = {
-      "Gemfile.lock":
-        "GEM\n  remote: https://rubygems.org/\n  specs:\n    rails (7.1.0)\n\nDEPENDENCIES\n  rails\n",
-      "config/routes.rb":
-        "Rails.application.routes.draw do\n  get '/widgets', to: 'widgets#index'\nend\n",
-      "app/models/widget.rb": "class Widget < ApplicationRecord\nend\n",
-      "app/controllers/widgets_controller.rb":
-        "class WidgetsController < ApplicationController\n  def index\n    render json: Widget.all\n  end\nend\n",
-    };
-    for (const [name, text] of Object.entries(files)) {
-      fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
-      fs.writeFileSync(path.join(root, name), text);
-    }
+    const root = railsAppWithoutItsDatabase("suss-tools-health-");
     const project = new Project({ root, watch: false });
     await project.start();
 
@@ -349,6 +358,30 @@ describe("the tools, on a project bigger than one answer", () => {
     expect(text).toMatch(
       /no-config\s+activerecord\s+reads nothing until storageSystem is set/,
     );
+
+    project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 60_000);
+
+  it("says in suss_ask's needs which pack read nothing for want of an option", async () => {
+    const root = railsAppWithoutItsDatabase("suss-tools-ask-config-");
+    const project = new Project({ root, watch: false });
+    await project.start();
+
+    const result = await askTool(project, {
+      question: "what writes postgresql:widgets",
+    });
+    const answer = result.structuredContent as {
+      found: boolean;
+      needs: string[];
+    };
+
+    expect(answer.found).toBe(false);
+    expect(answer.needs).toEqual([
+      expect.stringContaining(
+        "The activerecord pack read nothing, because storageSystem is not set",
+      ),
+    ]);
 
     project.close();
     fs.rmSync(root, { recursive: true, force: true });
