@@ -405,8 +405,6 @@ interface RenderCtx {
    * these names could be any of them, so it gets no `→` marker.
    */
   ambiguousFollowNames: ReadonlySet<string>;
-  /** Every summary's name as written, before `fileByName` strips it to its last segment. */
-  wholeFollowNames: ReadonlySet<string>;
   /**
    * Every loaded summary with an `identity.id`, keyed by that id. When an
    * invocation effect has a `summary` id, the extractor already resolved
@@ -801,46 +799,29 @@ function resolveFollowTargetById(
 
 /**
  * The `→` reference for a call with no recorded summary id, found by
- * matching the callee's name. The full callee text is tried first, then
- * its last dotted segment, so `utils.formatError` still finds a
- * `formatError` summary. The segment has to be a summary's whole name:
- * `Account.find` and a summary named `ReportJob.find` share only
- * `find`, a method on two receivers, so that call stays unresolved.
- * Returns null when no summary has the name, or when summaries in
- * several files do. A name can recur across a run, so this match can be
- * wrong; it is used only when there is no id to go on.
+ * matching the whole callee text against the summaries' names. Returns
+ * null when no summary has the name, or when summaries in several files
+ * do. A name can recur across a run, so this match can be wrong; it is
+ * used only when there is no id to go on.
+ *
+ * A call on a receiver is never matched by its method name alone. The
+ * extractor would have recorded an id had it known what the receiver
+ * was, so `cookies.delete` beside a controller action named `delete` is
+ * a method of some other object.
  */
 function resolveFollowTargetByName(
   callee: string,
   ctx: PerSummaryRenderCtx,
 ): string | null {
-  const byName = ctx.base.fileByName;
-  // When only the last segment matched, a reference into another file
-  // uses the matched name. The callee text there would print as
-  // `src/helpers.utils.formatPayload`.
-  const ambiguous = ctx.base.ambiguousFollowNames;
-  let resolved: string | null = null;
-  if (byName.has(callee)) {
-    resolved = callee;
-  } else {
-    const last = callee.split(".").pop();
-    if (
-      last !== undefined &&
-      last !== callee &&
-      ctx.base.wholeFollowNames.has(last)
-    ) {
-      resolved = last;
-    }
-  }
-  if (resolved === null || ambiguous.has(resolved)) {
+  const targetFile = ctx.base.fileByName.get(callee);
+  if (targetFile === undefined || ctx.base.ambiguousFollowNames.has(callee)) {
     return null;
   }
-  const targetFile = byName.get(resolved) ?? ctx.parentFile;
   if (targetFile === ctx.parentFile) {
     return callee;
   }
   const stripped = targetFile.replace(/\.[^./]+$/, "");
-  return `${stripped}.${resolved}`;
+  return `${stripped}.${callee}`;
 }
 
 function renderNode(
@@ -1523,7 +1504,6 @@ export function inspect(options: InspectOptions): void {
 
 function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   const fileByName = new Map<string, string>();
-  const wholeFollowNames = new Set<string>();
   // A name that summaries in several files share cannot pick one of them,
   // and a guessed `→` looks the same as a resolved one (#121).
   const filesPerFollowName = new Map<string, Set<string>>();
@@ -1542,7 +1522,6 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
     if (!fileByName.has(s.identity.name)) {
       fileByName.set(s.identity.name, s.location.file);
     }
-    wholeFollowNames.add(s.identity.name);
     noteFollowName(s.identity.name, s.location.file);
     const last = s.identity.name.split(".").pop();
     if (last !== undefined) {
@@ -1625,7 +1604,6 @@ function buildRenderCtx(summaries: BehavioralSummary[]): RenderCtx {
   return {
     fileByName,
     ambiguousFollowNames,
-    wholeFollowNames,
     summaryById,
     spawnerIndex,
     ambiguousNames,

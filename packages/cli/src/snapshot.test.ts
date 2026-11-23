@@ -454,7 +454,8 @@ describe("inspect output snapshots", () => {
               args: [],
               async: false,
             },
-            // Dotted callee whose last segment IS in the set.
+            // A call on a receiver with no id: its method name alone
+            // matches the helper, which is not enough for a marker.
             {
               type: "invocation",
               callee: "utils.formatPayload",

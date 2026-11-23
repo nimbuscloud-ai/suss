@@ -915,19 +915,20 @@ describe("inspect", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
-  it("without an id, still links a qualified call to a summary named by its last segment", () => {
+  it("without an id, leaves a call on a receiver unresolved when only its method name matches a summary", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inspect-byname-ns-"));
     const file = path.join(dir, "summaries.json");
     fs.writeFileSync(
       file,
       JSON.stringify([
-        onChangeHandlerSummary("src/Form.tsx"),
-        counterSummary({ callee: "handlers.onChange" }),
+        onChangeHandlerSummary("app/controllers/widgets_controller.rb"),
+        counterSummary({ callee: "cookies.onChange" }),
       ]),
     );
 
     const output = captureInspect(() => inspect({ file }));
-    expect(output).toContain("+ src/Form.onChange →");
+    expect(output).toContain("+ cookies.onChange\n");
+    expect(output).not.toContain("widgets_controller.onChange");
 
     fs.rmSync(dir, { recursive: true });
   });
