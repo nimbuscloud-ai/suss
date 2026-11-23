@@ -116,6 +116,19 @@ export interface BoundaryBehavior<S extends { name: string }> {
   };
 
   /**
+   * How a person writes one of these boundaries out in full, the way a
+   * report labels it, and which boundaries such a spelling picks out.
+   * It picks out only the boundaries `picksOut` accepts, so a longer
+   * boundary that shares its words is left out. A protocol that leaves
+   * this undefined is matched by the words in the spelling, and a
+   * shorter spelling covers more.
+   */
+  spelledInFull?: {
+    claims(raw: string): boolean;
+    picksOut(raw: string, semantics: S): boolean;
+  };
+
+  /**
    * Whether this boundary serves a request with the given method and
    * path. A protocol whose boundaries have no URL leaves this undefined.
    * Undefined means the question does not apply, and an `"unknown"`

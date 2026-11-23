@@ -2,6 +2,7 @@
  * A bare `suss extract` in a project whose `suss.json` lists reads in
  * two languages, as `suss init --write` writes it. Every read has to
  * run, and a read that fails has to be named without stopping the rest.
+ * A bare `suss ask` runs the same reads before it answers.
  */
 
 import fs from "node:fs";
@@ -189,6 +190,33 @@ describe("a bare extract with one read in suss.json", () => {
 
     expect(run.exit).toBe(1);
     expect(run.stderr).toContain("no-such-pack-anywhere");
+  });
+});
+
+describe("a bare ask", () => {
+  it("reads the project first, the way a bare check does, and answers from it", async () => {
+    writeReads([PYTHON_READ, TYPESCRIPT_READ]);
+
+    const run = await quietly([
+      "ask",
+      "what calls GET /orders/{id}",
+      "--project",
+      project,
+      "--json",
+      "--cache-dir",
+      path.join(project, ".cache"),
+    ]);
+
+    expect(run.exit).toBe(0);
+    expect(run.stderr).toContain("Reading what suss.json says.");
+    const answer = JSON.parse(run.stdout) as {
+      found: boolean;
+      items: Array<{ unit: string }>;
+    };
+    expect(answer.found).toBe(true);
+    expect(answer.items.map((item) => item.unit)).toEqual([
+      expect.stringMatching(/orders\.ts::orderTotal$/),
+    ]);
   });
 });
 

@@ -55,6 +55,7 @@ import { boundaryReach, entrypointKey, reachChanges } from "./diffReach.js";
 import { readingPairs, wholeReadings } from "./readingPairs.js";
 import { scopeLines, sharedCauses } from "./sharedCause.js";
 import { firstLineOf, readSummaries } from "./summaryFile.js";
+import { summaryFilesAmong } from "./summaryFolder.js";
 import { UsageError } from "./usageError.js";
 import { differenceTexts } from "./valueDiff.js";
 
@@ -3429,7 +3430,7 @@ export function readSummariesFromDir(dir: string): BehavioralSummary[] {
     );
   }
 
-  const files = fs.readdirSync(resolved).filter((f) => f.endsWith(".json"));
+  const files = summaryFilesAmong(fs.readdirSync(resolved));
   if (files.length === 0) {
     throw new UsageError(
       `No JSON files in ${resolved}. Write summaries there first with \`suss extract -o ${path.join(dir, "summaries.json")}\`.`,

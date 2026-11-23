@@ -18,17 +18,24 @@ import { readCallFacts } from "@suss/checker";
 
 import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { CallFacts } from "@suss/checker";
+import type { PackConfigNeed } from "@suss/extractor";
 
 export interface LoadedSummaries {
   readonly summaries: BehavioralSummary[];
   readonly callFacts: CallFacts;
+  /** The packs the extracts that wrote these summaries left out for want of an option. */
+  readonly packsNeedingConfig: readonly PackConfigNeed[];
 }
 
-export function loadedSummaries(read: BehavioralSummary[]): LoadedSummaries {
+export function loadedSummaries(
+  read: BehavioralSummary[],
+  packsNeedingConfig: readonly PackConfigNeed[] = [],
+): LoadedSummaries {
   const summaries = withConstructions(read);
   let facts: CallFacts | null = null;
   return {
     summaries,
+    packsNeedingConfig,
     get callFacts(): CallFacts {
       facts ??= readCallFacts(summaries);
       return facts;

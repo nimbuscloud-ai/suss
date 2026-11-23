@@ -27,8 +27,8 @@ import { dedupeFindings, findingPerConsumerPath } from "./dedupe.js";
 import { buildInteractionIndex } from "./interactions/dispatcher.js";
 import { checkMessageBus } from "./message-bus/messageBusPairing.js";
 import { checkMetric } from "./metric/metricPairing.js";
-import { pairGraphqlOperations } from "./pairing/graphqlPairing.js";
-import { pairSummaries, servingFunction } from "./pairing/pairing.js";
+import { pairBoundaries } from "./pairing/boundaryPairs.js";
+import { servingFunction } from "./pairing/pairing.js";
 import { checkSemanticBridging } from "./pairing/semanticBridging.js";
 import { isStory, productionCode } from "./pairing/testCode.js";
 import { checkRenderProps } from "./render/renderProps.js";
@@ -77,6 +77,7 @@ function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 export { bodyShapesMatch } from "./body/bodyMatch.js";
+export { calledMethod, methodName } from "./calls/calledName.js";
 export {
   type CallEdge,
   type CallFacts,
@@ -174,6 +175,11 @@ export {
   type SummaryClaim,
 } from "./pairing/boundaryCollisions.js";
 export {
+  type BoundaryPairs,
+  pairBoundaries,
+  pairsWithProviders,
+} from "./pairing/boundaryPairs.js";
+export {
   type GraphqlPairingResult,
   pairGraphqlOperations,
 } from "./pairing/graphqlPairing.js";
@@ -201,6 +207,7 @@ export {
   namesBoundaryExactly,
   type Relation,
   relationsOf,
+  spelledInFull,
   spellingTokens,
   type TouchedBoundary,
   touchLabel,
@@ -417,14 +424,14 @@ function routesTieDescription(
  */
 export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   const {
-    pairs: restPairs,
-    unmatched: restUnmatched,
-    ambiguous: restAmbiguous,
-  } = pairSummaries(summaries);
-  // REST pairing lists test code as unpairable, and every other pass
-  // leaves it out the same way.
+    rest: {
+      pairs: restPairs,
+      unmatched: restUnmatched,
+      ambiguous: restAmbiguous,
+    },
+    graphql,
+  } = pairBoundaries(summaries);
   const production = productionCode(summaries);
-  const graphql = pairGraphqlOperations(production);
 
   const findings: Finding[] = [
     ...graphql.findings,

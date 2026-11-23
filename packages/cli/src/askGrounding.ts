@@ -22,7 +22,8 @@ import {
   spellingTokens,
 } from "@suss/checker";
 
-import { operationTouchesAt } from "./graphqlFieldCallers.js";
+import { pairedTouchesAt } from "./pairedCallers.js";
+import { touchesNamedBy } from "./target.js";
 
 import type { BehavioralSummary, BoundaryBinding } from "@suss/behavioral-ir";
 import type {
@@ -112,10 +113,17 @@ export function groundedTouchesAt(
     });
   }
 
+  // A binding's words pick it out the way they do under `--at`, so a
+  // spelling that means one boundary leaves out longer ones sharing them.
+  const namedBindings = new Set(
+    (touchesNamedBy(subject, summaries) ?? []).map(
+      (touch) => touch.touched.binding,
+    ),
+  );
   for (const summary of summaries) {
     for (const touched of boundariesTouchedBy(summary)) {
       const included =
-        namesBoundary(subject, touched.binding) ||
+        namedBindings.has(touched.binding) ||
         matchedBindings.has(touched.binding) ||
         (touched.relation === "provides" && matchedProviders.has(summary));
       if (!included) {
@@ -130,7 +138,7 @@ export function groundedTouchesAt(
     }
   }
 
-  for (const touch of operationTouchesAt(touches, summaries)) {
+  for (const touch of pairedTouchesAt(touches, summaries)) {
     keep(touches, answered, asTouchKey(touch), touch);
   }
 

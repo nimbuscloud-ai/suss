@@ -14,6 +14,7 @@
 
 import { summaryIdentifier } from "@suss/behavioral-ir";
 
+import { calledMethod, methodName } from "../calls/calledName.js";
 import { functionOf, writtenFunctionOf } from "../calls/callFacts.js";
 import { ownBoundariesOf } from "../reach/ownBoundaries.js";
 import { shortestFirst } from "../reach/unitReach.js";
@@ -398,11 +399,6 @@ export function classNameOf(unit: BehavioralSummary): string | undefined {
   return dot > 0 ? symbol.slice(0, dot) : undefined;
 }
 
-/** The method a name ends in, which is what an unfollowed call would spell. */
-function methodName(name: string): string {
-  return name.slice(name.lastIndexOf(".") + 1);
-}
-
 function groupKey(call: ConstructCall): string {
   return [call.through, ...call.blanked.map((value) => value ?? "")].join(
     "\u0000",
@@ -670,10 +666,4 @@ function unfollowedNamedLike(
     }
   }
   return gaps;
-}
-
-/** The method a call as written runs: the last name before its arguments or block. */
-function calledMethod(callee: string): string {
-  const head = callee.split(/[({\s]/, 1)[0] ?? callee;
-  return head.slice(head.lastIndexOf(".") + 1);
 }
