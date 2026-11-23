@@ -903,6 +903,11 @@ export function hashKeySymbolName(node: RbNode): string | null {
   return node.type === "hash_key_symbol" ? node.text : null;
 }
 
+/** A hash key's name, `id` for each of `id:`, `:id =>` and `"id" =>`, or null for a key it computes. */
+export function hashKeyName(key: RbNode): string | null {
+  return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
+}
+
 /**
  * Whether this is the key of a pair written with no value. Ruby 3.1 reads
  * `f(a:)` as `f(a: a)` and `{ id: }` as `{ id: id }`, so the key is the
@@ -928,6 +933,26 @@ export function pairValue(pair: RbNode): RbNode | null {
   }
   const key = field(pair, "key");
   return key !== null && isShorthandKey(key, pair) ? key : null;
+}
+
+/** Each key a call is passed as a pair, with the value passed under it. */
+export function namedPairs(
+  call: RbNode,
+): Array<{ name: string; value: RbNode }> {
+  const args = field(call, "arguments");
+  const found: Array<{ name: string; value: RbNode }> = [];
+  for (const argument of args === null ? [] : children(args)) {
+    if (argument.type !== "pair") {
+      continue;
+    }
+    const key = field(argument, "key");
+    const value = pairValue(argument);
+    const name = key === null ? null : hashKeyName(key);
+    if (name !== null && value !== null) {
+      found.push({ name, value });
+    }
+  }
+  return found;
 }
 
 /** A constant's name starts with a capital, `Foo:` passing the constant `Foo`. */
