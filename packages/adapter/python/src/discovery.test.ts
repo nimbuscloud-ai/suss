@@ -1308,7 +1308,7 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
     ]);
   });
 
-  it("adds the library's own validation response to a route that reads the request", async () => {
+  it("adds the library's own validation response, ahead of the body's, to a route that reads the request", async () => {
     const validating: PythonPack = {
       ...fastapiWithRaises,
       discovery: [
@@ -1327,9 +1327,9 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
       [validating],
     );
     expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["422", ["request input fails validation"]],
       ["404", ["comparison"]],
       ["200", ["!comparison"]],
-      ["422", ["request input fails validation"]],
     ]);
   });
 

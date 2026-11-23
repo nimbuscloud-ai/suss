@@ -1356,8 +1356,10 @@ function buildRouteUnit(options: BuildRouteUnitOptions): RawCodeStructure {
     };
     branches.push(withBodyEffects(bare, extra));
   }
+  // The library validates before the body runs, so its response goes
+  // first, where a guard at the top of the body would be.
   if (branches.length > 0) {
-    branches.push(
+    branches.unshift(
       ...validationFailureBranches(
         pattern,
         readsTheRequest(
