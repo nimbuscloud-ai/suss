@@ -37,6 +37,7 @@ import {
   type HandOffOptions,
   throughResponseHelpers,
 } from "./responseHandOff.js";
+import { type ResponseReads, withResponseReads } from "./responseReads.js";
 import { moduleOf, parameterDefaults } from "./values/evaluator.js";
 import { isMethod } from "./values/lowering.js";
 import { originOf } from "./values/origin.js";
@@ -281,7 +282,11 @@ function callerBranches(
     keepsArms: (condition) =>
       testsStatus(predicateOf(condition, reading.facts), reading.statusMembers),
   });
-  const found = branches.length === 0 ? [handsBack(range, effects)] : branches;
+  const paths = branches.length === 0 ? [handsBack(range, effects)] : branches;
+  const found =
+    reading.reads === undefined
+      ? paths
+      : withResponseReads(paths, body, reading.reads);
   return reading.handOff === undefined
     ? found
     : throughResponseHelpers(found, sites, reading.handOff);
@@ -293,6 +298,8 @@ interface CallerReading {
   statusMembers: StatusMembers;
   /** Unset for a helper, whose own hand-offs are not followed. */
   handOff?: HandOffOptions;
+  /** Unset for a helper, which reads what it was handed rather than the response. */
+  reads?: ResponseReads;
 }
 
 /** What a caller does at the end of a path: it hands back whatever it got. */
@@ -381,6 +388,12 @@ function clientUnit(
       facts: options.facts,
       readHelper: (helper) =>
         callerBranches(helper, { facts: options.facts, statusMembers }),
+    },
+    reads: {
+      request: request.call,
+      bodyMembers: accessors.bodyAccessors ?? [],
+      statusMembers,
+      facts: options.facts,
     },
   };
   const { claim } = request;

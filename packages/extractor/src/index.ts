@@ -89,6 +89,7 @@ export {
   firesOn,
   guardsHoldOn,
   type PlacedEffect,
+  readsOn,
   runsBefore,
 } from "./effectGuards.js";
 export { markReturnsAsExitCode } from "./exitCode.js";
@@ -155,6 +156,14 @@ export {
   writtenReading,
 } from "./reading.js";
 export { redirectDeliveryWhenSet } from "./redirectOption.js";
+export {
+  decidesResponse,
+  placesInResponse,
+  type ReadHop,
+  type ReadStop,
+  type ResponseReading,
+  readShapeOf,
+} from "./responseReads.js";
 export { isListedTestFile, matchesTestFileName } from "./testFiles.js";
 export {
   comesFromInput,

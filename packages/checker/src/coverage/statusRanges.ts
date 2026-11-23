@@ -16,6 +16,7 @@ import {
   successAccessorsFor,
 } from "../contract/declaredContract.js";
 import {
+  isSuccessStatus,
   refLooksLikeStatus,
   statusesNamedIn,
   type StatusAccessors,
@@ -290,6 +291,29 @@ export function guardsForBranch(
     successAccessors,
     readsEquality: !transition.isDefault,
   };
+}
+
+/**
+ * Whether a consumer branch runs on `status`, with each status guard read
+ * the way round it is written. `branchHandlesStatus` counts a status a
+ * guard mentions either way round, which is right for coverage and wrong
+ * for a check on what the branch reads. The README beside this file says
+ * why a fall-through with no range guard runs on the 2xx class.
+ */
+export function branchRunsOnStatus(
+  ct: Transition,
+  status: number,
+  accessors: StatusAccessors,
+  successAccessors: StatusAccessors,
+): boolean {
+  const guards = guardsForBranch(ct, accessors, successAccessors);
+  const inGuards = branchStatusRanges(ct.conditions, guards)?.some(
+    (range) => status >= range.min && status <= range.max,
+  );
+  if (ct.isDefault) {
+    return inGuards ?? isSuccessStatus(status);
+  }
+  return inGuards ?? branchHandlesStatus(ct.conditions, guards, status);
 }
 
 /**

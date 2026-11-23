@@ -68,6 +68,29 @@ export function firesOn(site: EffectSite, branch: BranchEnding): boolean {
   );
 }
 
+/**
+ * Whether a field read written at `site` happens on `branch`. It is
+ * `firesOn` without the loop rule, and with one guard stricter: a guard
+ * `decidesResponse` picks, such as a status test, has to be one the
+ * branch states. A branch silent about it may run on a response the read
+ * never sees, and the read would be checked against that response's body.
+ */
+export function readsOn(
+  site: EffectSite,
+  branch: BranchEnding,
+  decidesResponse: (guard: RawCondition) => boolean,
+): boolean {
+  const onBranch = new Set(branch.conditions.map(keyOf));
+  const holds = (guard: RawCondition): boolean =>
+    decidesResponse(guard)
+      ? onBranch.has(keyOf(guard))
+      : !onBranch.has(opposite(guard));
+  return (
+    (site.preconditions ?? []).every(holds) &&
+    runsBefore(site.cleansUpFrom ?? site.line, branch.terminal.location.end)
+  );
+}
+
 /** The effects that can run before the branch reaches its terminal, in the order given. */
 export function effectsFiringOn<E>(
   placed: readonly PlacedEffect<E>[],

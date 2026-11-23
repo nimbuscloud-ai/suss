@@ -244,6 +244,17 @@ Compared 1 boundary.
       provider: { transitionId: "get:response:410:3b915da" }
       reason: TODO say why you accept this
 ────────────────────────────────────────────────────────────
+[ERROR] misreadProviderResponse
+  The consumer's fall-through path reads "email", but the 200 body the provider sends does not include it, and neither does any other response.
+  provider: src/server.ts::get (src/server.ts:14)
+  consumer: src/loadUser.ts::loadUser (src/loadUser.ts:1)
+  boundary: express (http) GET /users/:id
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: misreadProviderResponse
+      boundary: "GET /users/{id}"
+      provider: { transitionId: "get:response:200:f4e97bb" }
+      reason: TODO say why you accept this
+────────────────────────────────────────────────────────────
 [WARNING] unhandledProviderCase
   Provider produces status 429 but no consumer branch handles it
   provider: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
@@ -278,12 +289,12 @@ Compared 1 boundary.
   consumer: openapi:openapi.yaml::getUser (openapi:openapi.yaml:7)
   boundary: express (http) GET /users/:id
 ────────────────────────────────────────────────────────────
-5 findings: 1 error, 4 warning, 0 info
+6 findings: 2 error, 4 warning, 0 info
 
 suss met a call it could not follow in one unit, of 3, so that one is described in part. `suss inspect` says which calls.
 ```
 
-Three pairs produced five findings. Each of the two runs above found two, and the fifth comes from the pair neither of them had, the handler against the client. suss now reports the 410 twice, once because the document does not declare it and once because the client has no branch for it. When several sources agree on one boundary, the `also from:` line on a finding tells you where each side came from.
+Three pairs produced six findings. Each of the two runs above found two, and the other two come from the pair neither of them had, the handler against the client. suss now reports the 410 twice, once because the document does not declare it and once because the client has no branch for it. The handler's 200 body leaves out the `email` the document promises, and the client reads `email` off it, so `loadUser` returns undefined for every user it finds. Neither side read against the document alone shows that. When several sources agree on one boundary, the `also from:` line on a finding tells you where each side came from.
 
 The handler and the client share no types here. The client is a `fetch` call site in a browser bundle, the handler is Express in Node, and nothing imports anything across that line. suss reads both into the same format and pairs them on `(method, path)`, so the 410 shows up against the client as well as against the document.
 

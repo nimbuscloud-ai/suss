@@ -54,6 +54,7 @@ Runtime config:
   process.env.STRIPE_API_KEY read by chargeCard is not declared in the environment of a deployment that runs it. At runtime it resolves to undefined there, changing which execution paths the code takes.
   read: src/lib/payments.ts::chargeCard (src/lib/payments.ts:14)
   not declared by: Checkout, Refund
+  boundary: @suss/runtime-node (os)
   to silence this one, add to the rules in .sussignore.yml:
     - kind: boundaryFieldUnknown
       boundary: "runtime-config STRIPE_API_KEY"
@@ -63,6 +64,17 @@ Runtime config:
 ```
 
 One finding covers one read, however many deployments run it without the variable. The rule it prints accepts the variable in the deployments the finding lists, and keeps matching when the code that reads it moves to another file. A deployment the rule leaves out, including one added later, is still reported. A deployment runs a read when a call from its handler reaches the function that makes it, so a client file every handler imports is charged only to the handlers that call into it. A read in a file a deployment loads that no call reaches is listed under `unchecked.runtimeConfig` instead.
+
+A read the code already copes with is not reported. That is a read with a fallback, as in `process.env.STRIPE_API_KEY ?? ""`, or one whose value is used only after a presence test, when the path a missing value takes returns instead of throwing:
+
+```ts
+const key = process.env.STRIPE_API_KEY;
+if (!key) {
+  return { statusCode: 500, body: "payments are not configured" };
+}
+```
+
+The summary marks such a read `defaulted: true` on its `config-read` effect, and the check leaves it out, since the code says what happens when the variable is missing. To see the finding, read the variable where the code uses it without a test, as `chargeCard` does above.
 
 GraphQL:
 
@@ -232,8 +244,10 @@ The path runs on a response the provider sends, reads a field that response's bo
 
 - A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is what the consumer was testing for.
 - A body with spreads or an opaque shape is not checked, and a status the provider returns with several bodies fires only when every one of them lacks the field.
-- The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+- The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A guard is read the way round it is written, so the `else` of `res.status === 200` and the code after `if (res.ok) return` never run on a 200. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
+
+A read counts whatever name the consumer gave the body on the way. In TypeScript that is `const order = await res.json()` and then `order.customerName`, a destructured `{ customerName }`, a `.then((order) => order.customerName)`, axios's `data`, or the value a project helper returns from `res.json()`. In Python it is `resp.json()["customer_name"]` or `.get("customer_name")`, directly or through a name, and in Ruby `JSON.parse(response.body)["customer_name"]`, `fetch` or `dig`. A method called on a field, such as `order.lines.map(...)`, reads `lines` and nothing more.
 
 **Legitimate when:** the provider sends the field through a path suss could not read, a wrapper or a spread it flattened away. Suppress.
 

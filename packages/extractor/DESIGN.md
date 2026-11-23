@@ -69,6 +69,62 @@ The first test checks whether the branch contradicts the guard. It does not requ
 
 Guards are compared by the condition's polarity and the text it was written as, the same key a transition id is built from. An adapter therefore has to write a guard on an effect the same way it writes that guard on a branch. Otherwise the two never match, and the guard is treated as silence.
 
+## Which response fields a client reads
+
+A client's `expectedInput` lists the fields it reads off a response, and `misreadProviderResponse` compares that list with the bodies the provider sends. A client rarely reads a field off the response variable itself:
+
+```ts
+const res = await fetch(`/orders/${id}`);
+const order = await res.json();
+return order.customerName;
+```
+
+```python
+resp = requests.get(f"{BASE}/orders/{order_id}")
+order = resp.json()
+return order["customer_name"]
+```
+
+```ruby
+response = Faraday.get("#{BASE}/orders/#{id}")
+JSON.parse(response.body)["customer_name"]
+```
+
+`placesInResponse` in `responseReads.ts` says where a value is in the response, as the members read off the response to reach it: `["json", "customerName"]` for the first, `["body", "customer_name"]` for the last. It needs three things from the adapter:
+
+- **The walk.** `stopsOf` asks `@suss/resolution` with `wantedInputRead`, which follows a name to what it was written as and a read to what it was read off, and stops at a call. `order` stops at the call `res.json()`. A walk also stops at a node the adapter knows, because Python reads `requests.get(url)` as an entry of the `requests` module at a computed key, and the walk would otherwise go straight past the request.
+- **The request.** `isRequest` says which node is the call whose response this is. In a TypeScript helper the response was handed to, it is the helper's parameter instead.
+- **The steps.** `hopOf` says which nodes are a value taken from another: a body member such as `res.json()` or `response.body`, a decoder such as `JSON.parse(text)`, a key read such as `order["lines"]`, and in TypeScript the parameter of a `.then` callback. The adapter follows these itself, so only a name at the end of the steps costs a question, and every name a body reads is asked about at once.
+
+A value whose walk ends at the response along two different paths has no place, so the reads off it are left out. So does a value one of whose walks ends at anything else that could be a response, such as another call. A walk that ends at an expression written out, such as the literal default in `resp.json() if resp.ok else {}`, does not count against the place, since the caller reads the field off the response on the paths where it is the response. A read at a key the source computes leaves the key out of the walk's path, so a value read that way has no place either.
+
+The walk follows a name to its writes without regard to order, so a name a function writes twice leads every read of it to both:
+
+```python
+resp = requests.get(f"{BASE}/invoices")
+payer = resp.json()["payer_name"]
+resp = requests.get(f"{BASE}/receipts")
+return payer, resp.json()["total"]
+```
+
+A write later in the file than the read is a value the read never sees, so `writtenAfter` drops it, and `payer_name` goes on the invoices request. `total` could be either response as far as the walk can tell, so it goes on neither.
+
+Each read goes on the branches `readsOn` in `effectGuards.ts` puts it on, which is `firesOn` with one guard stricter. A call stays on a branch that says nothing about its guard, and for a call that is right. A read kept that way is wrong when the guard is a status test:
+
+```ts
+const res = await fetch(`/domains/${slug}`, { method: "DELETE" });
+if (res.status === 200) {
+  toast.success("Deleted");
+} else {
+  const { error } = await res.json();
+  toast.error(error.message);
+}
+```
+
+The caller has a fall-through branch with no conditions as well as the two arms. Under `firesOn` the fall-through reads `error`, the fall-through runs on a 200, and the 200 body has no `error`, so the check reported a misread that cannot happen. So a guard `decidesResponse` picks, a test on one of the pack's status or success members, has to be stated on the branch. Any other guard, such as `if (data.exists)`, keeps the `firesOn` rule, since it does not change which response the read sees. The loop rule is left out, since a read on an earlier pass says nothing about the response the branch ends on.
+
+`readShapeOf` turns the reads into the record a transition stores, nesting reads that share a member. A method called on a field of the body, such as `order.lines.map(...)`, is not itself a field, and the TypeScript reader drops it. Python and Ruby count only a key read, and only one under one of the pack's body members, since an attribute of the response object, such as `status_code`, is not part of the body.
+
 ## Extraction cache
 
 A second run over an unchanged repository returns the first run's summaries from disk, and a run after an edit re-extracts only the files the edit can affect. The TypeScript adapter keeps the cache in `.suss/cache/` beside the tsconfig, or in the walked directory when a run reads only part of the tsconfig, and turns it off for a project the caller supplied. `--no-cache` skips it for one run. In a git repository that directory is the one in the main checkout, at the same place, so every worktree of the repository uses one cache. "Worktrees share one cache" below says how. The rest of this section describes the design.

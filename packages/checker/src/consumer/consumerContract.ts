@@ -10,6 +10,7 @@ import {
   type DeclaredContract,
   readDeclaredContract,
   statusAccessorsFor,
+  successAccessorsFor,
   unwrapBodyField,
 } from "../contract/declaredContract.js";
 import {
@@ -18,6 +19,7 @@ import {
   makeBoundary,
   makeSide,
 } from "../coverage/responseMatch.js";
+import { branchRunsOnStatus } from "../coverage/statusRanges.js";
 
 import type {
   BehavioralSummary,
@@ -45,6 +47,7 @@ export function checkConsumerContract(
   }
 
   const statusAccessors = statusAccessorsFor(consumer);
+  const successAccessors = successAccessorsFor(consumer);
 
   for (const ct of consumer.transitions) {
     const expectedInput = ct.expectedInput;
@@ -57,7 +60,11 @@ export function checkConsumerContract(
       continue;
     }
 
-    const statuses = consumerExpectedStatuses(ct, statusAccessors);
+    // `!(res.status === 404)` mentions 404 and never runs on it.
+    const statuses = consumerExpectedStatuses(ct, statusAccessors).filter(
+      (status) =>
+        branchRunsOnStatus(ct, status, statusAccessors, successAccessors),
+    );
     const toCheck =
       statuses.length > 0
         ? statuses.flatMap((status) => {

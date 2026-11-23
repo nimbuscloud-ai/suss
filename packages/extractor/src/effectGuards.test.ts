@@ -5,6 +5,7 @@ import {
   effectsFiringOn,
   firesOn,
   guardsHoldOn,
+  readsOn,
   runsBefore,
 } from "./effectGuards.js";
 
@@ -70,6 +71,42 @@ describe("firesOn", () => {
 
     expect(firesOn(cleanup, endingAt(8))).toBe(true);
     expect(firesOn(cleanup, endingAt(4))).toBe(false);
+  });
+});
+
+describe("readsOn", () => {
+  const onStatus = (guard: RawCondition): boolean =>
+    guard.sourceText.startsWith("res.");
+  const site = { line: 3, preconditions: [condition("res.ok", "negative")] };
+
+  it("puts a read under a status test on the branch that states the test", () => {
+    const branch = endingAt(5, [condition("res.ok", "negative")]);
+    expect(readsOn(site, branch, onStatus)).toBe(true);
+  });
+
+  it("keeps a read under a status test off a branch that says nothing about it", () => {
+    expect(firesOn(site, endingAt(5))).toBe(true);
+    expect(readsOn(site, endingAt(5), onStatus)).toBe(false);
+  });
+
+  it("puts a read under any other guard on a branch that does not contradict it", () => {
+    const guarded = {
+      line: 3,
+      preconditions: [condition("data.exists", "positive")],
+    };
+    expect(readsOn(guarded, endingAt(5), onStatus)).toBe(true);
+    expect(
+      readsOn(
+        guarded,
+        endingAt(5, [condition("data.exists", "negative")]),
+        onStatus,
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps a read written after the terminal off it", () => {
+    expect(readsOn({ line: 9 }, endingAt(5), onStatus)).toBe(false);
+    expect(readsOn({ line: 4 }, endingAt(5), onStatus)).toBe(true);
   });
 });
 
