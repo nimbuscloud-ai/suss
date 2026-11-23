@@ -26,6 +26,7 @@ import {
   contentByBoundary,
   contractsCoveredByAnother,
 } from "./contractCopies.js";
+import { databasesDeclaredIn } from "./declaredDatabase.js";
 import {
   readPythonDependencies,
   readRubyDependencies,
@@ -52,7 +53,11 @@ import {
 import { bold, cyan, dim, green, yellow } from "./style.js";
 import { dependenciesThroughLocalPackages } from "./workspaces.js";
 
-import type { PackConfiguration, PackDeclaration } from "@suss/ir-core";
+import type {
+  PackConfiguration,
+  PackDeclaration,
+  ProjectValues,
+} from "@suss/ir-core";
 import type { ContractSource } from "./contract.js";
 import type { ContentByBoundary } from "./contractCopies.js";
 import type { UnreadDependencies } from "./dependencyManifests.js";
@@ -1063,7 +1068,7 @@ export interface ReadCommand {
    * another pack finds first, so run on its own it comes back empty.
    */
   effectsOnly: boolean;
-  /** Config files, from the directory init ran in, that a pack here cannot run without. */
+  /** The config files the command passes, from the directory init ran in, which have to be written before it runs. */
   needsConfig: string[];
 }
 
@@ -1097,12 +1102,16 @@ export function readCommands(
     if (language !== "typescript" || mixed) {
       args.push("--lang", language);
     }
+    const configs = items.flatMap((item) =>
+      passesItsConfig(item, report.root)
+        ? [{ item, file: path.join(directory, item.configuration?.file ?? "") }]
+        : [],
+    );
     for (const item of items) {
+      const config = configs.find((one) => one.item === item);
       args.push(
         "-f",
-        item.configuration === undefined
-          ? item.name
-          : `${item.name}=${path.join(directory, item.configuration.file)}`,
+        config === undefined ? item.name : `${item.name}=${config.file}`,
       );
     }
     const name = languages.length === 1 ? "code" : language;
@@ -1114,9 +1123,7 @@ export function readCommands(
       effectsOnly: !items.some(
         (item) => countsForProject(item) && item.kind !== "effects",
       ),
-      needsConfig: items
-        .filter((item) => item.configuration?.required === true)
-        .map((item) => path.join(directory, item.configuration?.file ?? "")),
+      needsConfig: configs.map((config) => config.file),
     };
   });
 
@@ -1141,6 +1148,24 @@ export function readCommands(
   );
 
   return [...extracts, ...contractCommands];
+}
+
+/**
+ * Whether a printed command passes the pack its config file. It does when
+ * the file is there, or when the report above the command says what to
+ * write to it, so every command runs once the report is followed. A pack
+ * that runs on its own defaults gets no file.
+ */
+function passesItsConfig(item: PackSuggestion, projectRoot: string): boolean {
+  const configuration = item.configuration;
+  if (configuration === undefined) {
+    return false;
+  }
+  return (
+    configuration.required ||
+    fs.existsSync(path.join(projectRoot, configuration.file)) ||
+    settledValues(configuration, projectRoot, item.language) !== null
+  );
 }
 
 const KIND_ORDER: Record<PackSuggestion["kind"], number> = {
@@ -1375,57 +1400,154 @@ function configurationLines(
       continue;
     }
 
-    lines.push(
-      ...packConfigurationLines(
-        item.name,
-        configuration,
-        projectRoot,
-        path.join(directory, configuration.file),
-      ),
+    const said = packConfigurationLines(
+      item,
+      configuration,
+      projectRoot,
+      path.join(directory, configuration.file),
     );
-    lines.push("");
+    if (said.length > 0) {
+      lines.push(...said, "");
+    }
   }
   return lines;
 }
 
+/**
+ * What to write to a pack's config file before the command that passes
+ * it runs. Every value comes with where the project states it, since a
+ * value init worked out is one the user should be able to check.
+ */
 function packConfigurationLines(
-  pack: string,
+  item: PackSuggestion,
   configuration: PackConfiguration,
   projectRoot: string,
   shown: string,
 ): string[] {
   if (fs.existsSync(path.join(projectRoot, configuration.file))) {
-    return [`   ${cyan(pack)} reads ${shown}, which is already here.`];
+    return [`   ${cyan(item.name)} reads ${shown}, which is already here.`];
   }
 
-  const values = valuesFor(configuration, projectRoot);
-  if (values !== null) {
+  const settled = settledValues(configuration, projectRoot, item.language);
+  if (settled !== null) {
     return [
-      `   ${cyan(pack)} reads ${shown}, and \`suss init --write\` writes this to it:`,
-      dim(`     ${JSON.stringify(values)}`),
+      `   ${cyan(item.name)} reads ${shown}.${settled.from === undefined ? "" : ` The value comes from ${settled.from}.`}`,
+      ...(settled.choice === undefined
+        ? []
+        : [`   ${yellow("!")} ${settled.choice}`]),
+      dim(`   Write this to ${shown}, or run \`suss init --write\`:`),
+      dim(`     ${JSON.stringify(settled.values)}`),
     ];
   }
 
+  if (!configuration.required) {
+    return [];
+  }
   return [
-    `   ${cyan(pack)} ${configurationNeed(configuration)} ${configuration.why}`,
+    `   ${cyan(item.name)} ${configurationNeed(configuration)} ${configuration.why}`,
     dim(`   Write that to ${shown}:`),
     dim(`     ${JSON.stringify(configuration.example)}`),
   ];
 }
 
+/** The values init writes for a pack, and where the project states them. */
+export interface SettledValues {
+  values: Record<string, unknown>;
+  /** Where the project states them. Absent when they are the pack's own defaults. */
+  from?: string;
+  /** Set when the project declares more than one database: which one init took, in a sentence. */
+  choice?: string;
+}
+
 /**
- * The values init writes for a pack: what the project says, over the
- * pack's defaults. Null when there is neither.
+ * The values init writes for a pack: what the pack reads from the
+ * project, then the database the project declares, over the pack's
+ * defaults. Null when there is none of them. `language` keeps a
+ * database driver another language's manifest lists out of the choice.
  */
+export function settledValues(
+  configuration: PackConfiguration,
+  projectRoot: string,
+  language?: Language,
+): SettledValues | null {
+  const read = configuration.readFromProject?.(projectRoot) ?? null;
+  const database = databaseFor(configuration, projectRoot, language, read);
+  if (
+    read === null &&
+    database === null &&
+    configuration.defaults === undefined
+  ) {
+    return null;
+  }
+
+  const from = read?.from ?? database?.from;
+  return {
+    values: {
+      ...configuration.defaults,
+      ...database?.values,
+      ...read?.values,
+    },
+    ...(from === undefined ? {} : { from }),
+    ...(database?.choice === undefined ? {} : { choice: database.choice }),
+  };
+}
+
 export function valuesFor(
   configuration: PackConfiguration,
   projectRoot: string,
+  language?: Language,
 ): Record<string, unknown> | null {
-  const read = configuration.readFromProject?.(projectRoot) ?? null;
-  if (read === null && configuration.defaults === undefined) {
+  return settledValues(configuration, projectRoot, language)?.values ?? null;
+}
+
+/**
+ * The database for a pack that takes one: what the pack read from the
+ * library's own settings, else the first one the project declares.
+ */
+function databaseFor(
+  configuration: PackConfiguration,
+  projectRoot: string,
+  language: Language | undefined,
+  read: ProjectValues | null,
+): (ProjectValues & { choice?: string }) | null {
+  const option = configuration.databaseOption;
+  if (option === undefined) {
     return null;
   }
-  return { ...configuration.defaults, ...read };
+
+  const stated = read?.values[option];
+  const found = [
+    ...(typeof stated === "string" && read !== null
+      ? [{ storageSystem: stated, from: read.from }]
+      : []),
+    ...databasesDeclaredIn(
+      projectRoot,
+      declaredLibraries(projectRoot).named.filter(
+        (library) =>
+          language === undefined || LANGUAGE_OF[library.ecosystem] === language,
+      ),
+    ),
+  ];
+  const [picked, ...rest] = found;
+  if (picked === undefined) {
+    return null;
+  }
+
+  const others = rest.filter(
+    (other, index) =>
+      other.storageSystem !== picked.storageSystem &&
+      rest.findIndex((one) => one.storageSystem === other.storageSystem) ===
+        index,
+  );
+  return {
+    values: { [option]: picked.storageSystem },
+    from: picked.from,
+    ...(others.length === 0
+      ? {}
+      : {
+          choice: `The project declares more than one database, and init took ${picked.storageSystem} from ${picked.from} over ${others.map((other) => `${other.storageSystem} from ${other.from}`).join(" and ")}.`,
+        }),
+  };
 }
 
 /** How much a pack reads without its config, as the start of a sentence that `why` finishes. */

@@ -231,6 +231,13 @@ export const declares: PackDeclaration = {
   dependencies: [{ ecosystem: "npm", name: "drizzle-orm" }],
   reads:
     "Drizzle ORM query-builder and relational-query calls. Each one becomes a storage-access interaction on the SQL table it touches.",
+  configuration: {
+    file: "suss.drizzle.json",
+    example: { storageSystem: "postgresql" },
+    required: false,
+    why: "which database the connection uses: postgresql, mysql, or sqlite. It assumes postgresql otherwise, and the calls do not pair with a store on another database.",
+    databaseOption: "storageSystem",
+  },
 };
 
 export default drizzleFramework;

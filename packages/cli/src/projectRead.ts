@@ -119,13 +119,15 @@ function withSettledConfig(entry: ReadEntry, report: InitReport): ReadEntry {
   return {
     ...entry,
     packs: entry.packs.map((spec) => {
-      const configuration = report.suggestions.find(
-        (one) => one.name === spec,
-      )?.configuration;
+      const suggestion = report.suggestions.find((one) => one.name === spec);
       const values =
-        configuration === undefined
+        suggestion?.configuration === undefined
           ? null
-          : valuesFor(configuration, report.root);
+          : valuesFor(
+              suggestion.configuration,
+              report.root,
+              suggestion.language,
+            );
       return values === null ? spec : `${spec}=${JSON.stringify(values)}`;
     }),
   };

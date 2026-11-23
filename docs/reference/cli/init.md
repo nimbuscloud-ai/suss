@@ -51,7 +51,17 @@ Interactively it asks four things: whether to install the packs, whether to writ
 
 With `--write` it asks nothing. It prints the same commands `--plain` prints, then writes `suss.json` for every project it found packs for, the same selection the interactive form starts with. It leaves the install, the `.sussignore` and the CI workflow to the interactive form.
 
-Either way, writing `suss.json` also writes the config file for each pack that takes one, such as `suss.graphql-ruby.json`, and `suss.json` lists the pack with its file, as in `graphql-ruby=suss.graphql-ruby.json`. The file gets the values a project the library's own generator made has, or the values the project already states elsewhere: the activerecord pack reads which database is behind the connection from the `adapter` lines in `config/database.yml`. A config file that is already there is kept as it is. When a pack needs a value that `init` can't work out, it leaves that pack out of `suss.json` and says what to write, because listing it would stop the whole extract for its language.
+Either way, writing `suss.json` also writes the config file for each pack that takes one, such as `suss.graphql-ruby.json`, and `suss.json` lists the pack with its file, as in `graphql-ruby=suss.graphql-ruby.json`. The file gets the values a project the library's own generator made has, or the values the project already states elsewhere, and the report says where each came from. A config file that is already there is kept as it is.
+
+The database packs, activerecord, sqlalchemy, sqlmodel, typeorm and drizzle, need to know which database is behind the connection. `init` takes it from the first of these it finds:
+
+1. What the library's own settings say: the development adapter in `config/database.yml`, or in the `database.yml.sample` an app checks in instead, for activerecord, and the `type` a TypeORM connection is made with.
+2. The scheme of a `DATABASE_URL` in `.env.example`, `.env.sample`, `.env.template`, `.env.dist` or `.env`, in the project or a folder above it in the repository.
+3. A driver the project depends on, such as `sqlite3` or `pg` in `Gemfile.lock`, `psycopg` or `asyncpg` in `pyproject.toml`, or `better-sqlite3` or `mysql2` in `package.json`.
+
+When the project declares more than one, such as `sqlite3` for development and `pg` for production, `init` takes the first and prints a line saying which it took over which. When a pack needs a value that `init` can't work out at all, `suss.json` still lists the pack, so every run reports that it reads nothing until the value is set, and `init` says what to write.
+
+Every command `init` prints runs as printed once the report above it is followed: a command passes a pack its config file only when the file is there or the report says what to write to it.
 
 `suss.json` is what [`extract`](/reference/cli/extract) reads when it is given no `-f`, and what [`inspect`](/reference/cli/inspect), [`check`](/reference/cli/check) and the MCP server read when they are given nothing. Without the file, those commands pick the same packs `init` would have picked, and print their choice on stderr.
 

@@ -144,7 +144,7 @@ npx @suss/cli extract --dir fixtures/ruby-rails -f rails -f activerecord=suss.ac
 npx @suss/cli inspect summaries/rails.json
 ```
 
-`suss.activerecord.json` sets which database is behind the connection. ActiveRecord works with several, and only `database.yml` records which one a project uses:
+`suss.activerecord.json` sets which database is behind the connection. ActiveRecord works with several, so the pack has to be told which one. `suss init` writes the file for you from the development adapter in `config/database.yml`, or the `database.yml.sample` an app checks in instead, and otherwise from the driver gem in `Gemfile.lock`. The sqlalchemy and sqlmodel packs get theirs the same way, from the driver in the Python manifest or the `DATABASE_URL` in an environment file:
 
 ```json
 { "storageSystem": "postgresql" }

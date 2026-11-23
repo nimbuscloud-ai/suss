@@ -79,6 +79,7 @@ export type {
   Ecosystem,
   PackConfiguration,
   PackDeclaration,
+  ProjectValues,
 } from "./packDeclaration.js";
 export type {
   BoundaryBehavior,

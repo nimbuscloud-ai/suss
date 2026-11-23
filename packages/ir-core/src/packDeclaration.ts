@@ -36,7 +36,14 @@ export interface PackConfiguration {
    * write them when there are no defaults. Null when the project does
    * not say.
    */
-  readFromProject?: (projectRoot: string) => Record<string, unknown> | null;
+  readFromProject?: (projectRoot: string) => ProjectValues | null;
+  /**
+   * The option that says which database is behind the connection, for a
+   * pack whose library talks to several. When `readFromProject` does not
+   * settle it, `suss init` works it out from the database drivers the
+   * project depends on and the `DATABASE_URL` in its environment file.
+   */
+  databaseOption?: string;
   /**
    * The options whose value is a file or directory path, either one
    * string or a list of them. A relative one is read against the config
@@ -45,6 +52,13 @@ export interface PackConfiguration {
    * pack look up classes in a directory that is not there.
    */
   paths?: readonly string[];
+}
+
+/** Values a project already states, and where, so init can say where each came from. */
+export interface ProjectValues {
+  values: Record<string, unknown>;
+  /** Where the project says so, as a phrase such as "the adapter in config/database.yml". */
+  from: string;
 }
 
 export interface PackDeclaration {

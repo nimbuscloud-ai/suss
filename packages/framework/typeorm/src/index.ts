@@ -302,6 +302,7 @@ export const declares: PackDeclaration = {
     defaults: { storageSystem: "postgresql" },
     why: "which database the connection uses: postgresql, mysql, or sqlite. It assumes postgresql otherwise, and the calls do not pair with a store on another database.",
     readFromProject: storageSystemFromDataSource,
+    databaseOption: "storageSystem",
   },
 };
 

@@ -16,6 +16,8 @@ import path from "node:path";
 
 import { ts } from "ts-morph";
 
+import type { ProjectValues } from "@suss/ir-core";
+
 /** The storage system behind each TypeORM driver the pack can pair. */
 const STORAGE_SYSTEM_OF_DRIVER: Record<string, string> = {
   postgres: "postgresql",
@@ -40,9 +42,12 @@ const UNPAIRED_DRIVERS = new Set([
 
 const CONNECTION_FACTORIES = new Set(["forRoot", "forRootAsync"]);
 
-const INSTALLED_PACKAGES = "node_modules";
+/** Installed packages, and the tests, whose connections are often to a database the app does not run on. */
+const SKIPPED_FOLDERS = new Set(["node_modules", "__tests__", "test", "tests"]);
 
 const SOURCE_FILE = /\.(?:[cm]?ts|[cm]?js)$/;
+
+const TEST_FILE = /\.(?:spec|test)\.[cm]?[jt]s$/;
 
 /**
  * `{ storageSystem }` for the one kind of database the project's TypeORM
@@ -50,8 +55,9 @@ const SOURCE_FILE = /\.(?:[cm]?ts|[cm]?js)$/;
  */
 export function storageSystemFromDataSource(
   projectRoot: string,
-): { storageSystem: string } | null {
+): ProjectValues | null {
   const systems = new Set<string>();
+  let first: string | null = null;
   for (const file of sourceFilesUnder(projectRoot)) {
     const text = fs.readFileSync(file, "utf8");
     if (!text.includes("typeorm")) {
@@ -64,12 +70,16 @@ export function storageSystemFromDataSource(
       const system = STORAGE_SYSTEM_OF_DRIVER[driver];
       if (system !== undefined) {
         systems.add(system);
+        first ??= file;
       }
     }
   }
   const [only] = systems;
-  return systems.size === 1 && only !== undefined
-    ? { storageSystem: only }
+  return systems.size === 1 && only !== undefined && first !== null
+    ? {
+        values: { storageSystem: only },
+        from: `the connection type in ${path.relative(projectRoot, first)}`,
+      }
     : null;
 }
 
@@ -84,7 +94,7 @@ function sourceFilesUnder(dir: string): string[] {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!entry.name.startsWith(".") && entry.name !== INSTALLED_PACKAGES) {
+      if (!entry.name.startsWith(".") && !SKIPPED_FOLDERS.has(entry.name)) {
         files.push(...sourceFilesUnder(full));
       }
       continue;
@@ -92,6 +102,7 @@ function sourceFilesUnder(dir: string): string[] {
     if (
       entry.isFile() &&
       SOURCE_FILE.test(entry.name) &&
+      !TEST_FILE.test(entry.name) &&
       !entry.name.endsWith(".d.ts")
     ) {
       files.push(full);
