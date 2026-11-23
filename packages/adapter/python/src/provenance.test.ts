@@ -156,6 +156,50 @@ describe("where a FastAPI route's query values came from", () => {
     expect(unit.inputReads).toEqual([{ input: "x_tenant_id", path: [] }]);
   });
 
+  it("writes the subject of a match on a parameter as a read of that input", async () => {
+    const route = write("app/routes.py", [
+      "from fastapi import FastAPI, HTTPException",
+      "",
+      "app = FastAPI()",
+      "",
+      '@app.get("/orders")',
+      "def list_orders(scope: str, owner: str | None):",
+      "    match scope:",
+      '        case "mine":',
+      "            raise HTTPException(status_code=401)",
+      "        case None:",
+      "            raise HTTPException(status_code=400)",
+      "    match owner:",
+      "        case None:",
+      "            raise HTTPException(status_code=404)",
+      "    return []",
+      "",
+    ]);
+
+    const unit = await unitNamed("list_orders", [route], [fastapiLike]);
+
+    const scope = { type: "input", inputRef: "scope", path: [] };
+    expect(
+      unit.transitions.map((transition) => transition.conditions[0]),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          type: "comparison",
+          left: scope,
+          op: "eq",
+          right: { type: "literal", value: "mine" },
+        },
+        { type: "nullCheck", subject: scope, negated: false },
+      ]),
+    );
+    expect(unit.inputReads).toEqual(
+      expect.arrayContaining([
+        { input: "scope", path: [] },
+        { input: "owner", path: [] },
+      ]),
+    );
+  });
+
   it("writes a value a builtin converted as converted from the input", async () => {
     const route = write("app/routes.py", [
       "from fastapi import Depends, FastAPI",

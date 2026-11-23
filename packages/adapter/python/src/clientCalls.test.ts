@@ -227,6 +227,51 @@ describe("a function that calls a request function", () => {
     });
   });
 
+  it("says which value of the parameter picks each request when a match on it picks one", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        'def send_it(verb="get"):',
+        "    match verb:",
+        '        case "get":',
+        '            return httpclient.get("/orders")',
+        '        case "post" | "create":',
+        '            return httpclient.post("/orders")',
+      ].join("\n"),
+    );
+    const verbIs = (value: string) => ({
+      type: "comparison",
+      left: { type: "input", inputRef: "verb", path: [] },
+      op: "eq",
+      right: { type: "literal", value },
+    });
+
+    expect(
+      units.map((unit) => [
+        unit.boundaryBinding?.semantics.name === "rest"
+          ? unit.boundaryBinding.semantics.method
+          : null,
+        unit.bindingFrom?.when?.map((one) => [one.polarity, one.structured]),
+      ]),
+    ).toEqual([
+      ["GET", [["positive", verbIs("get")]]],
+      [
+        "POST",
+        [
+          [
+            "positive",
+            {
+              type: "compound",
+              op: "or",
+              operands: [verbIs("post"), verbIs("create")],
+            },
+          ],
+        ],
+      ],
+    ]);
+  });
+
   it("says nothing about a call with no arguments at all", async () => {
     const units = await unitsIn(
       [

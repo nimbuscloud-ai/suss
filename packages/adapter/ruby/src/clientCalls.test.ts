@@ -149,6 +149,49 @@ describe("a method whose request comes from its parameters", () => {
     ]);
   });
 
+  it("says which value of the parameter picks each request when a case on it picks one", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def send_it(url, verb = :get)",
+        "    case verb",
+        "    when :get then HttpClient.get(url)",
+        "    when :post, :create then HttpClient.post(url)",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    const verbIs = (value: string) => ({
+      type: "comparison",
+      left: { type: "input", inputRef: "verb", path: [] },
+      op: "eq",
+      right: { type: "literal", value },
+    });
+
+    expect(
+      units.map((unit) => [
+        boundary([unit]).method,
+        unit.bindingFrom?.when?.map((one) => [one.polarity, one.structured]),
+      ]),
+    ).toEqual([
+      ["GET", [["positive", verbIs("get")]]],
+      [
+        "POST",
+        [
+          [
+            "positive",
+            {
+              type: "compound",
+              op: "or",
+              operands: [verbIs("post"), verbIs("create")],
+            },
+          ],
+        ],
+      ],
+    ]);
+  });
+
   it("records nothing for a method with no parameters", async () => {
     const units = await unitsIn(
       [
@@ -428,6 +471,44 @@ describe("a method that calls a request method", () => {
       type: "comparison",
       left: { type: "dependency", name: "response", accessChain: ["status"] },
       right: { type: "literal", value: 404 },
+    });
+  });
+
+  it("gives each arm of a case on the status a branch, with the status it tests", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def load",
+        '    response = HttpClient.get("/orders")',
+        "    case response.status",
+        "    when 200 then @orders = response.body",
+        "    when 404, 410 then @orders = []",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n"),
+      requestCalls({ response: { statusCode: ["status"] } }),
+    );
+
+    expect(outline(units[0])).toEqual([
+      "return positive response.status == 200",
+      "return positive response.status == 404 || response.status == 410",
+      "return negative response.status == 200 & negative response.status == 404 || response.status == 410",
+    ]);
+    const status = {
+      type: "dependency",
+      name: "response",
+      accessChain: ["status"],
+    };
+    expect(units[0]?.branches[1]?.conditions[0]?.structured).toEqual({
+      type: "compound",
+      op: "or",
+      operands: [404, 410].map((value) => ({
+        type: "comparison",
+        left: status,
+        op: "eq",
+        right: { type: "literal", value },
+      })),
     });
   });
 

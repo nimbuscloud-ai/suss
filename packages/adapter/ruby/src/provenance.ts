@@ -112,6 +112,9 @@ const BRANCHING = new Set([
   "conditional",
 ]);
 
+/** A `case` arm is a condition of its own, read off the arm. */
+const CASE_ARMS = new Set(["when", "in_clause"]);
+
 /** The subjects of every branch condition written in a method. */
 function guardSubjectsIn(method: RbNode): RbNode[] {
   const found: RbNode[] = [];
@@ -121,6 +124,9 @@ function guardSubjectsIn(method: RbNode): RbNode[] {
       : null;
     if (condition !== null) {
       found.push(...operandsOf(condition));
+    }
+    if (CASE_ARMS.has(node.type)) {
+      found.push(...operandsOf(node));
     }
     for (const child of children(node)) {
       visit(child);

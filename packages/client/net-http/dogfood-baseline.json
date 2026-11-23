@@ -1,7 +1,7 @@
 {
   "name": "@suss/client-net-http",
   "exports": 2,
-  "internal": 0,
-  "consumers": 4,
+  "internal": 1,
+  "consumers": 5,
   "unfollowedCalls": 0
 }

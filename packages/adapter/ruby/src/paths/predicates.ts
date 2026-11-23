@@ -14,9 +14,11 @@ import {
   numberLiteralValue,
   stringLiteralValue,
 } from "../ast.js";
+import { caseArmOf, patternTestText } from "./caseArms.js";
 
 import type { Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { RbNode } from "../parser.js";
+import type { CaseArm, PatternTest } from "./caseArms.js";
 
 /** The operators the IR models, by the text Ruby writes them as. */
 const OPERATORS: Record<string, "eq" | "neq" | "gt" | "gte" | "lt" | "lte"> = {
@@ -49,6 +51,11 @@ const JOINING = new Set(["&&", "||", "and", "or"]);
 
 /** What one condition tests. */
 export function predicateOf(node: RbNode, inputs?: GuardInputs): Predicate {
+  const arm = caseArmOf(node);
+  if (arm !== null) {
+    return caseArmPredicate(arm, inputs);
+  }
+
   if (node.type === "parenthesized_statements") {
     const inner = node.namedChild(0);
     return inner == null ? opaqueOf(node) : predicateOf(inner, inputs);
@@ -97,6 +104,16 @@ export function predicateOf(node: RbNode, inputs?: GuardInputs): Predicate {
  * can ask where all of them came from before it builds any predicate.
  */
 export function operandsOf(node: RbNode): RbNode[] {
+  const arm = caseArmOf(node);
+  if (arm !== null) {
+    const tested = arm.tests.flatMap((test) =>
+      (OPERANDS[test.kind] as (one: PatternTest) => RbNode[])(test),
+    );
+    return arm.guard === null
+      ? tested
+      : [...tested, ...operandsOf(arm.guard.test)];
+  }
+
   if (node.type === "parenthesized_statements") {
     const inner = node.namedChild(0);
     return inner == null ? [] : operandsOf(inner);
@@ -160,6 +177,75 @@ function binaryOf(node: RbNode, inputs: GuardInputs | undefined): Predicate {
     };
   }
   return opaqueOf(node);
+}
+
+type PatternReading<T> = {
+  [K in PatternTest["kind"]]: (
+    test: Extract<PatternTest, { kind: K }>,
+    inputs: GuardInputs | undefined,
+  ) => T;
+};
+
+const quotedTest = (test: PatternTest): Predicate => ({
+  type: "opaque",
+  sourceText: patternTestText(test),
+  reason: "complexExpression",
+});
+
+const PATTERN_PREDICATES: PatternReading<Predicate> = {
+  equals: (test, inputs) => ({
+    type: "comparison",
+    left: valueRefOf(test.subject, inputs),
+    op: "eq",
+    right: valueRefOf(test.pattern, inputs),
+  }),
+  caseEquals: quotedTest,
+  matches: quotedTest,
+  condition: (test, inputs) => predicateOf(test.test, inputs),
+};
+
+/** The nodes each test's predicate reads a value from, as `operandsOf` gives them for a comparison. */
+const OPERANDS: PatternReading<RbNode[]> = {
+  equals: (test) => [test.subject, test.pattern],
+  caseEquals: () => [],
+  matches: () => [],
+  condition: (test) => operandsOf(test.test),
+};
+
+/** Any one of an arm's tests picks it, and its guard must also be true. */
+function caseArmPredicate(
+  arm: CaseArm,
+  inputs: GuardInputs | undefined,
+): Predicate {
+  const tests = arm.tests.map((test) =>
+    (
+      PATTERN_PREDICATES[test.kind] as (
+        one: PatternTest,
+        given: GuardInputs | undefined,
+      ) => Predicate
+    )(test, inputs),
+  );
+  const guard = arm.guard === null ? [] : [guardPredicate(arm.guard, inputs)];
+  return joined("and", [
+    ...(tests.length === 0 ? [] : [joined("or", tests)]),
+    ...guard,
+  ]);
+}
+
+function guardPredicate(
+  guard: NonNullable<CaseArm["guard"]>,
+  inputs: GuardInputs | undefined,
+): Predicate {
+  const test = predicateOf(guard.test, inputs);
+  return guard.negated ? { type: "negation", operand: test } : test;
+}
+
+/** Several predicates joined with `op`, or the one predicate when there is only one. */
+function joined(op: "and" | "or", operands: Predicate[]): Predicate {
+  const [only] = operands;
+  return operands.length === 1 && only !== undefined
+    ? only
+    : { type: "compound", op, operands };
 }
 
 /** The value one side of a test reads. */

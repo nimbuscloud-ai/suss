@@ -108,6 +108,10 @@ function guardSubjectsIn(fn: PyNode): PyNode[] {
     if (condition !== null) {
       found.push(...conditionSubjects(condition));
     }
+    // A case of a `match` is a condition of its own, read off the clause.
+    if (node.type === "case_clause") {
+      found.push(...operandsOf(node));
+    }
     for (const child of children(node)) {
       visit(child);
     }
