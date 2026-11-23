@@ -112,6 +112,20 @@ describe("the database a Rails app connects to, from config/database.yml", () =>
     expect(storageSystemFromDatabaseYml(root)).toBeNull();
   });
 
+  it("passes over a key whose value is not a block of settings", () => {
+    databaseYml(
+      "version: 2\ndevelopment:\n  adapter: postgresql\nproduction:\n",
+    );
+
+    expect(systemOf()).toBe("postgresql");
+  });
+
+  it("does not say when the file is not a mapping of environments", () => {
+    databaseYml("- adapter: postgresql\n");
+
+    expect(storageSystemFromDatabaseYml(root)).toBeNull();
+  });
+
   it("reads the adapter lines of a file whose YAML does not parse", () => {
     databaseYml("production:\n  adapter: postgresql\n  pool: [\n");
 
