@@ -207,6 +207,30 @@ describe("checkConsumerContract", () => {
     expect(findings[0].kind).toBe("lowConfidence");
   });
 
+  it("checks the path after `if (res.status === 404) return` against the 2xx body, not the 404 one", () => {
+    const p = withContractBodies(
+      provider("getUser", [
+        transition("t-200", { output: response(200), isDefault: true }),
+      ]),
+      [
+        { statusCode: 200, body: record({ id: text, email: text }) },
+        { statusCode: 404, body: record({ error: text }) },
+      ],
+    );
+    const c = consumer("UserPage", [
+      {
+        ...transition("ct-rest", {
+          conditions: [{ type: "negation", operand: statusEq(404) }],
+          output: { type: "return", value: null },
+          isDefault: true,
+        }),
+        expectedInput: record({ body: record({ email: unknown }) }),
+      },
+    ]);
+
+    expect(checkConsumerContract(p, c)).toEqual([]);
+  });
+
   it("handles declared dictionary body (any field access is valid)", () => {
     const p = withContractBodies(
       provider("getConfig", [

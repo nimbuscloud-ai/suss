@@ -232,7 +232,7 @@ The path runs on a response the provider sends, reads a field that response's bo
 
 - A field any of the consumer's guards test is never reported. `if (res.error)` is how the consumer tells the failure body apart, so `error` coming back undefined on the 200 is what the consumer was testing for.
 - A body with spreads or an opaque shape is not checked, and a status the provider returns with several bodies fires only when every one of them lacks the field.
-- The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
+- The branch has to run on the response: a status guard, a range such as `!res.ok`, or the fall-through over the 2xx class. A guard is read the way round it is written, so the `else` of `res.status === 200` and the code after `if (res.ok) return` never run on a 200. A branch guarded on a body field never runs on a response whose body cannot satisfy the guard.
 - A response declared as a range is one response that may arrive with any status in it, so a branch on 404 is judged against the `4XX` body and the finding says which.
 
 **Legitimate when:** the provider sends the field through a path suss could not read, a wrapper or a spread it flattened away. Suppress.

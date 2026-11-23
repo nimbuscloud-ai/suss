@@ -161,6 +161,71 @@ describe("checkResponseMisread", () => {
     expect(findings[0].description).toContain("does not include it");
   });
 
+  it("keeps the else of a status test off the status it tests", () => {
+    // `if (res.status === 200) { ... } else { show((await res.json()).error) }`
+    // against a provider whose failures come from a handler suss did not read.
+    const p = provider("api", [
+      transition("t-200", { output: response(200, record({ slug: text })) }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-200", { conditions: [statusEq(200)], fields: [] }),
+      reading("ct-else", {
+        conditions: [{ type: "negation", operand: statusEq(200) }],
+        fields: ["error"],
+      }),
+    ]);
+
+    expect(checkResponseMisread(p, c)).toEqual([]);
+  });
+
+  it("keeps the path after `if (res.ok) return` off the 2xx class", () => {
+    const p = provider("api", [
+      transition("t-200", { output: response(200, record({ slug: text })) }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-rest", {
+        isDefault: true,
+        conditions: [successFlag(true)],
+        fields: ["error"],
+      }),
+    ]);
+
+    expect(checkResponseMisread(p, c)).toEqual([]);
+  });
+
+  it("still judges the path after `if (res.ok) return` against a failure body", () => {
+    const p = provider("api", [
+      transition("t-200", { output: response(200, record({ slug: text })) }),
+      transition("t-404", { output: response(404, record({ message: text })) }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-rest", {
+        isDefault: true,
+        conditions: [successFlag(true)],
+        fields: ["error"],
+      }),
+    ]);
+
+    const findings = checkResponseMisread(p, c);
+    expect(findings.map((f) => f.provider.transitionId)).toEqual(["t-404"]);
+  });
+
+  it("keeps the path after `if (res.status === 404) return` off the 404", () => {
+    const p = provider("api", [
+      transition("t-200", { output: response(200, record({ items: text })) }),
+      transition("t-404", { output: response(404, record({ message: text })) }),
+    ]);
+    const c = consumer("client", [
+      reading("ct-rest", {
+        isDefault: true,
+        conditions: [{ type: "negation", operand: statusEq(404) }],
+        fields: ["items"],
+      }),
+    ]);
+
+    expect(checkResponseMisread(p, c)).toEqual([]);
+  });
+
   it("checks each status a consumer branches on independently", () => {
     const p = provider("api", [
       transition("t-200", { output: response(200, record({ data: text })) }),
