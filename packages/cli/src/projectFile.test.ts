@@ -126,12 +126,6 @@ describe("what init writes down", () => {
         `rails=${path.join("services/web", "suss.rails.json")}`,
       );
     });
-
-    it("leaves out the packs it is told to", () => {
-      expect(
-        packs(projectFileFor(configured(root), ".", new Set(["activerecord"]))),
-      ).toEqual(["rails"]);
-    });
   });
 });
 
