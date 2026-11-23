@@ -42,6 +42,32 @@ async function pathsFor(source: string) {
   return { returns, result };
 }
 
+/** The calls to these methods written as statements of their own, each standing in as a terminal. */
+async function callPathsFor(source: string, names: readonly string[]) {
+  const tree = await parseRuby(source);
+  const method = tree.rootNode.namedChildren[0] as RbNode;
+  const body = field(method, "body");
+  const calls: RbNode[] = [];
+  const walk = (node: RbNode) => {
+    for (const child of node.namedChildren) {
+      if (child === null) {
+        continue;
+      }
+      if (child.type === "identifier" && names.includes(child.text)) {
+        calls.push(child);
+      }
+      walk(child);
+    }
+  };
+  walk(body as RbNode);
+  const lowered = lowerRubyBody(body, calls);
+  const result = enumerateStructuredPaths({
+    statements: lowered.statements,
+    terminalsByStmt: lowered.terminalsByStmt,
+  });
+  return { calls, result };
+}
+
 describe("ruby lowering feeds the shared path engine", () => {
   it("gives each return of an if/else its own condition set", async () => {
     const { returns, result } = await pathsFor(
@@ -250,6 +276,54 @@ describe("ruby lowering feeds the shared path engine", () => {
         ? null
         : predicateOf(medium.expression).type,
     ).toBe("compound");
+  });
+
+  it("reads the arms of a case written as the value an assignment stores", async () => {
+    const { calls, result } = await callPathsFor(
+      [
+        "def send_it(verb)",
+        "  response = case verb",
+        "  when :get then fetch_one",
+        "  when :post then create_one",
+        "  end",
+        "  response",
+        "end",
+      ].join("\n"),
+      ["fetch_one", "create_one"],
+    );
+    expect(
+      calls.map((call) =>
+        result.byTerminal
+          .get(call)
+          ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+      ),
+    ).toEqual([
+      [[["verb == :get", "positive"]]],
+      [[["verb == :post", "positive"]]],
+    ]);
+  });
+
+  it("reads an if written as the value of an assignment, even one assigned on again", async () => {
+    const { calls, result } = await callPathsFor(
+      [
+        "def pick(ok)",
+        "  first = second = if ok then fetch_one else fetch_two end",
+        "  @cached ||= case ok when true then fetch_three end",
+        "end",
+      ].join("\n"),
+      ["fetch_one", "fetch_two", "fetch_three"],
+    );
+    expect(
+      calls.map((call) =>
+        result.byTerminal
+          .get(call)
+          ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
+      ),
+    ).toEqual([
+      [[["ok", "positive"]]],
+      [[["ok", "negative"]]],
+      [[["ok == true", "positive"]]],
+    ]);
   });
 
   it("reads an in arm as the pattern it matches, under its guard, and raises when none matches", async () => {

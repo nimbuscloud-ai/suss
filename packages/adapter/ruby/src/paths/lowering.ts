@@ -135,6 +135,36 @@ function callHeaderOf(call: RbNode, block: RbNode): ConditionHandle<RbNode> {
   };
 }
 
+/** The branches a body lowers, by node type, with the field their test is written in. */
+const BRANCH_HEADERS: Record<string, string> = {
+  if: "condition",
+  unless: "condition",
+  case: "value",
+  case_match: "value",
+};
+
+const ASSIGNMENTS = new Set(["assignment", "operator_assignment"]);
+
+interface AssignedBranch {
+  readonly branch: RbNode;
+  readonly header: RbNode | null;
+}
+
+/** The branch whose value an assignment stores, `res = case method ... end`, or null. */
+function branchAssignedBy(node: RbNode): AssignedBranch | null {
+  const value = ASSIGNMENTS.has(node.type) ? field(node, "right") : null;
+  if (value === null) {
+    return null;
+  }
+  if (ASSIGNMENTS.has(value.type)) {
+    return branchAssignedBy(value);
+  }
+  const header = BRANCH_HEADERS[value.type];
+  return header === undefined
+    ? null
+    : { branch: value, header: field(value, header) };
+}
+
 /**
  * `case ... in` with no `else` raises when no arm matches, so that path
  * ends there.
@@ -448,6 +478,13 @@ class Lowerer {
     return otherwise === null ? null : this.lowerBlock(otherwise);
   }
 
+  /** The construct a branch written as a statement or as an assignment's value lowers to. */
+  private lowerBranch(node: RbNode): StructuredStatement<RbNode> {
+    return node.type === "case" || node.type === "case_match"
+      ? this.lowerCase(node)
+      : this.lowerIf(node);
+  }
+
   /**
    * `respond_to do |format| ... end` runs one arm per request, picked by
    * the format the request accepts, so it lowers to a switch with an arm
@@ -566,6 +603,16 @@ class Lowerer {
 
     if (node.type === "case" || node.type === "case_match") {
       return this.attach(this.lowerCase(node), [field(node, "value")]);
+    }
+
+    // `res = case method ... end` runs one arm the same as the statement
+    // would, and the calls in each arm are statements of their own.
+    const assigned = branchAssignedBy(node);
+    if (assigned !== null) {
+      return this.attach(this.lowerBranch(assigned.branch), [
+        node,
+        assigned.header,
+      ]);
     }
 
     // Rails raises on a second render, so a statement that responds is the
