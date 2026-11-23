@@ -22,7 +22,7 @@ export {
 
 export type { AdapterCodeStamp } from "@suss/extractor";
 
-export const ADAPTER_VERSION = "0.2.3";
+export const ADAPTER_VERSION = "0.2.4";
 
 const stamp = createAdapterStamp({
   moduleUrl: import.meta.url,

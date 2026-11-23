@@ -531,6 +531,12 @@ export interface ValueOps {
    */
   parameterAt?(fn: ValueOps): number | null;
   /**
+   * The name of `fn`'s parameter this value is, whether or not a call
+   * can pass it by position, as Python's keyword-only parameters cannot.
+   * Null for any other value.
+   */
+  parameterNamed?(fn: ValueOps): string | null;
+  /**
    * Where this value is declared under a name: the file, and the name of
    * the variable, function or class, followed through imports, renames and
    * re-exports to the module that writes it. The name is null for a value

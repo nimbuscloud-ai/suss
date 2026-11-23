@@ -70,7 +70,7 @@ import { askSourcesOfBodies, withSlotSources } from "../provenance.js";
 import { withEffectsThatRun } from "../responseStatus.js";
 import { callbacksReached, storageClaims } from "../storage.js";
 import { exampleCalls } from "../testCases.js";
-import { forgetEvaluations } from "../values/evaluator.js";
+import { forgetEvaluations, parameterDefaults } from "../values/evaluator.js";
 import {
   calleeSpellings,
   dispatchedCalls,
@@ -89,6 +89,7 @@ import type {
   ParameterCall,
   ReceiverClass,
   UnfollowedCall,
+  ValueRef,
 } from "@suss/behavioral-ir";
 import type {
   ExtractorOptions,
@@ -1264,7 +1265,10 @@ export function libraryUnit(
   const { file, node, name, exportPath } = target;
   const body = bodyOfMethod(node, file, options);
   const range = rangeOf(node);
-  const parameters = positionalParameters(node);
+  const parameters = positionalParameters(
+    node,
+    parameterDefaults(node, claimsFactsOf(options)),
+  );
   const flags = optionParserFlagReads(
     node,
     parameters.map((parameter) => parameter.name),
@@ -1319,7 +1323,11 @@ export function libraryUnit(
   };
 }
 
-function positionalParameters(node: RbNode): RawParameter[] {
+/** A method's parameters as a summary lists them, with the defaults given for them. */
+export function positionalParameters(
+  node: RbNode,
+  defaults: ReadonlyMap<string, ValueRef> = new Map(),
+): RawParameter[] {
   const parameters = field(node, "parameters");
   if (parameters === null) {
     return [];
@@ -1331,7 +1339,14 @@ function positionalParameters(node: RbNode): RawParameter[] {
     if (name === null) {
       continue;
     }
-    out.push({ name, position, role: name, typeText: null });
+    const fallback = defaults.get(name);
+    out.push({
+      name,
+      position,
+      role: name,
+      typeText: null,
+      ...(fallback === undefined ? {} : { default: fallback }),
+    });
     position += 1;
   }
   return out;

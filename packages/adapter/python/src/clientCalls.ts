@@ -14,7 +14,7 @@
  */
 
 import { restBinding, statusMembersOf, testsStatus } from "@suss/behavioral-ir";
-import { runPackHook } from "@suss/extractor";
+import { requestBindingFrom, runPackHook } from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
 
 import { children, field, isFunction, rangeOf, spanOf } from "./ast.js";
@@ -25,16 +25,20 @@ import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
 import {
   bodyCalls,
   expressionInvocationEffects,
+  type InvocationSite,
   invocationSites,
   ownBodyCalls,
 } from "./paths/effects.js";
 import { predicateOf } from "./paths/predicates.js";
 import { raisesIn } from "./paths/raisedResponses.js";
+import { askSourcesOfValues, sourcesOfValues } from "./provenance.js";
+import { positionalParameters } from "./reach/closure.js";
 import {
   type HandOffOptions,
   throughResponseHelpers,
 } from "./responseHandOff.js";
-import { moduleOf } from "./values/evaluator.js";
+import { moduleOf, parameterDefaults } from "./values/evaluator.js";
+import { isMethod } from "./values/lowering.js";
 import { originOf } from "./values/origin.js";
 
 import type { StatusMembers } from "@suss/behavioral-ir";
@@ -47,6 +51,7 @@ import type {
   RawEffect,
   RequestClaim,
   RequestRecognizer,
+  ValueOps,
 } from "@suss/extractor";
 import type { PythonPack } from "./pack.js";
 import type { PyNode } from "./parser.js";
@@ -67,7 +72,7 @@ interface Requesting {
   readonly pack: PythonPack;
   readonly hooks: readonly {
     readonly hook: RequestRecognizer;
-    readonly units: RawCodeStructure[];
+    readonly units: FoundUnit[];
   }[];
 }
 
@@ -103,12 +108,13 @@ export function clientCallUnits(
       for (const { pack, hooks } of requesting) {
         for (const { hook, units } of hooks) {
           for (const claim of claimsAt(hook, call, ops, pack, options)) {
-            units.push(
-              clientUnit(caller, name, { claim, call }, hook.response, pack, {
-                ...options,
-                facts,
-              }),
-            );
+            units.push({
+              caller,
+              name,
+              request: { claim, call },
+              response: hook.response,
+              pack,
+            });
           }
         }
       }
@@ -124,7 +130,41 @@ export function clientCallUnits(
       requestsBy(claim.lambda, claim.name, ownBodyCalls(claim.lambda, facts));
     }
   }
-  return requesting.flatMap(({ hooks }) => hooks.flatMap(({ units }) => units));
+  const found = requesting.flatMap(({ hooks }) =>
+    hooks.flatMap(({ units }) => units),
+  );
+  askSourcesOfValues(
+    found.flatMap(({ caller, request }) =>
+      takesParameters(caller) ? statedValues(request.claim) : [],
+    ),
+    facts,
+  );
+  return found.map((one) =>
+    clientUnit(one.caller, one.name, one.request, one.response, one.pack, {
+      ...options,
+      facts,
+    }),
+  );
+}
+
+/** A request a hook found, before its unit is built. */
+interface FoundUnit {
+  readonly caller: PyNode;
+  readonly name: string;
+  readonly request: FoundRequest;
+  readonly response: ClientResponse;
+  readonly pack: PythonPack;
+}
+
+/** Only a function with parameters can take its request's method or host from one. */
+function takesParameters(definition: PyNode): boolean {
+  return positionalParameters(definition, isMethod(definition)).length > 0;
+}
+
+function statedValues(claim: RequestClaim): ValueOps[] {
+  return [claim.read.stated?.method, claim.read.stated?.host?.value].filter(
+    (value): value is ValueOps => value !== undefined,
+  );
 }
 
 /** The requests one hook reads at the call. A hook that throws is charged to its pack, and the call makes none. */
@@ -200,6 +240,7 @@ function functionDefinitions(node: PyNode, found: PyNode[] = []): PyNode[] {
 function callerBranches(
   definition: PyNode,
   reading: CallerReading,
+  read?: readonly InvocationSite[],
 ): RawBranch[] {
   const range = rangeOf(definition);
   // A lambda is one expression, so it takes one path and has no
@@ -216,7 +257,7 @@ function callerBranches(
     ];
   }
   const body = field(definition, "body");
-  const sites = invocationSites(definition, reading.facts);
+  const sites = read ?? invocationSites(definition, reading.facts);
   const effects = sites.map((site) => site.effect);
   if (body === null) {
     return [handsBack(range, effects)];
@@ -343,6 +384,18 @@ function clientUnit(
     },
   };
   const { claim } = request;
+  const sites =
+    definition.type === "lambda"
+      ? undefined
+      : invocationSites(definition, options.facts);
+  const bindingFrom = takesParameters(definition)
+    ? requestBindingFrom(
+        claim.read.stated,
+        sites?.find((one) => one.call.id === request.call.id)?.effect
+          .preconditions ?? [],
+        sourcesOfValues({ facts: options.facts, unit: definition }),
+      )
+    : undefined;
   return {
     identity: {
       name,
@@ -361,8 +414,18 @@ function clientUnit(
       host: claim.host,
       recognition: pack.name,
     }),
-    parameters: [],
-    branches: callerBranches(definition, reading),
+    // `bindingFrom` points at parameters by name, so the unit lists them.
+    ...(bindingFrom === undefined
+      ? { parameters: [] }
+      : {
+          bindingFrom,
+          parameters: positionalParameters(
+            definition,
+            isMethod(definition),
+            parameterDefaults(definition, options.facts),
+          ),
+        }),
+    branches: callerBranches(definition, reading, sites),
     ...accessors,
     ...(claim.redirectDelivery === undefined
       ? {}

@@ -22,6 +22,7 @@ end
 `fetch` comes back as a client of `GET /orders/{id}`, and `create` as a client of `POST /v1/orders`. They pair with whatever serves those routes in the same run. That can be a Rails action in this project, a handler from another repository whose summaries are in the same folder, or an OpenAPI document read with `suss contract`.
 
 - **The request methods**: `get`, `post`, `put`, `patch`, `delete`, `head` and `options`, on the module itself or on a connection, each taking the URL first.
+- **`run_request(method, url, body, headers)`**, which sends the method it is given. When that method is a parameter of the method the call is in and nothing settles it, the client has a null method, and its `bindingFrom` says the method is that parameter.
 - **A connection**: `conn = Faraday.new(url: ...)`, followed by a call on `conn`. The connection can be a local, an instance variable the class sets, or a method of the class that returns it. The call's path is resolved against the base URL the way Faraday resolves it, which follows RFC 3986. On a connection built on `/v1`, `conn.post("orders")` goes to `/v1/orders`, and `conn.post("/orders")` goes to `/orders`, because a path that starts with a slash replaces the base's path.
 - **The URL**: read through the same value evaluator a Rails route path goes through, so `"#{ORDERS_BASE}/orders/#{id}"` resolves to `/orders/{id}`. A URL with a host is reported by its path alone, since a route does not declare a host.
 

@@ -22,9 +22,11 @@ import {
 import {
   anyOf,
   constructedFrom,
+  httpRequests,
   imported,
   messageSends,
   pack,
+  requestRecognizersOf,
   returnedBy,
   sqlStatements,
   storageCalls,
@@ -1236,6 +1238,96 @@ function fieldsWritten(effect: unknown): readonly string[] | null {
     ? written.interaction.fields
     : null;
 }
+
+// A client whose `deliver` takes the method first and the URL after it,
+// with no method of its own to fall back on.
+const DELIVERIES = httpRequests({ client: constructedFrom("webkit", "Webkit") })
+  .methods({ deliver: { sends: { from: { at: 0 } }, url: { at: 1 } } })
+  .example('Webkit().deliver("POST", "https://api.example.com/orders")');
+
+const DELIVERING = {
+  name: "delivering",
+  protocol: "http",
+  discovery: [],
+  requestRecognizers: requestRecognizersOf([DELIVERIES]),
+};
+
+const PYTHON_HELPER = [
+  "from webkit import Webkit",
+  "",
+  'def deliver(url, verb="GET"):',
+  "    return Webkit().deliver(verb, url)",
+].join("\n");
+
+const RUBY_HELPER = [
+  'def deliver(url, verb = "GET")',
+  "  Webkit.new.deliver(verb, url)",
+  "end",
+].join("\n");
+
+/** The client a helper's request makes, with only what the two languages state alike. */
+function helperRequest(summaries: readonly BehavioralSummary[]): unknown {
+  const client = summaries.find((summary) => summary.kind === "client");
+  return {
+    binding: client?.identity.boundaryBinding?.semantics,
+    bindingFrom: client?.bindingFrom,
+    inputs: client?.inputs,
+  };
+}
+
+describe("a request pack whose method a helper's parameter gives", () => {
+  it("keeps the request, and says the method is the parameter, in Python and Ruby", async () => {
+    fs.writeFileSync(path.join(root, "deliver.py"), PYTHON_HELPER);
+    fs.writeFileSync(path.join(root, "deliver.rb"), RUBY_HELPER);
+    const python = await extractPythonProject({
+      files: [path.join(root, "deliver.py")],
+      roots: [root],
+      packs: [DELIVERING],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    const ruby = await extractRubyProject({
+      files: [path.join(root, "deliver.rb")],
+      packs: [DELIVERING],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+
+    expect(helperRequest(python.summaries)).toEqual({
+      binding: { name: "rest", method: null, path: null },
+      bindingFrom: {
+        method: [{ type: "input", inputRef: "verb", path: [] }],
+        host: [
+          {
+            type: "derived",
+            from: { type: "input", inputRef: "url", path: [] },
+            derivation: { type: "propertyAccess", property: "host" },
+          },
+        ],
+      },
+      inputs: [
+        {
+          type: "parameter",
+          name: "url",
+          position: 0,
+          role: "url",
+          shape: null,
+        },
+        {
+          type: "parameter",
+          name: "verb",
+          position: 1,
+          role: "verb",
+          shape: null,
+          default: { type: "literal", value: "GET" },
+        },
+      ],
+    });
+    expect(helperRequest(ruby.summaries)).toEqual(
+      helperRequest(python.summaries),
+    );
+  });
+});
 
 /** A send the declared sends record, without where it was written. */
 function sendOf(channel: string, callee: string, body: string): unknown {

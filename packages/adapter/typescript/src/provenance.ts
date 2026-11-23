@@ -14,10 +14,17 @@ import { Node } from "ts-morph";
 import { sourceRefsOf } from "@suss/extractor";
 import { constantOf } from "@suss/values";
 
+import { nodeOfValue } from "./resolve/callOps.js";
 import { evaluatedValue } from "./values/evaluator.js";
 
 import type { ValueRef } from "@suss/behavioral-ir";
-import type { RawBranch, RawProvenance, SourceSpelling } from "@suss/extractor";
+import type {
+  RawBranch,
+  RawProvenance,
+  SourceSpelling,
+  SourcesOfValues,
+  ValueOps,
+} from "@suss/extractor";
 import type { SourceLeaf } from "@suss/resolution";
 import type { BindingElement } from "ts-morph";
 import type { FunctionRoot } from "./conditions.js";
@@ -60,6 +67,30 @@ export function recordProvenance(
       branch.provenance = provenance;
     }
   }
+}
+
+/** Where each value a request hook handed back came from, as one question. */
+export function sourcesOfValues(
+  func: FunctionRoot,
+  resolution: ResolutionStore,
+): SourcesOfValues {
+  return (values) => {
+    const nodes = new Map<ValueOps, Node>();
+    for (const value of values) {
+      const node = nodeOfValue(value);
+      if (node !== null) {
+        nodes.set(value, node);
+      }
+    }
+    const sources = resolution.sourcesOf([...nodes.values()]);
+    return new Map(
+      values.map((value) => {
+        const node = nodes.get(value);
+        const found = node === undefined ? [] : (sources.get(node) ?? []);
+        return [value, refsOf(found, func, resolution)];
+      }),
+    );
+  };
 }
 
 function refsOf(

@@ -22,7 +22,7 @@ import type { PackDeclaration } from "@suss/ir-core";
 import type { RequestMethod } from "@suss/recognize";
 
 /** The build of this pack, which the extraction cache keys on. */
-const PACK_VERSION = "1";
+const PACK_VERSION = "2";
 
 /** What a caller reads off a fetch `Response`, and what fetch does with a redirect by default. */
 const RESPONSE = {

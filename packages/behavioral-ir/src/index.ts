@@ -14,6 +14,7 @@ import { normalizeLegacyArray, normalizeLegacySummary } from "./legacy.js";
 import {
   BehavioralSummaryArraySchema,
   BehavioralSummarySchema,
+  type BindingFromSchema,
   type BoundaryAspectSchema,
   type CodeUnitIdentitySchema,
   type CodeUnitKindSchema,
@@ -381,6 +382,7 @@ export type Unreachable = z.infer<typeof UnreachableSchema>;
 export type ProvenanceSlot = z.infer<typeof ProvenanceSlotSchema>;
 export type ProvenanceEntry = z.infer<typeof ProvenanceEntrySchema>;
 export type Gap = z.infer<typeof GapSchema>;
+export type BindingFrom = z.infer<typeof BindingFromSchema>;
 export type BehavioralSummary = z.infer<typeof BehavioralSummarySchema>;
 export type SummaryDiff = z.infer<typeof SummaryDiffSchema>;
 

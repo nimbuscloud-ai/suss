@@ -30,7 +30,12 @@ interface Stated {
   readonly madeBySite?: Readonly<Record<string, CallOps>>;
   /** Whether suss reads it as an object it knows every key of. */
   readonly object?: boolean;
+  /** The position of the enclosing function's parameter it is. */
+  readonly parameter?: number;
 }
+
+/** The function a call with `inFunction` set is written in. */
+const ENCLOSING = { function: "enclosing" } as unknown as ValueOps;
 
 function valueOps(stated: Stated): ValueOps {
   const made =
@@ -63,6 +68,12 @@ function valueOps(stated: Stated): ValueOps {
       stated.host === undefined || port === null
         ? stated.host
         : `${stated.host}:${String(port.evaluated?.())}`,
+    ...(stated.parameter === undefined
+      ? {}
+      : {
+          parameterNamed: (fn: ValueOps) =>
+            fn === ENCLOSING ? `p${stated.parameter}` : null,
+        }),
     ...made,
   };
   return ops as unknown as ValueOps;
@@ -87,6 +98,8 @@ interface Call {
   readonly built?: Readonly<Record<number, CallOps>>;
   readonly writtenAs?: CallOps;
   readonly splats?: Splats;
+  /** Whether the call is written in `ENCLOSING`. Left out, the ops cannot say. */
+  readonly inFunction?: boolean;
 }
 
 function callOps(call: Call, asked: string[] = []): CallOps {
@@ -132,6 +145,9 @@ function callOps(call: Call, asked: string[] = []): CallOps {
     argument: (index: number) => call.built?.[index] ?? null,
     callee: () => call.writtenAs ?? null,
     splats: () => call.splats ?? { positionalFrom: null, keywords: false },
+    ...(call.inFunction === undefined
+      ? {}
+      : { enclosingBody: () => (call.inFunction ? ENCLOSING : null) }),
   } as unknown as CallOps;
 }
 
@@ -325,8 +341,61 @@ describe("a request chain", () => {
         method: "request",
         from: ["httplib"],
         args: [{}, at("/orders")],
+        inFunction: true,
       }),
     ).toEqual([]);
+  });
+
+  it("makes no request when the call states no method and the library has none to fall back on", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "request",
+        from: ["httplib"],
+        keywords: { url: at("/orders") },
+      }),
+    ).toEqual([]);
+  });
+
+  it("hands back the method's value and no host for a host passed apart from the path", () => {
+    const sendTo = httpRequests({ client: CLIENT }).methods({
+      send_to: {
+        sends: { from: { at: 2 } },
+        url: {
+          at: 0,
+          hostFirst: { host: { at: 0 }, path: { at: 1 } },
+        },
+      },
+    });
+    const [claim] =
+      readClaimsOf(sendTo, {
+        method: "send_to",
+        from: ["httplib"],
+        args: [
+          { ...at("api.example.com"), host: "api.example.com" },
+          { ...at("/orders"), string: true },
+          { parameter: 0 },
+        ],
+        inFunction: true,
+      }) ?? [];
+
+    expect(claim?.method).toBeNull();
+    expect(claim?.read.stated?.method).toBeDefined();
+    expect(claim?.read.stated?.host).toBeUndefined();
+  });
+
+  it("keeps a request with no method when the method is a parameter of the function the call is in", () => {
+    const [claim] =
+      readClaimsOf(REQUESTS, {
+        method: "request",
+        from: ["httplib"],
+        args: [{ parameter: 1 }, at("/orders", "api.example.com")],
+        inFunction: true,
+      }) ?? [];
+
+    expect(claim?.method).toBeNull();
+    expect(claim?.path).toBe("/orders");
+    expect(claim?.read.stated?.method?.parameterNamed?.(ENCLOSING)).toBe("p1");
+    expect(claim?.read.stated?.host?.within).toBe("url");
   });
 
   it("keeps a URL suss cannot read as a request with no path", () => {
@@ -575,6 +644,22 @@ describe("a request object", () => {
         },
       }),
     ).toEqual([{ method: "POST", path: "/orders", host: undefined }]);
+  });
+
+  it("makes no request from a class the table does not list", () => {
+    expect(
+      claimsOf(OBJECTS, {
+        method: "request",
+        from: ["httplib"],
+        built: {
+          0: callOps({
+            method: "new",
+            callee: "Http::Trace.new",
+            args: [at("/orders")],
+          }),
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("reads the construction the value the call passes was made by", () => {
@@ -925,6 +1010,37 @@ describe("a host passed apart from the path", () => {
     ]);
   });
 
+  it("hands back the construction's host argument as the value the host came from", () => {
+    const host = { host: "api.example.com", parameter: 0 };
+    const [claim] =
+      readClaimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [at("/orders")],
+        receiver: callOps({ method: "new", args: [host] }),
+      }) ?? [];
+
+    expect(claim?.read.stated?.host?.within).toBe("host");
+    expect(claim?.read.stated?.host?.value.host?.(null)).toBe(
+      "api.example.com",
+    );
+    expect(claim?.read.stated?.method).toBeUndefined();
+  });
+
+  it("hands back no host value for a host passed apart from the path", () => {
+    const [claim] =
+      readClaimsOf(MODULE, {
+        method: "get",
+        from: ["httplib"],
+        args: [
+          { ...at("api.example.com"), host: "api.example.com" },
+          { ...at("/orders"), string: true },
+        ],
+      }) ?? [];
+
+    expect(claim?.read.stated).toBeUndefined();
+  });
+
   it("goes to the host of a full URL passed as the path", () => {
     expect(
       claimsOf(MODULE, {
@@ -1117,7 +1233,28 @@ describe("a request chain over options objects", () => {
       method: "GET",
       options: { at: 1 },
       base: { path: "/api", host: undefined, joins: "appended" },
+      stated: { host: { value: expect.anything(), within: "url" } },
     });
+  });
+
+  it("hands back the value the method came from, and the construction's URL a relative path goes under", () => {
+    const method = { evaluated: "post" };
+    const baseURL = at("https://api.example.com");
+    const [claim] =
+      readClaimsOf(CONFIGURED, {
+        callee: "api",
+        from: ["confhttp"],
+        args: [{ properties: { url: at("/orders"), method } }],
+        writtenAs: callOps({
+          callee: "confhttp.create",
+          args: [{ properties: { baseURL } }],
+        }),
+      }) ?? [];
+
+    expect(claim?.method).toBe("POST");
+    expect(claim?.read.stated?.method?.evaluated?.()).toBe("post");
+    expect(claim?.read.stated?.host?.within).toBe("url");
+    expect(claim?.read.stated?.host?.value.url?.()).toEqual(baseURL.url);
   });
 
   it("reads a call of the client itself as the entry with the same meaning", () => {

@@ -423,6 +423,13 @@ export const InputSchema = z.discriminatedUnion("type", [
      */
     field: z.string().optional(),
     shape: TypeShapeSchema.nullable(),
+    /**
+     * The value the parameter takes when a caller passes nothing for it,
+     * as the source writes it: a `literal`, or an `unresolved` quoting a
+     * default the program works out when it runs. Absent for a parameter
+     * with no default.
+     */
+    default: ValueRefSchema.optional(),
   }),
   z.object({
     type: z.literal("injection"),
@@ -878,12 +885,35 @@ export const GapSchema = z.object({
   usedAsValue: z.boolean().optional(),
 });
 
+/**
+ * Where the boundary binding's values came from, when the unit takes one
+ * from its own parameters. A helper that sends whatever method its caller
+ * passes has, in its binding, the method its library sends when none is
+ * given, and says here that the method is really the parameter. A reader
+ * then puts each call's argument, or the parameter's default, in its
+ * place. Each list is in the value references `provenance` uses.
+ *
+ * A helper that picks its request by the verb it is passed has one unit
+ * per request. `when` lists the conditions every path to that request
+ * passes, as a branch records them, so it says which verb picks each.
+ */
+export const BindingFromSchema = z.object({
+  /** Where the REST method came from. */
+  method: z.array(ValueRefSchema).optional(),
+  /** Where the REST host came from. */
+  host: z.array(ValueRefSchema).optional(),
+  /** What must be true of the unit's inputs for the request to be sent. */
+  when: z.array(PredicateSchema).optional(),
+});
+
 export const BehavioralSummarySchema = z.object({
   /** Absent means version 1, which parse entry points normalize first. */
   schemaVersion: z.number().optional(),
   kind: CodeUnitKindSchema,
   location: SourceLocationSchema,
   identity: CodeUnitIdentitySchema,
+  /** Absent unless the binding takes a value from the unit's parameters. */
+  bindingFrom: BindingFromSchema.optional(),
   inputs: z.array(InputSchema),
   transitions: z.array(TransitionSchema),
   gaps: z.array(GapSchema),

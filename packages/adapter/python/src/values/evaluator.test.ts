@@ -25,6 +25,7 @@ import {
   bindEvaluator,
   evaluatedValue,
   forgetEvaluations,
+  parameterDefaults,
   stringValueOf,
 } from "./evaluator.js";
 import { pythonTruthiness } from "./truthiness.js";
@@ -1128,5 +1129,21 @@ describe("stringValueOf", () => {
     ) as PyNode;
     expect(stringValueOf(second)).toBe("/a");
     expect(stringValueOf(third)).toBeNull();
+  });
+});
+
+describe("what a parameter takes when a caller passes nothing", () => {
+  it("reads a positional default and a keyword-only one, and quotes one worked out at run time", async () => {
+    const tree = await parsePython(
+      'def fetch(url, method="get", body=None, *, retries=3, at=time.time(), verbose):\n    pass',
+    );
+    const fn = children(tree.rootNode).find(isFunction) as PyNode;
+
+    expect(Object.fromEntries(parameterDefaults(fn))).toEqual({
+      method: { type: "literal", value: "get" },
+      body: { type: "literal", value: null },
+      retries: { type: "literal", value: 3 },
+      at: { type: "unresolved", sourceText: "time.time()" },
+    });
   });
 });

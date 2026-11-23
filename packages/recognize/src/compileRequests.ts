@@ -33,6 +33,7 @@ import type {
   RequestClaim,
   RequestRead,
   RequestRecognizer,
+  StatedRequest,
   UrlTarget,
 } from "@suss/extractor";
 import type {
@@ -297,6 +298,7 @@ function claimOf(
       built: construction,
       link: requesting.base,
     }) ?? meaning.redirects;
+  const stated = statedRequest(sent, own, base);
   return {
     method: sent.method,
     path: placed.path,
@@ -309,17 +311,57 @@ function claimOf(
         ? { options: placeOf(meaning.options) }
         : {}),
       ...(base === null ? {} : { base: { ...base.url, joins: base.joins } }),
+      ...(stated === undefined ? {} : { stated }),
     },
+  };
+}
+
+/** The values the request's method and host came from, or undefined when the call states neither as a value. */
+function statedRequest(
+  sent: Sent,
+  own: UrlTarget,
+  base: Base | null,
+): StatedRequest | undefined {
+  const host = hostStated(sent, own, base);
+  const { method } = sent.values;
+  if (method === undefined && host === undefined) {
+    return undefined;
+  }
+  return {
+    ...(method === undefined ? {} : { method }),
+    ...(host === undefined ? {} : { host }),
+  };
+}
+
+/**
+ * The value the host is read from: the call's own URL, unless the
+ * request goes under the base its client was built with, as a path or a
+ * URL suss cannot read does.
+ */
+function hostStated(
+  sent: Sent,
+  own: UrlTarget,
+  base: Base | null,
+): StatedRequest["host"] {
+  if (base === null || own.host !== undefined) {
+    const url = sent.values.url;
+    return url === undefined ? undefined : { value: url, within: "url" };
+  }
+  return {
+    value: base.stated,
+    within: base.link.reads === "host" ? "host" : "url",
   };
 }
 
 /** What a call states its method and URL as, and where. */
 interface Sent {
-  readonly method: string;
+  readonly method: string | null;
   readonly url: UrlReading;
   /** The URL argument when it comes to one string, which is how an empty URL shows. */
   readonly written: () => string | null;
   readonly read: Pick<RequestRead, "url" | "method">;
+  /** The values the call states the method and a URL with a host in it as. */
+  readonly values: { readonly method?: ValueOps; readonly url?: ValueOps };
 }
 
 /**
@@ -338,20 +380,31 @@ function sentBy(
     const written = writtenOf(urlValue);
     const { sends } = meaning;
     const urlPlace = placeOf(meaning.url);
+    // A host passed on its own beside the path is not inside this URL.
+    const hostIn = meaning.url.hostFirst === undefined ? urlValue : null;
     if (typeof sends === "string") {
-      return withUrl(sends, url, written, { url: urlPlace, method: sends });
+      return withUrl(sends, url, written, {
+        read: { url: urlPlace, method: sends },
+        values: valuesOf(null, hostIn),
+      });
     }
     // A method the call states and suss cannot settle sends the default
     // too, so the request is kept with the method the library sends most.
     const stated = statedValue(ops, sends.from);
     const method =
       (stated === null ? null : stringOf(stated)) ?? sends.default ?? null;
-    return withUrl(method?.toUpperCase() ?? null, url, written, {
-      url: urlPlace,
-      method: {
-        at: placeOf(sends.from),
-        ...(sends.default === undefined ? {} : { default: sends.default }),
+    if (method === null && !passedIn(stated, ops)) {
+      return null;
+    }
+    return withMethodAndUrl(method?.toUpperCase() ?? null, url, written, {
+      read: {
+        url: urlPlace,
+        method: {
+          at: placeOf(sends.from),
+          ...(sends.default === undefined ? {} : { default: sends.default }),
+        },
       },
+      values: valuesOf(stated, hostIn),
     });
   }
   const { sends } = meaning;
@@ -366,9 +419,19 @@ function sentBy(
   const method = sends.classes[requestClass] ?? null;
   const urlValue = urlArgument(built, sends.url);
   return withUrl(method, urlReadingOf(urlValue), writtenOf(urlValue), {
-    url: { at: sends.object },
-    method: method ?? "",
+    read: { url: { at: sends.object }, method: method ?? "" },
+    values: valuesOf(null, urlValue),
   });
+}
+
+function valuesOf(
+  method: ValueOps | null,
+  url: ValueOps | null,
+): Sent["values"] {
+  return {
+    ...(method === null ? {} : { method }),
+    ...(url === null ? {} : { url }),
+  };
 }
 
 /** The string a URL argument comes to, read only when a base asks. */
@@ -413,11 +476,35 @@ function withUrl(
   method: string | null,
   url: UrlReading | null,
   written: Sent["written"],
-  read: Sent["read"],
+  stated: Pick<Sent, "read" | "values">,
 ): Sent | null {
-  return method === null || url === null
+  return method === null
     ? null
-    : { method, url, written, read };
+    : withMethodAndUrl(method, url, written, stated);
+}
+
+/** The request, with a null method when the method is one the caller passes and nothing settles. */
+function withMethodAndUrl(
+  method: string | null,
+  url: UrlReading | null,
+  written: Sent["written"],
+  stated: Pick<Sent, "read" | "values">,
+): Sent | null {
+  return url === null ? null : { method, url, written, ...stated };
+}
+
+/**
+ * Whether the value is one of the parameters of the function the call
+ * is written in. A request whose method is such a parameter still goes
+ * out with whatever method each caller passes.
+ */
+function passedIn(value: ValueOps | null, ops: CallOps): boolean {
+  const body = ops.enclosingBody?.() ?? null;
+  return (
+    value !== null &&
+    body !== null &&
+    (value.parameterNamed?.(body) ?? null) !== null
+  );
 }
 
 /**
@@ -474,7 +561,11 @@ function baseOf(
   if (link === null || built === null) {
     return null;
   }
-  const url = BASE_READ[link.reads ?? "url"](built, link, site);
+  const stated = statedValue(built, link.at);
+  if (stated === null) {
+    return null;
+  }
+  const url = BASE_READ[link.reads ?? "url"](built, link, site, stated);
   if (url === null || refusedBase(link, url)) {
     return null;
   }
@@ -486,6 +577,7 @@ function baseOf(
     url: guessed ? { path: undefined, host: url.host } : url,
     joins: link.joins,
     link,
+    stated,
   };
 }
 
@@ -494,6 +586,8 @@ interface Base {
   readonly url: UrlTarget;
   readonly joins: BaseJoin;
   readonly link: BaseUrlLink;
+  /** The value the construction states the base as. */
+  readonly stated: ValueOps;
 }
 
 /**
@@ -515,12 +609,10 @@ const BASE_READ: Record<
     built: CallOps,
     link: BaseUrlLink,
     site: string | undefined,
+    stated: ValueOps,
   ) => UrlTarget | null
 > = {
-  url: (built, link, site) => {
-    const stated = statedValue(built, link.at);
-    return stated === null ? null : (stated.url?.(site) ?? NOWHERE);
-  },
+  url: (_built, _link, site, stated) => stated.url?.(site) ?? NOWHERE,
   host: hostBase,
 };
 

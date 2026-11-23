@@ -45,6 +45,7 @@ A reader replaces `{"$def":n,"$value":v}` with `v`, and `{"$ref":n}` with the `v
 | `kind` | `CodeUnitKind` | What sort of unit this is: a handler, a client, a component, and twelve more. |
 | `location` | `SourceLocation` | File, line range, character span, export name, workspace, and the module when `suss.json` lists modules. `inTests` is true when the unit is test code and the file's path does not show it, because the file's own project starts below the directory the path is measured from, as `packages/api/test/app.js` does in an extract of the whole repository. |
 | `identity` | `CodeUnitIdentity` | The name, the export path, the boundary binding, the deployed unit. |
+| `bindingFrom` | object, optional | Where the binding's method and host came from, for a client that takes one from its own parameters. |
 | `inputs` | `Input[]` | How values reach the unit, one per parameter, injection, hook return or closure. |
 | `transitions` | `Transition[]` | One per execution path. |
 | `gaps` | `Gap[]` | What the summary could not account for. |
@@ -104,6 +105,8 @@ The handler is 23 lines of Express with two guards and a nested condition. The `
 The `id` is the workspace, the file and the name. Discovery made the name `get` up from the route's method, so `nameKind` is `label`, and a summary named by a label always has its boundary on the end of its id. A callback a pack claims inside that handler, such as the timer `get.setTimeout#0`, is named by a label too, and since it has no boundary key of its own its id ends with its handler's boundary. Any other summary gets the boundary only when another summary in the run would have the same id and its boundary has a key, and a later one in the same file that still matches gets `@2`, `@3`.
 
 A parameter the library fills with one field of the request says which field under `field`. FastAPI's `x_tenant_id: str = Header()` is `{ "role": "headers", "field": "x-tenant-id" }`, with the underscores written the way FastAPI sends them.
+
+A parameter with a default says what it is under `default`, in the value references a condition uses. Ruby's `def fetch(url, method = :get)` gives `method` the default `{ "type": "literal", "value": "get" }`, spelled the way a caller's `:get` argument is. A default the program works out when it runs, such as `Time.now`, is an `unresolved` that quotes it.
 
 ## One transition
 
@@ -240,6 +243,46 @@ A transition whose effects write a column or pick rows by one records where each
 ```
 
 `at` says which column of which effect: `effect` is the effect's position in the transition's `effects`, and `slot` is `field` for a column the access writes and `selector` for one it picks rows by. `from` lists every place the value could have come from, in the value references a condition uses. An `input` is a path off one of the unit's inputs, a `literal` is a value written in the source, and an `unresolved` is where suss stopped following the value, with the source text it stopped at: a call into a library no pack describes, or a parameter of a helper function. A value the language converted on the way, as `Number(req.params.id)` or `params[:id].to_i`, is a `derived` reference whose `derivation` is a `methodCall` naming the conversion, with the input under it. A transition with no such column has no `provenance` field.
+
+## Where a client's method came from
+
+A helper that sends whatever method its caller passes is a client like any other. Its binding has the method the library sends when the call gives none, or null when the library has no such method, and `bindingFrom` says where the method and the host really came from, in the same value references. This Python helper:
+
+```python
+def send(url, method="GET"):
+    return requests.request(method, url)
+```
+
+gives a client whose binding is `{ "name": "rest", "method": null, "path": null }` and whose `bindingFrom` is:
+
+```json
+"bindingFrom": {
+  "method": [{ "type": "input", "inputRef": "method", "path": [] }],
+  "host": [
+    {
+      "type": "derived",
+      "from": { "type": "input", "inputRef": "url", "path": [] },
+      "derivation": { "type": "propertyAccess", "property": "host" }
+    }
+  ]
+}
+```
+
+The `host` of the `url` parameter is where the request goes. A client with a `bindingFrom` lists the function's parameters under `inputs`, each with its `default`, so a reader can take a caller's argument at the parameter's `position`, or the default when the caller leaves it out, and put it in the binding's place. Any other client lists no inputs.
+
+A helper that picks its request by the verb it is passed gives one client per request, and `when` says which value picks each. This Ruby helper:
+
+```ruby
+def fetch(url, method = :get)
+  if method == :get
+    host.get(path)
+  elsif method == :post
+    host.post(path, body)
+  end
+end
+```
+
+gives the `POST` client `"when": [{ "type": "negation", "operand": <method == "get"> }, <method == "post">]`, each a `comparison` of the input with a `literal`. `when` lists the conditions every path to the request passes, as a branch records them, and appears only when one of them is about an input. A `case` on the verb gives none, since suss does not read its arms as comparisons. A client whose method and host are written out in the call has no `bindingFrom`.
 
 ## How two summaries pair
 

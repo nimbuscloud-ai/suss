@@ -2634,6 +2634,31 @@ describe("the JSX a function writes and the parameter a value is, over the facts
     expect(factValueOps("argsName", facts).parameterAt?.(unread)).toBeNull();
   });
 
+  it("names the parameter a value is, one a call can pass only by name too", () => {
+    const facts = rendered();
+    const db = facts.db as Database;
+    db.add("paramNamed", ["render", "args", "argsParam"]);
+    db.add("paramNamed", ["render", "verb", "verbParam"]);
+    db.add("binds", ["verbName", "verbParam"]);
+    const render = factValueOps("render", facts);
+
+    expect(factValueOps("argsName", facts).parameterNamed?.(render)).toBe(
+      "args",
+    );
+    expect(factValueOps("verbName", facts).parameterNamed?.(render)).toBe(
+      "verb",
+    );
+    expect(factValueOps("verbName", facts).parameterAt?.(render)).toBeNull();
+    expect(factValueOps("local", facts).parameterNamed?.(render)).toBeNull();
+    expect(
+      factValueOps("verbName", facts).parameterNamed?.(
+        factValueOps("local", facts),
+      ),
+    ).toBeNull();
+    const unread = { text: () => null } as unknown as ValueOps;
+    expect(factValueOps("verbName", facts).parameterNamed?.(unread)).toBeNull();
+  });
+
   it("gives no elements where the adapter states no JSX", () => {
     const { elementsOf: _, ...withoutJsx } = rendered();
 

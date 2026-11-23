@@ -13,34 +13,52 @@
  */
 
 import { restBinding, statusMembersOf, testsStatus } from "@suss/behavioral-ir";
-import { runPackHook } from "@suss/extractor";
+import {
+  requestBindingFrom,
+  runPackHook,
+  sharedGatingConditions,
+} from "@suss/extractor";
 import { factCallOps } from "@suss/recognize/ops";
+import { writtenLiteralOf } from "@suss/values";
 
 import { children, field, rangeOf, spanOf } from "./ast.js";
 import { callsUnder, claimedIn, claimsNamedAfter } from "./claims.js";
 import { factSourceOf } from "./factSource.js";
 import { nodeId } from "./facts/values.js";
-import { invocationSites } from "./paths/effects.js";
-import { predicateOf } from "./paths/predicates.js";
+import { invocationSites, pathsToCall } from "./paths/effects.js";
+import { operandsOf, predicateOf } from "./paths/predicates.js";
+import {
+  askSourcesOfValues,
+  guardInputs,
+  sourcesOfValues,
+} from "./provenance.js";
+import { positionalParameters } from "./reach/closure.js";
 import {
   type HandOffOptions,
   raiseEndings,
   throughResponseHelpers,
 } from "./responseHandOff.js";
 import { returnPathBranches } from "./responseStatus.js";
-import { askWrittenValues } from "./values/evaluator.js";
+import {
+  askWrittenValues,
+  evaluatedValue,
+  parameterDefaults,
+} from "./values/evaluator.js";
 
 import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   CallOps,
   ClientResponse,
+  ConditionInfo,
   PackTally,
   RawBranch,
   RawCodeStructure,
+  RawCondition,
   RawEffect,
   RequestClaim,
   RequestRecognizer,
+  ValueOps,
 } from "@suss/extractor";
 import type { Range } from "./ast.js";
 import type { RubyPack } from "./pack.js";
@@ -59,7 +77,7 @@ export interface ClientCallOptions {
 interface Requesting {
   readonly pack: RubyPack;
   readonly hooks: readonly RequestRecognizer[];
-  readonly units: RawCodeStructure[];
+  readonly units: FoundUnit[];
 }
 
 /**
@@ -92,12 +110,13 @@ export function clientCallUnits(
       for (const { pack, hooks, units } of requesting) {
         for (const hook of hooks) {
           for (const claim of claimsAt(hook, call, ops, pack, options)) {
-            units.push(
-              clientUnit(caller, name, { claim, call }, hook.response, pack, {
-                ...options,
-                facts,
-              }),
-            );
+            units.push({
+              caller,
+              name,
+              request: { claim, call },
+              response: hook.response,
+              pack,
+            });
           }
         }
       }
@@ -114,7 +133,71 @@ export function clientCallUnits(
       requestsBy(claim.node, claim.name, callsUnder(claim.node, claimed));
     }
   }
-  return requesting.flatMap(({ units }) => units);
+  const found = requesting.flatMap(({ units }) => units);
+  askRequestSources(
+    found.flatMap((one) =>
+      takesParameters(one.caller)
+        ? [
+            {
+              unit: one.caller,
+              call: one.request.call,
+              claim: one.request.claim,
+            },
+          ]
+        : [],
+    ),
+    facts,
+  );
+  return found.map((one) =>
+    clientUnit(one.caller, one.name, one.request, one.response, one.pack, {
+      ...options,
+      facts,
+    }),
+  );
+}
+
+/** A request a hook found, before its unit is built. */
+interface FoundUnit {
+  readonly caller: RbNode;
+  readonly name: string;
+  readonly request: FoundRequest;
+  readonly response: ClientResponse;
+  readonly pack: RubyPack;
+}
+
+/** Only a method with parameters can take its request's method or host from one. */
+function takesParameters(method: RbNode): boolean {
+  return positionalParameters(method).length > 0;
+}
+
+/**
+ * Asks where every request's values and the subjects of its conditions
+ * came from, in one question each, so building each unit finds them
+ * settled.
+ */
+function askRequestSources(
+  requests: ReadonlyArray<{ unit: RbNode; call: RbNode; claim: RequestClaim }>,
+  facts: Database,
+): void {
+  const stated = requests.flatMap(({ claim }) =>
+    [claim.read.stated?.method, claim.read.stated?.host?.value].filter(
+      (value): value is ValueOps => value !== undefined,
+    ),
+  );
+  const operands = requests.flatMap(({ unit, call }) =>
+    gateOperands(pathsToCall(unit, call, facts) ?? []),
+  );
+  askSourcesOfValues(stated, operands, facts);
+}
+
+function gateOperands(
+  paths: readonly (readonly ConditionInfo<RbNode>[])[],
+): RbNode[] {
+  return paths.flatMap((path) =>
+    path.flatMap((condition) =>
+      condition.expression === null ? [] : operandsOf(condition.expression),
+    ),
+  );
 }
 
 /** The requests one hook reads at the call. A hook that throws is charged to its pack, and the call makes none. */
@@ -207,6 +290,13 @@ function clientUnit(
     },
   };
   const { claim } = request;
+  const bindingFrom = takesParameters(method)
+    ? requestBindingFrom(
+        claim.read.stated,
+        requestGate(method, request.call, options.facts),
+        sourcesOfValues({ facts: options.facts, unit: method }),
+      )
+    : undefined;
   return {
     identity: {
       name,
@@ -225,7 +315,16 @@ function clientUnit(
       host: claim.host,
       recognition: pack.name,
     }),
-    parameters: [],
+    // `bindingFrom` points at parameters by name, so the unit lists them.
+    ...(bindingFrom === undefined
+      ? { parameters: [] }
+      : {
+          bindingFrom,
+          parameters: positionalParameters(
+            method,
+            parameterDefaults(method, options.facts),
+          ),
+        }),
     branches: callerBranches(method, reading),
     ...accessors,
     ...(claim.redirectDelivery === undefined
@@ -243,6 +342,35 @@ function clientUnit(
  * test on a status member stays a branch of its own, even when neither
  * arm returns.
  */
+/**
+ * The conditions every path to the request passes, with a subject that
+ * is a parameter read as that input and a written value read as the
+ * literal it comes to, `:post` included, so a caller's argument can
+ * settle them.
+ */
+function requestGate(
+  method: RbNode,
+  call: RbNode,
+  facts: Database,
+): RawCondition[] {
+  const paths = pathsToCall(method, call, facts) ?? [];
+  const operands = gateOperands(paths);
+  if (operands.length === 0) {
+    return sharedGatingConditions(paths);
+  }
+  const read = new Map(guardInputs(operands, { facts, unit: method }));
+  for (const operand of operands) {
+    // Read without the facts, which a literal does not need.
+    const literal = writtenLiteralOf(evaluatedValue(operand));
+    if (!read.has(operand.id) && literal !== undefined) {
+      read.set(operand.id, { type: "literal", value: literal });
+    }
+  }
+  return sharedGatingConditions(paths, (condition) =>
+    predicateOf(condition, read),
+  );
+}
+
 function callerBranches(method: RbNode, reading: CallerReading): RawBranch[] {
   const sites = invocationSites(method, undefined, undefined, reading.facts);
   const effects = sites.map((site) => site.effect);

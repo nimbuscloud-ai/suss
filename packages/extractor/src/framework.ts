@@ -2106,7 +2106,8 @@ export type InvocationRecognizer<TCtx = unknown> = ((
  * call is written in when the URL differs between them.
  */
 export interface RequestClaim {
-  readonly method: string;
+  /** Null when the method is a parameter of the function the call is in, and nothing settles it. */
+  readonly method: string | null;
   /** Null when the URL reads as no path, or as only holes and slashes under a host suss did not read. */
   readonly path: string | null;
   readonly host: string | undefined;
@@ -2143,6 +2144,17 @@ export interface RequestRead {
   readonly base?: UrlTarget & {
     readonly joins: "appended" | "resolved" | "asWritten";
   };
+  /** The values the call states its method and host as, for an adapter that asks where they came from. */
+  readonly stated?: StatedRequest;
+}
+
+/**
+ * The values a request states. The host is read out of a URL, or given
+ * on its own, as `Net::HTTP.new(host, port)` gives it.
+ */
+export interface StatedRequest {
+  readonly method?: ValueOps;
+  readonly host?: { readonly value: ValueOps; readonly within: "url" | "host" };
 }
 
 /** One argument of a call, by position or by keyword, and the properties read inside it. */
