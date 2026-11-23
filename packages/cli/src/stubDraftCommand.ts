@@ -50,6 +50,10 @@ const ARG_RENDERERS: {
   null: () => "null",
   undefined: () => "undefined",
   object: (arg) => `{${Object.keys(arg.fields).join(", ")}}`,
+  keywords: (arg) =>
+    Object.keys(arg.fields)
+      .map((name) => `${name}=...`)
+      .join(", "),
   array: (arg) => `[${arg.items.length} items]`,
   template: (arg) => arg.sourceText,
   identifier: (arg) => arg.name,

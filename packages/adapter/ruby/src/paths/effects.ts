@@ -12,8 +12,8 @@ import {
   field,
   isLambdaArgument,
   MODULE_SCOPE_STOPS,
+  namedPairs,
   OWN_BODY_TYPES,
-  pairValue,
   rangeOf,
   readAsType,
   runsInPlace,
@@ -353,16 +353,28 @@ export function argOf(node: RbNode, facts: Database | undefined): EffectArg {
   return { kind: "identifier", name: node.text };
 }
 
+/**
+ * The positional arguments in order, then the keyword arguments in one
+ * entry by name, since a keyword fills the parameter of its name and
+ * not the one at its place.
+ */
 function argsOf(call: RbNode, facts: Database | undefined): EffectArg[] {
   const args = field(call, "arguments");
   if (args === null) {
     return [];
   }
-  return children(args).map((child) =>
-    child.type === "pair"
-      ? argOf(pairValue(child) ?? child, facts)
-      : argOf(child, facts),
-  );
+  const positional = children(args)
+    .filter((child) => child.type !== "pair")
+    .map((child) => argOf(child, facts));
+  const pairs = namedPairs(call);
+  if (pairs.length === 0) {
+    return positional;
+  }
+  const fields: Record<string, EffectArg> = {};
+  for (const pair of pairs) {
+    fields[pair.name] = argOf(pair.value, facts);
+  }
+  return [...positional, { kind: "keywords", fields }];
 }
 
 /** The statement a call is written in, which is the node the lowering keys on. */

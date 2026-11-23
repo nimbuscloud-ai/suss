@@ -32,13 +32,15 @@ import {
 } from "@suss/datalog";
 
 import { writtenFunctionOf } from "../calls/callFacts.js";
+import { argumentForParameter } from "../calls/passedArguments.js";
 import { containerParametersOf } from "../storage/containerParameters.js";
 import { spellArgument } from "./argumentSpelling.js";
 
 import type { BehavioralSummary, Effect, Predicate } from "@suss/behavioral-ir";
 import type { Rule } from "@suss/datalog";
 import type { FunctionKey } from "../calls/callFacts.js";
-import type { RecordedArgument, SpelledArgument } from "./argumentSpelling.js";
+import type { RecordedArgument } from "../calls/passedArguments.js";
+import type { SpelledArgument } from "./argumentSpelling.js";
 
 /**
  * How a call reached its target. `written` is a call the run resolved,
@@ -245,22 +247,18 @@ function parametersByFunction(
 
 /**
  * What a call passes for each parameter. A parameter destructured out of
- * an object takes the field of that name. A parameter after a splat has
- * no position the call can be read at, so it is left out.
+ * an object takes the field of that name.
  */
 function valuesPassed(
   call: RecordedCall,
   parameters: readonly Parameter[],
 ): PassedValue[] {
-  const splat = call.args.findIndex(
-    (arg) => arg?.kind === "identifier" && arg.name.startsWith("*"),
-  );
   const values: PassedValue[] = [];
   for (const parameter of parameters) {
-    if (splat !== -1 && parameter.position >= splat) {
-      continue;
-    }
-    const value = argumentFor(call.args[parameter.position], parameter);
+    const value = argumentFor(
+      argumentForParameter(call.args, parameter),
+      parameter,
+    );
     if (value === undefined) {
       continue;
     }

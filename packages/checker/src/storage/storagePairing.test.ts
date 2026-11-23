@@ -1184,6 +1184,36 @@ describe("an access whose unit was told which store to reach", () => {
       grounding.namesFor(unit, { root: "location", fields: ["table"] }),
     ).toEqual([]);
   });
+
+  it("reads a location a Python or Ruby caller passes as a keyword argument", () => {
+    const unit = wrapper();
+    const keyword = caller({ kind: "string", value: "users" });
+    keyword.transitions = [
+      {
+        ...keyword.transitions[0],
+        effects: [
+          {
+            type: "invocation",
+            callee: "read_row",
+            summary: "repo::src/storage.ts::readRow",
+            args: [
+              { kind: "identifier", name: "*extra" },
+              {
+                kind: "keywords",
+                fields: { location: { kind: "string", value: "users" } },
+              },
+            ],
+            async: false,
+          },
+        ],
+      },
+    ];
+    const grounding = groundReferences([unit, keyword]);
+
+    expect(grounding.namesFor(unit, { root: "location", fields: [] })).toEqual([
+      "users",
+    ]);
+  });
 });
 
 describe("an index that copies part of an item", () => {

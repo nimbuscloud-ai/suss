@@ -91,4 +91,17 @@ describe("spellArgument", () => {
       ),
     ).toEqual({ spelled: '["a"]', blanked: '["a"]' });
   });
+
+  it("spells keyword arguments the way each language writes them", () => {
+    const keywords = {
+      kind: "keywords" as const,
+      fields: { verb: { kind: "string" as const, value: "post" } },
+    };
+    expect(spellArgument(keywords, "app/grants.rb").spelled).toBe(
+      'verb: "post"',
+    );
+    expect(spellArgument(keywords, "app/grants.py").spelled).toBe(
+      'verb="post"',
+    );
+  });
 });

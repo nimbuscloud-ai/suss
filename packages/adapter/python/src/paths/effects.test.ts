@@ -205,14 +205,21 @@ describe("python invocation effects", () => {
     ]);
   });
 
-  it("reads a keyword argument's value rather than the keyword", async () => {
+  it("records keyword arguments by name, after the positional ones", async () => {
     const effects = await effectsFor([
       "def get(self):",
-      '    publish(queue="orders")',
+      '    publish(payload, retries=3, queue="orders")',
     ]);
     const [effect] = effects;
     expect(effect?.type === "invocation" && effect.args).toEqual([
-      { kind: "string", value: "orders" },
+      { kind: "identifier", name: "payload" },
+      {
+        kind: "keywords",
+        fields: {
+          retries: { kind: "number", value: 3 },
+          queue: { kind: "string", value: "orders" },
+        },
+      },
     ]);
   });
 

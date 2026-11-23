@@ -21,15 +21,10 @@ import {
   variableAsked,
 } from "@suss/behavioral-ir";
 
-import type { BehavioralSummary, Effect, Reference } from "@suss/behavioral-ir";
+import { argumentForParameter } from "../calls/passedArguments.js";
 
-/** What a caller passed, in the shape the extractor records arguments. */
-type Argument =
-  | { kind: "string"; value: string }
-  | { kind: "template"; sourceText: string }
-  | { kind: "object"; fields: Record<string, unknown> }
-  | { kind: string; [key: string]: unknown }
-  | null;
+import type { BehavioralSummary, Effect, Reference } from "@suss/behavioral-ir";
+import type { RecordedArgument as Argument } from "../calls/passedArguments.js";
 
 /** A name a reference reaches, and the summary that supplied it. */
 export interface GroundedName {
@@ -151,7 +146,10 @@ function callerNames(
   const names: GroundedName[] = [];
   for (const call of callsInto.get(id) ?? []) {
     const passed = valueAt(
-      call.args[parameter.position] ?? null,
+      argumentForParameter(call.args, {
+        name: reference.root,
+        position: parameter.position,
+      }) ?? null,
       reference.fields,
     );
     const name = passed === null ? null : nameOf(passed);
@@ -204,7 +202,7 @@ function valueAt(argument: Argument, fields: string[]): Argument {
     if (found === null || found.kind !== "object") {
       return null;
     }
-    found = ((found.fields as Record<string, Argument>) ?? {})[field] ?? null;
+    found = found.fields[field] ?? null;
   }
   return found;
 }
@@ -219,10 +217,10 @@ function nameOf(argument: Argument): string | null {
   if (argument === null) {
     return null;
   }
-  if (argument.kind === "string" && typeof argument.value === "string") {
+  if (argument.kind === "string") {
     return argument.value;
   }
-  if (argument.kind === "template" && typeof argument.sourceText === "string") {
+  if (argument.kind === "template") {
     return namePatternFromSub(argument.sourceText.replace(/^`|`$/g, ""));
   }
   return null;

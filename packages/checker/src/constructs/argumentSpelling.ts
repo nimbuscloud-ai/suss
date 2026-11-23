@@ -10,19 +10,7 @@
  * that text by the syntax each language uses for them.
  */
 
-/** What a summary records for one argument, as the adapters write it. */
-export type RecordedArgument =
-  | { kind: "string"; value: string }
-  | { kind: "number"; value: number }
-  | { kind: "boolean"; value: boolean }
-  | { kind: "null" }
-  | { kind: "undefined" }
-  | { kind: "object"; fields: Record<string, RecordedArgument> }
-  | { kind: "array"; items: RecordedArgument[] }
-  | { kind: "template"; sourceText: string }
-  | { kind: "identifier"; name: string }
-  | { kind: "call"; callee: string; args: RecordedArgument[] }
-  | null;
+import type { RecordedArgument } from "../calls/passedArguments.js";
 
 export interface SpelledArgument {
   /** The argument as the source writes it. */
@@ -38,6 +26,12 @@ export const HOLE = "_";
 const NULL_WORD: Record<string, string> = {
   rb: "nil",
   py: "None",
+};
+
+/** What comes between a keyword argument's name and its value, keyed the same way. */
+const KEYWORD_MARK: Record<string, string> = {
+  rb: ": ",
+  py: "=",
 };
 
 export function spellArgument(
@@ -64,15 +58,18 @@ const SPELLERS: {
   null: (_argument, file) => same(NULL_WORD[extensionOf(file)] ?? "null"),
   undefined: () => same("undefined"),
   object: (argument, file) => {
-    const fields = Object.entries(argument.fields).map(([name, value]) => ({
-      name,
-      ...spellArgument(value, file),
-    }));
+    const fields = spelledFields(argument.fields, file, ": ");
     return {
-      spelled: `{${fields.map((field) => `${field.name}: ${field.spelled}`).join(", ")}}`,
-      blanked: `{${fields.map((field) => `${field.name}: ${field.blanked}`).join(", ")}}`,
+      spelled: `{${fields.spelled}}`,
+      blanked: `{${fields.blanked}}`,
     };
   },
+  keywords: (argument, file) =>
+    spelledFields(
+      argument.fields,
+      file,
+      KEYWORD_MARK[extensionOf(file)] ?? ": ",
+    ),
   array: (argument, file) => {
     const items = argument.items.map((item) => spellArgument(item, file));
     return {
@@ -90,6 +87,25 @@ const SPELLERS: {
 
 function same(text: string): SpelledArgument {
   return { spelled: text, blanked: text };
+}
+
+function spelledFields(
+  fields: Record<string, RecordedArgument>,
+  file: string,
+  mark: string,
+): SpelledArgument {
+  const spelled = Object.entries(fields).map(([name, value]) => ({
+    name,
+    ...spellArgument(value, file),
+  }));
+  return {
+    spelled: spelled
+      .map((one) => `${one.name}${mark}${one.spelled}`)
+      .join(", "),
+    blanked: spelled
+      .map((one) => `${one.name}${mark}${one.blanked}`)
+      .join(", "),
+  };
 }
 
 function extensionOf(file: string): string {

@@ -16,7 +16,7 @@ import type {
   Predicate,
   Transition,
 } from "@suss/behavioral-ir";
-import type { RecordedArgument } from "./argumentSpelling.js";
+import type { RecordedArgument } from "../calls/passedArguments.js";
 
 const FILE = "app/store.rb";
 
