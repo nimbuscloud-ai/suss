@@ -153,9 +153,10 @@ npx @suss/cli inspect summaries/rails.json
 ```
 app/controllers/profiles_controller.rb
 ├─ GET /profile  (rails handler | line 4 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw)
-│      if  session[:user_id] == null
-│        -> 401  (from require_login)
-│      else
+│      from require_login, before the handler
+│        if  session[:user_id] == null
+│          -> 401
+│      from the handler
 │        -> 200
 │          + app/services/order_service.find_order →
 │
@@ -163,9 +164,10 @@ app/controllers/profiles_controller.rb
 │      reads postgresql:Order  through OrderService.new.find_order
 │
 └─ PATCH /profile  (rails handler | line 8 | wrapped by require_login (app/controllers/application_controller.rb), not_found (app/controllers/application_controller.rb) on a throw)
-       if  session[:user_id] == null
-         -> 401  (from require_login)
-       else
+       from require_login, before the handler
+         if  session[:user_id] == null
+           -> 401
+       from the handler
          -> 200
            + app/services/order_service.cancel_order →
 
@@ -179,7 +181,7 @@ config/routes.rb
        !! config/routes.rb also declares mount, which this pack does not read; whatever those declarations route is missing from what suss reports
 ```
 
-Every instance method that a controller extending `ApplicationController` defines directly is one of its actions, and suss takes the method and path from `config/routes.rb`. `before_action` filters come through as wrappers, so the summary records that the 401 on both actions comes from `require_login`. Under `Reaches:`, suss follows the call into the service object and prints the table at the other end, with the chain of calls that leads there.
+Every instance method that a controller extending `ApplicationController` defines directly is one of its actions, and suss takes the method and path from `config/routes.rb`. `before_action` filters come through as wrappers, so the summary records that the 401 on both actions comes from `require_login`. `inspect` prints each filter's tests apart from the action's, in the order a request meets them, because a filter's test is about what the filter reads and says nothing about the action's branches. Under `Reaches:`, suss follows the call into the service object and prints the table at the other end, with the chain of calls that leads there.
 
 The pack reads most of the routes grammar:
 

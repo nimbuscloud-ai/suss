@@ -384,8 +384,6 @@ type Leaf = {
   declares: ((status: number) => boolean) | null;
   /** The range spec ("4XX") for a response declared by class. */
   rangeSpec: string | null;
-  /** The wrapper whose body produced this outcome, if a wrapper did. */
-  from: WrapperReference | null;
 };
 
 /**
@@ -521,7 +519,6 @@ function leafKey(leaf: Leaf): string {
     output: leaf.output,
     effects: leaf.effects,
     rangeSpec: leaf.rangeSpec,
-    from: leaf.from,
   });
 }
 
@@ -652,7 +649,6 @@ function buildDecisionTree(transitions: Transition[]): TreeNode {
       isDefault: t.isDefault,
       declares: null, // set afterwards by stampDeclaredStatuses
       rangeSpec: readHttpMetadata(t)?.statusRange?.spec ?? null,
-      from: readWrapperMetadata(t)?.from ?? null,
     });
   }
   return root;
@@ -700,11 +696,6 @@ function renderLeaf(
       ) {
         line += "  !! undeclared";
       }
-    }
-    // A wrapper's body produced this outcome, and nothing in this unit
-    // shows where it came from.
-    if (leaf.from !== null) {
-      line += `  (from ${leaf.from.name})`;
     }
     lines.push(line);
   }
@@ -904,22 +895,120 @@ function renderThenSide(
  * decision tree prints each test once, as nested `if`, `elif` and `else`.
  */
 function renderTransitions(
-  transitions: Transition[],
+  summary: BehavioralSummary,
   declares: ((status: number) => boolean) | null,
   ctx: PerSummaryRenderCtx,
 ): string[] {
+  const baseIndent = "    ";
+  const sources = outcomeSources(summary.transitions);
+  const [first] = sources;
+  if (sources.length === 1 && first !== undefined && first.wrapper === null) {
+    return renderDecisionTree(first, declares, ctx, baseIndent);
+  }
+  return sources.flatMap((source) => [
+    `${baseIndent}${sourceHeading(source.wrapper, summary.kind)}`,
+    ...renderDecisionTree(source, declares, ctx, `${baseIndent}  `),
+  ]);
+}
+
+/** The outcomes one body produced: a wrapper's, or the unit's own when `wrapper` is null. */
+interface OutcomeSource {
+  wrapper: WrapperReference | null;
+  transitions: Transition[];
+}
+
+/**
+ * The transitions split by the body that produced them, in the order a
+ * request meets them: the wrappers in front of the unit, the unit, then
+ * the error handlers. A wrapper's conditions test what its own body
+ * tests, so one tree over every body would nest a filter's redirect
+ * under a test the unit makes and drop the filter's own test.
+ */
+function outcomeSources(transitions: readonly Transition[]): OutcomeSource[] {
+  const own: OutcomeSource = { wrapper: null, transitions: [] };
+  const byWrapper = new Map<string, OutcomeSource>();
+  for (const transition of transitions) {
+    const wrapper = readWrapperMetadata(transition)?.from;
+    if (wrapper === undefined) {
+      own.transitions.push(transition);
+      continue;
+    }
+
+    const key = JSON.stringify([
+      wrapper.file,
+      wrapper.name,
+      wrapper.line ?? null,
+      wrapper.onThrow === true,
+    ]);
+    const source = byWrapper.get(key) ?? { wrapper, transitions: [] };
+    source.transitions.push(transition);
+    byWrapper.set(key, source);
+  }
+  const wrappers = [...byWrapper.values()];
+  return [
+    ...wrappers.filter((source) => source.wrapper?.onThrow !== true),
+    ...(own.transitions.length > 0 ? [own] : []),
+    ...wrappers.filter((source) => source.wrapper?.onThrow === true),
+  ];
+}
+
+function sourceHeading(
+  wrapper: WrapperReference | null,
+  kind: BehavioralSummary["kind"],
+): string {
+  if (wrapper === null) {
+    return `from the ${kind}`;
+  }
+
+  if (wrapper.onThrow === true) {
+    return `from ${wrapper.name}, on a throw`;
+  }
+  return `from ${wrapper.name}, before the ${kind}`;
+}
+
+function renderDecisionTree(
+  source: OutcomeSource,
+  declares: ((status: number) => boolean) | null,
+  ctx: PerSummaryRenderCtx,
+  indent: string,
+): string[] {
+  const built = buildDecisionTree(source.transitions);
+  const tree = source.wrapper === null ? built : respondingSideFirst(built);
   // Every leaf gets the declared-status test, so the recursion does not
   // have to pass it down to mark an undeclared status.
-  const tree = buildDecisionTree(transitions);
   stampDeclaredStatuses(tree, declares);
-  const baseIndent = "    ";
   if (tree.kind === "leaf") {
-    return renderLeaves(tree.leaves, baseIndent, ctx);
+    return renderLeaves(tree.leaves, indent, ctx);
   }
   if (tree.kind === "branch") {
-    return renderNode(tree, baseIndent, "if", ctx);
+    return renderNode(tree, indent, "if", ctx);
   }
   return [];
+}
+
+/**
+ * Composition leaves out the paths on which a wrapper hands the request
+ * on, so in a wrapper's tree the side of a test that passes is empty.
+ * Printed as built, `if @user` has nothing under it and the redirect
+ * prints under `else`. Testing the other way puts each response under
+ * the test that leads to it.
+ */
+function respondingSideFirst(node: TreeNode): TreeNode {
+  if (node.kind !== "branch") {
+    return node;
+  }
+
+  const thenBranch = respondingSideFirst(node.thenBranch);
+  const elseBranch = respondingSideFirst(node.elseBranch);
+  if (thenBranch.kind === "empty" && elseBranch.kind !== "empty") {
+    return {
+      kind: "branch",
+      predicate: { type: "negation", operand: node.predicate },
+      thenBranch: elseBranch,
+      elseBranch: thenBranch,
+    };
+  }
+  return { ...node, thenBranch, elseBranch };
 }
 
 function stampDeclaredStatuses(
@@ -1115,7 +1204,7 @@ function renderSummary(
   bodyLines.push(...storeLines(summary));
 
   if (summary.transitions.length > 0) {
-    bodyLines.push(...renderTransitions(summary.transitions, declares, perCtx));
+    bodyLines.push(...renderTransitions(summary, declares, perCtx));
   }
 
   // The transitions above already show what the unit's own body touches,
