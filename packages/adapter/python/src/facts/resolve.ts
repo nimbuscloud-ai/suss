@@ -306,6 +306,30 @@ export function subjectConstructions(
 }
 
 /**
+ * Where the class a call makes came from, as the rules settle the call
+ * itself: its callee's import, or what a pack says calling a library
+ * call's result makes. `subjectConstructions` leaves a call out of its
+ * own answers, so a caller holding the call asks here.
+ */
+export function callConstructionOrigins(
+  db: Database,
+  callKey: string,
+): SubjectOrigin[] {
+  askResolution(db, [callKey], "wantedSubject", programFor(db));
+  const found: SubjectOrigin[] = [];
+  for (const row of db.lookup("wantedSubjectConstruction", 0, callKey)) {
+    const one = { module: String(row[2]), name: String(row[3]) };
+    if (
+      String(row[1]) === callKey &&
+      !found.some((was) => sameOrigin(was, one))
+    ) {
+      found.push(one);
+    }
+  }
+  return found;
+}
+
+/**
  * Where each construction's callee came from. The module and the name
  * follow from the call alone, so two subjects settling on the same
  * construction get the same pair and one entry covers both.

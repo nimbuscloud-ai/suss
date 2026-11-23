@@ -272,16 +272,33 @@ export function isClaimed(
 export function callsUnder(
   node: RbNode,
   claimed: ReadonlySet<number> | undefined,
+): RbNode[] {
+  return callSitesUnder(node, claimed, () => false);
+}
+
+/**
+ * Every call under the node, in source order, and every name written
+ * alone that `bareCall` accepts as a call. Ruby parses `save` on its own
+ * as an identifier, the same node a local read gives, so only the
+ * caller can say which of those it reads as calls.
+ */
+export function callSitesUnder(
+  node: RbNode,
+  claimed: ReadonlySet<number> | undefined,
+  bareCall: (identifier: RbNode) => boolean,
   found: RbNode[] = [],
 ): RbNode[] {
   for (const child of children(node)) {
     if (isClaimed(child, claimed)) {
       continue;
     }
-    if (child.type === "call") {
+    if (
+      child.type === "call" ||
+      (child.type === "identifier" && bareCall(child))
+    ) {
       found.push(child);
     }
-    callsUnder(child, claimed, found);
+    callSitesUnder(child, claimed, bareCall, found);
   }
   return found;
 }

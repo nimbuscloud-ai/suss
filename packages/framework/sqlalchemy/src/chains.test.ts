@@ -459,6 +459,57 @@ describe("a session typed the way a project writes it", () => {
     ]);
   });
 
+  it("reads a session made by calling what a session factory returned, here or in another module", async () => {
+    expect(
+      await accessesOf(
+        [
+          "from sqlalchemy.orm import sessionmaker, scoped_session",
+          "from app.base import ShopSession",
+          "",
+          "def handler(engine):",
+          "    factory = sessionmaker(bind=engine)",
+          "    built = factory()",
+          "    built.add(Orders())",
+          "    sessionmaker(bind=engine)().merge(Orders())",
+          "    ShopSession().flush()",
+          "    with ShopSession() as opened:",
+          "        opened.commit()",
+          "    scoped_session(factory)().delete(Orders())",
+        ],
+        {
+          base: [
+            "from sqlalchemy.orm import sessionmaker",
+            "",
+            "ShopSession = sessionmaker()",
+          ],
+        },
+      ),
+    ).toMatchObject([
+      { kind: "write", operation: "add", container: "Orders" },
+      { kind: "write", operation: "merge" },
+      { kind: "write", operation: "flush" },
+      { kind: "write", operation: "commit" },
+      { kind: "write", operation: "delete" },
+    ]);
+  });
+
+  it("says nothing about calling what a project function of the same name returned", async () => {
+    expect(
+      await accessesOf(
+        [
+          "from app.base import sessionmaker",
+          "",
+          "def handler():",
+          "    made = sessionmaker()()",
+          "    made.add(Orders())",
+        ],
+        {
+          base: ["def sessionmaker():", "    return lambda: None"],
+        },
+      ),
+    ).toEqual([]);
+  });
+
   it("reads a session a project function builds, whether or not it says it returns one, and records nothing for the call that only returns it", async () => {
     expect(
       await accessesOf(

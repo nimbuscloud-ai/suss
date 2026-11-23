@@ -125,6 +125,18 @@ export const SQLALCHEMY_MODEL_CALLS: ModelCalls = {
   entryFunctions: [{ module: "sqlalchemy", name: "select", argument: 0 }],
 };
 
+const SESSION = { module: "sqlalchemy.orm", name: "Session" };
+
+/**
+ * Calling what `sessionmaker(...)` or `scoped_session(...)` returned
+ * makes a `Session`, so a session made that way is read the same as one
+ * built by `Session()`.
+ */
+export const SESSION_FACTORIES: NonNullable<PackWords["makesWhenCalled"]> = [
+  { module: "sqlalchemy.orm", name: "sessionmaker", makes: SESSION },
+  { module: "sqlalchemy.orm", name: "scoped_session", makes: SESSION },
+];
+
 /** The words the shared rules read the calls as, for every base a model can have. */
 export function modelWords(calls: ModelCalls): PackWords {
   return {
@@ -136,6 +148,11 @@ export function modelWords(calls: ModelCalls): PackWords {
     ),
     givesBackOneOfImport: [...calls.entryFunctions],
   };
+}
+
+/** What a pack built on SQLAlchemy says about its models and about the factories its sessions come from. */
+export function storageWords(calls: ModelCalls): PackWords {
+  return { ...modelWords(calls), makesWhenCalled: SESSION_FACTORIES };
 }
 
 /**
@@ -520,7 +537,7 @@ export function withSqlalchemy(
   return withStatements(pack, [
     rawStatements("sqlalchemy", options),
     queryChains("sqlalchemy-queries", SQLALCHEMY_TYPES, options, {
-      words: modelWords(SQLALCHEMY_MODEL_CALLS),
+      words: storageWords(SQLALCHEMY_MODEL_CALLS),
       classBodies: sqlalchemyClassBodies(),
     }),
     statementChains("sqlalchemy-statements", ["sqlalchemy"], options),

@@ -39,6 +39,16 @@ export interface EntersAsSelf {
   name: string;
 }
 
+/**
+ * Calling one of `module`'s `name` makes one of `makes`, as calling what
+ * `sqlalchemy.orm.sessionmaker(...)` returned makes a `Session`.
+ */
+export interface MakesWhenCalled {
+  module: string;
+  name: string;
+  makes: { module: string; name: string };
+}
+
 /** Calling the `name` that `module` exports gives back its argument at `argument`. */
 export interface UnwrapsByName {
   module: string;
@@ -64,6 +74,7 @@ export interface PackWords {
   givesBackOneOfArgument?: ReadonlyArray<GivesBackOneOfArgument>;
   givesBackOneOfImport?: ReadonlyArray<GivesBackOneOfImport>;
   entersAsSelf?: ReadonlyArray<EntersAsSelf>;
+  makesWhenCalled?: ReadonlyArray<MakesWhenCalled>;
   unwrapsByName?: ReadonlyArray<UnwrapsByName>;
   associationConstructor?: ReadonlyArray<AssociationConstructor>;
   /** Methods that hand back the object they are called on, by name. */
@@ -103,6 +114,14 @@ export function addPackWords(db: Database, words: PackWords): void {
   }
   for (const word of words.entersAsSelf ?? []) {
     db.add("entersAsSelf", [word.module, word.name]);
+  }
+  for (const word of words.makesWhenCalled ?? []) {
+    db.add("makesWhenCalled", [
+      word.module,
+      word.name,
+      word.makes.module,
+      word.makes.name,
+    ]);
   }
   for (const word of words.unwrapsByName ?? []) {
     db.add("unwrapsByName", [word.module, word.name, String(word.argument)]);
