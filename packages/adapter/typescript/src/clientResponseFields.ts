@@ -37,6 +37,7 @@ import type {
   ResponsePropertyMapping,
 } from "@suss/extractor";
 import type { Expression } from "ts-morph";
+import type { ResponseMembers } from "./shapes/fieldAccesses.js";
 
 export type ClientResponseFields = Pick<
   RawCodeStructure,
@@ -84,6 +85,14 @@ export function clientResponseFieldsOfPack(
     ...(pack.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: pack.redirectDelivery }),
+  };
+}
+
+/** What a pack says about the response a caller reads fields off, for `collectClientFieldAccesses`. */
+export function responseMembersOf(pack: PatternPack): ResponseMembers {
+  return {
+    responseSemantics: pack.responseSemantics,
+    statusMembers: statusMembersOf(clientResponseFieldsOfPack(pack)),
   };
 }
 

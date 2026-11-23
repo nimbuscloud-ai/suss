@@ -582,4 +582,82 @@ describe("expectedInput on client transitions", () => {
     expect(fields).not.toContainEqual(expect.stringContaining("email"));
     expect(fields).toContain("loadBoth /orders/{id}: total");
   });
+
+  it("follows the parsed body through whatever name the caller gives it", async () => {
+    const fields = await expectedBodyFields(`
+      export async function awaited(id: string) {
+        const res = await fetch("/invoices/" + id);
+        const invoice = await res.json();
+        return invoice.payerName;
+      }
+
+      export async function destructured(id: string) {
+        const res = await fetch("/receipts/" + id);
+        const { payerName, total: amount } = await res.json();
+        return [payerName, amount];
+      }
+
+      export async function parenthesized(id: string) {
+        const res = await fetch("/refunds/" + id);
+        return (await res.json()).payerName;
+      }
+    `);
+
+    expect(fields).toEqual([
+      "awaited /invoices/{id}: payerName",
+      "destructured /receipts/{id}: payerName,total",
+      "parenthesized /refunds/{id}: payerName",
+    ]);
+  });
+
+  it("puts a read on the branches whose guards it is written under", async () => {
+    const project = createProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      declare function notify(message: string): void;
+      export async function removeInvoice(id: string) {
+        const res = await fetch("/invoices/" + id, { method: "DELETE" });
+        if (res.status === 200) {
+          notify("removed");
+        } else {
+          const { error } = await res.json();
+          notify(error.message);
+        }
+      }
+    `,
+    );
+    const adapter = createTypeScriptAdapter({ project, frameworks: [webPack] });
+    const [summary] = await adapter.extractAll();
+
+    // The fall-through says nothing about the status, so it reads nothing
+    // the else arm reads.
+    const readOn = (summary?.transitions ?? []).map((t) => {
+      const body =
+        t.expectedInput?.type === "record"
+          ? t.expectedInput.properties.json
+          : undefined;
+      const fields =
+        body?.type === "record" ? Object.keys(body.properties) : [];
+      const guard = t.conditions[0]?.type ?? "none";
+      return `${guard}: ${fields.join(",")}`;
+    });
+    expect(readOn.sort()).toEqual([
+      "comparison: ",
+      "negation: error",
+      "none: ",
+    ]);
+  });
+
+  it("takes a method called on a body field as no field of its own", async () => {
+    const fields = await expectedBodyFields(`
+      export async function lineNames(id: string) {
+        const res = await fetch("/invoices/" + id);
+        const invoice = await res.json();
+        return invoice.lines.map((line: { name: string }) => line.name);
+      }
+    `);
+
+    expect(fields).toEqual(["lineNames /invoices/{id}: lines"]);
+  });
 });

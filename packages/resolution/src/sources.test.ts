@@ -160,6 +160,33 @@ describe("askSources", () => {
     ]);
   });
 
+  it("ends at a member the caller picks, before a computed read off it", () => {
+    const db = databaseOf([
+      ["call", "request", "clientRef"],
+      ["readsKeyed", "request", "clientRef", "url"],
+      ["readsProperty", "body", "request", "body"],
+      ["binds", "parsed", "body"],
+      ["binds", "parsedRef", "parsed"],
+    ]);
+    expect(
+      askSources(
+        db,
+        ["parsedRef"],
+        undefined,
+        "wantedInputRead",
+        (member) => member === "request",
+      ).get("parsedRef"),
+    ).toEqual([
+      {
+        key: "request",
+        path: ["body"],
+        computedAt: null,
+        conversions: [],
+        end: { is: "call" },
+      },
+    ]);
+  });
+
   it("goes through the language's own conversion and says it did", () => {
     const db = databaseOf([
       ...HANDLER,

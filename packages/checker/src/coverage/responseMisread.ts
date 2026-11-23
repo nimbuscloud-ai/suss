@@ -26,12 +26,11 @@ import {
 import {
   extractResponseStatus,
   extractResponseStatusRange,
-  isSuccessStatus,
   makeBoundary,
   makeSide,
   type StatusAccessors,
 } from "./responseMatch.js";
-import { branchHandlesStatus, guardsForBranch } from "./statusRanges.js";
+import { branchRunsOnStatus } from "./statusRanges.js";
 
 import type {
   BehavioralSummary,
@@ -183,26 +182,6 @@ function fieldAbsent(shape: TypeShape, field: string): boolean {
   return false;
 }
 
-/**
- * Which statuses this branch runs on: the same reading provider
- * coverage uses, so the two checks agree on where a branch applies.
- */
-function branchAdmitsStatus(
-  ct: Transition,
-  status: number,
-  statusAccessors: StatusAccessors,
-  successAccessors: StatusAccessors,
-): boolean {
-  if (ct.isDefault && isSuccessStatus(status)) {
-    return true;
-  }
-  return branchHandlesStatus(
-    ct.conditions,
-    guardsForBranch(ct, statusAccessors, successAccessors),
-    status,
-  );
-}
-
 /** Whether the branch runs on any status the response's span admits. */
 function branchAdmitsResponse(
   ct: Transition,
@@ -211,7 +190,7 @@ function branchAdmitsResponse(
   successAccessors: StatusAccessors,
 ): boolean {
   for (let status = r.min; status <= r.max; status++) {
-    if (branchAdmitsStatus(ct, status, statusAccessors, successAccessors)) {
+    if (branchRunsOnStatus(ct, status, statusAccessors, successAccessors)) {
       return true;
     }
   }

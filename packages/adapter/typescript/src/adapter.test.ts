@@ -5982,6 +5982,57 @@ describe("wrapper expansion", () => {
     }
   });
 
+  it("reads each caller of a fetch wrapper that passes no options, with the fields it reads off the body", async () => {
+    const project = makeProject();
+    project.createSourceFile(
+      "api.ts",
+      `
+      export async function getJson<T>(path: string): Promise<T> {
+        const res = await fetch(path);
+        return res.json();
+      }
+
+      export async function loadInvoice(id: string) {
+        const invoice = await getJson<{ payerName: string }>(\`/invoices/\${id}\`);
+        return invoice.payerName;
+      }
+
+      export async function loadHealth() {
+        const health = await getJson<{ up: boolean }>("/health");
+        return health.up;
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [
+        {
+          ...axiosLikePack,
+          name: "fetch",
+          requestRecognizers: fetchRequests(),
+        },
+      ],
+    });
+    const summaries = await adapter.extractAll();
+
+    const read = summaries
+      .filter((s) => s.identity.name !== "getJson")
+      .map((s) => {
+        const fields = s.transitions.flatMap((t) =>
+          t.expectedInput?.type === "record"
+            ? Object.keys(t.expectedInput.properties)
+            : [],
+        );
+        return `${s.identity.name} ${restPathOf(s)}: ${fields.join(",")}`;
+      })
+      .sort();
+    expect(read).toEqual([
+      "loadHealth /health: up",
+      "loadInvoice /invoices/{id}: payerName",
+    ]);
+  });
+
   it("follows a wrapper whose own caller is a wrapper", async () => {
     const project = makeProject();
     project.createSourceFile(

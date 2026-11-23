@@ -452,6 +452,51 @@ describe("a method that calls a request method", () => {
     });
   });
 
+  it("records the body fields a caller reads, through whatever name it gives the parsed body", async () => {
+    const units = await unitsIn(
+      [
+        "class InvoiceClient",
+        "  PAYER = 'payer_name'",
+        "",
+        "  def named(id)",
+        '    response = HttpClient.get("/invoices/#{id}")',
+        "    invoice = JSON.parse(response.body)",
+        "    invoice[PAYER]",
+        "  end",
+        "",
+        "  def inline(id)",
+        '    response = HttpClient.get("/receipts/#{id}")',
+        "    JSON.parse(response.body, symbolize_names: true).fetch(:payer_name)",
+        "  end",
+        "",
+        "  def nested(id)",
+        '    response = HttpClient.get("/refunds/#{id}")',
+        '    lines = JSON.parse(response.body)["lines"]',
+        '    [lines.dig("first", "name"), response.status]',
+        "  end",
+        "",
+        "  def parsed_by_the_client(id)",
+        '    response = HttpClient.get("/credits/#{id}")',
+        '    response.body["payer_name"]',
+        "  end",
+        "end",
+      ].join("\n"),
+      requestCalls({ response: { statusCode: ["status"], body: ["body"] } }),
+    );
+
+    expect(
+      units.map(
+        (unit) =>
+          `${unit.identity.name}: ${JSON.stringify(unit.branches.map((branch) => branch.expectedInput ?? null))}`,
+      ),
+    ).toEqual([
+      'named: [{"type":"record","properties":{"body":{"type":"record","properties":{"payer_name":{"type":"unknown"}}}}}]',
+      'inline: [{"type":"record","properties":{"body":{"type":"record","properties":{"payer_name":{"type":"unknown"}}}}}]',
+      'nested: [{"type":"record","properties":{"body":{"type":"record","properties":{"lines":{"type":"record","properties":{"first":{"type":"record","properties":{"name":{"type":"unknown"}}}}}}}}}]',
+      'parsed_by_the_client: [{"type":"record","properties":{"body":{"type":"record","properties":{"payer_name":{"type":"unknown"}}}}}]',
+    ]);
+  });
+
   it("gives one branch per path the caller takes after the call", async () => {
     const units = await unitsIn(
       [

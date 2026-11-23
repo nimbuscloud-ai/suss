@@ -67,6 +67,7 @@ import type {
   AccessRecognizer,
   CallOps,
   EffectArg,
+  EffectSite,
   InvocationRecognizer,
   RawCondition,
   RawEffect,
@@ -1158,6 +1159,15 @@ function collectPreconditions(node: Node, root: Node): RawCondition[] {
   return collectAncestorConditionInfosBelow(node, root).map(
     conditionInfoToRawCondition,
   );
+}
+
+/** Where a node in `root` is written, for `firesOn` to place it on branches the way it places a call. */
+export function siteOf(node: Node, root: Node): EffectSite {
+  return {
+    line: enclosingStatementLine(node),
+    preconditions: collectPreconditions(node, root),
+    cleansUpFrom: cleanupStartLine(node, root),
+  };
 }
 
 /**

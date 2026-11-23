@@ -13,7 +13,8 @@ The extractor calls this layer whenever it needs to know what a value looks like
 - `typeShapes.ts:shapeFromNodeType` / `shapeFromType` are the type-checker fallback. They use `MAX_DEPTH = 6` and a per-call `seen` Set on `objectToShape` to handle recursive types.
 - `typeShapes.ts:typeToShape` is the central dispatch. It decides which `TypeShape` variant matches the type checker's `Type`.
 - `fieldAccesses.ts:findResponseAccessor` locates the response binding in a call expression, whether it is a named param, destructured, or assigned to a variable.
-- `fieldAccesses.ts:collectPropertyAccesses` traces property reads through a statement subtree, and normalizes chains rooted at the response.
+- `fieldAccesses.ts:collectClientFieldAccesses` lists the fields each branch of a client reads off its response. Every name the function declares, and every parenthesized call such as `(await res.json())`, is a possible read. `placesInResponse` in `@suss/extractor` asks the resolution store where each one came from, so `invoice.payerName` after `const invoice = await res.json()` is `json.payerName`, the same as a destructured `{ payerName }` or a `.then((invoice) => invoice.payerName)`. The extractor's DESIGN.md says which values get a place.
+- **What counts as a field.** A method called on the response itself, such as `res.json()`, is one of its members and is kept. A method called on anything inside the body, such as `invoice.lines.map(...)`, is not a field, so the read stops at `lines`. A status, success flag or header read off the response is left out by the pack's response semantics. Without a resolution store nothing says where a value came from, so no branch reads anything.
 
 ## Gotchas
 
