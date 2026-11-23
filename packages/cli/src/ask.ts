@@ -15,6 +15,7 @@
 import path from "node:path";
 
 import {
+  BOUNDARY_ROLE,
   bindingIs,
   originalIdOf,
   readHttpMetadata,
@@ -54,6 +55,7 @@ import { loadedSummaries } from "./loadedSummaries.js";
 import { reachTargetOf } from "./reachTarget.js";
 import { sentenceList } from "./sentenceList.js";
 import { readSummaries } from "./summaryFile.js";
+import { packsNeedingConfigIn } from "./summaryFolder.js";
 import {
   ambiguousBoundarySpelling,
   collapseTouches,
@@ -280,7 +282,10 @@ function loadSummaries(options: AskOptions): LoadedSummaries {
     return options.loaded;
   }
   if (options.dir !== undefined) {
-    return loadedSummaries(readSummariesFromDir(options.dir));
+    return loadedSummaries(
+      readSummariesFromDir(options.dir),
+      packsNeedingConfigIn(options.dir),
+    );
   }
   if (options.file !== undefined) {
     return loadedSummaries(readSummaries(options.file));
@@ -298,7 +303,7 @@ const ANSWERS: Record<
   Exclude<QuestionShape, WhyShape>,
   (subject: string, loaded: LoadedSummaries) => Answer
 > = {
-  declares: (subject, loaded) => answerDeclares(subject, loaded.summaries),
+  declares: answerDeclares,
   reads: (subject, loaded) => answerDirection("reads", subject, loaded),
   writes: (subject, loaded) => answerDirection("writes", subject, loaded),
   invokes: (subject, loaded) => answerDirection("invokes", subject, loaded),
@@ -340,7 +345,7 @@ const PLURAL_VERB: Record<AtBoundary, string> = {
   calls: "call",
 };
 
-/** What an unfollowed call could be hiding, for each question. */
+/** What a call suss could not read could be hiding, for each question. */
 const HIDDEN_ACTOR: Record<AtBoundary, string> = {
   reads: "a reader",
   writes: "a writer",
@@ -400,21 +405,35 @@ function notHere(
   shape: QuestionShape,
   subject: string,
   hints: string[],
+  loaded: LoadedSummaries,
 ): Answer {
+  const unconfigured = packConfigNeeds(loaded);
   return {
     shape,
     subject,
     headline: `Nothing in these summaries is at ${subject}.`,
     items: [],
     needs:
-      hints.length > 0
-        ? hints
+      hints.length > 0 || unconfigured.length > 0
+        ? [...hints, ...unconfigured]
         : [
             `Extract the code that goes through ${subject}, or read its deploy template in with suss contract, then ask again.`,
           ],
     caveats: [],
     found: false,
   };
+}
+
+/**
+ * What to do about each pack the extract left out for want of an
+ * option. Whatever that pack reads is missing from these summaries, so
+ * extracting the same code again would give the same answer.
+ */
+function packConfigNeeds(loaded: LoadedSummaries): string[] {
+  return loaded.packsNeedingConfig.map(
+    (need) =>
+      `The ${need.pack} pack read nothing, because ${need.option} is not set, so whatever it reads is missing here. Write a JSON file such as ${need.example}, pass it to the extract as -f ${need.pack}=<config.json>, then ask again.`,
+  );
 }
 
 /**
@@ -446,10 +465,8 @@ function ambiguousAnswer(
   };
 }
 
-function answerDeclares(
-  subject: string,
-  summaries: BehavioralSummary[],
-): Answer {
+function answerDeclares(subject: string, loaded: LoadedSummaries): Answer {
+  const { summaries } = loaded;
   const ambiguous = ambiguousBoundarySpelling(subject, summaries);
   if (ambiguous !== null) {
     return ambiguousAnswer("declares", subject, ambiguous, summaries);
@@ -457,7 +474,7 @@ function answerDeclares(
 
   const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
-    return notHere("declares", subject, hints);
+    return notHere("declares", subject, hints, loaded);
   }
 
   const label = boundaryLabelFor(subject, touches);
@@ -595,7 +612,7 @@ function answerAtBoundary(
 
   const { touches, hints } = groundedTouchesAt(subject, summaries);
   if (touches.length === 0) {
-    return notHere(shape, subject, hints);
+    return notHere(shape, subject, hints, loaded);
   }
 
   const label = boundaryLabelFor(subject, touches);
@@ -642,14 +659,19 @@ function answerAtBoundary(
       ? []
       : [`${label} is provided by ${providers.join(", ")}.`];
 
+  const hidden = hiddenAtBoundary(touches, loaded, {
+    actor: HIDDEN_ACTOR[shape],
+    label,
+    listed,
+  });
   if (items.length === 0) {
     return {
       shape,
       subject,
       headline: `Nothing in these summaries ${shape} ${label}.`,
       items: [],
-      needs: [...servedBy, ...hints],
-      caveats: runCaveats(summaries, shape),
+      needs: [...servedBy, ...hints, ...packConfigNeeds(loaded)],
+      caveats: hidden,
       found: true,
     };
   }
@@ -662,11 +684,7 @@ function answerAtBoundary(
     items,
     ...(modules.length === 0 ? {} : { detail: { modules } }),
     needs: servedBy,
-    caveats: [
-      ...hints,
-      ...gapCaveats(listed),
-      ...runCaveats(summaries, shape, listed),
-    ],
+    caveats: [...hints, ...gapCaveats(listed), ...hidden],
     found: true,
   };
 }
@@ -678,13 +696,44 @@ function answerAtBoundary(
  * collects everything they touch.
  */
 function reachedFrom(target: ResolvedTarget, facts: CallFacts): ReachedTouch[] {
-  const start =
-    target.kind === "boundary"
-      ? unitsServing(target.touches)
-      : target.summaries;
+  const start = reachStart(target);
   const direct =
     target.kind === "boundary" ? touchesOfUnits(start) : target.touches;
   return touchesReached(direct, reachedFunctions(start, facts), facts);
+}
+
+function reachStart(target: ResolvedTarget): BehavioralSummary[] {
+  return target.kind === "boundary"
+    ? unitsServing(target.touches)
+    : target.summaries;
+}
+
+/**
+ * Warns that a boundary the target reaches could be missing, because
+ * the code it calls stops at a call suss did not follow. The target's
+ * own units print their gaps one by one, so only the code they call is
+ * counted here.
+ */
+function reachCaveats(target: ResolvedTarget, facts: CallFacts): string[] {
+  const start = reachStart(target);
+  const own = new Set(start);
+  const called = [...reachedFunctions(start, facts).keys()]
+    .flatMap((fn) => facts.units.get(fn) ?? [])
+    .filter(
+      (unit) =>
+        !own.has(unit) &&
+        unit.gaps.some((gap) => gap.type === "unfollowedCall"),
+    );
+  if (called.length === 0) {
+    return [];
+  }
+  return [
+    hiddenBehindLine(
+      unfollowedCalls(called),
+      "a boundary it reaches",
+      "in the code it calls",
+    ),
+  ];
 }
 
 /** Units in a module first, grouped by module name, and the rest after in their order. */
@@ -895,7 +944,10 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
           ? `Extract the code serving ${subject} into the same folder, then ask again.`
           : "A pack that reads the library this code calls would say more. suss extract -f <pack> lists what is built in.",
       ],
-      caveats: gapCaveats(target.summaries),
+      caveats: [
+        ...gapCaveats(target.summaries),
+        ...reachCaveats(target, loaded.callFacts),
+      ],
       found: true,
     };
   }
@@ -906,7 +958,10 @@ function answerReaches(subject: string, loaded: LoadedSummaries): Answer {
     headline: `${subject}, ${target.summaries.length} summar${target.summaries.length === 1 ? "y" : "ies"}, reaches ${items.length} boundar${items.length === 1 ? "y" : "ies"}:`,
     items,
     needs: [],
-    caveats: gapCaveats(target.summaries),
+    caveats: [
+      ...gapCaveats(target.summaries),
+      ...reachCaveats(target, loaded.callFacts),
+    ],
     found: true,
   };
 }
@@ -1005,7 +1060,7 @@ function answerProvides(subject: string, loaded: LoadedSummaries): Answer {
 
   const resolution = resolveTarget(subject, summaries);
   if (!resolution.matched) {
-    return notHere("provides", subject, []);
+    return notHere("provides", subject, [], loaded);
   }
 
   const providers = resolution.target.summaries.filter(
@@ -1121,23 +1176,81 @@ function declarationsOf(summary: BehavioralSummary): Declaration[] {
 }
 
 /**
- * Warns that a unit suss could not read completely may touch the boundary
- * without this run seeing it. Units the answer already lists are left
- * out, because their gaps are printed one by one above this line.
+ * What could hide a unit the answer leaves out. A route's caller is a
+ * request, so a request whose URL suss could not read could be one. Any
+ * other boundary is touched by code, so a call suss did not follow in
+ * the code at the boundary, or in what that code calls, could be one.
+ * Units the answer lists print their own gaps, so they are left out.
  */
-function runCaveats(
-  summaries: ReadonlyArray<BehavioralSummary>,
-  shape: AtBoundary,
-  listed: ReadonlyArray<BehavioralSummary> = [],
+function hiddenAtBoundary(
+  touches: ReadonlyArray<TargetTouch>,
+  loaded: LoadedSummaries,
+  said: {
+    actor: string;
+    label: string;
+    listed: ReadonlyArray<BehavioralSummary>;
+  },
 ): string[] {
-  const already = new Set(listed);
-  const withGaps = summaries.filter(
-    (summary) => summary.gaps.length > 0 && !already.has(summary),
+  if (touches.some((touch) => bindingIs(touch.touched.binding, "rest"))) {
+    return unreadRequestCaveats(
+      loaded.summaries,
+      `${said.actor} of ${said.label}`,
+    );
+  }
+  const start = [...new Set(touches.map((touch) => touch.summary))];
+  const listed = new Set(said.listed);
+  const facts = loaded.callFacts;
+  const stopped = [
+    ...start,
+    ...[...reachedFunctions(start, facts).keys()].flatMap(
+      (fn) => facts.units.get(fn) ?? [],
+    ),
+  ].filter(
+    (unit) =>
+      !listed.has(unit) &&
+      unit.gaps.some((gap) => gap.type === "unfollowedCall"),
   );
-  if (withGaps.length === 0) {
+  if (stopped.length === 0) {
     return [];
   }
-  return [hiddenBehindLine(unfollowedCalls(withGaps), HIDDEN_ACTOR[shape])];
+  return [
+    hiddenBehindLine(
+      unfollowedCalls([...new Set(stopped)]),
+      said.actor,
+      `in the code at ${said.label} or the code it calls`,
+    ),
+  ];
+}
+
+/**
+ * The requests here whose URL suss could not read, any of which could
+ * be a call to the route the answer is about. A request made through a
+ * call suss did not follow is still read where it is made, so this
+ * covers it too.
+ */
+function unreadRequestCaveats(
+  summaries: ReadonlyArray<BehavioralSummary>,
+  actor: string,
+): string[] {
+  const unread = writtenOnly(summaries).filter((summary) => {
+    const binding = summary.identity.boundaryBinding;
+    return (
+      BOUNDARY_ROLE[summary.kind] === "consumer" &&
+      bindingIs(binding, "rest") &&
+      binding.semantics.path === null
+    );
+  });
+  const places = [...new Set(unread.map(unitAt))];
+  if (places.length === 0) {
+    return [];
+  }
+  const shown = places.slice(0, 3);
+  const more = places.length - shown.length;
+  const listed =
+    more === 0 ? sentenceList(shown) : `${shown.join(", ")} and ${more} more`;
+  return [
+    `warning: ${actor} could be one of ${places.length} request${places.length === 1 ? "" : "s"} here whose URL suss could not read: ${listed}.`,
+  ];
 }
 
 /** The summaries as written. A copy made for one construction of a receiver repeats its original's calls, so it is left out. */
@@ -1184,16 +1297,17 @@ export function unfollowedCalls(summaries: ReadonlyArray<BehavioralSummary>): {
 export function hiddenBehindLine(
   stops: { count: number; callees: string[] },
   actor: string,
+  where = "elsewhere in this run",
 ): string {
   if (stops.count === 1) {
     const called = stops.callees.length === 1 ? ` to ${stops.callees[0]}` : "";
-    return `warning: ${actor} could be hidden behind an unfollowed call${called} elsewhere in this run.`;
+    return `warning: ${actor} could be hidden behind an unfollowed call${called} ${where}.`;
   }
   const listed =
     stops.count <= 3 && stops.callees.length === stops.count
       ? ` (${stops.callees.join(", ")})`
       : "";
-  return `warning: ${actor} could be hidden behind one of ${stops.count} unfollowed calls${listed} elsewhere in this run. Run with --json to see them.`;
+  return `warning: ${actor} could be hidden behind one of ${stops.count} unfollowed calls${listed} ${where}. Run with --json to see them.`;
 }
 
 // ---------------------------------------------------------------------------
