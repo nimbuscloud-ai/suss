@@ -23,8 +23,8 @@ concurrency:
 # in order took nine minutes and the three longest steps did not depend
 # on each other. Wall clock is now the slowest of the three.
 #
-#   checks     lint, typecheck, build, and every check: script that
-#              reads the tree rather than running it
+#   checks     lint, typecheck, build, every check: script that reads
+#              the tree rather than running it, and the client URL check
 #   test       the unit suite, then the badges it writes and the
 #              coverage floor read from them
 #   behaviour  dogfood and the self check that reads its output, the
@@ -221,6 +221,33 @@ jobs:
 
       - name: Documented examples
         run: npm run check:examples
+
+      # The client URL check asks httpx, aiohttp, Faraday, Net::HTTP and
+      # axios for the URL each builds and compares it with the client
+      # pack's. It runs last, so the docs checks never read the gems.
+      - uses: actions/setup-python@v5
+        if: steps.prepare.outputs.docs_only != 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/differential/python/requirements.txt
+
+      - uses: ruby/setup-ruby@v1
+        if: steps.prepare.outputs.docs_only != 'true'
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          working-directory: tools/differential/ruby
+
+      - name: Install the clients the client URL check asks
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: |
+          python3 -m pip install -r tools/differential/python/requirements.txt
+          npm ci --prefix tools/differential/node --no-audit --no-fund
+
+      - name: Client URLs against the libraries
+        if: steps.prepare.outputs.docs_only != 'true'
+        run: npm run check:client-urls
 
       # Save whatever turbo produced even when a step above failed, so
       # the next run of this job still finds it. See turbo-cache-save.
