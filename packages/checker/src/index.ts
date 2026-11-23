@@ -77,6 +77,7 @@ function reportedByItsOwnPass(summary: BehavioralSummary): boolean {
 
 export { checkBodyCompatibility } from "./body/bodyCompatibility.js";
 export { bodyShapesMatch } from "./body/bodyMatch.js";
+export { calledMethod, methodName } from "./calls/calledName.js";
 export {
   type CallEdge,
   type CallFacts,
