@@ -130,7 +130,78 @@ export function readKey(
   if (node.type !== "identifier") {
     return nodeId(filePath, node);
   }
-  return nameKeyIn(filePath, enclosing, node.text);
+  return (
+    loopVariableKey(filePath, node) ?? nameKeyIn(filePath, enclosing, node.text)
+  );
+}
+
+/**
+ * The key a read of a `for` loop's variable inside the loop's body joins
+ * on, or null for any other name. Python gives a function one variable
+ * per name, so two loops over `namespace` in one function would otherwise
+ * each read as either loop's items.
+ */
+function loopVariableKey(filePath: string, name: PyNode): string | null {
+  const loop = loopBinding(name);
+  return loop === null ? null : loopKey(filePath, loop, name.text);
+}
+
+function loopKey(filePath: string, loop: PyNode, name: string): string {
+  return `${nodeId(filePath, loop)}#${name}`;
+}
+
+/**
+ * The nearest `for` loop in the same function whose body the name is
+ * read in and whose target is the name, when that body writes the name
+ * nowhere else. A write in the body would leave the reads after it
+ * holding something other than the element.
+ */
+function loopBinding(name: PyNode): PyNode | null {
+  let child = name;
+  for (let parent = name.parent; parent !== null; parent = parent.parent) {
+    if (FUNCTION_TYPES.has(parent.type) || parent.type === "class_definition") {
+      return null;
+    }
+    if (
+      loopVariable(parent) === name.text &&
+      field(parent, "body")?.id === child.id
+    ) {
+      return bodyWrites(parent).has(name.text) ? null : parent;
+    }
+    child = parent;
+  }
+  return null;
+}
+
+/** The name a `for` statement's target is, or null when it takes the element apart or the node is no `for` statement. */
+function loopVariable(loop: PyNode): string | null {
+  if (loop.type !== "for_statement") {
+    return null;
+  }
+  const target = field(loop, "left");
+  return target?.type === "identifier" ? target.text : null;
+}
+
+const bodyWritesByTree = new WeakMap<
+  object,
+  Map<number, ReadonlySet<string>>
+>();
+
+/** The names a loop's body writes, nested loops' targets among them. */
+function bodyWrites(loop: PyNode): ReadonlySet<string> {
+  let byLoop = bodyWritesByTree.get(loop.tree);
+  if (byLoop === undefined) {
+    byLoop = new Map();
+    bodyWritesByTree.set(loop.tree, byLoop);
+  }
+  const known = byLoop.get(loop.id);
+  if (known !== undefined) {
+    return known;
+  }
+  const body = field(loop, "body");
+  const names = new Set(body === null ? [] : readScope(body, []).writes.keys());
+  byLoop.set(loop.id, names);
+  return names;
 }
 
 /**
@@ -515,7 +586,10 @@ function valueKey(emitter: Emitter, value: PyNode): string {
   if (value.type !== "identifier") {
     return nodeId(emitter.filePath, value);
   }
-  return nameKey(emitter.filePath, emitter.enclosing, value.text);
+  return (
+    loopVariableKey(emitter.filePath, value) ??
+    nameKey(emitter.filePath, emitter.enclosing, value.text)
+  );
 }
 
 /** A sequence is an object whose keys are positions. */
@@ -1077,6 +1151,15 @@ function emitElementVariables(emitter: Emitter, clause: PyNode): void {
     return;
   }
   emitElementTaken(emitter, target, valueKey(emitter, over), null);
+  const name = loopVariable(clause);
+  if (name !== null && !bodyWrites(clause).has(name)) {
+    // The loop writes the variable with no value of its own, as it does
+    // the function's name for it, so a call on an item nothing settles
+    // is still reported as a value the rules could not settle.
+    const key = loopKey(emitter.filePath, clause, name);
+    add(emitter, "elementOf", key, valueKey(emitter, over));
+    add(emitter, "writesUnstated", key);
+  }
 }
 
 /**

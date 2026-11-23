@@ -119,7 +119,8 @@ that is not a path, such as `orders`, counts as a refusal. One that is
 a full URL is that URL, because a server reads the target from it
 (RFC 9112, section 3.2.2).
 
-Each side needs its library installed:
+Pull request CI runs the check in its checks job, after installing the
+clients below. Each side needs its library installed:
 
 ```sh
 python3 -m pip install -r tools/differential/python/requirements.txt

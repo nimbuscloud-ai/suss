@@ -2199,6 +2199,16 @@ now start at `callOriginChain`, which only the question fills.
 is cleared after each question can be derived from facts read from
 source alone, and the error says which relation it is.
 
+The same thing goes wrong the other way round, when a relation that
+keeps its rows feeds one that is cleared. `callOriginChain` starts at
+the question and passes demand on to `nameHop`. If the chain kept its
+rows, asking about the same callee again after the store had read
+another file would derive the chain's first row a second time, which
+is no change, so the demand on `nameHop` would never come back and the
+answer would miss the file. `queryFacts` therefore clears every
+relation a question fills that a cleared relation reads, and the
+answers the callers read are the only rows a question leaves behind.
+
 ## What is not modelled
 
 **A handler passed as one property of a config.**

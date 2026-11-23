@@ -72,7 +72,7 @@
     "check:readers": "node scripts/checkReaders.mjs",
     "check:readmes": "node scripts/checkReadmes.mjs",
     "check:pack-tables": "node scripts/generatePackTables.mjs --check",
-    "check:perf": "node scripts/checkPerfBaseline.mjs",
+    "check:perf": "node scripts/checkPerf.mjs",
     "check:publish": "node scripts/preparePublish.mjs --check",
     "check:self": "turbo check:self",
     "check:style": "node scripts/checkStyle.mjs",

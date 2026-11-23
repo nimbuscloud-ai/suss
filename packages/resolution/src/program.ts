@@ -195,11 +195,81 @@ export function queryFacts(program: OnDemandRules): readonly string[] {
   if (program.demandDriven.length === 0) {
     return [];
   }
-  return [
+  const known = queryFactsByProgram.get(program);
+  if (known !== undefined) {
+    return known;
+  }
+  const cleared = [
     ...program.demandDriven,
     ...ASKING_RELATIONS,
     ...QUESTION_SCOPED_RELATIONS,
   ];
+  const all = [...cleared, ...keptRowsFeedingCleared(program, cleared)];
+  queryFactsByProgram.set(program, all);
+  return all;
+}
+
+const queryFactsByProgram = new WeakMap<OnDemandRules, readonly string[]>();
+
+/**
+ * The relations a question fills that a relation cleared with it reads,
+ * so they have to be cleared too. Asked again, the question derives a
+ * kept row a second time, which is no change, so nothing it led to
+ * before the clear is derived again. A chain kept from the first ask
+ * would leave the demand at its end cleared for good, and the answer
+ * would miss every fact read since.
+ */
+function keptRowsFeedingCleared(
+  program: OnDemandRules,
+  cleared: readonly string[],
+): string[] {
+  const fromQuestion = relationsDerivedFrom(program.rules, cleared);
+  const scoped = new Set(cleared);
+  const added: string[] = [];
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const one of program.rules) {
+      if (!scoped.has(one.head.relation)) {
+        continue;
+      }
+      for (const literal of one.body) {
+        if (
+          fromQuestion.has(literal.relation) &&
+          !scoped.has(literal.relation)
+        ) {
+          scoped.add(literal.relation);
+          added.push(literal.relation);
+          grew = true;
+        }
+      }
+    }
+  }
+  return added;
+}
+
+/** Every relation the rules derive, at any distance, from one of `seeds`. */
+function relationsDerivedFrom(
+  rules: readonly Rule[],
+  seeds: readonly string[],
+): Set<string> {
+  const reached = new Set(seeds);
+  const derived = new Set<string>();
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const one of rules) {
+      if (
+        !derived.has(one.head.relation) &&
+        one.body.some((literal) => reached.has(literal.relation))
+      ) {
+        reached.add(one.head.relation);
+        derived.add(one.head.relation);
+        grew = true;
+      }
+    }
+  }
+  return derived;
 }
 
 // A cache's ledger, which keeps an answer until something behind it
