@@ -1,11 +1,13 @@
-import { Evaluator, force, type Value } from "@suss/values";
+import { writtenValueRef } from "@suss/extractor";
+import { Evaluator, force, type Value, writtenLiteralOf } from "@suss/values";
 
 import { createProgramMemo } from "../programMemo.js";
-import { typescriptLowering } from "./lowering.js";
+import { declaredParameters, typescriptLowering } from "./lowering.js";
 import { typescriptRows } from "./rows.js";
 import { typescriptSoundLowering } from "./soundLowering.js";
 
-import type { Node, Project } from "ts-morph";
+import type { ValueRef } from "@suss/behavioral-ir";
+import type { FunctionLikeDeclaration, Node, Project } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
 const evaluators = createProgramMemo<object, Evaluator<Node>>();
@@ -55,6 +57,27 @@ export function evaluatorFor(
     evaluators.set(project, key, evaluator);
   }
   return evaluator;
+}
+
+/**
+ * What each name a function's parameters bind takes when a caller passes
+ * nothing for it: the literal its default comes down to, or a hole
+ * quoting the default when the function works it out as it runs. A
+ * name a destructured parameter binds has the default written beside it.
+ */
+export function parameterDefaults(
+  fn: FunctionLikeDeclaration,
+  resolution: ResolutionStore | undefined,
+): ReadonlyMap<string, ValueRef> {
+  const found = new Map<string, ValueRef>();
+  for (const parameter of declaredParameters(fn)) {
+    const written = parameter.default;
+    if (written !== null) {
+      const literal = writtenLiteralOf(evaluatedValue(written, resolution));
+      found.set(parameter.name, writtenValueRef(literal, written.getText()));
+    }
+  }
+  return found;
 }
 
 /**

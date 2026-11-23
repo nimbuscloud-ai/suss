@@ -74,6 +74,7 @@ import {
   type RequestRead,
   type ResponsePropertyMapping,
   type RootRecord,
+  requestBindingFrom,
   runDigest,
   runPackHook,
   runRootOf,
@@ -196,6 +197,7 @@ import {
 import { moduleInitSummary, unreadModuleInitSummary } from "./moduleInit.js";
 import { moduleSurfacePack, settleTypeScriptModules } from "./moduleSurface.js";
 import { enclosingParameterReads, parameterReads } from "./parameterReads.js";
+import { sourcesOfValues } from "./provenance.js";
 import { reportReadFailure } from "./readFailure.js";
 import { createReferenceIndex } from "./referencedFiles.js";
 import {
@@ -231,7 +233,7 @@ import {
   type Timer,
   type TimingReport,
 } from "./timing.js";
-import { evaluatedValueUnder } from "./values/evaluator.js";
+import { evaluatedValueUnder, parameterDefaults } from "./values/evaluator.js";
 import {
   computeAdapterPacksDigest,
   declineWhenRunFromSource,
@@ -401,6 +403,24 @@ function bindingRole(element: BindingElement, name: string): string {
     return property.getLiteralValue();
   }
   return property.getText();
+}
+
+/** The parameters, each with the default the function writes for the name it binds. */
+function withDefaults(
+  parameters: RawParameter[],
+  func: FunctionRoot,
+  resolution: ResolutionStore | undefined,
+): RawParameter[] {
+  const defaults = parameterDefaults(func, resolution);
+  if (defaults.size === 0) {
+    return parameters;
+  }
+  return parameters.map((parameter) => {
+    const fallback = defaults.get(parameter.name);
+    return fallback === undefined
+      ? parameter
+      : { ...parameter, default: fallback };
+  });
 }
 
 function extractParameters(
@@ -970,10 +990,14 @@ function readCodeStructure(
   }
   // A pack whose units follow more than one convention overrides the
   // pack-level input mapping per unit.
-  const params = extractParameters(
+  const params = withDefaults(
+    extractParameters(
+      func,
+      unit.inputMapping ??
+        rolesPastFrameworkValue(pack.inputMapping, frameworkValueAt(unit)),
+    ),
     func,
-    unit.inputMapping ??
-      rolesPastFrameworkValue(pack.inputMapping, frameworkValueAt(unit)),
+    resolution,
   );
   const terminals = terminalsFor(unit, pack, everyUnit.terminals);
   const keepsArms =
@@ -1121,6 +1145,36 @@ function stampClientBinding(
       location: lineRangeOf(call),
     },
   ];
+}
+
+/**
+ * Where the client's method and host came from, when the function takes
+ * one from its own parameters. `bindingFrom` points at parameters by
+ * name, so the unit then lists every parameter.
+ */
+function stampBindingFrom(
+  raw: RawCodeStructure,
+  func: FunctionRoot | null,
+  request: RequestClaim,
+  resolution: ResolutionStore | undefined,
+): void {
+  if (func === null || resolution === undefined) {
+    return;
+  }
+  const bindingFrom = requestBindingFrom(
+    request.read.stated,
+    [],
+    sourcesOfValues(func, resolution),
+  );
+  if (bindingFrom === undefined) {
+    return;
+  }
+  raw.bindingFrom = bindingFrom;
+  raw.parameters = withDefaults(
+    extractParameters(func, { type: "allPositional" }),
+    func,
+    resolution,
+  );
 }
 
 /**
@@ -1594,6 +1648,7 @@ function extractFromSourceFile(
           raw.redirectDelivery = request.redirectDelivery;
         }
         stampClientBinding(raw, unit.callSite, requestBinding(request, pack));
+        stampBindingFrom(raw, unit.func, request, resolution);
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
         const binding = contractClientBinding(
           unit,

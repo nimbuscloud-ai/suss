@@ -693,6 +693,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
         role: "queryParams",
         field: "q",
         typeText: "Optional[str]",
+        default: { type: "literal", value: null },
       },
     ]);
 

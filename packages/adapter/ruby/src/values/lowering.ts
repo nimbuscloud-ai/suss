@@ -881,6 +881,11 @@ function parametersOf(parameters: RbNode | null): Parameter<RbNode>[] {
   return declared;
 }
 
+/** The parameters a method, lambda or block declares, as the evaluator binds them. */
+export function declaredParameters(node: RbNode): readonly Parameter<RbNode>[] {
+  return functionOf(node)?.parameters ?? [];
+}
+
 function functionOf(node: RbNode): FunctionShape<RbNode> | null {
   if (node.type === "program") {
     return { parameters: [], body: named(node) };

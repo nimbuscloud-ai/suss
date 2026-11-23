@@ -35,6 +35,7 @@ import type {
 } from "@suss/values";
 import type {
   BindingElement,
+  FunctionLikeDeclaration,
   ObjectBindingPattern,
   ParameterDeclaration,
 } from "ts-morph";
@@ -504,6 +505,13 @@ function siteOf(node: Node): Site<Node> | null {
     }
     current = parent;
   }
+}
+
+/** Each name a function's parameters bind, with the default written for it, as the evaluator binds them. */
+export function declaredParameters(
+  fn: FunctionLikeDeclaration,
+): readonly Parameter<Node>[] {
+  return fn.getParameters().flatMap(parametersOf);
 }
 
 function functionOf(node: Node): FunctionShape<Node> | null {

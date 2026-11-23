@@ -10,8 +10,9 @@
  * the file through the engine's own scope walk.
  */
 
+import { writtenValueRef } from "@suss/extractor";
 import { nodeOfKey, noteKeyRead } from "@suss/resolution";
-import { Evaluator, force, literalOf } from "@suss/values";
+import { Evaluator, force, literalOf, writtenLiteralOf } from "@suss/values";
 
 import { enclosingFunction, field } from "../ast.js";
 import {
@@ -24,13 +25,14 @@ import {
   writtenValuesOf,
   writtenValueUnder,
 } from "../facts/resolve.js";
-import { readKey } from "../facts/values.js";
+import { parameterShapes, readKey } from "../facts/values.js";
 import { bindModule } from "../scope.js";
 import { pythonLowering } from "./lowering.js";
 import { originOf } from "./origin.js";
 import { pythonRows } from "./rows.js";
 import { pythonSoundLowering } from "./soundLowering.js";
 
+import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { Origin, Value } from "@suss/values";
 import type { PyNode } from "../parser.js";
@@ -294,6 +296,26 @@ export function evaluatedValue(
 
   const underSite = (): Value => force(evaluator.evaluate(node, { site }));
   return db === undefined ? underSite() : evaluatingUnderSite(db, underSite);
+}
+
+/**
+ * What each parameter of a function takes when a caller passes nothing
+ * for it, by name: the literal its default comes down to, or a hole
+ * quoting the default when the function works it out as it runs.
+ */
+export function parameterDefaults(
+  fn: PyNode,
+  db?: Database,
+): ReadonlyMap<string, ValueRef> {
+  const found = new Map<string, ValueRef>();
+  for (const parameter of parameterShapes(fn)) {
+    const written = parameter.default;
+    if (written !== null) {
+      const literal = writtenLiteralOf(evaluatedValue(written, db));
+      found.set(parameter.name, writtenValueRef(literal, written.text));
+    }
+  }
+  return found;
 }
 
 /** The one string `node` evaluates to, or null when it does not settle on one. */

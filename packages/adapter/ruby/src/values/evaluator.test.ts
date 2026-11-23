@@ -30,6 +30,7 @@ import {
   evaluatedValue,
   forgetEvaluations,
   methodDefinitionsIn,
+  parameterDefaults,
   possibleValueNodes,
   stringValueOf,
 } from "./evaluator.js";
@@ -1411,5 +1412,21 @@ describe("reading a value under one construction", () => {
     forgetEvaluations(new Database());
 
     expect(literalOf(evaluatedValue(node, db))).toBe("/api/items");
+  });
+});
+
+describe("what a parameter takes when a caller passes nothing", () => {
+  it("reads a positional default and a keyword's, and quotes one worked out at run time", async () => {
+    const tree = await parseRuby(
+      "def fetch(url, method = :get, body = nil, retries: 3, at: Time.now, verbose:)\nend",
+    );
+    const [method] = methodDefinitionsIn("http.rb", tree.rootNode).values();
+
+    expect(Object.fromEntries(parameterDefaults(method as RbNode))).toEqual({
+      method: { type: "literal", value: "get" },
+      body: { type: "literal", value: null },
+      retries: { type: "literal", value: 3 },
+      at: { type: "unresolved", sourceText: "Time.now" },
+    });
   });
 });

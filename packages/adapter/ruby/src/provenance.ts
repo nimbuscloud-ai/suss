@@ -10,7 +10,8 @@
  */
 
 import { sourceRefsOf } from "@suss/extractor";
-import { constantOf, literalOf } from "@suss/values";
+import { valueKeyOf } from "@suss/recognize/ops";
+import { writtenLiteralOf } from "@suss/values";
 
 import { children, field, NodeMap } from "./ast.js";
 import { askSourceQuestions, sourcesOf } from "./facts/resolve.js";
@@ -24,7 +25,12 @@ import {
 
 import type { Effect, ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
-import type { RawProvenance, SourceSpelling } from "@suss/extractor";
+import type {
+  RawProvenance,
+  SourceSpelling,
+  SourcesOfValues,
+  ValueOps,
+} from "@suss/extractor";
 import type { SourceLeaf, SourceQuestion } from "@suss/resolution";
 import type { RbNode } from "./parser.js";
 import type { EffectSlot, RbStorageOptions } from "./storage.js";
@@ -192,6 +198,38 @@ export function withSlotSources<B extends { extraEffects?: Effect[] }>(
   });
 }
 
+/**
+ * Asks where the values a file's request hooks handed back came from,
+ * and where the subjects of their conditions came from, as one question
+ * each, so each unit's own questions find them asked.
+ */
+export function askSourcesOfValues(
+  values: readonly ValueOps[],
+  operands: readonly RbNode[],
+  facts: Database,
+): void {
+  askSourceQuestions(
+    facts,
+    [...new Set(values.flatMap((value) => valueKeyOf(value) ?? []))],
+    "wantedSource",
+  );
+  askSourceQuestions(facts, keysOf(operands), "wantedInputRead");
+}
+
+/** Where each value a request hook handed back came from, as one question. */
+export function sourcesOfValues(context: SourceContext): SourcesOfValues {
+  return (values) => {
+    const keys = values.flatMap((value) => valueKeyOf(value) ?? []);
+    const found = keySources(keys, context);
+    return new Map(
+      values.map((value) => {
+        const key = valueKeyOf(value);
+        return [value, key === null ? [] : (found.get(key) ?? [])];
+      }),
+    );
+  };
+}
+
 /** Where each value came from, asked as one question. */
 export function valueSources(
   values: readonly RbNode[],
@@ -317,7 +355,5 @@ function literalAt(
   if (node === null) {
     return undefined;
   }
-  const value = evaluatedValue(node, facts);
-  const constant = constantOf(value);
-  return constant !== undefined ? constant : (literalOf(value) ?? undefined);
+  return writtenLiteralOf(evaluatedValue(node, facts));
 }

@@ -11,8 +11,15 @@
  * walk.
  */
 
+import { writtenValueRef } from "@suss/extractor";
 import { nodeOfKey, noteKeyRead, writtenValuesByKey } from "@suss/resolution";
-import { Evaluator, force, literalOf, text } from "@suss/values";
+import {
+  Evaluator,
+  force,
+  literalOf,
+  text,
+  writtenLiteralOf,
+} from "@suss/values";
 
 import { children, enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
 import {
@@ -24,10 +31,11 @@ import {
   writtenValueUnder,
 } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
-import { rubyLowering } from "./lowering.js";
+import { declaredParameters, rubyLowering } from "./lowering.js";
 import { rubyRows } from "./rows.js";
 import { rubySoundLowering } from "./soundLowering.js";
 
+import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { Value } from "@suss/values";
 import type { RbNode } from "../parser.js";
@@ -323,6 +331,26 @@ export function askWrittenValues(
   // A key the rules settle on a call has to be asked about again. Asking
   // for the whole batch keeps that second round to one question too.
   writtenValuesByKey(db, asked, (more) => resolveValues(db, more));
+}
+
+/**
+ * What each parameter of a method takes when a caller passes nothing for
+ * it, by name: the literal its default comes down to, or a hole quoting
+ * the default when the method works it out as it runs.
+ */
+export function parameterDefaults(
+  fn: RbNode,
+  db?: Database,
+): ReadonlyMap<string, ValueRef> {
+  const found = new Map<string, ValueRef>();
+  for (const parameter of declaredParameters(fn)) {
+    const written = parameter.default;
+    if (written !== null) {
+      const literal = writtenLiteralOf(evaluatedValue(written, db));
+      found.set(parameter.name, writtenValueRef(literal, written.text));
+    }
+  }
+  return found;
 }
 
 /** Values to use for the parameters of the block or method around `node`, as a caller would supply them. */

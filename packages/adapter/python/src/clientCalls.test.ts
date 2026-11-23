@@ -193,7 +193,21 @@ describe("a function that calls a request function", () => {
     ).toEqual(["GET /orders", "POST /audit"]);
   });
 
-  it("says nothing about a method argument that is not a literal", async () => {
+  it("says nothing about a method argument that nothing settles", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def load():",
+        "    verb = pick_verb()",
+        '    return httpclient.send(verb, "/orders")',
+      ].join("\n"),
+    );
+
+    expect(units).toEqual([]);
+  });
+
+  it("keeps a request whose method is the function's own parameter, with no method", async () => {
     const units = await unitsIn(
       [
         "import httpclient",
@@ -203,7 +217,14 @@ describe("a function that calls a request function", () => {
       ].join("\n"),
     );
 
-    expect(units).toEqual([]);
+    expect(units[0]?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: null,
+      path: "/orders",
+    });
+    expect(units[0]?.bindingFrom).toEqual({
+      method: [{ type: "input", inputRef: "verb", path: [] }],
+    });
   });
 
   it("says nothing about a call with no arguments at all", async () => {

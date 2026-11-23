@@ -16,7 +16,7 @@ import {
 } from "@suss/values";
 
 import { ResolutionStore } from "../facts/store.js";
-import { evaluatedValue } from "./evaluator.js";
+import { evaluatedValue, parameterDefaults } from "./evaluator.js";
 
 interface Fixture {
   readonly files?: Record<string, string>;
@@ -752,5 +752,24 @@ describe("functions", () => {
         },
       ).kind,
     ).toBe("hole");
+  });
+});
+
+describe("what a parameter takes when a caller passes nothing", () => {
+  it("reads a default beside a parameter and inside a destructure, and quotes one worked out at run time", () => {
+    const project = createTestProject();
+    const file = project.createSourceFile(
+      "/send.ts",
+      `export function send(url: string, method = "GET", { retries = 3, at = Date.now() } = {}, body?: string) {}`,
+    );
+    const send = file.getFunctionOrThrow("send");
+
+    expect(
+      Object.fromEntries(parameterDefaults(send, new ResolutionStore())),
+    ).toEqual({
+      method: { type: "literal", value: "GET" },
+      retries: { type: "literal", value: 3 },
+      at: { type: "unresolved", sourceText: "Date.now()" },
+    });
   });
 });
