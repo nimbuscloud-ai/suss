@@ -2125,8 +2125,22 @@ export interface RequestClaim {
   readonly redirectDelivery?: RedirectDelivery;
   /** The construction of the call's class this request was read under, when the URL differs between them. */
   readonly site?: string;
+  /**
+   * Set when the call makes a different request under each arm of a
+   * branch before it: the arms this request was read under, one entry
+   * per condition, with a fork that tests it and the arm of that fork.
+   * Empty when the arms that give this request share none. An adapter
+   * turns each into the condition its arm runs under.
+   */
+  readonly arms?: readonly ForkArm[];
   /** Where the call states the request, for an adapter that reads the call again under other values. */
   readonly read: RequestRead;
+}
+
+/** One arm of one fork, the fork as the adapter's source keys it. */
+export interface ForkArm {
+  readonly at: string;
+  readonly arm: number;
 }
 
 /**

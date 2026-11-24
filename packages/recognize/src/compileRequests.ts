@@ -26,6 +26,11 @@ import {
   urlReadingOf,
 } from "./httpRequestsHost.js";
 import { modulesOf, opsIn } from "./ops.js";
+import {
+  alternativeClaims,
+  lacking,
+  type Reading,
+} from "./requestAlternatives.js";
 
 import type {
   ArgumentPlace,
@@ -241,7 +246,16 @@ function claimsAt(
   matched: Matched,
   ops: CallOps,
 ): RequestClaim[] {
-  const plain = claimOf(requesting, matched, ops, undefined);
+  const reading = readingOf(requesting, matched, ops, undefined);
+  const alternatives = lacking(reading)
+    ? alternativeClaims(ops, reading, (under) =>
+        readingOf(requesting, matched, under, undefined),
+      )
+    : null;
+  if (alternatives !== null) {
+    return alternatives;
+  }
+  const plain = reading?.claim ?? null;
   if (plain !== null && plain.path !== null && !hasNameHole(plain.path)) {
     return [plain];
   }
@@ -272,10 +286,19 @@ function claimsAt(
  */
 function claimOf(
   requesting: Requesting,
-  { meaning, entry }: Matched,
+  matched: Matched,
   ops: CallOps,
   site: string | undefined,
 ): RequestClaim | null {
+  return readingOf(requesting, matched, ops, site)?.claim ?? null;
+}
+
+function readingOf(
+  requesting: Requesting,
+  { meaning, entry }: Matched,
+  ops: CallOps,
+  site: string | undefined,
+): Reading | null {
   const sent = sentBy(meaning, ops, site);
   const own = sent === null ? null : sent.url(site);
   if (sent === null || own === null || own.local === true) {
@@ -299,7 +322,7 @@ function claimOf(
       link: requesting.base,
     }) ?? meaning.redirects;
   const stated = statedRequest(sent, own, base);
-  return {
+  const claim: RequestClaim = {
     method: sent.method,
     path: placed.path,
     host: placed.host,
@@ -313,6 +336,11 @@ function claimOf(
       ...(base === null ? {} : { base: { ...base.url, joins: base.joins } }),
       ...(stated === undefined ? {} : { stated }),
     },
+  };
+  return {
+    claim,
+    methodOpen: sent.methodOpen,
+    methodGuessed: sent.methodGuessed,
   };
 }
 
@@ -362,7 +390,13 @@ interface Sent {
   readonly read: Pick<RequestRead, "url" | "method">;
   /** The values the call states the method and a URL with a host in it as. */
   readonly values: { readonly method?: ValueOps; readonly url?: ValueOps };
+  /** As `Reading` says. */
+  readonly methodOpen: boolean;
+  readonly methodGuessed: boolean;
 }
+
+/** A method the table writes, or one read from a value that settled, is sure. */
+const SURE = { methodOpen: false, methodGuessed: false } as const;
 
 /**
  * The method the call sends and how it states the URL, or null when
@@ -386,13 +420,14 @@ function sentBy(
       return withUrl(sends, url, written, {
         read: { url: urlPlace, method: sends },
         values: valuesOf(null, hostIn),
+        ...SURE,
       });
     }
     // A method the call states and suss cannot settle sends the default
     // too, so the request is kept with the method the library sends most.
     const stated = statedValue(ops, sends.from);
-    const method =
-      (stated === null ? null : stringOf(stated)) ?? sends.default ?? null;
+    const settled = stated === null ? null : stringOf(stated);
+    const method = settled ?? sends.default ?? null;
     if (method === null && !passedIn(stated, ops)) {
       return null;
     }
@@ -405,6 +440,11 @@ function sentBy(
         },
       },
       values: valuesOf(stated, hostIn),
+      methodOpen: stated !== null && settled === null,
+      methodGuessed:
+        settled === null &&
+        method !== null &&
+        (stated !== null || optionsUnread(ops, sends.from)),
     });
   }
   const { sends } = meaning;
@@ -421,7 +461,21 @@ function sentBy(
   return withUrl(method, urlReadingOf(urlValue), writtenOf(urlValue), {
     read: { url: { at: sends.object }, method: method ?? "" },
     values: valuesOf(null, urlValue),
+    ...SURE,
   });
+}
+
+/**
+ * Whether the call passes the object the method is read from and suss
+ * cannot read that object in full, so it may set a method suss did not
+ * see.
+ */
+function optionsUnread(ops: CallOps, pick: OneArgument): boolean {
+  if (pick.property === undefined) {
+    return false;
+  }
+  const passed = ops.valueAt(pick.at);
+  return passed !== null && (passed.object?.() ?? null) === null;
 }
 
 function valuesOf(
@@ -472,11 +526,14 @@ function urlArgument(ops: CallOps, pick: OneArgument): ValueOps | null {
 /** A URL argument suss cannot read, which reads as no URL at all. */
 const UNREAD: ValueOps = { ...NOTHING_STATED, url: () => NOWHERE };
 
+/** What a call states, apart from its method and URL. */
+type Stated = Pick<Sent, "read" | "values" | "methodOpen" | "methodGuessed">;
+
 function withUrl(
   method: string | null,
   url: UrlReading | null,
   written: Sent["written"],
-  stated: Pick<Sent, "read" | "values">,
+  stated: Stated,
 ): Sent | null {
   return method === null
     ? null
@@ -488,7 +545,7 @@ function withMethodAndUrl(
   method: string | null,
   url: UrlReading | null,
   written: Sent["written"],
-  stated: Pick<Sent, "read" | "values">,
+  stated: Stated,
 ): Sent | null {
   return url === null ? null : { method, url, written, ...stated };
 }

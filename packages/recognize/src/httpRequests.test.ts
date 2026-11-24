@@ -8,6 +8,8 @@ import { declarationsIn, pack, requestRecognizersOf } from "./pack.js";
 
 import type {
   AsCallFollowing,
+  CallFork,
+  CallForks,
   RequestClaim,
   Splats,
   UrlTarget,
@@ -100,12 +102,33 @@ interface Call {
   readonly splats?: Splats;
   /** Whether the call is written in `ENCLOSING`. Left out, the ops cannot say. */
   readonly inFunction?: boolean;
+  /** What reading the call's arguments meets under the arms taken. Left out, the ops cannot take arms. */
+  readonly forks?: (arms: ReadonlyMap<string, number>) => CallForks;
+  /** The arguments under the arms taken, where they differ from `args`. */
+  readonly argsUnder?: (
+    arms: ReadonlyMap<string, number>,
+  ) => readonly Stated[] | undefined;
 }
 
-function callOps(call: Call, asked: string[] = []): CallOps {
+function callOps(
+  call: Call,
+  asked: string[] = [],
+  arms: ReadonlyMap<string, number> = new Map(),
+): CallOps {
   const comesFrom = (origin: ReceiverOrigin) =>
     modulesOf(origin).some((module) => (call.from ?? []).includes(module));
+  const args = call.argsUnder?.(arms) ?? call.args;
+  const { forks } = call;
+  const armed =
+    forks === undefined
+      ? {}
+      : {
+          forks: () => forks(arms),
+          takingArms: (taken: ReadonlyMap<string, number>) =>
+            callOps(call, asked, taken),
+        };
   return {
+    ...armed,
     method: () => call.method ?? null,
     calleeText: () => call.callee ?? `client.${call.method ?? "call"}`,
     calleeImport: () => call.imports ?? null,
@@ -131,7 +154,7 @@ function callOps(call: Call, asked: string[] = []): CallOps {
         : call.settled && comesFrom(origin);
     },
     valueAt: (index: number) => {
-      const stated = call.args?.[index];
+      const stated = args?.[index];
       return stated === undefined ? null : valueOps(stated);
     },
     keywordAt: (name: string) => {
@@ -381,6 +404,23 @@ describe("a request chain", () => {
     expect(claim?.method).toBeNull();
     expect(claim?.read.stated?.method).toBeDefined();
     expect(claim?.read.stated?.host).toBeUndefined();
+  });
+
+  it("sends the library's default when a call passes no method argument, and splits nothing on it", () => {
+    const withDefault = httpRequests({ client: CLIENT }).methods({
+      request: {
+        sends: { from: { at: 0, keyword: "method" }, default: "get" },
+        url: { at: 1, keyword: "url" },
+      },
+    });
+    expect(
+      claimsOf(withDefault, {
+        method: "request",
+        from: ["httplib"],
+        keywords: { url: at("/orders") },
+        forks: () => ({ forks: [], reached: true, exhausted: false }),
+      }),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
   });
 
   it("keeps a request with no method when the method is a parameter of the function the call is in", () => {
@@ -1322,5 +1362,252 @@ describe("a request chain over options objects", () => {
         }),
       }),
     ).toEqual([{ method: "GET", path: "/orders", host: "api.example.com" }]);
+  });
+});
+
+describe("a request a branch before the call picks", () => {
+  const forkOf = (key: string, extra: Partial<CallFork> = {}): CallFork => ({
+    key,
+    at: `fork:${key}`,
+    arms: 2,
+    negated: false,
+    under: null,
+    ...extra,
+  });
+  const meeting = (
+    forks: readonly CallFork[],
+    extra: Partial<CallForks> = {},
+  ): CallForks => ({ forks, reached: true, exhausted: false, ...extra });
+  /** The forks a run meets: each listed fork until its key is taken. */
+  const openForks =
+    (...forks: CallFork[]) =>
+    (arms: ReadonlyMap<string, number>) =>
+      meeting(forks.filter((fork) => !arms.has(fork.key)));
+  const urlBy =
+    (pick: (arms: ReadonlyMap<string, number>) => string | undefined) =>
+    (arms: ReadonlyMap<string, number>) => [at(pick(arms))];
+  const byId = urlBy((arms) =>
+    arms.has("id") ? ["/x/{id}", "/x"][arms.get("id") ?? 0] : undefined,
+  );
+
+  it("gives one request per URL the arms of a fork pick, each under its arm", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("id")),
+        argsUnder: byId,
+      }),
+    ).toEqual([
+      {
+        method: "GET",
+        path: "/x/{id}",
+        host: undefined,
+        arms: [{ at: "fork:id", arm: 0 }],
+      },
+      {
+        method: "GET",
+        path: "/x",
+        host: undefined,
+        arms: [{ at: "fork:id", arm: 1 }],
+      },
+    ]);
+  });
+
+  it("gives one request per method the arms pick, and drops the value it was stated as", () => {
+    const claims =
+      readClaimsOf(REQUESTS, {
+        method: "request",
+        from: ["httplib"],
+        args: [{}, at("/widgets")],
+        forks: openForks(forkOf("on")),
+        argsUnder: (arms) =>
+          arms.has("on")
+            ? [
+                { evaluated: arms.get("on") === 0 ? "put" : "delete" },
+                at("/widgets"),
+              ]
+            : undefined,
+      }) ?? [];
+
+    expect(claims.map((claim) => claim.method)).toEqual(["PUT", "DELETE"]);
+    expect(claims.map((claim) => claim.read.stated?.method)).toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it("reads a negated condition's arms the other way round", () => {
+    const [first] =
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("id", { negated: true })),
+        argsUnder: byId,
+      }) ?? [];
+
+    expect(first?.path).toBe("/x/{id}");
+    expect(first?.arms).toEqual([{ at: "fork:id", arm: 1 }]);
+  });
+
+  it("keeps the plain request when no fork changes it", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("debug")),
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+  });
+
+  it("keeps the plain request when two conditions both change it", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("a"), forkOf("b")),
+        argsUnder: urlBy((arms) =>
+          arms.has("a") || arms.has("b")
+            ? `/${arms.get("a") ?? "_"}/${arms.get("b") ?? "_"}`
+            : undefined,
+        ),
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+  });
+
+  it("keeps the plain request when a fork beside the one taken starts to change it", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("a"), forkOf("b")),
+        argsUnder: urlBy((arms) => {
+          const a = arms.get("a");
+          const b = arms.get("b");
+          if (a === undefined) {
+            return undefined;
+          }
+          return b === undefined ? `/a${a}` : `/a${a}/b${b}`;
+        }),
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+  });
+
+  it("splits a fork inside an arm once that arm is taken", () => {
+    const inner = forkOf("b", { under: "a" });
+    const claims = claimsOf(REQUESTS, {
+      method: "get",
+      from: ["httplib"],
+      args: [at(undefined)],
+      forks: (arms) => meeting(forksInside(arms, inner)),
+      argsUnder: urlBy((arms) => {
+        if (arms.get("a") === 0) {
+          return "/a";
+        }
+        return arms.has("b") ? ["/b", "/c"][arms.get("b") ?? 0] : undefined;
+      }),
+    });
+
+    expect(claims?.map((claim) => [claim.path, claim.arms])).toEqual([
+      ["/a", [{ at: "fork:a", arm: 0 }]],
+      [
+        "/b",
+        [
+          { at: "fork:a", arm: 1 },
+          { at: "fork:b", arm: 0 },
+        ],
+      ],
+      [
+        "/c",
+        [
+          { at: "fork:a", arm: 1 },
+          { at: "fork:b", arm: 1 },
+        ],
+      ],
+    ]);
+  });
+
+  /** The fork `a` at the top, and `inner` once `a` took its second arm. */
+  function forksInside(
+    arms: ReadonlyMap<string, number>,
+    inner: CallFork,
+  ): CallFork[] {
+    if (!arms.has("a")) {
+      return [forkOf("a")];
+    }
+    return arms.get("a") === 1 && !arms.has("b") ? [inner] : [];
+  }
+
+  it("leaves out an arm that returns before the call, and shares what arms giving one request share", () => {
+    const pick = forkOf("kind", { arms: 4 });
+    const claims = claimsOf(REQUESTS, {
+      method: "get",
+      from: ["httplib"],
+      args: [at(undefined)],
+      forks: (arms) =>
+        meeting(arms.has("kind") ? [] : [pick], {
+          reached: arms.get("kind") !== 3,
+        }),
+      argsUnder: urlBy((arms) =>
+        arms.has("kind")
+          ? ["/a", "/b", "/a", "/gone"][arms.get("kind") ?? 0]
+          : undefined,
+      ),
+    });
+
+    expect(claims?.map((claim) => [claim.path, claim.arms])).toEqual([
+      ["/a", []],
+      ["/b", [{ at: "fork:kind", arm: 1 }]],
+    ]);
+  });
+
+  it("keeps the plain request when an arm's method is only the library's default", () => {
+    const FETCH_CALL = {
+      sends: { from: { at: 1, property: ["method"] }, default: "GET" },
+      url: { at: 0 },
+    };
+    const FETCH = httpRequests({ client: imported({ from: ["httplib"] }) })
+      .methods({ fetch: FETCH_CALL })
+      .calls(FETCH_CALL);
+
+    expect(
+      claimsOf(FETCH, {
+        callee: "fetch",
+        from: ["httplib"],
+        args: [at(undefined), {}],
+        forks: openForks(forkOf("id")),
+        argsUnder: (arms) =>
+          arms.has("id")
+            ? [at(arms.get("id") === 0 ? "/x/{id}" : "/x"), {}]
+            : undefined,
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+  });
+
+  it("keeps the plain request when a reading stopped early or the class is built more than one way", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: () => meeting([forkOf("id")], { exhausted: true }),
+        argsUnder: byId,
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        sites: ["new A"],
+        forks: openForks(forkOf("id")),
+        argsUnder: byId,
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
   });
 });
