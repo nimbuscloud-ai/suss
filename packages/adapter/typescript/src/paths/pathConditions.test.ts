@@ -392,12 +392,12 @@ describe("computePathConditions: sound degradation on declined shapes", () => {
   });
 
   it("degrades when the path budget is exceeded", () => {
-    // Six sequential three-way switches reach 3^6 = 729 paths. A switch
-    // group has no complement to cancel against, so nothing merges.
+    // Six sequential three-way switches reach 3^6 = 729 paths. With a
+    // default that throws, no unmatched value runs on, so nothing folds.
     const switches = Array.from(
       { length: 6 },
       (_, i) =>
-        `switch (k${i}) { case "a": term(); break; case "b": term(); break; default: term(); }`,
+        `switch (k${i}) { case "a": term(); break; case "b": term(); break; case "c": term(); break; default: throw new Error(); }`,
     ).join("\n");
     const fn = getFunction(`
       export function handler(term: any, ${Array.from({ length: 6 }, (_, i) => `k${i}: any`).join(", ")}) {
@@ -828,10 +828,9 @@ describe("computePathConditions, a braced case body splices into the clause", ()
     `);
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
-    // The return is reached matched-and-broken or unmatched.
+    // The return is reached matched-and-broken or unmatched, so the arm folds away.
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
-      'negative:explicit:req.query.kind === "a"',
-      'positive:explicit:req.query.kind === "a"',
+      "<unconditional>",
     ]);
   });
 
@@ -1022,7 +1021,7 @@ describe("computePathConditions, a braced case body splices into the clause", ()
     ]);
   });
 
-  it("models the branches of a switch nested in a braced case", () => {
+  it("folds a switch nested in a braced case, then the switch around it", () => {
     const fn = getFunction(`
       export function handler(req: { query: { kind: string } }, res: any) {
         switch (req.query.kind) {
@@ -1042,9 +1041,7 @@ describe("computePathConditions, a braced case body splices into the clause", ()
     const terminals = returnTerminals(fn);
     const result = computePathConditions(fn, terminals);
     expect(pathSigs(result?.byTerminal.get(terminals[0]))).toEqual([
-      'negative:explicit:req.query.kind === "b"',
-      'positive:explicit:req.query.kind === "b" ∧ negative:explicit:req.query.kind === "x"',
-      'positive:explicit:req.query.kind === "b" ∧ positive:explicit:req.query.kind === "x"',
+      "<unconditional>",
     ]);
   });
 });

@@ -123,7 +123,7 @@ describe("python lowering feeds the shared path engine", () => {
     expect(result.byTerminal.has(returns[1] as PyNode)).toBe(true);
   });
 
-  it("runs one case and never the next, with the subject in each case's condition", async () => {
+  it("runs one case and never the next, so the cases rejoin before the return after the match", async () => {
     const { returns, result } = await pathsFor(
       [
         "def send_it(verb):",
@@ -141,14 +141,7 @@ describe("python lowering feeds the shared path engine", () => {
       result.byTerminal
         .get(returns[0] as PyNode)
         ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
-    ).toEqual([
-      [['verb == "get"', "positive"]],
-      [['verb == "put" or verb == "patch"', "positive"]],
-      [
-        ['verb == "get"', "negative"],
-        ['verb == "put" or verb == "patch"', "negative"],
-      ],
-    ]);
+    ).toEqual([[]]);
   });
 
   it("reads each case's condition as the subject compared with its pattern", async () => {

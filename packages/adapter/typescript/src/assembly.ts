@@ -10,7 +10,6 @@
 
 import {
   type CallExpression,
-  type Expression,
   type NewExpression,
   Node,
   type ReturnStatement,
@@ -27,6 +26,7 @@ import {
 import { walkBodyOnce } from "./bodyWalks.js";
 import {
   type ConditionInfo,
+  type ConditionNode,
   conditionInfoToRawCondition,
 } from "./conditions.js";
 import { lineRangeOf } from "./lines.js";
@@ -272,7 +272,7 @@ export function extractRawBranches(
   anchorCallsOf?: AnchorCallsOf,
   resolveCallee?: ResolveCallee,
   collectCallAccounting = false,
-  keepsArms?: KeepsArms<Expression>,
+  keepsArms?: KeepsArms<ConditionNode>,
   handOff?: ResponseHandOffOptions,
 ): RawBranchResult {
   const { terminals, invocations, recognized } = walkBodyOnce(
@@ -498,7 +498,7 @@ interface HelperReading {
   originatesFrom: OriginatesFrom | undefined;
   anchorCallsOf: AnchorCallsOf | undefined;
   resolveCallee: ResolveCallee | undefined;
-  keepsArms: KeepsArms<Expression> | undefined;
+  keepsArms: KeepsArms<ConditionNode> | undefined;
 }
 
 /** The calls that hand a helper the response, with the helper's paths, as the shared splitter takes them. */

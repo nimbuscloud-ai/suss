@@ -50,7 +50,7 @@
 // lists (and therefore transition IDs) are byte-identical on shapes
 // the legacy pipeline handled soundly.
 
-import { type Expression, Node, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 
 import {
   enumerateStructuredPaths,
@@ -64,6 +64,7 @@ import {
 
 import {
   type ConditionInfo,
+  type ConditionNode,
   collectAncestorConditionInfosBelow,
   type FunctionRoot,
 } from "../conditions.js";
@@ -143,7 +144,7 @@ function loweredExpressionBody(
   func: Node,
   barriers: DescentBarriers,
 ): LoweredFunctionBody {
-  const statement: StructuredStatement<Expression> = {
+  const statement: StructuredStatement<ConditionNode> = {
     kind: "opaque",
     exitKind: null,
     callbacks: lowerExpressionBodyCallbacks(body, func, barriers),
@@ -170,7 +171,7 @@ export function computePathConditions(
   terminalNodes: readonly Node[],
   barriers: DescentBarriers = NO_BARRIERS,
   endings: ReadonlySet<Node> = NO_ENDINGS,
-  keepsArms?: KeepsArms<Expression>,
+  keepsArms?: KeepsArms<ConditionNode>,
 ): PathConditionsResult {
   const body = func.getBody();
   if (body === undefined) {

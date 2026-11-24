@@ -565,7 +565,7 @@ describe("if / else-if chain", () => {
 // ---------------------------------------------------------------------------
 
 describe("switch/case", () => {
-  it("extracts synthetic conditions for switch cases", () => {
+  it("compares the switch's subject with the case label", () => {
     const project = createProject();
     const fn = getExportedFunction(
       project,
@@ -585,13 +585,21 @@ describe("switch/case", () => {
     const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
-    // Switch case conditions are synthetic (expression is null → structured is null)
     const caseA = branches.find(
       (b) =>
         b.conditions.length > 0 && b.conditions[0].sourceText.includes('"a"'),
     );
     expect(caseA).toBeDefined();
-    expect(caseA?.conditions[0].structured).toBeNull();
+    expect(caseA?.conditions[0].structured).toEqual({
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "input", inputRef: "params", path: [] },
+        derivation: { type: "propertyAccess", property: "type" },
+      },
+      op: "eq",
+      right: { type: "literal", value: "a" },
+    });
     expect(caseA?.conditions[0].source).toBe("explicit");
 
     // The fallthrough branch (400) has no conditions
@@ -602,6 +610,101 @@ describe("switch/case", () => {
     );
     expect(b400).toBeDefined();
     expect(b400?.isDefault).toBe(true);
+  });
+
+  it("folds arms that only set a value into the one response after the switch", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler({ params }: any) {
+        let shade: string;
+        switch (params.hour) {
+          case "dusk":
+            shade = "late";
+            break;
+          case "dawn":
+            shade = "early";
+            break;
+          default:
+            shade = "noon";
+        }
+        return { status: 200, body: { shade } };
+      }
+    `,
+    );
+
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
+
+    expect(branches.map((b) => b.conditions)).toEqual([[]]);
+  });
+
+  it("keeps an arm that returns its own status apart from the arms that run on", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      export function handler({ params }: any) {
+        let shade: string;
+        switch (params.hour) {
+          case "midnight":
+            return { status: 404, body: { error: "closed" } };
+          case "dawn":
+            shade = "early";
+            break;
+          default:
+            shade = "noon";
+        }
+        return { status: 200, body: { shade } };
+      }
+    `,
+    );
+
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
+
+    expect(
+      branches.map((b) => [
+        b.terminal.statusCode,
+        b.conditions.map((c) => `${c.polarity} ${c.sourceText}`),
+      ]),
+    ).toEqual([
+      [
+        { type: "literal", value: 404 },
+        ['positive params.hour === "midnight"'],
+      ],
+      [
+        { type: "literal", value: 200 },
+        ['negative params.hour === "midnight"'],
+      ],
+    ]);
+  });
+
+  it("keeps a write in one arm on that arm's condition when the arms fold, as an if does", () => {
+    const project = createProject();
+    const fn = getExportedFunction(
+      project,
+      `
+      declare const ledger: { append(entry: string): void };
+      export function handler({ params }: any) {
+        switch (params.hour) {
+          case "dusk":
+            ledger.append("dusk");
+            break;
+          default:
+            break;
+        }
+        return { status: 200, body: {} };
+      }
+    `,
+    );
+
+    const branches = extractRawBranches(fn, tsRestTerminals).branches;
+
+    expect(branches.map((b) => b.conditions)).toEqual([[]]);
+    const append = invocationOf(branches, "ledger.append");
+    expect(
+      append.preconditions?.map((c) => [c.polarity, c.structured?.type]),
+    ).toEqual([["positive", "comparison"]]);
   });
 });
 
