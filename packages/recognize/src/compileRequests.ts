@@ -322,11 +322,15 @@ function readingOf(
       link: requesting.base,
     }) ?? meaning.redirects;
   const stated = statedRequest(sent, own, base);
+  const tookDefault =
+    own.tookDefault === true ||
+    (base?.url.tookDefault === true && own.host === undefined);
   const claim: RequestClaim = {
     method: sent.method,
     path: placed.path,
     host: placed.host,
     ...(redirectDelivery === undefined ? {} : { redirectDelivery }),
+    ...(tookDefault ? { urlTookDefault: true as const } : {}),
     read: {
       entry,
       ...sent.read,

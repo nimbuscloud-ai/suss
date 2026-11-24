@@ -12,6 +12,7 @@ import {
   literalOf,
   literalsOf,
   piecesOf,
+  takenOverUnread,
   type Value,
 } from "@suss/values";
 
@@ -771,5 +772,34 @@ describe("what a parameter takes when a caller passes nothing", () => {
       retries: { type: "literal", value: 3 },
       at: { type: "unresolved", sourceText: "Date.now()" },
     });
+  });
+});
+
+describe("a string built from a fallback's default over a value that did not read", () => {
+  it("keeps the mark the default has, written in place or through a name", () => {
+    expect(
+      takenOverUnread(
+        subjectOf(
+          'export const subject = `${process.env.API_URL ?? ""}/orders`;',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      takenOverUnread(
+        subjectOf(
+          'const base = process.env.API_URL || "";\nexport const subject = base + "/orders";',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("has no mark when every part of it reads", () => {
+    expect(
+      takenOverUnread(
+        subjectOf(
+          'const base = "/api";\nexport const subject = `${base}/orders`;',
+        ),
+      ),
+    ).toBe(false);
   });
 });

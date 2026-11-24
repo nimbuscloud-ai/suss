@@ -16,9 +16,8 @@ import {
   staysInItsFunction,
 } from "@suss/resolution";
 import {
-  hostOf,
   literalOf as literalOfValue,
-  pathOf,
+  requestUrlOf,
   scalarOf,
 } from "@suss/values";
 
@@ -221,7 +220,7 @@ export function pythonFactSource(
         return null;
       }
       const value = evaluated(node, site);
-      return { path: pathOf(value), host: hostOf(value) };
+      return requestUrlOf(value);
     },
     constructionSitesOf: (call) => {
       const node = nodeAt(call);

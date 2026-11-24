@@ -10,7 +10,7 @@ import path from "node:path";
 import { Node, SyntaxKind } from "ts-morph";
 
 import { factReadOps, factValueOps } from "@suss/recognize/ops";
-import { hostOf, isLocalUrl, literalsOf, pathOf, scalarOf } from "@suss/values";
+import { isLocalUrl, literalsOf, requestUrlOf, scalarOf } from "@suss/values";
 
 import { resolvedModuleFile } from "../discovery/importScan.js";
 import {
@@ -228,8 +228,7 @@ export function factSourceFor(
       at(key, null, (node) => {
         const value = evaluatedValue(node, store, site, arms);
         return {
-          path: pathOf(value),
-          host: hostOf(value),
+          ...requestUrlOf(value),
           ...(isLocalUrl(value) ? { local: true } : {}),
         };
       }),

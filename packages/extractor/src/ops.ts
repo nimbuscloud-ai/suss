@@ -245,6 +245,8 @@ export interface UrlTarget {
   readonly host: string | undefined;
   /** True for a URL the client reads without a request, such as a `data:` URL. */
   readonly local?: boolean;
+  /** True when part of the URL is a fallback's default taken over a value that did not read. */
+  readonly tookDefault?: boolean;
 }
 
 /**
