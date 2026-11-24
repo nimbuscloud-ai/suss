@@ -1538,6 +1538,72 @@ describe("discoverUnits: a raise the pack says the library responds with", () =>
   });
 });
 
+describe("discoverUnits: a match whose cases rejoin before the response", () => {
+  it("reads one response after cases that only pick a value", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "match item_id:",
+        "    case 1:",
+        '        shade = "late"',
+        "    case 2:",
+        '        shade = "early"',
+        "    case _:",
+        '        shade = "noon"',
+        'return {"shade": shade}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["200", []],
+    ]);
+  });
+
+  it("keeps a case that raises its own status apart from the cases that run on", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "match item_id:",
+        "    case 0:",
+        "        raise HTTPException(status_code=404)",
+        "    case 1:",
+        '        shade = "early"',
+        "    case _:",
+        '        shade = "noon"',
+        'return {"shade": shade}',
+      ]),
+      [fastapiWithRaises],
+    );
+    expect(outcomesOf(units.find((u) => u.identity.name === "show"))).toEqual([
+      ["404", ["comparison"]],
+      ["200", ["!comparison"]],
+    ]);
+  });
+
+  it("keeps a write in one case on that case's condition when the cases fold", async () => {
+    const units = await unitsOf(
+      routeRaising([
+        "match item_id:",
+        "    case 1:",
+        "        audit(item_id)",
+        "    case _:",
+        "        pass",
+        'return {"id": item_id}',
+      ]),
+      [fastapiWithRaises],
+    );
+    const summary = assembleSummary(
+      units.find((u) => u.identity.name === "show") as RawCodeStructure,
+    );
+    expect(summary.transitions.map((t) => t.conditions)).toEqual([[]]);
+    expect(
+      summary.transitions[0]?.effects.flatMap((effect) =>
+        effect.type === "invocation"
+          ? [[effect.callee, effect.preconditions?.map((p) => p.type)]]
+          : [],
+      ),
+    ).toEqual([["audit", ["comparison"]]]);
+  });
+});
+
 describe("discoverUnits: a route declared inside an app factory", () => {
   const factorySource = [
     "from fastapi import FastAPI",

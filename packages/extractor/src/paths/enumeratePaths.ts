@@ -49,6 +49,13 @@ interface PathCond<Cond> {
   readonly info: ConditionInfo<Cond>;
   readonly branchStmt: StructuredStatement<Cond> | null;
   readonly oppositeExit: ExitKind;
+  /** For a switch group's test, which switch and which group, so the arms can fold back together. */
+  readonly arm?: SwitchArm<Cond>;
+}
+
+interface SwitchArm<Cond> {
+  readonly switchStmt: StructuredStatement<Cond>;
+  readonly group: number;
 }
 
 function branchCond<Cond>(
@@ -350,10 +357,14 @@ function stepSwitch<Cond, Terminal>(
       throw new UnmodeledFlow("non-trailing break in switch clause");
     }
 
+    const arm: SwitchArm<Cond> = { switchStmt: stmt, group: i };
     const groupPath =
       group.condition === null
         ? [...path, ...negations]
-        : [...path, fixedCond(group.condition, "positive", "explicit")];
+        : [
+            ...path,
+            { ...fixedCond(group.condition, "positive", "explicit"), arm },
+          ];
     const conts = enumerate(ctx, group.body, groupPath);
     if (conts.length > 0) {
       if (!group.hasTrailingBreak && !fallthroughSafe) {
@@ -372,7 +383,10 @@ function stepSwitch<Cond, Terminal>(
           : exit === "return"
             ? "earlyReturn"
             : "explicit";
-      negations.push(fixedCond(group.condition, "negative", negationSource));
+      negations.push({
+        ...fixedCond(group.condition, "negative", negationSource),
+        arm,
+      });
     }
   }
 
@@ -598,41 +612,183 @@ function mergeRejoined<Cond>(
   paths: PathCond<Cond>[][],
   keepsArms: KeepsArms<Cond> = KEEPS_NO_ARMS,
 ): PathCond<Cond>[][] {
+  // Every pass that merges leaves fewer paths, so this ends. One merge can
+  // make the next possible, as in an else-if chain merging from its last
+  // arm up, so it runs until a pass merges nothing.
   let current = paths;
-  for (let round = 0; round < current.length; round++) {
-    const out: PathCond<Cond>[][] = [];
-    const taken = new Set<number>();
-    let mergedAny = false;
-    for (let i = 0; i < current.length; i++) {
-      if (taken.has(i)) {
+  for (;;) {
+    const next =
+      mergePairs(current, keepsArms) ?? foldSwitchArms(current, keepsArms);
+    if (next === null) {
+      return current;
+    }
+    current = next;
+  }
+}
+
+/** One pass of the pairwise merge, or null when no two paths merge. */
+function mergePairs<Cond>(
+  current: PathCond<Cond>[][],
+  keepsArms: KeepsArms<Cond>,
+): PathCond<Cond>[][] | null {
+  const out: PathCond<Cond>[][] = [];
+  const taken = new Set<number>();
+  let mergedAny = false;
+  for (let i = 0; i < current.length; i++) {
+    if (taken.has(i)) {
+      continue;
+    }
+    let combined = current[i] as PathCond<Cond>[];
+    for (let j = i + 1; j < current.length; j++) {
+      if (taken.has(j)) {
         continue;
       }
-      let combined = current[i] as PathCond<Cond>[];
-      for (let j = i + 1; j < current.length; j++) {
-        if (taken.has(j)) {
-          continue;
-        }
-        const at = soleDisagreement(
-          combined,
-          current[j] as PathCond<Cond>[],
-          keepsArms,
-        );
-        if (at === null) {
-          continue;
-        }
-        combined = [...combined.slice(0, at), ...combined.slice(at + 1)];
-        taken.add(j);
-        mergedAny = true;
-        break;
+      const at = soleDisagreement(
+        combined,
+        current[j] as PathCond<Cond>[],
+        keepsArms,
+      );
+      if (at === null) {
+        continue;
       }
-      out.push(combined);
-    }
-    current = out;
-    if (!mergedAny) {
+      combined = [...combined.slice(0, at), ...combined.slice(at + 1)];
+      taken.add(j);
+      mergedAny = true;
       break;
     }
+    out.push(combined);
   }
-  return current;
+  return mergedAny ? out : null;
+}
+
+/**
+ * A switch's arms rejoin the way an else-if chain's do. The path that
+ * matched none of the groups and the path through the last group reach
+ * the next statement whichever ran, so they become one path without that
+ * group's negation, and then the group before it, as far up as the arms
+ * all run on. A group's own path has only its own test, where an else-if
+ * arm also has the negations of the arms before it, so folding from the
+ * last group up is the order that matches the chain. A switch whose
+ * unmatched path does not reach the next statement does not fold, as an
+ * else-if chain ending in a return does not. Null when no switch folds.
+ */
+function foldSwitchArms<Cond>(
+  paths: PathCond<Cond>[][],
+  keepsArms: KeepsArms<Cond>,
+): PathCond<Cond>[][] | null {
+  for (const [at, unmatched] of paths.entries()) {
+    for (const negations of unmatchedSegments(unmatched)) {
+      const arms = foldableArms(paths, unmatched, negations, keepsArms);
+      if (arms.length === 0) {
+        continue;
+      }
+      const folded = [
+        ...unmatched.slice(0, negations.end - arms.length),
+        ...unmatched.slice(negations.end),
+      ];
+      const gone = new Set([at, ...arms]);
+      const first = Math.min(...gone);
+      return paths.flatMap((path, index) => {
+        if (index === first) {
+          return [folded];
+        }
+        return gone.has(index) ? [] : [path];
+      });
+    }
+  }
+  return null;
+}
+
+/** Where a path records that it matched none of a switch's groups, one negation per group in group order. */
+interface UnmatchedSegment {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Each run of one switch's negated group tests on the path. */
+function unmatchedSegments<Cond>(path: PathCond<Cond>[]): UnmatchedSegment[] {
+  const segments: UnmatchedSegment[] = [];
+  let at = 0;
+  while (at < path.length) {
+    const arm = negatedArmAt(path, at);
+    if (arm === null) {
+      at++;
+      continue;
+    }
+    let end = at + 1;
+    while (negatedArmAt(path, end)?.switchStmt === arm.switchStmt) {
+      end++;
+    }
+    segments.push({ start: at, end });
+    at = end;
+  }
+  return segments;
+}
+
+function negatedArmAt<Cond>(
+  path: PathCond<Cond>[],
+  at: number,
+): SwitchArm<Cond> | null {
+  const cond = path[at];
+  return cond?.arm !== undefined && cond.info.polarity === "negative"
+    ? cond.arm
+    : null;
+}
+
+/**
+ * The paths through the last groups of the unmatched path's switch that
+ * agree with it everywhere else, from the last group up. It stops at the
+ * first group with no such path, and at a group whose arms the caller
+ * keeps.
+ */
+function foldableArms<Cond>(
+  paths: PathCond<Cond>[][],
+  unmatched: PathCond<Cond>[],
+  negations: UnmatchedSegment,
+  keepsArms: KeepsArms<Cond>,
+): number[] {
+  const found: number[] = [];
+  for (let at = negations.end - 1; at >= negations.start; at--) {
+    const negation = unmatched[at] as PathCond<Cond>;
+    const test = negation.info.expression;
+    if (test !== null && keepsArms(test)) {
+      break;
+    }
+    const arm = paths.findIndex((path) =>
+      isArmOf(path, unmatched, negations, negation),
+    );
+    if (arm === -1) {
+      break;
+    }
+    found.push(arm);
+  }
+  return found;
+}
+
+/** Whether `path` went through the group `negation` tests, and agrees with the unmatched path before and after the switch. */
+function isArmOf<Cond>(
+  path: PathCond<Cond>[],
+  unmatched: PathCond<Cond>[],
+  negations: UnmatchedSegment,
+  negation: PathCond<Cond>,
+): boolean {
+  const taken = path[negations.start];
+  if (
+    taken?.info.polarity !== "positive" ||
+    taken.arm?.switchStmt !== negation.arm?.switchStmt ||
+    taken.arm?.group !== negation.arm?.group
+  ) {
+    return false;
+  }
+  const expected = [
+    ...unmatched.slice(0, negations.start),
+    taken,
+    ...unmatched.slice(negations.end),
+  ];
+  return (
+    path.length === expected.length &&
+    path.every((cond, at) => cond === expected[at])
+  );
 }
 
 /**

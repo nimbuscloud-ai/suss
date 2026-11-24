@@ -124,6 +124,15 @@ function group(
   };
 }
 
+/** Three arms that run on and a default that throws, so the arms never fold. */
+const threeWaySwitch = (): S =>
+  mkSwitch([
+    group("a", true, [opq()]),
+    group("b", true, [opq()]),
+    group("c", true, [opq()]),
+    group(null, false, [thr()]),
+  ]);
+
 const sig = (infos: ConditionInfo<string>[]): string =>
   infos.map((c) => `${c.polarity}:${c.source}:${c.sourceText}`).join(" ∧ ") ||
   "<unconditional>";
@@ -169,6 +178,21 @@ describe("enumerateStructuredPaths, if/else", () => {
     const terminalsByStmt = new Map<S, string[]>([[t0, ["T0"]]]);
 
     const result = enumerateStructuredPaths({ statements, terminalsByStmt });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
+  });
+
+  it("rejoins every arm of a long else-if chain whose arms all run on", () => {
+    const chain = ["a", "b", "c", "d", "e"].reduceRight<S[]>(
+      (elseBody, test) => [mkIf(cond(test), [opq()], elseBody)],
+      [opq()],
+    );
+    const t0 = ret();
+
+    const result = enumerateStructuredPaths({
+      statements: [...chain, t0],
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
 
     expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
   });
@@ -495,6 +519,165 @@ describe("enumerateStructuredPaths, switch", () => {
     ]);
   });
 
+  it("folds the arms back together when every arm runs on, as an else-if chain does", () => {
+    const t0 = ret();
+    const withDefault = mkSwitch([
+      group('kind === "a"', true, [opq()]),
+      group('kind === "b"', true, [opq()]),
+      group(null, false, [opq()]),
+    ]);
+    const withoutDefault = mkSwitch([
+      group('mode === "x"', true, [opq()]),
+      group('mode === "y"', true, [opq()]),
+    ]);
+
+    const result = enumerateStructuredPaths({
+      statements: [withDefault, withoutDefault, t0],
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
+  });
+
+  it("folds the arms after one that returns into the negation of the arms before them", () => {
+    const t0 = ret();
+    const statements = [
+      mkSwitch([
+        group('kind === "a"', true, [opq()]),
+        group('kind === "b"', false, [ret()]),
+        group('kind === "c"', true, [opq()]),
+        group(null, false, [opq()]),
+      ]),
+      t0,
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      'negative:explicit:kind === "a" ∧ negative:earlyReturn:kind === "b"',
+      'positive:explicit:kind === "a"',
+    ]);
+  });
+
+  it("keeps the arms apart when no unmatched value reaches the next statement", () => {
+    const t0 = ret();
+    const statements = [
+      mkSwitch([
+        group('kind === "a"', true, [opq()]),
+        group('kind === "b"', true, [opq()]),
+        group(null, false, [thr()]),
+      ]),
+      t0,
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      'positive:explicit:kind === "a"',
+      'positive:explicit:kind === "b"',
+    ]);
+  });
+
+  it("keeps the arms apart when each runs on under a guard of its own", () => {
+    const t0 = ret();
+    const statements = [
+      mkSwitch([
+        group('kind === "a"', true, [mkIf(cond("x"), [ret()], null)]),
+        group(null, false, [mkIf(cond("y"), [ret()], null)]),
+      ]),
+      t0,
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      'negative:earlyReturn:kind === "a" ∧ negative:earlyReturn:y',
+      'positive:explicit:kind === "a" ∧ negative:earlyReturn:x',
+    ]);
+  });
+
+  it("folds a switch on each path a test the caller keeps left open", () => {
+    const t0 = ret();
+    const statements = [
+      mkIf(
+        { sourceText: "status == 200", expression: "status" },
+        [opq()],
+        [opq()],
+      ),
+      mkSwitch([
+        group('kind === "a"', true, [opq()]),
+        group(null, false, [opq()]),
+      ]),
+      t0,
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+      keepsArms: (condition: string) => condition === "status",
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "negative:explicit:status == 200",
+      "positive:explicit:status == 200",
+    ]);
+  });
+
+  it("keeps the arms of a switch on a test the caller names", () => {
+    const t0 = ret();
+    const statements = [
+      mkSwitch([
+        {
+          condition: { sourceText: "status === 200", expression: "status" },
+          hasTrailingBreak: true,
+          body: [opq()],
+        },
+        group(null, false, [opq()]),
+      ]),
+      t0,
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+      keepsArms: (condition: string) => condition === "status",
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual([
+      "negative:explicit:status === 200",
+      "positive:explicit:status === 200",
+    ]);
+  });
+
+  it("gives a switch that ends the body the rejoined path beside each arm, as an if gets", () => {
+    const statements = [
+      mkSwitch([
+        group('kind === "a"', true, [opq()]),
+        group(null, false, [opq()]),
+      ]),
+    ];
+
+    const result = enumerateStructuredPaths({
+      statements,
+      terminalsByStmt: new Map(),
+    });
+
+    expect(pathSigs(result.fallthrough)).toEqual([
+      "<unconditional>",
+      'negative:explicit:kind === "a"',
+      'positive:explicit:kind === "a"',
+    ]);
+  });
+
   it("degrades on fallthrough into a non-empty clause", () => {
     const log = opq();
     const t0 = ret();
@@ -663,13 +846,8 @@ describe("enumerateStructuredPaths, path budget", () => {
   });
 
   it("degrades when branching alone crosses the cap, with no terminal in sight", () => {
-    // A switch never needs a terminal to avoid collapsing (unlike an
-    // if with neither an exit nor a terminal in either arm), so six
-    // sequential three-way switches reach 3^6 = 729 paths without ever
-    // calling recordTerminal. The budget check inside `enumerate`
-    // itself is what catches this, not the one in recordTerminal.
-    const threeWaySwitch = (): S =>
-      mkSwitch([group("a", true, [opq()]), group("b", false, [opq()])]);
+    // Six switches of three arms each reach 3^6 = 729 paths, so the budget
+    // check inside `enumerate` catches it, not the one in recordTerminal.
     const statements: S[] = Array.from({ length: 6 }, threeWaySwitch);
 
     expect(() =>
@@ -729,8 +907,6 @@ describe("enumerateStructuredPaths, opaque pass-through", () => {
 
 describe("enumerateOrDegrade", () => {
   it("gives every terminal one unreadable condition when the budget runs out", () => {
-    const threeWaySwitch = (): S =>
-      mkSwitch([group("a", true, [opq()]), group("b", false, [opq()])]);
     const statements: S[] = Array.from({ length: 6 }, threeWaySwitch);
     const terminalsByStmt = new Map<S, string[]>();
 

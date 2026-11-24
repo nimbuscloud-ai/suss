@@ -536,6 +536,7 @@ describe("a method that calls a request method", () => {
     );
 
     expect(outline(units[0])).toEqual([
+      "return ",
       "return positive response.status == 200",
       "return positive response.status == 404 || response.status == 410",
       "return negative response.status == 200 & negative response.status == 404 || response.status == 410",
@@ -545,7 +546,7 @@ describe("a method that calls a request method", () => {
       name: "response",
       accessChain: ["status"],
     };
-    expect(units[0]?.branches[1]?.conditions[0]?.structured).toEqual({
+    expect(units[0]?.branches[2]?.conditions[0]?.structured).toEqual({
       type: "compound",
       op: "or",
       operands: [404, 410].map((value) => ({
@@ -584,6 +585,30 @@ describe("a method that calls a request method", () => {
       [],
       ["positive response.success?"],
       ["negative response.success?"],
+    ]);
+  });
+
+  it("keeps each arm of a case on the status when the arms rejoin and the body goes on", async () => {
+    const units = await unitsIn(
+      [
+        "class OrderClient",
+        "  def refresh",
+        '    response = HttpClient.get("/orders")',
+        "    case response.status",
+        "    when 200 then @orders = response.body",
+        "    else @orders = []",
+        "    end",
+        "    @loaded = true",
+        "  end",
+        "end",
+      ].join("\n"),
+      requestCalls({ response: { statusCode: ["status"] } }),
+    );
+
+    expect(outline(units[0])).toEqual([
+      "return ",
+      "return positive response.status == 200",
+      "return negative response.status == 200",
     ]);
   });
 

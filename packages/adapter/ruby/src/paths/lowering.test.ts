@@ -173,7 +173,7 @@ describe("ruby lowering feeds the shared path engine", () => {
     expect(result.byTerminal.has(returns[1] as RbNode)).toBe(true);
   });
 
-  it("runs one when arm and never the next, with the subject in each arm's condition", async () => {
+  it("runs one when arm and never the next, so the arms rejoin before the return after the case", async () => {
     const { returns, result } = await pathsFor(
       [
         "def send_it(verb)",
@@ -193,14 +193,7 @@ describe("ruby lowering feeds the shared path engine", () => {
       result.byTerminal
         .get(returns[0] as RbNode)
         ?.map((path) => path.map((c) => [c.sourceText, c.polarity])),
-    ).toEqual([
-      [["verb == :get", "positive"]],
-      [["verb == :put || verb == :patch", "positive"]],
-      [
-        ["verb == :get", "negative"],
-        ["verb == :put || verb == :patch", "negative"],
-      ],
-    ]);
+    ).toEqual([[]]);
   });
 
   it("reads each arm's condition as the subject compared with its patterns", async () => {

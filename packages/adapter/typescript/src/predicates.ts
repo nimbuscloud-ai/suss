@@ -4,6 +4,7 @@ import { type Expression, Node, SyntaxKind } from "ts-morph";
 
 import { replacePredicateRefs } from "@suss/behavioral-ir";
 
+import { caseArmOf } from "./paths/caseArms.js";
 import { resolveCallableBody } from "./resolve/astResolve.js";
 import { resolveSubject } from "./subjects.js";
 import { writesUndefined } from "./walk/undefinedValue.js";
@@ -11,6 +12,7 @@ import { peelParens } from "./walk/unwrap.js";
 
 import type { ComparisonOp, Predicate, ValueRef } from "@suss/behavioral-ir";
 import type { CallExpression } from "ts-morph";
+import type { ConditionNode } from "./conditions.js";
 
 const MAX_INLINE_DEPTH = 4;
 
@@ -56,6 +58,77 @@ function wrapOpaque(
     return predicate;
   }
   return { type: "opaque", sourceText, reason: "complexExpression" };
+}
+
+/**
+ * What a branch condition tests. A switch arm compares the switch's
+ * subject with each of its labels, as `subject === label` would.
+ */
+export function predicateOfCondition(node: ConditionNode): Predicate | null {
+  if (!Node.isCaseClause(node)) {
+    return parseConditionExpression(node);
+  }
+  const arm = caseArmOf(node);
+  if (arm === null) {
+    return null;
+  }
+  const tests = arm.labels.map((label) =>
+    comparisonOf(arm.subject, "===", "eq", label),
+  );
+  const [only] = tests;
+  return tests.length === 1 && only !== undefined
+    ? only
+    : { type: "compound", op: "or", operands: tests };
+}
+
+/** `left <op> right`, read as a null check or a typeof check when it is one. */
+function comparisonOf(
+  left: Expression,
+  opText: string,
+  op: ComparisonOp,
+  right: Expression,
+): Predicate {
+  if (NULL_CHECK_OPS.has(opText)) {
+    const leftIsNull = isNullOrUndefined(left);
+    const rightIsNull = isNullOrUndefined(right);
+
+    if (leftIsNull || rightIsNull) {
+      const subject = resolveSubject(leftIsNull ? right : left);
+      // negated: true means "is NOT null" (neq)
+      const negated = op === "neq";
+      return { type: "nullCheck", subject, negated };
+    }
+  }
+
+  // typeof check: typeof x === "string"
+  if (
+    Node.isTypeOfExpression(left) &&
+    Node.isStringLiteral(right) &&
+    (opText === "===" || opText === "==")
+  ) {
+    const subject = resolveSubject(left.getExpression());
+    return {
+      type: "typeCheck",
+      subject,
+      expectedType: right.getLiteralValue(),
+    };
+  }
+  if (
+    Node.isTypeOfExpression(right) &&
+    Node.isStringLiteral(left) &&
+    (opText === "===" || opText === "==")
+  ) {
+    const subject = resolveSubject(right.getExpression());
+    return {
+      type: "typeCheck",
+      subject,
+      expectedType: left.getLiteralValue(),
+    };
+  }
+
+  const leftRef: ValueRef = resolveSubject(left);
+  const rightRef: ValueRef = resolveSubject(right);
+  return { type: "comparison", left: leftRef, op, right: rightRef };
 }
 
 /**
@@ -164,48 +237,7 @@ export function parseConditionExpression(
 
     const op = toComparisonOp(opText);
     if (op !== null) {
-      // Null/undefined check detection for ==, !=, ===, !==
-      if (NULL_CHECK_OPS.has(opText)) {
-        const leftIsNull = isNullOrUndefined(left);
-        const rightIsNull = isNullOrUndefined(right);
-
-        if (leftIsNull || rightIsNull) {
-          const subject = resolveSubject(leftIsNull ? right : left);
-          // negated: true means "is NOT null" (neq)
-          const negated = op === "neq";
-          return { type: "nullCheck", subject, negated };
-        }
-      }
-
-      // typeof check: typeof x === "string"
-      if (
-        Node.isTypeOfExpression(left) &&
-        Node.isStringLiteral(right) &&
-        (opText === "===" || opText === "==")
-      ) {
-        const subject = resolveSubject(left.getExpression());
-        return {
-          type: "typeCheck",
-          subject,
-          expectedType: right.getLiteralValue(),
-        };
-      }
-      if (
-        Node.isTypeOfExpression(right) &&
-        Node.isStringLiteral(left) &&
-        (opText === "===" || opText === "==")
-      ) {
-        const subject = resolveSubject(right.getExpression());
-        return {
-          type: "typeCheck",
-          subject,
-          expectedType: left.getLiteralValue(),
-        };
-      }
-
-      const leftRef: ValueRef = resolveSubject(left);
-      const rightRef: ValueRef = resolveSubject(right);
-      return { type: "comparison", left: leftRef, op, right: rightRef };
+      return comparisonOf(left, opText, op, right);
     }
 
     return null;

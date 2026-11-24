@@ -346,6 +346,28 @@ describe("responseBranches, one branch per path", () => {
     expect(branches[0]?.isDefault).toBe(true);
   });
 
+  it("reads one response after a case whose arms only pick a value", async () => {
+    const branches = await branchesOf(
+      '    @shade = case params[:hour]\n    when "dusk" then "late"\n    when "dawn" then "early"\n    else "noon"\n    end\n    render json: @shade, status: :ok',
+    );
+    expect(readings(branches)).toMatchObject([{ kind: "written", value: 200 }]);
+    expect(conditions(branches)).toEqual([[]]);
+  });
+
+  it("keeps an arm of a case that responds apart from the arms that run on", async () => {
+    const branches = await branchesOf(
+      '    case params[:hour]\n    when "midnight" then return head(:not_found)\n    when "dawn" then @shade = "early"\n    end\n    render json: @shade, status: :ok',
+    );
+    expect(readings(branches)).toMatchObject([
+      { kind: "written", value: 404 },
+      { kind: "written", value: 200 },
+    ]);
+    expect(conditions(branches)).toEqual([
+      ['params[:hour] == "midnight"'],
+      ['!params[:hour] == "midnight"'],
+    ]);
+  });
+
   it("gives a path that ends in a bare return the implicit render", async () => {
     const branches = await branchesOf(
       "    return if params[:id].blank?\n    render json: item, status: :ok",
@@ -446,6 +468,22 @@ describe("responseBranches, effects per branch", () => {
         ),
       ),
     ).toEqual([["work_positive"], ["work_negative"]]);
+  });
+
+  it("keeps a write in one arm on that arm's condition when the arms of a case fold", async () => {
+    const branches = await branchesOf(
+      '    case params[:hour]\n    when "dusk" then audit_dusk\n    end\n    head :ok',
+      RAILS_LIKE,
+      [gated('params[:hour] == "dusk"', "positive")],
+    );
+    expect(conditions(branches)).toEqual([[]]);
+    expect(
+      branches.map((branch) =>
+        branch.effects.map((effect) =>
+          effect.type === "invocation" ? effect.callee : effect.type,
+        ),
+      ),
+    ).toEqual([["work_positive"]]);
   });
 
   it("puts the effects a recognizer built on every branch", async () => {

@@ -23,8 +23,7 @@ export type ExitKind = "return" | "throw" | null;
 /**
  * A test the engine passes through without looking inside: its display text
  * plus the language's own expression handle. The handle is null for a
- * synthetic condition, such as a loop's "some iteration of" marker or a
- * switch group's disjunction text.
+ * synthetic condition, such as a loop's "some iteration of" marker.
  */
 export interface ConditionHandle<Cond> {
   readonly sourceText: string;

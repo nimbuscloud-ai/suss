@@ -4879,6 +4879,41 @@ describe("response property semantics", () => {
     expect(conditions).toContain("[]");
   });
 
+  it("keeps the arms of a switch on the status when they rejoin and the body goes on", async () => {
+    const project = createTestProject();
+    project.createSourceFile(
+      "consumer.ts",
+      `
+      declare function setFound(found: boolean): void;
+      declare function setLoading(loading: boolean): void;
+      export async function lookUpWidget(id: string) {
+        const res = await fetch("/widgets/" + id);
+        switch (res.status) {
+          case 404:
+            setFound(false);
+            break;
+          default:
+            setFound(true);
+        }
+        setLoading(false);
+      }
+    `,
+    );
+
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [{ ...fetchPackWithSemantics, terminals: [] }],
+    });
+    const [summary] = await adapter.extractAll();
+    const conditions = (summary?.transitions ?? []).map((t) =>
+      JSON.stringify(t.conditions),
+    );
+
+    expect(conditions).toHaveLength(3);
+    expect(conditions.filter((c) => c.includes('"status"'))).toHaveLength(2);
+    expect(conditions).toContain("[]");
+  });
+
   it("does not resolve when pack has no responseSemantics", async () => {
     const { responseSemantics: _, ...packWithoutSemantics } =
       fetchPackWithSemantics;

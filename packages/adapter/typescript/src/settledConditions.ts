@@ -12,13 +12,18 @@ import { javascriptTruthiness } from "./values/truthiness.js";
 import { peelSyntax } from "./walk/unwrap.js";
 
 import type { SettledCondition } from "@suss/extractor";
+import type { ConditionNode } from "./conditions.js";
 import type { ResolutionStore } from "./facts/store.js";
 
 /** What the condition at `expression` comes to on every run, or null when some run could differ. */
 export function settledConditionOf(
-  expression: Node,
+  expression: ConditionNode,
   resolution: ResolutionStore | undefined,
 ): SettledCondition | null {
+  // The evaluator reads expressions, and a switch arm is a clause.
+  if (Node.isCaseClause(expression)) {
+    return null;
+  }
   return settledTest(
     soundValueOf(expression, resolution),
     () => soundValueOf(withoutNegations(expression), resolution),

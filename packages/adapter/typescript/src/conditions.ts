@@ -12,7 +12,8 @@ import {
   Node,
 } from "ts-morph";
 
-import { parseConditionExpression } from "./predicates.js";
+import { caseArmOf, caseArmText } from "./paths/caseArms.js";
+import { predicateOfCondition } from "./predicates.js";
 
 import type { RawCondition } from "@suss/extractor";
 
@@ -29,15 +30,22 @@ export type FunctionRoot =
   | ConstructorDeclaration;
 
 /**
- * A condition with its original AST Expression preserved.
- * Used internally by the assembly step to call parseConditionExpression.
+ * What a branch condition tests: the test expression, or for a switch
+ * arm the case clause, which compares the switch's subject with its
+ * labels.
+ */
+export type ConditionNode = Expression | CaseClause;
+
+/**
+ * A condition with its original AST node preserved.
+ * Used internally by the assembly step to call predicateOfCondition.
  */
 export interface ConditionInfo {
   sourceText: string;
   polarity: "positive" | "negative";
   source: RawCondition["source"];
-  /** The AST node for the condition. Null for catch clauses and synthetic switch conditions. */
-  expression: Expression | null;
+  /** The AST node for the condition. Null for catch clauses and loop markers. */
+  expression: ConditionNode | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +56,7 @@ function makeConditionInfo(
   sourceText: string,
   polarity: "positive" | "negative",
   source: RawCondition["source"],
-  expression: Expression | null,
+  expression: ConditionNode | null,
 ): ConditionInfo {
   return { sourceText, polarity, source, expression };
 }
@@ -118,22 +126,10 @@ export function collectAncestorConditionInfosBelow(
         );
       }
     } else if (Node.isCaseClause(current)) {
-      const switchStmt = current.getParent()?.getParent();
-      if (switchStmt !== undefined && Node.isSwitchStatement(switchStmt)) {
-        const switchExpr = switchStmt.getExpression().getText();
-        const labels = collectFallthroughCaseLabels(current as CaseClause);
-        // One label: `x === "a"`. Multiple (fallthrough): disjunction
-        // `x === "a" || x === "b"`. Each predecessor case with an empty
-        // body falls through to this one's body, so the return fires
-        // for any of their match values too: capturing only the
-        // direct case label would silently narrow the branch.
-        const condText =
-          labels.length === 1
-            ? `${switchExpr} === ${labels[0]}`
-            : labels.map((l) => `${switchExpr} === ${l}`).join(" || ");
-        // Synthetic condition: no single Expression node to preserve
+      const arm = caseArmOf(current);
+      if (arm !== null) {
         result.unshift(
-          makeConditionInfo(condText, "positive", "explicit", null),
+          makeConditionInfo(caseArmText(arm), "positive", "explicit", current),
         );
       }
     } else if (Node.isCatchClause(current)) {
@@ -210,34 +206,11 @@ export function isAncestorOrSelf(maybeAncestor: Node, node: Node): boolean {
  */
 export function conditionInfoToRawCondition(info: ConditionInfo): RawCondition {
   const structured =
-    info.expression !== null ? parseConditionExpression(info.expression) : null;
+    info.expression !== null ? predicateOfCondition(info.expression) : null;
   return {
     sourceText: info.sourceText,
     structured,
     polarity: info.polarity,
     source: info.source,
   };
-}
-
-/**
- * Collect the case-expression labels whose match value would cause
- * `caseClause`'s body to execute. This is the direct label, plus
- * every previous sibling CaseClause whose statement body is empty
- * (classic JS fallthrough: `case "a": case "b": doThing();`).
- *
- * Returns labels in source order (outermost/earliest first).
- */
-function collectFallthroughCaseLabels(caseClause: CaseClause): string[] {
-  const labels: string[] = [caseClause.getExpression().getText()];
-  let prev = caseClause.getPreviousSibling();
-  while (prev !== undefined && Node.isCaseClause(prev)) {
-    const prevClause = prev as CaseClause;
-    if (prevClause.getStatements().length === 0) {
-      labels.unshift(prevClause.getExpression().getText());
-      prev = prev.getPreviousSibling();
-    } else {
-      break;
-    }
-  }
-  return labels;
 }
