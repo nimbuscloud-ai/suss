@@ -17,7 +17,11 @@ export interface CaseArm {
   readonly labels: readonly Expression[];
 }
 
-/** What a case clause tests, or null for a clause outside a switch. */
+/**
+ * What a case clause tests. Null for a clause outside a switch, and for
+ * one an empty `default` falls into, since that arm runs for any value
+ * the other labels miss.
+ */
 export function caseArmOf(clause: CaseClause): CaseArm | null {
   const switchStatement = clause.getParent()?.getParent();
   if (
@@ -26,21 +30,29 @@ export function caseArmOf(clause: CaseClause): CaseArm | null {
   ) {
     return null;
   }
+  const stacked = stackedClauses(clause);
+  if (stacked === null) {
+    return null;
+  }
   return {
     subject: switchStatement.getExpression(),
-    labels: stackedClauses(clause).map((one) => one.getExpression()),
+    labels: stacked.map((one) => one.getExpression()),
   };
 }
 
-/** The clause and the empty clauses directly above it, in source order. */
-function stackedClauses(clause: CaseClause): CaseClause[] {
+/** The clause and the empty clauses directly above it, in source order, or null when one of them is a `default`. */
+function stackedClauses(clause: CaseClause): CaseClause[] | null {
   const stacked = [clause];
   let previous = clause.getPreviousSibling();
   while (
     previous !== undefined &&
-    Node.isCaseClause(previous) &&
+    (Node.isCaseClause(previous) || Node.isDefaultClause(previous)) &&
     previous.getStatements().length === 0
   ) {
+    if (Node.isDefaultClause(previous)) {
+      return null;
+    }
+
     stacked.unshift(previous);
     previous = previous.getPreviousSibling();
   }

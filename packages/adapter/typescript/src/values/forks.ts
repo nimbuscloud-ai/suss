@@ -8,13 +8,15 @@
 
 import { Node, SyntaxKind } from "ts-morph";
 
-import { parseConditionExpression } from "../predicates.js";
-import { resolveSubject } from "../subjects.js";
+import { caseArmOf, caseArmText } from "../paths/caseArms.js";
+import {
+  parseConditionExpression,
+  predicateOfCondition,
+} from "../predicates.js";
 import { peelParens, peelValue } from "../walk/unwrap.js";
 import { switchArms } from "./lowering.js";
 import { namesWrittenAgain } from "./soundLowering.js";
 
-import type { Predicate } from "@suss/behavioral-ir";
 import type { RawCondition } from "@suss/extractor";
 import type { ForkTest } from "@suss/values";
 import type { Expression, SwitchStatement } from "ts-morph";
@@ -94,40 +96,17 @@ function switchArmCondition(
   arm: number,
 ): RawCondition | null {
   const clause = switchArms(fork)[arm];
-  if (clause === undefined) {
+  if (clause === undefined || !Node.isCaseClause(clause)) {
     return null;
   }
-  const clauses = fork.getClauses();
-  const reached: Node[] = [clause];
-  for (let at = clauses.indexOf(clause) - 1; at >= 0; at--) {
-    const before = clauses[at];
-    if (before === undefined || before.getStatements().length > 0) {
-      break;
-    }
-    reached.unshift(before);
-  }
-  const labels = reached.flatMap((one) =>
-    Node.isCaseClause(one) ? [one.getExpression()] : [],
-  );
-  if (labels.length < reached.length) {
+  const caseArm = caseArmOf(clause);
+  const structured = predicateOfCondition(clause);
+  if (caseArm === null || structured === null) {
     return null;
   }
-  const subject = fork.getExpression();
-  const tests: Predicate[] = labels.map((label) => ({
-    type: "comparison",
-    op: "eq",
-    left: resolveSubject(subject),
-    right: resolveSubject(label),
-  }));
-  const [only] = tests;
   return {
-    sourceText: labels
-      .map((label) => `${subject.getText()} === ${label.getText()}`)
-      .join(" || "),
-    structured:
-      only !== undefined && tests.length === 1
-        ? only
-        : { type: "compound", op: "or", operands: tests },
+    sourceText: caseArmText(caseArm),
+    structured,
     polarity: "positive",
     source: "explicit",
   };

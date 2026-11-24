@@ -205,4 +205,19 @@ describe("what a fork tests", () => {
     expect(forkArmCondition(fork, 0, root)?.sourceText).toBe("k === 'a'");
     expect(forkArmCondition(fork, 1, root)).toBeNull();
   });
+
+  it("reads stacked labels as either one, and no condition for an arm an empty default falls into", () => {
+    const { fork, root } = forkIn(
+      "function f(k: string) { let p = ''; switch (k) { case 'a': case 'b': p = 'x'; break; default: case 'c': p = 'y'; break; } return p; }",
+      SyntaxKind.SwitchStatement,
+    );
+    expect(forkArmCondition(fork, 0, root)?.structured).toMatchObject({
+      type: "compound",
+      op: "or",
+    });
+    expect(forkArmCondition(fork, 0, root)?.sourceText).toBe(
+      "k === 'a' || k === 'b'",
+    );
+    expect(forkArmCondition(fork, 1, root)).toBeNull();
+  });
 });
