@@ -255,6 +255,148 @@ describe("webFetchPack — integration", () => {
   });
 });
 
+describe("webFetchPack: a request a branch picks", () => {
+  async function clientsOf(name: string): Promise<BehavioralSummary[]> {
+    const fixturesDir = path.resolve(
+      __dirname,
+      "../../../../fixtures/branch-picked-request",
+    );
+    const project = createFixtureProject(fixturesDir, "client.ts");
+    const adapter = createTypeScriptAdapter({
+      project,
+      frameworks: [webFetchPack()],
+    });
+    return (await adapter.extractAll()).filter(
+      (summary) => summary.identity.name === name,
+    );
+  }
+
+  /** Each client's method, path, and the condition text its `when` has, sorted by path then method. */
+  function requestsOf(clients: readonly BehavioralSummary[]) {
+    return clients
+      .map((client) => {
+        const semantics = client.identity.boundaryBinding?.semantics;
+        return {
+          method: semantics?.name === "rest" ? semantics.method : null,
+          path: semantics?.name === "rest" ? semantics.path : null,
+          when: client.bindingFrom?.when ?? [],
+        };
+      })
+      .sort(
+        (a, b) =>
+          String(a.path).localeCompare(String(b.path)) ||
+          String(a.method).localeCompare(String(b.method)),
+      );
+  }
+
+  const id = { type: "input", inputRef: "id", path: [] } as const;
+  const sprocketId = {
+    type: "derived",
+    from: { type: "input", inputRef: "sprocket", path: [] },
+    derivation: { type: "propertyAccess", property: "id" },
+  } as const;
+
+  it("makes one client per arm of a record a branch picks, with the arm's condition", async () => {
+    expect(requestsOf(await clientsOf("saveSprocket"))).toEqual([
+      {
+        method: "POST",
+        path: "/api/sprockets",
+        when: [
+          {
+            type: "negation",
+            operand: {
+              type: "truthinessCheck",
+              subject: sprocketId,
+              negated: false,
+            },
+          },
+        ],
+      },
+      {
+        method: "PATCH",
+        path: "/api/sprockets/{id}",
+        when: [
+          { type: "truthinessCheck", subject: sprocketId, negated: false },
+        ],
+      },
+    ]);
+  });
+
+  it("makes one client per URL a branch picks under a fixed method", async () => {
+    expect(requestsOf(await clientsOf("loadGizmo"))).toEqual([
+      {
+        method: "GET",
+        path: "/api/gizmos",
+        when: [
+          {
+            type: "negation",
+            operand: { type: "truthinessCheck", subject: id, negated: false },
+          },
+        ],
+      },
+      {
+        method: "GET",
+        path: "/api/gizmos/{id}",
+        when: [{ type: "truthinessCheck", subject: id, negated: false }],
+      },
+    ]);
+  });
+
+  it("makes one client per method a branch picks for a fixed URL", async () => {
+    const on = { type: "input", inputRef: "on", path: [] } as const;
+    expect(requestsOf(await clientsOf("toggleWidget"))).toEqual([
+      {
+        method: "DELETE",
+        path: "/api/widgets/current",
+        when: [
+          {
+            type: "negation",
+            operand: { type: "truthinessCheck", subject: on, negated: false },
+          },
+        ],
+      },
+      {
+        method: "PUT",
+        path: "/api/widgets/current",
+        when: [{ type: "truthinessCheck", subject: on, negated: false }],
+      },
+    ]);
+  });
+
+  it("makes one client per arm of a switch, past four arms", async () => {
+    const period = { type: "input", inputRef: "period", path: [] } as const;
+    const equals = (value: string) => ({
+      type: "comparison",
+      op: "eq",
+      left: period,
+      right: { type: "literal", value },
+    });
+    expect(requestsOf(await clientsOf("fetchReport"))).toEqual([
+      { method: "GET", path: "/api/reports/all", when: [] },
+      { method: "GET", path: "/api/reports/daily", when: [equals("day")] },
+      { method: "GET", path: "/api/reports/monthly", when: [equals("month")] },
+      {
+        method: "GET",
+        path: "/api/reports/weekly",
+        when: [
+          {
+            type: "compound",
+            op: "or",
+            operands: [equals("week"), equals("fortnight")],
+          },
+        ],
+      },
+      { method: "GET", path: "/api/reports/yearly", when: [equals("year")] },
+    ]);
+  });
+
+  it("keeps one client when the branch changes neither the method nor the URL", async () => {
+    expect(requestsOf(await clientsOf("pingDoohickey"))).toEqual([
+      { method: "POST", path: "/api/doohickeys/ping", when: [] },
+    ]);
+  });
+});
+
 describe("webFetchPack — fixtures", () => {
   it("says a helper's method and host come from its parameters, with the method's default", async () => {
     const fixturesDir = path.resolve(

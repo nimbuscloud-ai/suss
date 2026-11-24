@@ -18,6 +18,7 @@ import {
   type Element,
   expressionBodyOf,
   type Field,
+  type ForkTest,
   type FunctionBody,
   type FunctionShape,
   type Literal,
@@ -68,6 +69,11 @@ const A_READ = "read";
 const A_CALL = "call";
 type OuterShape = typeof A_READ | typeof A_CALL;
 
+/** Whether `valueAt` reads the expression a caller asked about, or one an outer read reached. */
+const TARGET = "target";
+const ELSEWHERE = "elsewhere";
+type Reading = typeof TARGET | typeof ELSEWHERE;
+
 interface State {
   readonly bindings: Map<string, Value>;
   readonly heap: Map<number, Value>;
@@ -78,6 +84,61 @@ interface State {
    * still refer to anything made before it, through a name of its own.
    */
   readonly madeFrom: number;
+  /**
+   * Set on the state a run that takes arms builds for the function the
+   * evaluated expression is written in, and nowhere else, so a fork in an
+   * inlined call or an outer read is joined as it always is.
+   */
+  picks: Picks | null;
+}
+
+/** What a run that takes arms knows on the way to its target. */
+interface Picks {
+  /** The arm each key took on the way: the path entered it, or a guard left only it. */
+  readonly decided: Map<string, number>;
+  /** The names the conditions of those keys read. */
+  readonly reads: Set<string>;
+  /** Whether the run is inside an arm of a fork it left open. */
+  inOpen: boolean;
+  /** The key of the taken fork whose arm the run is in, or null. */
+  under: string | null;
+}
+
+/**
+ * A branch or `?:` a run met without settling its condition or taking
+ * an arm of it, in the function the evaluated expression is written in.
+ */
+export interface Fork<N> {
+  readonly at: N;
+  readonly key: string;
+  readonly arms: number;
+  /** Whether the key's arm 0 is this fork's arm 1, as for `if (!x)` under the key `x`. */
+  readonly negated: boolean;
+  /** The key of the taken fork whose arm this one is in, or null at the top of the function. */
+  readonly under: string | null;
+}
+
+/** What `forksIn` met. */
+export interface ForksMet<N> {
+  readonly forks: readonly Fork<N>[];
+  /** False when an arm the run took returned or threw before the target. */
+  readonly reached: boolean;
+  /** True when the run used up its statement budget, so it may have skipped a fork. */
+  readonly exhausted: boolean;
+}
+
+/** The arm a run takes at one fork, and the key a fork inside that arm is reported under. */
+interface Taken {
+  readonly arm: number;
+  readonly picks: Picks;
+  readonly under: string | null;
+}
+
+/** One run that takes arms: the arms it was given and the forks it met. */
+interface ForkRun<N> {
+  readonly arms: ReadonlyMap<string, number>;
+  readonly met: Map<string, Fork<N>>;
+  reached: boolean;
 }
 
 interface AllocatedByDeferredCall {
@@ -119,6 +180,13 @@ export interface EvaluateOptions<N = unknown> {
    * left lazy.
    */
   readonly given?: ReadonlyMap<N, Value>;
+  /**
+   * The arm to take at each fork in the function the expression is
+   * written in whose condition does not settle, by the fork's key from
+   * `Lowering.forkTest`. The function's own statements are not memoized
+   * in that run.
+   */
+  readonly arms?: ReadonlyMap<string, number>;
 }
 
 export interface EvaluatorOptions {
@@ -162,6 +230,10 @@ export class Evaluator<N extends object> {
   /** How many calls have been deferred, which numbers each one in the order it was made. */
   private deferredCalls = 0;
   private readonly computing = new Set<unknown>();
+  /** The run that takes arms, while one is running. */
+  private forkRun: ForkRun<N> | undefined;
+  /** What each fork tests, by `idOf`, worked out once. */
+  private readonly forkTests = new Map<unknown, ForkTest | null>();
   private readonly methodRows: ReadonlyMap<
     string,
     readonly Extract<Row, { kind: "method" }>[]
@@ -227,6 +299,15 @@ export class Evaluator<N extends object> {
   evaluate(node: N, options: EvaluateOptions<N> = {}): Value {
     this.statements = 0;
     this.exhausted = false;
+    // A run takes its arms as it goes, so what it leaves lazy comes out
+    // the same when the caller forces it later.
+    const { arms } = options;
+    return arms === undefined
+      ? this.runOf(node, options)
+      : this.takingArms(newForkRun(arms), () => this.runOf(node, options));
+  }
+
+  private runOf(node: N, options: EvaluateOptions<N>): Value {
     if (this.sound) {
       return this.withinBudget(() =>
         forcedThrough(this.evaluateUnderSite(node, options)),
@@ -238,6 +319,34 @@ export class Evaluator<N extends object> {
     return this.withGiven(options.given, () =>
       forcedThrough(this.evaluateUnderSite(node, options)),
     );
+  }
+
+  /**
+   * The forks that evaluating each of `nodes` under `options.arms` met
+   * and left open, at the top of the function the nodes are written in
+   * or directly inside an arm it took. A caller that wants one value per
+   * arm reads them, picks an arm of one, and asks again.
+   */
+  forksIn(nodes: readonly N[], options: EvaluateOptions<N> = {}): ForksMet<N> {
+    const run = newForkRun<N>(options.arms ?? new Map());
+    let exhausted = false;
+    for (const node of nodes) {
+      this.statements = 0;
+      this.exhausted = false;
+      this.takingArms(run, () => this.runOf(node, options));
+      exhausted = exhausted || this.exhausted;
+    }
+    return { forks: [...run.met.values()], reached: run.reached, exhausted };
+  }
+
+  private takingArms<T>(run: ForkRun<N>, compute: () => T): T {
+    const previous = this.forkRun;
+    this.forkRun = run;
+    try {
+      return compute();
+    } finally {
+      this.forkRun = previous;
+    }
   }
 
   /**
@@ -285,6 +394,7 @@ export class Evaluator<N extends object> {
         heap: state.heap,
         parameters: new Set(),
         madeFrom: this.nextAllocation,
+        picks: null,
       };
       this.bindParameters(callee, args, inner, 0);
       const bound = new Map<string, Value>();
@@ -315,17 +425,25 @@ export class Evaluator<N extends object> {
 
   private evaluateUnderSite(node: N, options: EvaluateOptions<N>): Value {
     if (options.site === undefined) {
-      return this.valueAt(node, options);
+      return this.valueAt(node, options, TARGET);
     }
     this.underSite = options.site;
     try {
-      return force(this.valueAt(node, options));
+      return force(this.valueAt(node, options, TARGET));
     } finally {
       this.underSite = undefined;
     }
   }
 
-  private valueAt(node: N, options: EvaluateOptions<N> = {}): Value {
+  /**
+   * The value of `node` where it is written. Only the run a caller asked
+   * for takes arms, and an outer read that comes back here does not.
+   */
+  private valueAt(
+    node: N,
+    options: EvaluateOptions<N> = {},
+    reading: Reading = ELSEWHERE,
+  ): Value {
     const shape = this.lowering.expression(node);
     if (shape.kind === "literal") {
       // A literal has the same value wherever it is written, so the
@@ -334,10 +452,11 @@ export class Evaluator<N extends object> {
       return literalValue(shape.value);
     }
     const site = this.lowering.siteOf(node);
+    const picking = reading === TARGET && this.forkRun !== undefined;
     const state =
       site === null
         ? emptyState()
-        : this.stateAt(site, options.bindings ?? null, 0);
+        : this.stateAt(site, options.bindings ?? null, 0, picking);
     return this.materialize(this.expression(node, state, 0), state);
   }
 
@@ -345,9 +464,13 @@ export class Evaluator<N extends object> {
     site: Site<N>,
     bindings: ReadonlyMap<string, Value> | null,
     depth: number,
+    picking = false,
   ): State {
     const shape = this.lowering.functionOf(site.root);
     const state = emptyState();
+    if (picking) {
+      state.picks = emptyPicks();
+    }
     for (const { name } of shape?.parameters ?? []) {
       const supplied = bindings?.get(name);
       if (supplied === undefined) {
@@ -357,7 +480,9 @@ export class Evaluator<N extends object> {
       }
     }
     const body = shape === null ? [] : statementsOf(shape.body);
-    const memo = this.remembers(bindings) ? this.stateAfterStatement : null;
+    // The memo keeps this function's states with every arm joined.
+    const memo =
+      !picking && this.remembers(bindings) ? this.stateAfterStatement : null;
     return this.runPath(body, site.path, state, site.root, depth, memo);
   }
 
@@ -403,6 +528,7 @@ export class Evaluator<N extends object> {
       const outcome = this.execute(stmt, current, root, depth);
       memo?.set(this.idOf(stmt), cloneState(current));
       if (!outcome.completes) {
+        this.notReached(current);
         break;
       }
     }
@@ -410,6 +536,13 @@ export class Evaluator<N extends object> {
       return current;
     }
     return this.descend(target, rest, current, root, depth, memo);
+  }
+
+  /** A run that takes arms and ended before its target cannot make the request its arms pick. */
+  private notReached(state: State): void {
+    if (state.picks !== null && this.forkRun !== undefined) {
+      this.forkRun.reached = false;
+    }
   }
 
   /**
@@ -432,15 +565,19 @@ export class Evaluator<N extends object> {
       return state;
     }
     if (shape.kind === "branch") {
-      const arm = shape.arms.find((candidate) =>
+      const index = shape.arms.findIndex((candidate) =>
         candidate.some((stmt) => this.same(stmt, next)),
       );
+      const arm = shape.arms[index];
+      if (arm !== undefined) {
+        this.decide(stmt, index, shape.arms.length, state);
+      }
       return arm === undefined
         ? state
         : this.runPath(arm, rest, state, root, depth, memo);
     }
     if (shape.kind === "loop") {
-      const after = cloneState(state);
+      const after = loopPass(state);
       this.run(shape.body, after, root, depth);
       const entry = this.afterLoop(state, after);
       return this.runPath(shape.body, rest, entry, root, depth, memo);
@@ -510,10 +647,10 @@ export class Evaluator<N extends object> {
       return completes;
     }
     if (shape.kind === "branch") {
-      return this.branch(shape.condition, shape.arms, state, root, depth);
+      return this.branch(stmt, shape.condition, shape.arms, state, root, depth);
     }
     if (shape.kind === "loop") {
-      const after = cloneState(state);
+      const after = loopPass(state);
       const outcome = this.run(shape.body, after, root, depth);
       replaceState(state, this.afterLoop(state, after));
       return { returns: outcome.returns, completes: true };
@@ -591,6 +728,7 @@ export class Evaluator<N extends object> {
   }
 
   private branch(
+    stmt: N,
     condition: N | null,
     arms: readonly (readonly N[])[],
     state: State,
@@ -605,15 +743,24 @@ export class Evaluator<N extends object> {
       const arm = arms[settled ? 0 : 1] ?? [];
       return this.run(arm, state, root, depth);
     }
+    const taken = this.armTaken(stmt, arms.length, state);
+    if (taken !== null) {
+      const arm = arms[taken.arm] ?? [];
+      return this.underTaken(taken, () => this.run(arm, state, root, depth));
+    }
     const returns: Value[] = [];
     const completing: State[] = [];
+    const completingArms: number[] = [];
     const ended: State[] = [];
-    for (const arm of arms) {
-      const armState = cloneState(state);
+    arms.forEach((arm, index) => {
+      const armState = openArm(state);
       const outcome = this.run(arm, armState, root, depth);
       returns.push(...outcome.returns);
       (outcome.completes ? completing : ended).push(armState);
-    }
+      if (outcome.completes) {
+        completingArms.push(index);
+      }
+    });
     const [first, ...rest] = completing;
     const joined =
       first === undefined
@@ -626,7 +773,150 @@ export class Evaluator<N extends object> {
       return { returns, completes: false };
     }
     replaceState(state, joined);
+    if (state.picks !== null) {
+      const differ = rest.some((other) => !sameState(first, other));
+      this.leftOpen(stmt, arms.length, completingArms, differ, state);
+    }
     return { returns, completes: true };
+  }
+
+  /**
+   * The arm a run that takes arms takes at a fork: the one the caller
+   * picked for its key, or the one the path to the target already fixed.
+   * Null when the run does not take arms here.
+   */
+  private armTaken(fork: N, count: number, state: State): Taken | null {
+    const picks = state.picks;
+    const run = this.forkRun;
+    const test =
+      picks === null || run === undefined ? null : this.forkTestOf(fork);
+    if (picks === null || run === undefined || test === null) {
+      return null;
+    }
+    const picked = run.arms.get(test.key);
+    const keyArm = picked ?? picks.decided.get(test.key);
+    if (keyArm === undefined) {
+      return null;
+    }
+    // An arm the path already fixed is part of where the run is, and
+    // the forks in it sit where the fork itself does.
+    return {
+      arm: ownArm(test, keyArm, count),
+      picks,
+      under: picked === undefined ? picks.under : test.key,
+    };
+  }
+
+  /** Runs both arms of a `?:` the run left open, where no fork is reported. */
+  private inOpenArms<T>(state: State, run: () => T): T {
+    const picks = state.picks;
+    if (picks === null) {
+      return run();
+    }
+    const outer = picks.inOpen;
+    picks.inOpen = true;
+    try {
+      return run();
+    } finally {
+      picks.inOpen = outer;
+    }
+  }
+
+  /** Runs an arm the run took, with the forks met in it reported as being under its key. */
+  private underTaken<T>({ picks, under }: Taken, run: () => T): T {
+    const outer = picks.under;
+    picks.under = under;
+    try {
+      return run();
+    } finally {
+      picks.under = outer;
+    }
+  }
+
+  /**
+   * Fixes a fork's key to the arm the run went into, on the path to the
+   * target or past a guard whose other arms return. A later fork with
+   * that key takes the same arm.
+   */
+  private decide(fork: N, arm: number, count: number, state: State): void {
+    const picks = state.picks;
+    const test =
+      picks === null || this.forkRun === undefined
+        ? null
+        : this.forkTestOf(fork);
+    if (picks === null || test === null) {
+      return;
+    }
+    picks.decided.set(test.key, ownArm(test, arm, count));
+    for (const name of test.reads) {
+      picks.reads.add(name);
+    }
+  }
+
+  /**
+   * After a branch the run left open: one completing arm is a guard,
+   * which fixes the key; two or more that left the state different are a
+   * fork the caller may pick an arm of.
+   */
+  private leftOpen(
+    fork: N,
+    count: number,
+    completingArms: readonly number[],
+    differ: boolean,
+    state: State,
+  ): void {
+    const [only] = completingArms;
+    if (completingArms.length === 1 && only !== undefined) {
+      this.decide(fork, only, count, state);
+      return;
+    }
+    if (differ) {
+      this.report(fork, count, state);
+    }
+  }
+
+  /**
+   * Lists a fork the run left open at the top of the function, or right
+   * inside an arm it took. A fork whose condition reads a name an
+   * earlier condition decided is not listed, since its arms may depend
+   * on that one in a way the keys do not show.
+   */
+  private report(fork: N, count: number, state: State): void {
+    const picks = state.picks;
+    const run = this.forkRun;
+    const test =
+      picks === null || run === undefined || picks.inOpen
+        ? null
+        : this.forkTestOf(fork);
+    if (
+      picks === null ||
+      run === undefined ||
+      test === null ||
+      run.met.has(test.key) ||
+      test.reads.some((name) => picks.reads.has(name))
+    ) {
+      return;
+    }
+    run.met.set(test.key, {
+      at: fork,
+      key: test.key,
+      arms: count,
+      negated: test.negated,
+      under: picks.under,
+    });
+  }
+
+  private forkTestOf(fork: N): ForkTest | null {
+    const id = this.idOf(fork);
+    const known = this.forkTests.get(id);
+    if (known !== undefined) {
+      return known;
+    }
+    const root = this.lowering.siteOf(fork)?.root ?? null;
+    const test =
+      root === null ? null : (this.lowering.forkTest?.(fork, root) ?? null);
+    this.forkTests.set(id, test);
+    return test;
   }
 
   /**
@@ -914,11 +1204,22 @@ export class Evaluator<N extends object> {
           depth,
         );
       }
-      return this.joinedValues(
+      const taken = this.armTaken(node, 2, state);
+      if (taken !== null) {
+        return this.underTaken(taken, () =>
+          this.expression(
+            taken.arm === 0 ? shape.whenTrue : shape.whenFalse,
+            state,
+            depth,
+          ),
+        );
+      }
+      const [whenTrue, whenFalse] = this.inOpenArms(state, () => [
         this.expression(shape.whenTrue, state, depth),
         this.expression(shape.whenFalse, state, depth),
-        state,
-      );
+      ]);
+      this.report(node, 2, state);
+      return this.joinedValues(whenTrue, whenFalse, state);
     }
     if (this.sound && shape.kind === "function") {
       // The function may run later, from anywhere, and change what it reads.
@@ -1391,6 +1692,7 @@ export class Evaluator<N extends object> {
       heap: state.heap,
       parameters: new Set(),
       madeFrom: this.nextAllocation,
+      picks: null,
     };
     this.bindParameters(shape, args, inner, depth);
     if (this.sound) {
@@ -1704,6 +2006,7 @@ function emptyState(): State {
     heap: new Map(),
     parameters: new Set(),
     madeFrom: 0,
+    picks: null,
   };
 }
 
@@ -1717,9 +2020,34 @@ function cloneState(state: State): State {
     heap: new Map(state.heap),
     parameters: state.parameters,
     madeFrom: state.madeFrom,
+    picks: state.picks === null ? null : copyPicks(state.picks),
   };
 }
 
+/** The state an arm of a fork the run left open starts from. */
+function openArm(state: State): State {
+  const armState = cloneState(state);
+  if (armState.picks !== null) {
+    armState.picks.inOpen = true;
+  }
+  return armState;
+}
+
+/**
+ * The state a loop body runs once in, to see what it changes. Its forks
+ * are joined, since another time round could take another arm.
+ */
+function loopPass(state: State): State {
+  const pass = cloneState(state);
+  pass.picks = null;
+  return pass;
+}
+
+/**
+ * The target takes the source's bindings, heap and decided keys. Where
+ * the run is, open or under a taken fork, stays the target's, in the
+ * same object, which a run that took an arm puts back when it leaves it.
+ */
 function replaceState(target: State, source: State): void {
   target.bindings.clear();
   for (const [name, value] of source.bindings) {
@@ -1729,6 +2057,76 @@ function replaceState(target: State, source: State): void {
   for (const [id, value] of source.heap) {
     target.heap.set(id, value);
   }
+  const picks = target.picks;
+  if (picks === null || source.picks === null || picks === source.picks) {
+    return;
+  }
+  const { decided, reads } = source.picks;
+  picks.decided.clear();
+  for (const [key, arm] of decided) {
+    picks.decided.set(key, arm);
+  }
+  picks.reads.clear();
+  for (const name of reads) {
+    picks.reads.add(name);
+  }
+}
+
+/** Whether two arms left every binding and every allocation as the same value, compared without forcing anything. */
+function sameState(a: State, b: State): boolean {
+  return sameEntries(a.bindings, b.bindings) && sameEntries(a.heap, b.heap);
+}
+
+function sameEntries<K>(
+  a: ReadonlyMap<K, Value>,
+  b: ReadonlyMap<K, Value>,
+): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const [key, value] of a) {
+    if (b.get(key) !== value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function emptyPicks(): Picks {
+  return { decided: new Map(), reads: new Set(), inOpen: false, under: null };
+}
+
+function copyPicks(picks: Picks): Picks {
+  return {
+    decided: new Map(picks.decided),
+    reads: new Set(picks.reads),
+    inOpen: picks.inOpen,
+    under: picks.under,
+  };
+}
+
+/**
+ * What two arms both decided. A key one arm fixed and the other did not
+ * is open again after the branch, since the run may have come either way.
+ */
+function meetPicks(a: Picks | null, b: Picks | null): Picks | null {
+  if (a === null || b === null) {
+    return a === null ? null : copyPicks(a);
+  }
+  const decided = new Map(
+    [...a.decided].filter(([key, arm]) => b.decided.get(key) === arm),
+  );
+  const reads = new Set([...a.reads].filter((name) => b.reads.has(name)));
+  return { decided, reads, inOpen: a.inOpen, under: a.under };
+}
+
+function newForkRun<N>(arms: ReadonlyMap<string, number>): ForkRun<N> {
+  return { arms, met: new Map(), reached: true };
+}
+
+/** This fork's arm for an arm of its key, the two swapped for a negated condition. */
+function ownArm(test: ForkTest, keyArm: number, count: number): number {
+  return test.negated && count === 2 ? 1 - keyArm : keyArm;
 }
 
 type DeferredAllocations = ReadonlyMap<number, AllocatedByDeferredCall>;
@@ -1785,7 +2183,13 @@ function combineStates(
     }
     heap.set(id, combineContent(left, right));
   }
-  return { bindings, heap, parameters: a.parameters, madeFrom: a.madeFrom };
+  return {
+    bindings,
+    heap,
+    parameters: a.parameters,
+    madeFrom: a.madeFrom,
+    picks: meetPicks(a.picks, b.picks),
+  };
 }
 
 function groupBy<T>(

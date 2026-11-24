@@ -1519,3 +1519,82 @@ describe("a file with several call sites", () => {
     expect(three.profile.evaluations).toBeLessThanOrEqual(4);
   });
 });
+
+describe("a request a branch before the call picks", () => {
+  /** Each unit's path and the condition texts it is sent under. */
+  async function requestsIn(lines: string[]): Promise<string[]> {
+    const units = await unitsIn(
+      ["class OrderClient", ...lines.map((line) => `  ${line}`), "end"].join(
+        "\n",
+      ),
+    );
+    return units.map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      const path = semantics?.name === "rest" ? semantics.path : "";
+      const when = (unit.bindingFrom?.when ?? []).map(
+        (one) =>
+          `${one.polarity === "negative" ? "not " : ""}${one.sourceText}`,
+      );
+      return when.length === 0 ? `${path}` : `${path} when ${when.join(", ")}`;
+    });
+  }
+
+  it("makes one client per URL a ternary picks, each under its arm", async () => {
+    expect(
+      await requestsIn([
+        "def load(order_id)",
+        '  url = order_id ? "/orders/#{order_id}" : "/orders"',
+        "  HttpClient.get(url)",
+        "end",
+      ]),
+    ).toEqual([
+      "/orders/{order_id} when order_id",
+      "/orders when not order_id",
+    ]);
+  });
+
+  it("makes one client per arm of an unless, read the right way round", async () => {
+    expect(
+      await requestsIn([
+        "def load(archived)",
+        "  unless archived",
+        '    url = "/orders/live"',
+        "  else",
+        '    url = "/orders/old"',
+        "  end",
+        "  HttpClient.get(url)",
+        "end",
+      ]),
+    ).toEqual(["/orders/old when archived", "/orders/live when not archived"]);
+  });
+
+  it("makes one client per arm of a case, the else with no test of its own", async () => {
+    expect(
+      await requestsIn([
+        "def load(kind)",
+        "  case kind",
+        '  when "open" then url = "/orders/open"',
+        '  when "shut", "gone" then url = "/orders/shut"',
+        '  else url = "/orders/all"',
+        "  end",
+        "  HttpClient.get(url)",
+        "end",
+      ]),
+    ).toEqual([
+      '/orders/open when kind == "open"',
+      '/orders/shut when kind == "shut" || kind == "gone"',
+      "/orders/all",
+    ]);
+  });
+
+  it("keeps one client when the branch changes nothing the request says", async () => {
+    expect(
+      await requestsIn([
+        "def ping(loud)",
+        '  url = loud ? "/ping" : "/ping"',
+        "  HttpClient.post(url)",
+        "end",
+      ]),
+    ).toEqual(["/ping"]);
+  });
+});

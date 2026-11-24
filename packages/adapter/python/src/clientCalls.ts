@@ -29,16 +29,25 @@ import {
   invocationSites,
   ownBodyCalls,
 } from "./paths/effects.js";
-import { predicateOf } from "./paths/predicates.js";
+import { operandsOf, predicateOf } from "./paths/predicates.js";
 import { raisesIn } from "./paths/raisedResponses.js";
-import { askSourcesOfValues, sourcesOfValues } from "./provenance.js";
+import {
+  askSourcesOfValues,
+  guardInputs,
+  sourcesOfValues,
+} from "./provenance.js";
 import { positionalParameters } from "./reach/closure.js";
 import {
   type HandOffOptions,
   throughResponseHelpers,
 } from "./responseHandOff.js";
 import { type ResponseReads, withResponseReads } from "./responseReads.js";
-import { moduleOf, parameterDefaults } from "./values/evaluator.js";
+import {
+  moduleOf,
+  nodeOfResolutionKey,
+  parameterDefaults,
+} from "./values/evaluator.js";
+import { forkCondition } from "./values/forks.js";
 import { isMethod } from "./values/lowering.js";
 import { originOf } from "./values/origin.js";
 
@@ -46,9 +55,11 @@ import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type {
   ClientResponse,
+  ForkArm,
   PackTally,
   RawBranch,
   RawCodeStructure,
+  RawCondition,
   RawEffect,
   RequestClaim,
   RequestRecognizer,
@@ -361,6 +372,37 @@ function responseAccessors(response: ClientResponse): {
   };
 }
 
+/**
+ * The condition each arm a request was read under runs under, with a
+ * parameter the condition tests read as that input, as a call's
+ * preconditions are read.
+ */
+function armConditions(
+  definition: PyNode,
+  arms: readonly ForkArm[],
+  facts: Database,
+): RawCondition[] {
+  return arms.flatMap((one) => {
+    const fork = nodeOfResolutionKey(one.at, facts);
+    const condition = fork === null ? null : forkCondition(fork);
+    if (condition === null) {
+      return [];
+    }
+    const inputs = guardInputs(operandsOf(condition), {
+      facts,
+      unit: definition,
+    });
+    return [
+      {
+        sourceText: condition.text,
+        structured: predicateOf(condition, facts, inputs),
+        polarity: one.arm === 0 ? "positive" : "negative",
+        source: "explicit",
+      },
+    ];
+  });
+}
+
 /** One request a hook found, and the call that makes it. */
 interface FoundRequest {
   readonly claim: RequestClaim;
@@ -404,8 +446,11 @@ function clientUnit(
   const bindingFrom = takesParameters(definition)
     ? requestBindingFrom(
         claim.read.stated,
-        sites?.find((one) => one.call.id === request.call.id)?.effect
-          .preconditions ?? [],
+        [
+          ...(sites?.find((one) => one.call.id === request.call.id)?.effect
+            .preconditions ?? []),
+          ...armConditions(definition, claim.arms ?? [], options.facts),
+        ],
         sourcesOfValues({ facts: options.facts, unit: definition }),
       )
     : undefined;

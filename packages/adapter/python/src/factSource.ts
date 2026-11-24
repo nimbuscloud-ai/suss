@@ -15,7 +15,12 @@ import {
   spanOfKey,
   staysInItsFunction,
 } from "@suss/resolution";
-import { hostOf, pathOf, scalarOf } from "@suss/values";
+import {
+  hostOf,
+  literalOf as literalOfValue,
+  pathOf,
+  scalarOf,
+} from "@suss/values";
 
 import {
   field,
@@ -55,9 +60,9 @@ import { isBuiltin } from "./stdlibNames.js";
 import {
   constructionSitesOf,
   evaluatedValue,
+  forksAt,
   moduleOf,
   nodeOfResolutionKey,
-  stringValueOf,
 } from "./values/evaluator.js";
 
 import type { Database } from "@suss/datalog";
@@ -88,10 +93,18 @@ export function factSourceOf(db: Database): PythonFactSource {
   return source;
 }
 
-/** The fact source for one run's database. */
-export function pythonFactSource(db: Database): PythonFactSource {
+/**
+ * The fact source for one run's database. With arms, every value it
+ * evaluates takes them, as `CallOps.takingArms` reads a call.
+ */
+export function pythonFactSource(
+  db: Database,
+  arms?: ReadonlyMap<string, number>,
+): PythonFactSource {
   const nodeAt = (key: string | null): PyNode | null =>
     key === null ? null : nodeOfResolutionKey(key, db);
+  const evaluated = (node: PyNode, site?: string) =>
+    evaluatedValue(node, db, site, arms);
   // A name has no node, so its value is what it was written as.
   const valueNode = (key: string): PyNode | null =>
     nodeAt(key) ?? nodeAt(writtenValueOf(db, key));
@@ -154,7 +167,7 @@ export function pythonFactSource(db: Database): PythonFactSource {
     dropped: (call, owned) => droppedInItsFunction(db, call, owned),
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
-      const settled = node === null ? null : stringValueOf(node, db);
+      const settled = node === null ? null : literalOfValue(evaluated(node));
       if (settled !== null || unsettled !== "reference") {
         return settled;
       }
@@ -200,20 +213,31 @@ export function pythonFactSource(db: Database): PythonFactSource {
     handedReaching: (key) => handedNamesAt(db, key),
     evaluatedOf: (key) => {
       const node = valueNode(key);
-      return node === null ? null : scalarOf(evaluatedValue(node, db));
+      return node === null ? null : scalarOf(evaluated(node));
     },
     urlOf: (key, site, at) => {
       const node = argumentNode(at) ?? valueNode(key);
       if (node === null) {
         return null;
       }
-      const value = evaluatedValue(node, db, site);
+      const value = evaluated(node, site);
       return { path: pathOf(value), host: hostOf(value) };
     },
     constructionSitesOf: (call) => {
       const node = nodeAt(call);
       return node === null ? [] : constructionSitesOf(node, db);
     },
+    forksOf: (call) => {
+      const node = nodeAt(call);
+      return node?.type === "call"
+        ? forksAt(
+            callArguments(node).map((argument) => argument.node),
+            db,
+            arms ?? new Map(),
+          )
+        : null;
+    },
+    takingArms: (taken) => pythonFactSource(db, taken),
     splatsOf: (call) => {
       const node = nodeAt(call);
       return node?.type === "call"
@@ -222,7 +246,7 @@ export function pythonFactSource(db: Database): PythonFactSource {
     },
     partsOf: (key) => {
       const node = valueNode(key);
-      return node === null ? null : literalParts(evaluatedValue(node, db));
+      return node === null ? null : literalParts(evaluated(node));
     },
     classNameOf,
     classKeyOf: (key, notFrom) => {

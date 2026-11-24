@@ -265,6 +265,27 @@ function onAPath(node: RbNode, method: RbNode): boolean {
  * shares the method's locals and its parameters shadow them.
  */
 function namesWrittenOnce(root: RbNode): ReadonlySet<string> {
+  const once = new Set<string>();
+  for (const [name, written] of writesIn(root)) {
+    const only = written[0];
+    if (written.length === 1 && only !== undefined && isTrusted(only, root)) {
+      once.add(name);
+    }
+  }
+  return once;
+}
+
+/** The names `root` and the blocks inside it write more than once, a parameter counted as a write. */
+export function namesWrittenAgain(root: RbNode): ReadonlySet<string> {
+  return new Set(
+    [...writesIn(root)].flatMap(([name, written]) =>
+      written.length > 1 ? [name] : [],
+    ),
+  );
+}
+
+/** Every write to each name in `root`'s scope, a parameter counted as one. */
+function writesIn(root: RbNode): ReadonlyMap<string, readonly RbNode[]> {
   const writes = new Map<string, RbNode[]>();
   const visit = (node: RbNode): void => {
     for (const child of children(node)) {
@@ -285,14 +306,7 @@ function namesWrittenOnce(root: RbNode): ReadonlySet<string> {
       writes.set(name.text, [...(writes.get(name.text) ?? []), parameter]);
     }
   }
-  const once = new Set<string>();
-  for (const [name, written] of writes) {
-    const only = written[0];
-    if (written.length === 1 && only !== undefined && isTrusted(only, root)) {
-      once.add(name);
-    }
-  }
-  return once;
+  return writes;
 }
 
 /** The name an identifier binds or writes, or a pattern binds with a key alone, as `in {id:}` does. */

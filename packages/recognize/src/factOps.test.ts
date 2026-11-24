@@ -3122,6 +3122,30 @@ describe("a request's URL and the receiver it is made on, over the facts", () =>
     expect(ops?.constructionSites?.()).toEqual(["c1"]);
   });
 
+  it("hands the forks of a call on from the source, and reads it again through the source that takes arms", () => {
+    const { facts } = requesting();
+    const met = { forks: [], reached: true, exhausted: false };
+    const taken: ReadonlyMap<string, number>[] = [];
+    const forking = {
+      ...facts,
+      forksOf: () => met,
+      takingArms: (arms: ReadonlyMap<string, number>) => {
+        taken.push(arms);
+        return forking;
+      },
+    };
+    const ops = factCallOps("viaModule", forking);
+    const arms = new Map([["id", 1]]);
+
+    expect(ops?.forks?.()).toBe(met);
+    expect(ops?.takingArms?.(arms)?.method()).toBe(ops?.method());
+    expect(taken).toEqual([arms]);
+    // A source that cannot take arms reads the call as it is.
+    const plain = factCallOps("viaModule", facts);
+    expect(plain?.forks?.()).toBeNull();
+    expect(plain?.takingArms?.(arms)).toBe(plain);
+  });
+
   it("says where a call unpacks its arguments, and that it unpacks none when the adapter does not say", () => {
     const { facts } = requesting();
     const unpacking = {

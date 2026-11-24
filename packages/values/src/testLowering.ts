@@ -485,4 +485,75 @@ export const testLowering: Lowering<TestNode> = {
   declaredValueOf: (n) => n.declared ?? null,
   truthiness: testTruthiness,
   rows,
+  forkTest: testForkTest,
 };
+
+const ownKeys = new WeakMap<TestNode, string>();
+let nextOwnKey = 0;
+
+/**
+ * A name, or a name under `!`, is a key that is the name; any other
+ * condition leaves the fork joined. A branch with no condition, and a
+ * test of a name the root writes twice, gets a key of its own.
+ */
+function testForkTest(
+  fork: TestNode,
+  root: TestNode,
+): { key: string; negated: boolean; reads: string[] } | null {
+  const shape = fork.shape;
+  const condition =
+    shape.kind === "branch" || shape.kind === "conditional"
+      ? shape.condition
+      : null;
+  if (condition === null) {
+    return { key: ownKeyOf(fork), negated: false, reads: [] };
+  }
+  const inner = condition.shape;
+  const negated =
+    inner.kind === "operator" &&
+    inner.operator === "!" &&
+    inner.operands.length === 1;
+  const tested =
+    negated && inner.kind === "operator" ? inner.operands[0] : condition;
+  const compared = tested === undefined ? null : comparedName(tested);
+  if (compared !== null) {
+    return { key: compared.key, negated, reads: [compared.name] };
+  }
+  if (tested?.shape.kind !== "name") {
+    return null;
+  }
+  const text = tested.shape.text;
+  const shared = root.reboundNames?.includes(text) !== true;
+  return {
+    key: shared ? text : `${text}${ownKeyOf(fork)}`,
+    negated,
+    reads: [text],
+  };
+}
+
+/** `x === "a"`, keyed by its text, and the name it reads. */
+function comparedName(
+  condition: TestNode,
+): { key: string; name: string } | null {
+  const shape = condition.shape;
+  if (shape.kind !== "operator" || shape.operator !== "===") {
+    return null;
+  }
+  const [left, right] = shape.operands;
+  if (left?.shape.kind !== "name" || right?.shape.kind !== "literal") {
+    return null;
+  }
+  return {
+    key: `${left.shape.text}===${String(right.shape.value)}`,
+    name: left.shape.text,
+  };
+}
+
+function ownKeyOf(fork: TestNode): string {
+  let key = ownKeys.get(fork);
+  if (key === undefined) {
+    key = `#${nextOwnKey++}`;
+    ownKeys.set(fork, key);
+  }
+  return key;
+}

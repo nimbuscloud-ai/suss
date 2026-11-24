@@ -1,14 +1,19 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   createConstantFileCache,
   discoverUnits,
+  extractRubyProject,
   factsForFile,
   parseRuby,
 } from "@suss/adapter-ruby";
+import { evalPredicate } from "@suss/behavioral-ir";
 
 import { FARADAY, faradayClient } from "./index.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { RawCodeStructure } from "@suss/extractor";
 
 const FILE = "app/clients/order_client.rb";
@@ -246,6 +251,94 @@ describe("a class given its path prefix when it was made", () => {
         })
         .sort(),
     ).toEqual(["/orders", "/users"]);
+  });
+});
+
+describe("a request a branch before the call picks", () => {
+  const root = path.resolve(
+    __dirname,
+    "../../../../fixtures/branch-picked-request-ruby",
+  );
+
+  async function clientsOf(name: string): Promise<BehavioralSummary[]> {
+    const { summaries } = await extractRubyProject({
+      files: [path.join(root, "app/client.rb")],
+      packs: [faradayClient()],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    return summaries.filter(
+      (summary) => summary.kind === "client" && summary.identity.name === name,
+    );
+  }
+
+  function requestOf(client: BehavioralSummary): string {
+    const semantics = client.identity.boundaryBinding?.semantics;
+    return semantics?.name === "rest"
+      ? `${semantics.method} ${semantics.path}`
+      : "";
+  }
+
+  /** The requests whose condition comes out true when the caller passes these arguments. */
+  function sentWith(
+    clients: readonly BehavioralSummary[],
+    env: Record<string, unknown>,
+  ): string[] {
+    return clients
+      .filter((client) =>
+        (client.bindingFrom?.when ?? []).every(
+          (one) => evalPredicate(one, env) === "true",
+        ),
+      )
+      .map(requestOf);
+  }
+
+  it("makes one client per arm of a record a branch picks, each under its arm's condition", async () => {
+    const clients = await clientsOf("save_sprocket");
+    expect(sentWith(clients, { sprocket: { id: "s1" } })).toEqual([
+      "PATCH /sprockets/{param}",
+    ]);
+    expect(sentWith(clients, { sprocket: {} })).toEqual(["POST /sprockets"]);
+  });
+
+  it("makes one client per URL a branch picks under a fixed method", async () => {
+    const clients = await clientsOf("load_gizmo");
+    expect(sentWith(clients, { gizmo_id: "g1" })).toEqual([
+      "GET /gizmos/{gizmo_id}",
+    ]);
+    expect(sentWith(clients, { gizmo_id: null })).toEqual(["GET /gizmos"]);
+  });
+
+  it("makes one client per method a branch picks for a fixed URL", async () => {
+    const clients = await clientsOf("toggle_widget");
+    expect(sentWith(clients, { on: true })).toEqual(["PUT /widgets/current"]);
+    expect(sentWith(clients, { on: false })).toEqual([
+      "DELETE /widgets/current",
+    ]);
+  });
+
+  it("makes one client per arm of a case", async () => {
+    const clients = await clientsOf("fetch_report");
+    expect(clients.map(requestOf).sort()).toEqual([
+      "GET /reports/all",
+      "GET /reports/daily",
+      "GET /reports/weekly",
+    ]);
+    expect(sentWith(clients, { period: "day" })).toContain(
+      "GET /reports/daily",
+    );
+    expect(sentWith(clients, { period: "fortnight" })).toContain(
+      "GET /reports/weekly",
+    );
+    expect(sentWith(clients, { period: "day" })).not.toContain(
+      "GET /reports/weekly",
+    );
+  });
+
+  it("keeps one client when the branch changes neither the method nor the URL", async () => {
+    const clients = await clientsOf("ping_doohickey");
+    expect(clients.map(requestOf)).toEqual(["POST /doohickeys/ping"]);
+    expect(clients[0]?.bindingFrom).toBeUndefined();
   });
 });
 

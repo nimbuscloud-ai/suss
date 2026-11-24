@@ -1257,3 +1257,76 @@ describe("a URL an annotated class attribute states", () => {
     ).toBe(UNREAD);
   });
 });
+
+describe("a request a branch before the call picks", () => {
+  /** Each unit's request and the condition texts it is sent under. */
+  async function requestsIn(lines: string[]): Promise<string[]> {
+    const units = await unitsIn(["import httpclient", "", ...lines].join("\n"));
+    return units.map((unit) => {
+      const semantics = unit.boundaryBinding?.semantics;
+      const request =
+        semantics?.name === "rest"
+          ? `${semantics.method} ${semantics.path}`
+          : "";
+      const when = (unit.bindingFrom?.when ?? []).map(
+        (one) =>
+          `${one.polarity === "negative" ? "not " : ""}${one.sourceText}`,
+      );
+      return when.length === 0 ? request : `${request} when ${when.join(", ")}`;
+    });
+  }
+
+  it("makes one client per arm of a record a branch picks", async () => {
+    expect(
+      await requestsIn([
+        "def save(item):",
+        "    target = (",
+        '        {"method": "PATCH", "url": f"/items/{item}"}',
+        "        if item",
+        '        else {"method": "POST", "url": "/items"}',
+        "    )",
+        '    return httpclient.send(target["method"], target["url"])',
+      ]),
+    ).toEqual(["PATCH /items/{item} when item", "POST /items when not item"]);
+  });
+
+  it("makes one client per branch of an elif chain, each under the arms that lead to it", async () => {
+    expect(
+      await requestsIn([
+        "def report(period):",
+        '    if period == "day":',
+        '        path = "/daily"',
+        '    elif period == "week":',
+        '        path = "/weekly"',
+        "    else:",
+        '        path = "/all"',
+        "    return httpclient.get(path)",
+      ]),
+    ).toEqual([
+      'GET /daily when period == "day"',
+      'GET /weekly when not period == "day", period == "week"',
+      'GET /all when not period == "day", not period == "week"',
+    ]);
+  });
+
+  it("pairs no arms of two forks that call something, as their arms may not match", async () => {
+    expect(
+      await requestsIn([
+        "def load(item, flags):",
+        '    method = "PUT" if flags.get("x") else "POST"',
+        '    path = "/a" if flags.get("x") else "/b"',
+        "    return httpclient.send(method, path)",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps one client when the branch changes neither the method nor the URL", async () => {
+    expect(
+      await requestsIn([
+        "def ping(loud):",
+        '    url = "/ping" if loud else "/ping"',
+        "    return httpclient.post(url)",
+      ]),
+    ).toEqual(["POST /ping"]);
+  });
+});
