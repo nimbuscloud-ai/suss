@@ -53,10 +53,13 @@ import type {
   GlobalPrefixCall,
   PatternPack,
   RouteVersioning,
+  ServingCall,
 } from "@suss/extractor";
 import type { Node, SourceFile } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
+import type { MountBeside } from "./mountBeside.js";
 
+export type { MountBeside } from "./mountBeside.js";
 export type { MountPrefixIndex } from "./registrationCall.js";
 
 const NO_MOUNTS: MountPrefixIndex = {
@@ -117,6 +120,7 @@ export function buildMountPrefixIndex(
   const subjectIdsByPack = new Map<string, Set<string>>();
   const mountWorkByPack = new Map<string, PackMountWork[]>();
   const ownMethodsByPack = new Map<string, Set<string>>();
+  const servingCallsByPack = new Map<string, readonly ServingCall[]>();
   const globalPrefixWork: GlobalPrefixWork[] = [];
   const versioningWork: VersioningWork[] = [];
 
@@ -126,6 +130,9 @@ export function buildMountPrefixIndex(
       const mountPatterns: MountPattern[] = [];
       if (!ownMethodsByPack.has(pack.name)) {
         ownMethodsByPack.set(pack.name, methodsRegisteredOn(pack.discovery));
+      }
+      if (pack.servedBeside !== undefined) {
+        servingCallsByPack.set(pack.name, pack.servedBeside.servingCalls ?? []);
       }
       for (const pattern of pack.discovery) {
         if (
@@ -184,8 +191,15 @@ export function buildMountPrefixIndex(
   // time, now that subjectIdsByPack has every file's subjects for each
   // pack.
   const edgesByChild = new Map<string, MountEdge[]>();
+  const servedBeside = new Map<string, MountBeside[]>();
   for (const [packName, work] of mountWorkByPack) {
     const knownSubjectIds = subjectIdsByPack.get(packName) ?? new Set<string>();
+    const servingCalls = servingCallsByPack.get(packName);
+    const found: MountBeside[] = [];
+    const beside =
+      servingCalls === undefined
+        ? undefined
+        : { servingCalls, found: (mount: MountBeside) => found.push(mount) };
     for (const { sourceFile, match, mount } of work) {
       for (const candidate of discoverMountEdges(
         sourceFile,
@@ -194,9 +208,13 @@ export function buildMountPrefixIndex(
         knownSubjectIds,
         resolution,
         ownMethodsByPack.get(packName),
+        beside,
       )) {
         recordEdge(edgesByChild, candidate);
       }
+    }
+    if (found.length > 0) {
+      servedBeside.set(packName, found);
     }
   }
 
@@ -207,7 +225,7 @@ export function buildMountPrefixIndex(
     globalPrefixes.size === 0 &&
     versionings.size === 0
   ) {
-    return NO_MOUNTS;
+    return servedBeside.size === 0 ? NO_MOUNTS : { ...NO_MOUNTS, servedBeside };
   }
 
   const edges: MountEdges = edgesByChild;
@@ -223,6 +241,7 @@ export function buildMountPrefixIndex(
     prefixForId: (id) => recordedPrefixFor(id),
     globalPrefixes,
     versionings,
+    servedBeside,
   };
 
   function recordedPrefixFor(id: string): string {

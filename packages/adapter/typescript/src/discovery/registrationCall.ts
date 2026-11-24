@@ -20,6 +20,12 @@ import { routePatternFromArgument } from "../resolve/routePath.js";
 import { memberNameOf } from "../walk/propertyName.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
+import {
+  type BesideMounts,
+  type MountBeside,
+  noteMountedBeside,
+  noteUnprefixedMount,
+} from "./mountBeside.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
 import {
   functionValueOf,
@@ -69,6 +75,8 @@ export interface MountPrefixIndex {
   globalPrefixes?: ReadonlyMap<string, GlobalPrefix>;
   /** How the run's applications serve API versions, keyed by `routeVersioningKey`. */
   versionings?: ReadonlyMap<string, AppVersioning>;
+  /** By pack, the mount calls that serve requests beside the routes suss read. */
+  servedBeside?: ReadonlyMap<string, readonly MountBeside[]>;
 }
 
 /** One mount call this file states, before it's folded into the index. */
@@ -843,6 +851,7 @@ export function discoverMountEdges(
   knownSubjectIds: ReadonlySet<string>,
   resolution?: ResolutionStore,
   packMethods: ReadonlySet<string> = new Set(),
+  beside?: BesideMounts,
 ): MountEdgeCandidate[] {
   const ownMethods = new Set([
     ...packMethods,
@@ -892,6 +901,9 @@ export function discoverMountEdges(
     const prefix =
       prefixArg === undefined ? null : stringValueOf(prefixArg, resolution);
     if (prefix === null) {
+      if (beside !== undefined) {
+        noteUnprefixedMount(node, prefixArg, args, beside, resolution);
+      }
       return;
     }
 
@@ -911,6 +923,17 @@ export function discoverMountEdges(
       )
     ) {
       return;
+    }
+    if (beside !== undefined) {
+      noteMountedBeside(
+        node,
+        args,
+        mount.targetPosition,
+        targetNodes,
+        prefix,
+        beside,
+        resolution,
+      );
     }
     for (const targetNode of targetNodes) {
       edges.push({

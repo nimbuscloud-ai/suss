@@ -26,10 +26,12 @@ import {
 import {
   dropIdleReceivers,
   isTestFile,
+  readServedBesideMetadata,
   readTestMetadata,
   readWrapperMetadata,
   SUMMARY_SCHEMA_VERSION,
   withRewrittenPaths,
+  withServedBesideMetadata,
   withWrapperMetadata,
 } from "@suss/behavioral-ir";
 import { testFilesUnder } from "@suss/behavioral-ir/files";
@@ -2017,6 +2019,25 @@ export function relativizeSummaryPaths(
   relativizeMockedModules(summary, projectRoot);
   relativizeReceiverClasses(summary, projectRoot);
   relativizeConstructions(summary, projectRoot);
+  relativizeServedBeside(summary, projectRoot);
+}
+
+/** Each file a framework pack read what it serves besides its routes from. */
+function relativizeServedBeside(
+  summary: BehavioralSummary,
+  projectRoot: string,
+): void {
+  const servedBeside = readServedBesideMetadata(summary);
+  if (servedBeside === undefined) {
+    return;
+  }
+  summary.metadata = withServedBesideMetadata(summary.metadata, {
+    ...servedBeside,
+    entries: servedBeside.entries.map((entry) => ({
+      ...entry,
+      file: relativeIfAbsolute(projectRoot, entry.file),
+    })),
+  });
 }
 
 /**

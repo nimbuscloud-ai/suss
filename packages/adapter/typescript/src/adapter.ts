@@ -97,6 +97,7 @@ import {
   pathIsOnlyHoles,
   pathOf,
   statedRequestPath,
+  takenOverUnread,
   type Value,
 } from "@suss/values";
 
@@ -222,6 +223,7 @@ import {
   bodyCalleesOf,
   type ResponseHandOffOptions,
 } from "./responseHandOff.js";
+import { stampServedBesideOn } from "./servedBeside.js";
 import { withDefinitions } from "./shapes/definitions.js";
 import { collectClientFieldAccesses } from "./shapes/fieldAccesses.js";
 import { stableTypeText } from "./shapes/typeText.js";
@@ -1676,6 +1678,9 @@ function extractFromSourceFile(
         if (request.redirectDelivery !== undefined) {
           raw.redirectDelivery = request.redirectDelivery;
         }
+        if (request.urlTookDefault === true) {
+          raw.urlTookDefault = true;
+        }
         stampClientBinding(raw, unit.callSite, requestBinding(request, pack));
         stampBindingFrom(raw, unit.func, request, resolution);
       } else if (unit.callSite !== undefined && matchedPattern !== undefined) {
@@ -2270,7 +2275,12 @@ function sinkReading(
   const host = hostOf(url);
   return method === undefined
     ? null
-    : { path, method, ...(host === undefined ? {} : { host }) };
+    : {
+        path,
+        method,
+        ...(host === undefined ? {} : { host }),
+        ...(takenOverUnread(url) ? { tookDefault: true } : {}),
+      };
 }
 
 function sinkArgumentValue(
@@ -2494,6 +2504,9 @@ function buildCallerSummary(
     host: reading.host ?? base?.host,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
+  if (reading.tookDefault === true) {
+    raw.urlTookDefault = true;
+  }
   Object.assign(raw, clientResponseFieldsThroughWrapper(wrapper.summary));
 
   const summary = assembleSummary(raw, options);
@@ -3463,6 +3476,16 @@ function readWalkedFiles(reading: FileReading): FilesRead {
         fileImporting(project, prefix),
       ),
     ),
+  );
+  timer.time("stampServedBeside", () =>
+    stampServedBesideOn(enriched, {
+      frameworks,
+      project,
+      store: resolution,
+      root: reading.runRoot,
+      sourceFiles,
+      mounts: mountPrefixes.servedBeside ?? new Map(),
+    }),
   );
   timer.time("liftSchemasOntoDocuments", () =>
     liftSchemasOntoDocuments(enriched),

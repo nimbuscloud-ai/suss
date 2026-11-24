@@ -38,6 +38,8 @@ export interface SinkReading {
   method: string;
   /** The host when the URL the caller settles is absolute. */
   host?: string;
+  /** True when part of the URL is a fallback's default taken over a value that did not read. */
+  tookDefault?: boolean;
 }
 
 /**

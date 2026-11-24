@@ -129,6 +129,7 @@ import {
   watchFileCache,
   watchReachContext,
 } from "./reuse.js";
+import { stampRubyServedBeside } from "./servedBeside.js";
 import { stdlibReads } from "./stdlib/dispatch.js";
 import { pooledStorage } from "./storage.js";
 import { startSubUnits, subUnitSummaries } from "./subUnits.js";
@@ -1221,6 +1222,7 @@ async function runRuby(
   const dependencies = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => dependencies.get(file) ?? []);
   stampModules(summaries, declaredModules, options.workspaceRoot);
+  stampRubyServedBeside(summaries, options.packs, (name) => tallies.get(name));
 
   for (const summary of summaries) {
     const absoluteFile =

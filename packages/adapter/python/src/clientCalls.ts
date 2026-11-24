@@ -488,6 +488,7 @@ function clientUnit(
     ...(claim.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: claim.redirectDelivery }),
+    ...(claim.urlTookDefault === true ? { urlTookDefault: true } : {}),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,
