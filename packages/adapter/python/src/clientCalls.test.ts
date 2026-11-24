@@ -577,6 +577,35 @@ describe("a function that calls a request function", () => {
     ]);
   });
 
+  it("keeps each case of a match on the status when the cases rejoin and the body goes on", async () => {
+    const units = await unitsIn(
+      [
+        "import httpclient",
+        "",
+        "def refresh(orders):",
+        '    response = httpclient.get("/orders")',
+        "    match response.status_code:",
+        "        case 404:",
+        "            orders.clear()",
+        "        case _:",
+        "            orders.sort()",
+        "    orders.mark_loaded()",
+      ].join("\n"),
+      httpclient({ statusCode: ["status_code"] }),
+    );
+
+    const conditions = (units[0]?.branches ?? []).map((branch) =>
+      branch.conditions.map(
+        (condition) => `${condition.polarity} ${condition.sourceText}`,
+      ),
+    );
+    expect(conditions).toEqual([
+      [],
+      ["positive response.status_code == 404"],
+      ["negative response.status_code == 404"],
+    ]);
+  });
+
   it("keeps one branch for a caller that tests nothing", async () => {
     const units = await unitsIn(
       [
