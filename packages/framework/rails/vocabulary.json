@@ -70,5 +70,6 @@
   "StandardError": "language: Ruby's base class of every exception rescue_from catches by default",
   "Exception": "language: Ruby's root of the exception hierarchy",
   "IndexError": "language: Ruby's exception that ActionController::UnpermittedParameters inherits from",
-  "KeyError": "language: Ruby's exception that ActionController::ParameterMissing inherits from"
+  "KeyError": "language: Ruby's exception that ActionController::ParameterMissing inherits from",
+  "public": "language: Ruby's visibility keyword. Rails: the directory whose files it serves ahead of the routes"
 }

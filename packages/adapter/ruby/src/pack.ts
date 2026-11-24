@@ -10,6 +10,7 @@
 import type {
   MessageBusTechnology,
   RequestSpellingMetadata,
+  ServedBesideEntry,
   TypeShape,
 } from "@suss/behavioral-ir";
 import type {
@@ -133,6 +134,13 @@ export interface RubyPack {
   requestAccessors?: string[];
   /** Where an action reads each part of the request, recorded on every action the pack finds. */
   requestSpelling?: RequestSpellingMetadata;
+  /**
+   * What else serves requests beside the pack's routes, as a framework
+   * pack states it. The adapter lists the static directories, and each
+   * controller pattern's `routedElsewhere` adds what its routing sends
+   * somewhere suss does not read.
+   */
+  servedBeside?: { staticDirectories: readonly string[] };
   /** Calls that read a model through a batching loader, where the model is an argument instead of the receiver. */
   loaders?: RbLoaderPattern[];
   /** Calls in a class or module body whose block runs as part of that body. */
@@ -572,6 +580,12 @@ export interface ControllerActions {
   optionalFormat?: boolean;
   /** One message for each kind of routing declaration the pattern could not read. Calling it again returns the same list. */
   routingGaps?: () => readonly string[];
+  /**
+   * The paths the routing sends to something suss does not read, such as
+   * an app a `mount` puts under a path, and a declaration it could not
+   * read at all, which may serve any path.
+   */
+  routedElsewhere?: () => readonly ServedBesideEntry[];
   /** The class-level calls that run one of the controller's own methods around its actions, Rails' `before_action` and `rescue_from`. */
   filters?: RbControllerFilter[];
 }

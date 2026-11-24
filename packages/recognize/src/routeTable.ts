@@ -2597,7 +2597,14 @@ function readMount(
     mountPath === null ||
     walk.mounting.has(owner.name)
   ) {
-    walk.gaps.push({ kind: "unread", file: walk.file, name: entry.name });
+    walk.gaps.push({
+      kind: "unread",
+      file: walk.file,
+      name: entry.name,
+      ...(owner === null && mountPath !== null
+        ? { at: joinRoutePath(scope.pathPrefix, mountPath) }
+        : {}),
+    });
     return;
   }
   const root = walk.mounted.get(owner.name);

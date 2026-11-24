@@ -307,14 +307,17 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
         : conventionalRoutes(key, actionName);
     },
     routingGaps: () => routeTable().gaps,
+    routedElsewhere: () => routeTable().elsewhere,
     optionalFormat: true,
   };
 
   return {
     name: "rails",
-    version: "6",
+    version: "7",
     protocol: "http",
     discovery: [pattern],
+    // Rails serves the files under `public` ahead of its routes.
+    servedBeside: { staticDirectories: [path.join(railsRoot, "public")] },
     bodyBlocks: BODY_BLOCKS,
     inflections,
     // An action reads the request through these, and is handed nothing.

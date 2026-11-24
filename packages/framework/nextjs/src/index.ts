@@ -6,12 +6,16 @@
  * React pack. The README covers `pages/api` handlers and server actions.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 import { describeDiscovery } from "@suss/recognize";
 
 import type {
   BindingExtraction,
   DeclaredDiscoveryPattern,
   PatternPack,
+  ServedBesideDeclaration,
   TerminalPattern,
 } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
@@ -20,7 +24,7 @@ import type { PackDeclaration } from "@suss/ir-core";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "1";
+const VERSION = "2";
 
 const ROUTE_METHODS = [
   "GET",
@@ -75,6 +79,95 @@ const ACTION_TERMINALS: TerminalPattern[] = [
   { kind: "return", match: { type: "functionFallthrough" }, extraction: {} },
 ];
 
+const SOURCE_EXTENSIONS = "{ts,tsx,js,jsx,mts,mjs,md,mdx}";
+
+/** Where Next.js looks for its config, at the app's root. */
+const CONFIG_FILES = [
+  "next.config.js",
+  "next.config.mjs",
+  "next.config.cjs",
+  "next.config.ts",
+  "next.config.mts",
+];
+
+/**
+ * Where Next.js looks for the function it runs in front of every route,
+ * at the app's root or under `src`. Version 16 calls it `proxy`.
+ */
+const MIDDLEWARE_FILES = ["middleware", "proxy"].flatMap((name) =>
+  ["", "src/"].flatMap((under) =>
+    ["ts", "js", "mts", "mjs"].map(
+      (extension) => `${under}${name}.${extension}`,
+    ),
+  ),
+);
+
+/** Files under `app` that Next.js serves at their own path with an extension after it, such as `/sitemap.xml`. */
+const METADATA_FILES = [
+  "sitemap",
+  "robots",
+  "manifest",
+  "icon",
+  "apple-icon",
+  "opengraph-image",
+  "twitter-image",
+  "favicon",
+];
+
+/**
+ * What else a Next.js app serves a request at: its pages and metadata
+ * files, what is under `public`, the rewrites and redirects its config
+ * returns, and the middleware its matcher runs for. The config keys
+ * that move every route are not read, so an app that sets one is not
+ * checked for calls to missing routes.
+ */
+const SERVED_BESIDE: ServedBesideDeclaration = {
+  pages: [
+    { filePattern: `**/app/**/page.${SOURCE_EXTENSIONS}`, path: APP_ROUTES },
+    {
+      filePattern: `**/app/**/{${METADATA_FILES.join(",")}}.*`,
+      path: APP_ROUTES,
+      suffixed: true,
+    },
+    { filePattern: `**/pages/**/*.${SOURCE_EXTENSIONS}`, path: PAGES_ROUTES },
+  ],
+  staticDirectories: ["public"],
+  config: {
+    files: CONFIG_FILES,
+    rules: [
+      { key: "rewrites", by: "rewrite" },
+      { key: "redirects", by: "redirect" },
+    ],
+    unread: ["basePath", "i18n", "pageExtensions"],
+  },
+  middleware: {
+    files: MIDDLEWARE_FILES,
+    export: "config",
+    property: "matcher",
+  },
+  patternSyntax: "pathToRegexp",
+};
+
+/** The config file beside each file the run reads, which decides what the app serves besides its routes. */
+function configFilesFor(files: readonly string[]): string[] {
+  const found = new Set<string>();
+  const looked = new Set<string>();
+  for (const file of files) {
+    let directory = path.dirname(path.resolve(file));
+    while (!looked.has(directory)) {
+      looked.add(directory);
+      for (const name of CONFIG_FILES) {
+        const candidate = path.join(directory, name);
+        if (fs.existsSync(candidate)) {
+          found.add(candidate);
+        }
+      }
+      directory = path.dirname(directory);
+    }
+  }
+  return [...found].sort();
+}
+
 /** The functions a `"use server"` directive turns into server actions, each bound by its module and name. */
 const SERVER_ACTIONS: DeclaredDiscoveryPattern = {
   kind: "action",
@@ -97,6 +190,8 @@ export function nextjsFramework(): PatternPack {
     version: VERSION,
     protocol: "http",
     languages: ["typescript", "javascript"],
+    servedBeside: SERVED_BESIDE,
+    discoveryInputs: configFilesFor,
 
     discovery: [
       {

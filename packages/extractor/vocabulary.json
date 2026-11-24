@@ -218,5 +218,10 @@
   "value": "suss: route table EntryPick, the value of a pair argument",
   "variable": "expression kind the extractor records",
   "walkedBlock": "suss: route table gap kind, a library's wrapper walked in place",
-  "written": "suss: sub-unit name part, the name a function was handed over as"
+  "written": "suss: sub-unit name part, the name a function was handed over as",
+  "page": "suss: served-beside entry kind, a page a framework serves at its path",
+  "proxy": "suss: served-beside entry kind, a proxy mounted under a prefix",
+  "redirect": "suss: served-beside entry kind, a redirect rule in a framework's config",
+  "rewrite": "suss: served-beside entry kind, a rewrite rule in a framework's config",
+  "static": "suss: served-beside entry kind, a file a framework serves as it is"
 }

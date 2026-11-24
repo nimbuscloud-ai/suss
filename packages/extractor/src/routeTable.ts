@@ -413,7 +413,13 @@ export interface TableRoute {
 }
 
 export type RouteGap =
-  | { readonly kind: "unread"; readonly file: string; readonly name: string }
+  | {
+      readonly kind: "unread";
+      readonly file: string;
+      readonly name: string;
+      /** For a mount of something the table does not read, the path it is mounted at, when that reads. */
+      readonly at?: string;
+    }
   | {
       readonly kind: "walkedBlock";
       readonly file: string;

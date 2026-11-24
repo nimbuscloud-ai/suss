@@ -250,6 +250,22 @@ describe("railsFramework", () => {
         expect.stringContaining("also declares mount"),
       ]);
     });
+
+    it("says the app it does not read serves every path under the mount, and nothing else", () => {
+      const pack = railsFramework({
+        root: path.join(fixtureRoot, "app"),
+        routesFile: path.join(fixtureRoot, "config/routes.rb"),
+      });
+      expect(pattern(pack).routedElsewhere?.()).toEqual([
+        {
+          by: "mount",
+          path: "/sidekiq/{path*}",
+          file: path.join(fixtureRoot, "config/routes.rb"),
+          line: 1,
+          written: "mount",
+        },
+      ]);
+    });
   });
 
   describe("when the routes file does not exist", () => {

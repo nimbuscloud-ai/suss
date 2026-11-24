@@ -164,6 +164,7 @@ export {
   type ResponseReading,
   readShapeOf,
 } from "./responseReads.js";
+export { stampServedBeside, staticDirectoryEntries } from "./servedBeside.js";
 export { isListedTestFile, matchesTestFileName } from "./testFiles.js";
 export {
   comesFromInput,
@@ -242,6 +243,11 @@ export type {
   RouteVersioning,
   RunnerCalls,
   RunsPick,
+  ServedBesideDeclaration,
+  ServedConfig,
+  ServedMiddleware,
+  ServedPages,
+  ServingCall,
   SharedInclude,
   SkipRules,
   StatedRequest,
@@ -587,6 +593,8 @@ export interface RawCodeStructure {
   failureDelivery?: FailureDelivery;
   /** Whether this client follows a redirect or hands the 3xx back. */
   redirectDelivery?: RedirectDelivery;
+  /** True when the client's URL took a fallback's default over a value that did not read. */
+  urlTookDefault?: boolean;
   /** Statuses the handler's own code lists as possible responses, such as FastAPI's `responses=`. */
   declaredStatuses?: number[];
   /** Left exactly as written, because the extractor does not depend on
@@ -1040,6 +1048,9 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   }
   if (raw.redirectDelivery !== undefined) {
     http.redirectDelivery = raw.redirectDelivery;
+  }
+  if (raw.urlTookDefault === true) {
+    http.urlTookDefault = true;
   }
   if (raw.declaredStatuses !== undefined && raw.declaredStatuses.length > 0) {
     http.declaredStatuses = raw.declaredStatuses;
