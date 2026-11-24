@@ -24,6 +24,7 @@ interface PatternPack {
   version?: string;
   contractReading?: ContractPattern;
   requestSpelling?: RequestSpellingMetadata;
+  servedBeside?: ServedBesideDeclaration;
   responseSemantics?: ResponsePropertyMapping[];
   failureDelivery?: "response" | "exception";
   redirectDelivery?: "followed" | "response";
@@ -68,6 +69,27 @@ The shipped packs use these strings:
 - `"storage"`, database and object-store access.
 
 Reuse a string when your pack pairs the way an existing protocol pairs and its payloads mean the same things. Otherwise pick a new one that describes a transport instead of a library. React is not a protocol, because it has no wire format, so a React boundary uses `"in-process"`. [Boundary semantics](/theory/boundary-semantics) explains how transport and semantics are kept apart.
+
+### What serves requests beside the routes
+
+`servedBeside` is for a REST framework pack. It says what else in the framework serves a request that no route matches, and where the pack reads each one, and `suss check` reports a call to a missing route ([`restMethodOnUnknownPath`](/reference/findings#restmethodonunknownpath)) only in a service whose packs all state it. A pack that leaves it out keeps its routes out of that check, since "no route matches" could then mean "suss did not read what does".
+
+```typescript
+servedBeside: {
+  pages: [{ filePattern: "**/app/**/page.tsx", path: APP_ROUTES }],
+  staticDirectories: ["public"],
+  config: {
+    files: ["next.config.ts"],
+    rules: [{ key: "rewrites", by: "rewrite" }],
+    unread: ["basePath"],
+  },
+  middleware: { files: ["middleware.ts"], export: "config", property: "matcher" },
+  servingCalls: [{ module: "express", names: ["static"], by: "static" }],
+  patternSyntax: "pathToRegexp",
+}
+```
+
+`pages` lists the files the framework serves a page from, each read for its path the way a route file is. `staticDirectories` lists the directories whose files are served at their own path. `config` says which config file to read, the keys whose function returns rules with a `source`, and the keys suss does not read, any of which makes every path uncertain. `middleware` says which file exports a matcher for the function that runs in front of the routes, and a file with no matcher covers every path. `servingCalls` lists the library functions whose result serves requests when the pack's mount method is handed it; a mount of anything else the pack cannot follow covers its prefix. The Next.js, Express and Rails packs state this. The adapter writes what it found on every route the pack recognized, under `metadata.servedBeside`.
 
 ## `DiscoveryMatch` variants
 
