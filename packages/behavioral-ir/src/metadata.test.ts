@@ -16,6 +16,7 @@ import {
   readRequestSpellingMetadata,
   readRoutingMetadata,
   readRuntimeContractMetadata,
+  readServedBesideMetadata,
   readSourceDocumentMetadata,
   readStorageContractMetadata,
   readStorybookMetadata,
@@ -29,6 +30,7 @@ import {
   withRequestSpellingMetadata,
   withRoutingMetadata,
   withRuntimeContractMetadata,
+  withServedBesideMetadata,
   withSourceDocumentMetadata,
   withTestMetadata,
   withWrapperMetadata,
@@ -708,5 +710,41 @@ describe("typed metadata namespaces", () => {
       readProcessMetadata(carrier({ process: { exitCodeFrom: "return" } })),
     ).toEqual({ exitCodeFrom: "return" });
     expect(readProcessMetadata(carrier({}))).toBeUndefined();
+  });
+});
+
+describe("what a pack read beside its routes", () => {
+  const statement = {
+    pack: "shop-framework",
+    entries: [
+      { by: "rewrite" as const, path: "/old/{path*}", file: "a.ts", line: 2 },
+      { by: "unread" as const, file: "b.ts", line: 1, written: "basePath" },
+    ],
+  };
+
+  it("reads back what was written", () => {
+    expect(
+      readServedBesideMetadata(
+        summaryWith(withServedBesideMetadata(undefined, statement)),
+      ),
+    ).toEqual(statement);
+  });
+
+  it("reads nothing when the pack or its entries are missing", () => {
+    expect(readServedBesideMetadata(summaryWith(undefined))).toBeUndefined();
+    expect(
+      readServedBesideMetadata(
+        summaryWith({ servedBeside: { pack: "shop-framework" } }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("refuses a field the namespace does not declare", () => {
+    expect(() =>
+      withServedBesideMetadata(undefined, {
+        ...statement,
+        extra: true,
+      } as typeof statement),
+    ).toThrow();
   });
 });

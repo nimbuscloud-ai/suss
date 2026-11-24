@@ -208,6 +208,7 @@ export {
 export {
   compareRanks,
   type HoleRange,
+  isCatchAll,
   rangedHole,
   setPiece,
 } from "./semantics/pathPattern.js";

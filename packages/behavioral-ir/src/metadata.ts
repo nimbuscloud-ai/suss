@@ -922,6 +922,13 @@ export const HttpMetadataSchema = z.object({
    */
   redirectDelivery: z.enum(["followed", "response"]).optional(),
   /**
+   * True when the client's URL took a fallback's default where the
+   * value before it did not read, as `${process.env.API_URL ?? ""}/orders`
+   * does. The binding has the default, and the deployment may send the
+   * call somewhere else.
+   */
+  urlTookDefault: z.boolean().optional(),
+  /**
    * Statuses the handler's own code lists as responses it may send,
    * whether or not a path read here produces them: FastAPI's
    * `responses=` on the route, its router, or a mount above it. A
@@ -1056,6 +1063,76 @@ export function readLibraryEnvReads(
     LibraryEnvReadsSchema,
     summary.metadata?.libraryEnvReads,
   );
+}
+
+/**
+ * One thing besides a route that serves requests: a rewrite or a
+ * redirect in the framework's config, middleware that runs in front of
+ * the routes, a proxy or another app mounted at a prefix, a static file,
+ * or a page. `path` is the requests it serves, written as a route path,
+ * and `pattern` is the same as a regular expression over the request
+ * path, for a framework whose syntax a route path cannot express. With
+ * neither, suss could not read which requests it serves, so it may be
+ * any of them.
+ */
+const ServedBesideEntrySchema = z.object({
+  by: z.enum([
+    "rewrite",
+    "redirect",
+    "middleware",
+    "proxy",
+    "mount",
+    "static",
+    "page",
+    "unread",
+  ]),
+  path: z.string().optional(),
+  pattern: z.string().optional(),
+  /** The methods it serves, when not every one, such as GET for a page. */
+  methods: z.array(z.string()).optional(),
+  file: z.string(),
+  line: z.number(),
+  /** What the source writes, such as the rewrite's `source`. */
+  written: z.string().optional(),
+});
+
+export type ServedBesideEntry = z.infer<typeof ServedBesideEntrySchema>;
+
+export const ServedBesideMetadataSchema = z.object({
+  /** The pack whose routes these sit beside. */
+  pack: z.string(),
+  entries: z.array(ServedBesideEntrySchema),
+});
+
+export type ServedBesideMetadata = z.infer<typeof ServedBesideMetadataSchema>;
+
+/**
+ * What a framework pack read that serves requests beside its routes,
+ * stamped on every route the pack recognized in a run. An empty list
+ * still says the pack looked, and a route with no statement comes from
+ * a pack that states nothing.
+ */
+export function withServedBesideMetadata(
+  metadata: Record<string, unknown> | undefined,
+  value: ServedBesideMetadata,
+): Record<string, unknown> {
+  return {
+    ...(metadata ?? {}),
+    servedBeside: strictly(ServedBesideMetadataSchema).parse(value),
+  };
+}
+
+/** The summary's served-beside namespace, or undefined when absent. */
+export function readServedBesideMetadata(
+  summary: BehavioralSummary,
+): ServedBesideMetadata | undefined {
+  const read = readNamespace(
+    ServedBesideMetadataSchema,
+    summary.metadata?.servedBeside,
+  );
+  return read?.pack === undefined || read.entries === undefined
+    ? undefined
+    : (read as ServedBesideMetadata);
 }
 
 const ModuleImportsSchema = z.array(z.string());

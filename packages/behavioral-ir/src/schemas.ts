@@ -993,6 +993,14 @@ export const FindingSchema = z.object({
    * same operation, and then they are the documents on the consumer side.
    */
   sources: z.array(z.string()).optional(),
+  /** For a call to a missing route: the service it goes to, its route count, and the routes closest to the call. */
+  target: z
+    .object({
+      service: z.string(),
+      routes: z.number(),
+      nearby: z.array(z.string()),
+    })
+    .optional(),
   suppressed: FindingSuppressionSchema.optional(),
 });
 
