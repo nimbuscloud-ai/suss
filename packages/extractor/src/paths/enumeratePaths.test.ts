@@ -173,6 +173,21 @@ describe("enumerateStructuredPaths, if/else", () => {
     expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
   });
 
+  it("rejoins every arm of a long else-if chain whose arms all run on", () => {
+    const chain = ["a", "b", "c", "d", "e"].reduceRight<S[]>(
+      (elseBody, test) => [mkIf(cond(test), [opq()], elseBody)],
+      [opq()],
+    );
+    const t0 = ret();
+
+    const result = enumerateStructuredPaths({
+      statements: [...chain, t0],
+      terminalsByStmt: new Map<S, string[]>([[t0, ["T0"]]]),
+    });
+
+    expect(pathSigs(result.byTerminal.get("T0"))).toEqual(["<unconditional>"]);
+  });
+
   it("keeps each arm of a test the caller names after the arms rejoin", () => {
     const status = { sourceText: "status == 200", expression: "status" };
     const statements = [

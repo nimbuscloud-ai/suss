@@ -598,41 +598,52 @@ function mergeRejoined<Cond>(
   paths: PathCond<Cond>[][],
   keepsArms: KeepsArms<Cond> = KEEPS_NO_ARMS,
 ): PathCond<Cond>[][] {
+  // Every pass that merges leaves fewer paths, so this ends. One merge can
+  // make the next possible, as in an else-if chain merging from its last
+  // arm up, so it runs until a pass merges nothing.
   let current = paths;
-  for (let round = 0; round < current.length; round++) {
-    const out: PathCond<Cond>[][] = [];
-    const taken = new Set<number>();
-    let mergedAny = false;
-    for (let i = 0; i < current.length; i++) {
-      if (taken.has(i)) {
+  for (;;) {
+    const next = mergePairs(current, keepsArms);
+    if (next === null) {
+      return current;
+    }
+    current = next;
+  }
+}
+
+/** One pass of the pairwise merge, or null when no two paths merge. */
+function mergePairs<Cond>(
+  current: PathCond<Cond>[][],
+  keepsArms: KeepsArms<Cond>,
+): PathCond<Cond>[][] | null {
+  const out: PathCond<Cond>[][] = [];
+  const taken = new Set<number>();
+  let mergedAny = false;
+  for (let i = 0; i < current.length; i++) {
+    if (taken.has(i)) {
+      continue;
+    }
+    let combined = current[i] as PathCond<Cond>[];
+    for (let j = i + 1; j < current.length; j++) {
+      if (taken.has(j)) {
         continue;
       }
-      let combined = current[i] as PathCond<Cond>[];
-      for (let j = i + 1; j < current.length; j++) {
-        if (taken.has(j)) {
-          continue;
-        }
-        const at = soleDisagreement(
-          combined,
-          current[j] as PathCond<Cond>[],
-          keepsArms,
-        );
-        if (at === null) {
-          continue;
-        }
-        combined = [...combined.slice(0, at), ...combined.slice(at + 1)];
-        taken.add(j);
-        mergedAny = true;
-        break;
+      const at = soleDisagreement(
+        combined,
+        current[j] as PathCond<Cond>[],
+        keepsArms,
+      );
+      if (at === null) {
+        continue;
       }
-      out.push(combined);
-    }
-    current = out;
-    if (!mergedAny) {
+      combined = [...combined.slice(0, at), ...combined.slice(at + 1)];
+      taken.add(j);
+      mergedAny = true;
       break;
     }
+    out.push(combined);
   }
-  return current;
+  return mergedAny ? out : null;
 }
 
 /**
