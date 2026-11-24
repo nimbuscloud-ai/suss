@@ -330,7 +330,7 @@ On an `invocation`, `summary` is the summary this call reaches, the one whose un
 
 A method that every repository in a project shares can read the table its constructor stored, as `select(self.model)` does, and which table that is depends on which repository the call ran on. The storage read in that method then has `container: null`, and `containerByConstruction` lists the table each construction gives, keyed by where the construction is written as `file:line:column`, such as `"repos/factory.py:215:16": "Tool"`. A call whose receiver can only have been made at known constructions lists them in `receiverConstructions`, and a call on the method's own `self` has `onOwnReceiver`. Both appear only on calls into a method that does something different on some construction, either through such a read or through a call on its own `self` into one that does. `suss ask`, `suss map` and the MCP server copy the method once for each construction a caller passes, with that construction's table filled in, so the answer to `what does GET /tools reach` includes `Tool`. The copies are never written to a file, and an answer that lists the method lists it once, with the constructions it covers. Today the Python adapter sets these.
 
-`args` has one entry per argument, in the order the call wrote them, and each entry's `kind` says what was passed:
+`args` has one entry per positional argument, in the order the call wrote them, and each entry's `kind` says what was passed:
 
 ```typescript
 type Argument =
@@ -340,12 +340,15 @@ type Argument =
   | { kind: "null" }
   | { kind: "undefined" }
   | { kind: "object"; fields: Record<string, Argument> }
+  | { kind: "keywords"; fields: Record<string, Argument> }
   | { kind: "array"; items: Argument[] }
   | { kind: "template"; sourceText: string }
   | { kind: "identifier"; name: string }
   | { kind: "call"; callee: string; args: Argument[] }
   | null;
 ```
+
+A Python or Ruby call's keyword arguments come last, in one `keywords` entry keyed by the name each is written with, since a keyword fills the parameter of its name and its place in the call says nothing. `send(url, verb: :post)` records `[url, { kind: "keywords", fields: { verb: ... } }]`.
 
 `{ "kind": "null" }` is a caller that wrote `null`, `None` or `nil`. `{ "kind": "undefined" }` is a JavaScript caller that wrote `undefined`, which a parameter default replaces and `null` does not. A JSON `null` entry is an argument the TypeScript adapter could not read, such as arithmetic, so `[{ "kind": "null" }]` says the caller passed null and `[null]` says suss does not know. Python and Ruby write an argument they could not read as an `identifier` whose `name` is its source text, such as `count + 1`.
 

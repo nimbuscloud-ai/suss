@@ -8,10 +8,9 @@
 import {
   children,
   field,
-  hashKeySymbolName,
+  hashKeyName,
   pairValue,
   stringLiteralValue,
-  symbolValue,
 } from "./ast.js";
 
 import type { TypeShape } from "@suss/behavioral-ir";
@@ -62,14 +61,10 @@ function hashShape(node: RbNode): TypeShape {
     }
     const key = field(pair, "key");
     const value = pairValue(pair);
-    const name = key === null ? null : keyName(key);
+    const name = key === null ? null : hashKeyName(key);
     if (name !== null && value !== null) {
       properties[name] = writtenShapeOf(value);
     }
   }
   return { type: "record", properties };
-}
-
-function keyName(key: RbNode): string | null {
-  return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
 }

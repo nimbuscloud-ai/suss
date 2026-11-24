@@ -169,8 +169,30 @@ function argumentNodes(call: PyNode): PyNode[] {
   );
 }
 
+/**
+ * The positional arguments in order, then the keyword arguments in one
+ * entry by name, since a keyword fills the parameter of its name and
+ * not the one at its place.
+ */
 function argsOf(call: PyNode, facts: Database | undefined): EffectArg[] {
-  return argumentNodes(call).map((node) => argOf(node, facts));
+  const written = children(field(call, "arguments")).filter(
+    (child) => child.type !== "comment",
+  );
+  const positional = written
+    .filter((child) => child.type !== "keyword_argument")
+    .map((child) => argOf(child, facts));
+  const fields: Record<string, EffectArg> = {};
+  for (const keyword of written) {
+    const name =
+      keyword.type === "keyword_argument" ? field(keyword, "name") : null;
+    const value = name === null ? null : field(keyword, "value");
+    if (name !== null && value !== null) {
+      fields[name.text] = argOf(value, facts);
+    }
+  }
+  return Object.keys(fields).length === 0
+    ? positional
+    : [...positional, { kind: "keywords", fields }];
 }
 
 /** The callee as written. Readers of the effect match on this text. */

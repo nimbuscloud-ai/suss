@@ -589,6 +589,16 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/react-router"),
     ...packs("react-router"),
   ]),
+  fixture("request-method-keyword-python", [
+    ...lang("python"),
+    ...dir("fixtures/request-method-keyword-python"),
+    ...packs("requests"),
+  ]),
+  fixture("request-method-keyword-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/request-method-keyword-ruby"),
+    ...packs("net-http", "faraday"),
+  ]),
   fixture("request-method-parameter", [
     ...dir("fixtures/request-method-parameter"),
     ...packs("express", "fetch", "axios"),

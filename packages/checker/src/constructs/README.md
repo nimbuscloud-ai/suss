@@ -27,19 +27,57 @@ counts those calls under it.
 
 A call is grouped by what it passes for the parameters that reach the
 boundary. Two facts say which those are. `selects(f, p)` says `f` uses
-parameter `p` for a column it selects rows by or for a container
-written as a reference such as `{location.table}`. `forwards(f, p, g,
-q)` says `f` passes its own `p` to `g` as `g`'s `q`. The `counted` rule
-closes over both, so `enabled?(key)` counts `key` because the method it
-calls, `lookup(key)`, selects rows by it. `keyed` and `leftOut` then join each call
-to the counted parameters of the function it calls. Every other
-parameter plays no part, since grouping on every argument would give one
-group per call.
+parameter `p` for a column it selects rows by, for a container
+written as a reference such as `{location.table}`, or for a client's
+method or host, or tests it to choose which request to make (below).
+`forwards(f, p, g, q)` says `f` passes
+its own `p` to `g` as `g`'s `q`. The `counted` rule closes over both, so
+`enabled?(key)` counts `key` because the method it calls, `lookup(key)`,
+selects rows by it. `keyed` and `leftOut` then join each call to the
+counted parameters of the function it calls. A call that leaves a
+counted parameter out is keyed by the parameter's default when the
+source writes the default as a literal, so `fetch(url)` and
+`fetch(url, :get)` share a group when `method` defaults to `:get`.
+Every other parameter plays no part, since grouping on every argument
+would give one group per call.
 
 Each value prints as the source writes it. A part computed at run time
 is blanked to `_`, and two calls share a group when their blanked values
 are equal, so `"user:#{id}:theme"` and `"user:#{user.id}:theme"` are one
 group.
+
+A call fills a parameter by the keyword argument written with its name,
+in Python and Ruby, and otherwise by place. When no parameter has the
+name of any keyword the call writes, the method is Ruby's and takes the
+pairs as one options hash, in the place after the positional
+arguments. A splat, `*args`, fills every parameter from its place on
+with a value suss cannot read.
+
+## Which request a call makes
+
+A helper that picks its request with an `if`, a `case` or a `match` on
+a parameter has one client unit per request, each over the helper's
+lines, and each records under `bindingFrom.when` the tests that every
+path to its request passes. Each test that compares a parameter with a
+literal is a `requires` fact, or an `excludes` fact under a negation.
+
+A test that every request of the helper shares, such as a timeout
+around the whole body or a check on the redirect count, says whether
+the helper makes a request and not which one. It can rule a request
+out, and it chooses nothing. The other tests choose, and only their
+parameters count for grouping.
+
+A call makes a request when no test is false of what it passes, or of
+the default, and every choosing test is true of it. The `sends` rule
+says so. When a choosing test compares with something other than a
+literal, or the call passes a value that is not a literal, the test is
+open, and `maySend` says the call could make that request. When a
+helper has several requests and one of them has no choosing test, the
+helper picks it by something the summaries do not read, so every call
+could make it.
+
+A client that hands the method to the library sends what the call
+passes for that parameter, or the default, upper-cased.
 
 ## Reach
 
@@ -50,9 +88,13 @@ entry point is listed as possible only when no certain path reaches it.
 
 ## What is left out
 
-- The HTTP method or host a client takes from a parameter, and a
-  parameter's default. Neither is in the summaries yet, so a client's
-  calls group only by which method of the construct they go into.
+- A host read out of a URL groups the calls by the URL, with its
+  computed parts blanked, and not by the host alone.
+- A test that is not an equality with a literal, such as `method.in?(...)`
+  or an `or` of two equalities, stays open, so a call it chooses for
+  could make any request it does not rule out.
+- A request made by a helper the call reaches through another function.
+  Only the client units over the function the call goes into count.
 - Which `rescue`, `except` or `catch` covers a call. The answer says how
   the construct fails, and does not say which callers handle it.
 - Calls from functions that no entry point reaches and that have no
@@ -60,6 +102,3 @@ entry point is listed as possible only when no certain path reaches it.
   gap. A call suss did not follow that uses the name of one of the
   construct's methods is listed too, with the entry points that reach
   the unit making it.
-- A Python or Ruby keyword argument is recorded by its position, so a
-  call that passes keywords in another order than the parameters would
-  be grouped on the wrong value.

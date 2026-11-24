@@ -20,12 +20,10 @@ import { askResolution, classMemberName } from "@suss/resolution";
 import {
   children,
   field,
-  hashKeySymbolName,
-  pairValue,
+  hashKeyName,
+  namedPairs,
   rangeOf,
   readCallArgs,
-  stringLiteralValue,
-  symbolValue,
 } from "./ast.js";
 import {
   classBehind,
@@ -230,29 +228,12 @@ function keywordKeys(call: RbNode, facts: Database): string[] {
       continue;
     }
     const key = field(argument, "key");
-    const name = key === null ? null : keyNameOf(key);
+    const name = key === null ? null : hashKeyName(key);
     if (name !== null) {
       keys.push(name);
     }
   }
   return keys;
-}
-
-/** Each key a call is passed as a pair, with the value passed under it. */
-function pairValues(call: RbNode): Array<{ name: string; value: RbNode }> {
-  const found: Array<{ name: string; value: RbNode }> = [];
-  for (const argument of argumentsOf(call)) {
-    if (argument.type !== "pair") {
-      continue;
-    }
-    const key = field(argument, "key");
-    const value = pairValue(argument);
-    const name = key === null ? null : keyNameOf(key);
-    if (name !== null && value !== null) {
-      found.push({ name, value });
-    }
-  }
-  return found;
 }
 
 /**
@@ -276,7 +257,7 @@ function slotsOf(
     }
     if (pattern.reads.includes(methodOf(link))) {
       slots.push(
-        ...pairValues(link).map((one) => ({
+        ...namedPairs(link).map((one) => ({
           slot: "selector" as const,
           ...one,
         })),
@@ -285,7 +266,7 @@ function slotsOf(
   }
   if (kind === "write") {
     slots.push(
-      ...pairValues(call).map((one) => ({ slot: "field" as const, ...one })),
+      ...namedPairs(call).map((one) => ({ slot: "field" as const, ...one })),
     );
   }
   return slots;
@@ -305,11 +286,6 @@ export interface SlotValue {
  */
 function keyedSlot(one: SlotValue): HeardSlot {
   return { slot: one.slot, name: one.name, key: resolutionKeyOf(one.value) };
-}
-
-/** A hash key's name, `id` for each of `id:`, `:id =>` and `"id" =>`. */
-function keyNameOf(key: RbNode): string | null {
-  return hashKeySymbolName(key) ?? symbolValue(key) ?? stringLiteralValue(key);
 }
 
 /** Whether the call is passed something other than keys, such as the `1` in `find(1)`. */

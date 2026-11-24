@@ -28,6 +28,7 @@ import type {
   UsageGap,
   UsageGroup,
   UsageOutcome,
+  UsageRequest,
 } from "@suss/checker";
 import type { Answer, AnswerItem } from "./ask.js";
 import type { LoadedSummaries } from "./loadedSummaries.js";
@@ -72,6 +73,7 @@ export function answerHowUsed(
           through: call.through,
           count: call.count,
           values: call.values,
+          requests: call.requests,
           group: call.group,
           conditions: call.conditions.map(formatCondition),
           ...(call.kind === "possible" ? { possible: true } : {}),
@@ -263,6 +265,7 @@ function groupItem(group: UsageGroup): AnswerItem {
         parameter: value.parameter,
         value: value.blanked,
       })),
+      requests: group.requests,
       spellings: group.spellings,
     },
   };
@@ -405,30 +408,65 @@ function outcomeSentence(outcomes: readonly PrintedOutcome[]): string {
   return parts.length === 0 ? "" : `It ${sentenceList(parts)}.`;
 }
 
+/**
+ * One row per member the calls go through and the request they make,
+ * with the request column only when some call makes one.
+ */
 function groupLines(
   groups: ReadonlyArray<Record<string, unknown>>,
   all: boolean,
 ): string[] {
-  const byThrough = new Map<string, { calls: number; passes: string[] }>();
+  const byRow = new Map<
+    string,
+    { through: string; sends: string; calls: number; passes: string[] }
+  >();
   for (const group of groups) {
     const through = String(group.through);
-    const row = byThrough.get(through) ?? { calls: 0, passes: [] };
+    const sends = sendsLabel(group.requests as UsageRequest[]);
+    const key = `${through}\u0000${sends}`;
+    const row = byRow.get(key) ?? { through, sends, calls: 0, passes: [] };
     row.calls += Number(group.calls);
     const passes = groupPasses(group);
     if (passes !== "") {
       row.passes.push(passes);
     }
-    byThrough.set(through, row);
+    byRow.set(key, row);
   }
-  const rows = [...byThrough].map(([through, row]) => [
-    through,
+  const anySends = [...byRow.values()].some((row) => row.sends !== "");
+  const rows = [...byRow.values()].map((row) => [
+    row.through,
+    ...(anySends ? [row.sends] : []),
     String(row.calls),
     listed(row.passes, all),
   ]);
+  const header = anySends
+    ? ["Through", "sends", "calls", "passes"]
+    : ["Through", "calls", "passes"];
   return [
-    ...table(["Through", "calls", "passes"], shown(rows, all)),
+    ...table(header, shown(rows, all)),
     ...moreLine(rows.length, all, "  "),
   ];
+}
+
+/**
+ * The requests a group's calls make, as methods: "POST", or "could be
+ * GET or POST" when a condition that picks one tests a value suss
+ * cannot settle. A method suss cannot tell prints as `?`.
+ */
+function sendsLabel(requests: readonly UsageRequest[]): string {
+  const methods = (possible: boolean) => [
+    ...new Set(
+      requests
+        .filter((request) => (request.possible === true) === possible)
+        .map((request) => request.method ?? "?"),
+    ),
+  ];
+  const certain = methods(false);
+  const maybe = methods(true);
+  return [
+    ...(certain.length === 0 ? [] : [sentenceList(certain)]),
+    ...(maybe.length === 0 ? [] : [`could be ${sentenceList(maybe, "or")}`]),
+  ].join(", and ");
 }
 
 /**
