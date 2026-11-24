@@ -5,7 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import { testCompilerOptions } from "@suss/test-project";
 
-import { collectAncestorBranches } from "./conditions.js";
+import {
+  collectAncestorBranches,
+  collectAncestorConditionInfos,
+  conditionInfoToRawCondition,
+} from "./conditions.js";
 import { computePathConditions } from "./paths/pathConditions.js";
 
 import type { FunctionRoot } from "./conditions.js";
@@ -178,6 +182,24 @@ describe("fixture-switch-fallthrough.ts: classify fallthrough", () => {
     const conditions = collectAncestorBranches(r, func);
     expect(conditions).toHaveLength(1);
     expect(conditions[0].sourceText).toBe('kind === "a" || kind === "b"');
+  });
+
+  it("reads the 'ab' case as the subject compared with either label", () => {
+    const [info] = collectAncestorConditionInfos(returns[0] as Node, func);
+    const kindIs = (value: string) => ({
+      type: "comparison",
+      left: { type: "input", inputRef: "kind", path: [] },
+      op: "eq",
+      right: { type: "literal", value },
+    });
+
+    expect(
+      info === undefined ? null : conditionInfoToRawCondition(info).structured,
+    ).toEqual({
+      type: "compound",
+      op: "or",
+      operands: [kindIs("a"), kindIs("b")],
+    });
   });
 
   it("the 'c' case return picks up its case label", () => {

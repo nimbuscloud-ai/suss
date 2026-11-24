@@ -1,4 +1,4 @@
-// lowering.ts: ts-morph statement nodes to StructuredStatement<Expression>.
+// lowering.ts: ts-morph statement nodes to StructuredStatement<ConditionNode>.
 //
 // The only place in the TS adapter that still walks a raw ts-morph
 // statement tree for control-flow shape. Everything downstream
@@ -39,6 +39,9 @@ import {
   wrapperOf,
 } from "../walk/rawDescent.js";
 import { peelValue } from "../walk/unwrap.js";
+import { caseArmOf, caseArmText } from "./caseArms.js";
+
+import type { ConditionNode } from "../conditions.js";
 
 /**
  * What the walk needs at every node: the pack's sub-unit barriers, the
@@ -51,7 +54,7 @@ export const NO_ENDINGS: ReadonlySet<Node> = new Set();
 interface LowerContext {
   readonly func: Node;
   readonly barriers: DescentBarriers;
-  readonly rawToStructured: Map<Node, StructuredStatement<Expression>>;
+  readonly rawToStructured: Map<Node, StructuredStatement<ConditionNode>>;
   /** Terminal calls that end the process, so nothing after one runs. */
   readonly endings: ReadonlySet<Node>;
 }
@@ -139,7 +142,7 @@ const loopHeaderText = (stmt: Statement): string => {
   return header.trim();
 };
 
-const conditionOf = (expr: Expression): ConditionHandle<Expression> => ({
+const conditionOf = (expr: Expression): ConditionHandle<ConditionNode> => ({
   sourceText: expr.getText(),
   expression: expr,
 });
@@ -151,7 +154,7 @@ const conditionOf = (expr: Expression): ConditionHandle<Expression> => ({
 function lowerStatement(
   stmt: Statement,
   ctx: LowerContext,
-): StructuredStatement<Expression> {
+): StructuredStatement<ConditionNode> {
   const structured = {
     ...buildStructured(stmt, ctx),
     callbacks: lowerCallbacksIn(ownExpressionsOf(stmt), ctx),
@@ -163,7 +166,7 @@ function lowerStatement(
 function lowerList(
   stmts: readonly Statement[],
   ctx: LowerContext,
-): StructuredStatement<Expression>[] {
+): StructuredStatement<ConditionNode>[] {
   return spliceBlocks(stmts).map((s) => lowerStatement(s, ctx));
 }
 
@@ -211,8 +214,8 @@ function ownExpressionsOf(stmt: Statement): Node[] {
 function lowerCallbacksIn(
   parts: readonly Node[],
   ctx: LowerContext,
-): StatementBlock<Expression>[] {
-  const bodies: StatementBlock<Expression>[] = [];
+): StatementBlock<ConditionNode>[] {
+  const bodies: StatementBlock<ConditionNode>[] = [];
 
   // Only a node that starts its own scope can be a stop or a callback,
   // so nothing else is wrapped.
@@ -266,7 +269,7 @@ export function lowerExpressionBodyCallbacks(
   expression: Node,
   func: Node,
   barriers: DescentBarriers = NO_BARRIERS,
-): StatementBlock<Expression>[] {
+): StatementBlock<ConditionNode>[] {
   return lowerCallbacksIn([expression], {
     func,
     barriers,
@@ -290,7 +293,7 @@ function spliceBlocks(stmts: readonly Statement[]): Statement[] {
 function buildStructured(
   stmt: Statement,
   ctx: LowerContext,
-): StructuredStatement<Expression> {
+): StructuredStatement<ConditionNode> {
   const exitKind = exitKindOf(stmt, ctx.endings);
   if (Node.isIfStatement(stmt)) {
     const elseBranch = stmt.getElseStatement();
@@ -374,22 +377,20 @@ function endsTheProcess(stmt: Statement, endings: ReadonlySet<Node>): boolean {
 
 /**
  * Case-group lowering: merge TypeScript's stacked empty-bodied labels
- * onto the clause that finally has a body, matching the legacy
- * collector's synthetic condition text exactly so transition IDs stay
- * stable. A default clause anywhere but last is a shape the enumeration
- * declines, checked here against the raw clause order. An empty
- * default still counts (it would have blocked anything after it had it
- * carried a body too): the ordering rule is about TypeScript's own
- * clause-list grammar, not about the lowered shape, so it belongs in
- * lowering rather than in the generic engine.
+ * onto the clause that finally has a body. The group's condition is
+ * that clause, which tests every label stacked onto it. A default clause
+ * anywhere but last is a shape the enumeration declines, checked here
+ * against the raw clause order. An empty default still counts (it would
+ * have blocked anything after it had it carried a body too): the
+ * ordering rule is about TypeScript's own clause-list grammar, not about
+ * the lowered shape, so it belongs in lowering rather than in the
+ * generic engine.
  */
 function lowerSwitchGroups(
   stmt: SwitchStatement,
   ctx: LowerContext,
-): CaseGroup<Expression>[] {
-  const switchText = stmt.getExpression().getText();
-  const groups: CaseGroup<Expression>[] = [];
-  let pendingLabels: string[] = [];
+): CaseGroup<ConditionNode>[] {
+  const groups: CaseGroup<ConditionNode>[] = [];
   let sawDefault = false;
 
   for (const clause of stmt.getClauses()) {
@@ -413,16 +414,13 @@ function lowerSwitchGroups(
     if (!Node.isCaseClause(clause)) {
       continue;
     }
-    pendingLabels.push(clause.getExpression().getText());
     const stmts = clause.getStatements();
-    if (stmts.length === 0) {
-      continue; // stacked label, falls into the next clause's body
+    const arm = caseArmOf(clause);
+    if (arm === null || stmts.length === 0) {
+      continue; // a stacked label falls into the next clause's body
     }
-    const labels = pendingLabels;
-    pendingLabels = [];
-    const sourceText = labels.map((l) => `${switchText} === ${l}`).join(" || ");
     groups.push({
-      condition: { sourceText, expression: null },
+      condition: { sourceText: caseArmText(arm), expression: clause },
       ...lowerGroupBody(stmts, ctx),
     });
   }
@@ -464,7 +462,7 @@ function validateClauseBreaks(stmts: readonly Statement[]): void {
 function lowerGroupBody(
   rawStmts: Statement[],
   ctx: LowerContext,
-): { hasTrailingBreak: boolean; body: StructuredStatement<Expression>[] } {
+): { hasTrailingBreak: boolean; body: StructuredStatement<ConditionNode>[] } {
   // Splice before the break rules run, so a break at the end of a
   // braced case counts as the clause's own trailing break.
   const stmts = spliceBlocks(rawStmts);
@@ -488,9 +486,9 @@ function lowerGroupBody(
 // ---------------------------------------------------------------------------
 
 export interface LoweredFunctionBody {
-  statements: StructuredStatement<Expression>[];
+  statements: StructuredStatement<ConditionNode>[];
   terminalsByStmt: ReadonlyMap<
-    StructuredStatement<Expression>,
+    StructuredStatement<ConditionNode>,
     readonly Node[]
   >;
   /**
@@ -518,11 +516,11 @@ export function lowerFunctionBody(
   barriers: DescentBarriers = NO_BARRIERS,
   endings: ReadonlySet<Node> = NO_ENDINGS,
 ): LoweredFunctionBody {
-  const rawToStructured = new Map<Node, StructuredStatement<Expression>>();
+  const rawToStructured = new Map<Node, StructuredStatement<ConditionNode>>();
   const ctx: LowerContext = { func, barriers, rawToStructured, endings };
   const statements = lowerList(body.getStatements(), ctx);
 
-  const terminalsByStmt = new Map<StructuredStatement<Expression>, Node[]>();
+  const terminalsByStmt = new Map<StructuredStatement<ConditionNode>, Node[]>();
   const terminalHomeRaw = new Map<Node, Node>();
 
   for (const terminal of terminalNodes) {
@@ -552,7 +550,7 @@ export function lowerFunctionBody(
 function enclosingLoweredStatement(
   terminal: Node,
   body: Node,
-  rawToStructured: ReadonlyMap<Node, StructuredStatement<Expression>>,
+  rawToStructured: ReadonlyMap<Node, StructuredStatement<ConditionNode>>,
 ): Node | null {
   let current: Node | undefined = terminal;
   while (current !== undefined && current !== body) {

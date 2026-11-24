@@ -565,7 +565,7 @@ describe("if / else-if chain", () => {
 // ---------------------------------------------------------------------------
 
 describe("switch/case", () => {
-  it("extracts synthetic conditions for switch cases", () => {
+  it("compares the switch's subject with the case label", () => {
     const project = createProject();
     const fn = getExportedFunction(
       project,
@@ -585,13 +585,21 @@ describe("switch/case", () => {
     const branches = extractRawBranches(fn, tsRestTerminals).branches;
     expect(branches).toHaveLength(3);
 
-    // Switch case conditions are synthetic (expression is null → structured is null)
     const caseA = branches.find(
       (b) =>
         b.conditions.length > 0 && b.conditions[0].sourceText.includes('"a"'),
     );
     expect(caseA).toBeDefined();
-    expect(caseA?.conditions[0].structured).toBeNull();
+    expect(caseA?.conditions[0].structured).toEqual({
+      type: "comparison",
+      left: {
+        type: "derived",
+        from: { type: "input", inputRef: "params", path: [] },
+        derivation: { type: "propertyAccess", property: "type" },
+      },
+      op: "eq",
+      right: { type: "literal", value: "a" },
+    });
     expect(caseA?.conditions[0].source).toBe("explicit");
 
     // The fallthrough branch (400) has no conditions

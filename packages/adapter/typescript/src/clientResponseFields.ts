@@ -19,7 +19,7 @@ import {
 } from "@suss/behavioral-ir";
 import { MAX_HELPER_PATHS } from "@suss/extractor";
 
-import { parseConditionExpression } from "./predicates.js";
+import { predicateOfCondition } from "./predicates.js";
 
 import type {
   BehavioralSummary,
@@ -36,7 +36,7 @@ import type {
   RawTerminal,
   ResponsePropertyMapping,
 } from "@suss/extractor";
-import type { Expression } from "ts-morph";
+import type { ConditionNode } from "./conditions.js";
 import type { ResponseMembers } from "./shapes/fieldAccesses.js";
 
 export type ClientResponseFields = Pick<
@@ -104,10 +104,10 @@ export function responseMembersOf(pack: PatternPack): ResponseMembers {
  */
 export function keepsStatusArms(
   fields: ClientResponseFields,
-): KeepsArms<Expression> {
+): KeepsArms<ConditionNode> {
   const members = statusMembersOf(fields);
   return (condition) => {
-    const test = parseConditionExpression(condition);
+    const test = predicateOfCondition(condition);
     return test !== null && testsStatus(test, members);
   };
 }
