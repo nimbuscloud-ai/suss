@@ -56,6 +56,7 @@ import {
   type ExtractorOptions,
   extractionCacheDirFor,
   extractionConfigStamp,
+  type ForkArm,
   functionCallBindingOfDiscoveredUnit,
   type InputMappingPattern,
   type InvocationRecognizer,
@@ -68,6 +69,7 @@ import {
   packRecognizers,
   type RawBranch,
   type RawCodeStructure,
+  type RawCondition,
   type RawDependencyCall,
   type RawParameter,
   type RequestClaim,
@@ -182,6 +184,7 @@ import {
 import { stampExitCodeFrom } from "./exitCode.js";
 import {
   forgetReassignedNamesUnstated,
+  nodeId,
   reassignedNamesUnstated,
 } from "./facts/extract.js";
 import { ResolutionStore } from "./facts/store.js";
@@ -235,6 +238,7 @@ import {
   type TimingReport,
 } from "./timing.js";
 import { evaluatedValueUnder, parameterDefaults } from "./values/evaluator.js";
+import { forkArmCondition } from "./values/forks.js";
 import {
   computeAdapterPacksDigest,
   declineWhenRunFromSource,
@@ -1164,7 +1168,7 @@ function stampBindingFrom(
   }
   const bindingFrom = requestBindingFrom(
     request.read.stated,
-    [],
+    armConditions(func, request.arms ?? []),
     sourcesOfValues(func, resolution),
   );
   if (bindingFrom === undefined) {
@@ -1176,6 +1180,30 @@ function stampBindingFrom(
     func,
     resolution,
   );
+}
+
+/** The condition each arm a request was read under runs under, found by its fork's key in the function. */
+function armConditions(
+  func: FunctionRoot,
+  arms: readonly ForkArm[],
+): RawCondition[] {
+  if (arms.length === 0) {
+    return [];
+  }
+  // A `?:` the engine met inside parentheses is keyed by the parentheses.
+  const wanted = new Set(arms.map((one) => one.at));
+  const forks = new Map(
+    func
+      .getDescendants()
+      .filter((node) => wanted.has(nodeId(node)))
+      .map((node) => [nodeId(node), node]),
+  );
+  return arms.flatMap((one) => {
+    const fork = forks.get(one.at);
+    const condition =
+      fork === undefined ? null : forkArmCondition(fork, one.arm, func);
+    return condition === null ? [] : [condition];
+  });
 }
 
 /**
@@ -2038,7 +2066,13 @@ function expandWrapperCallers(
     }
     lookup ??= createSourceFileLookup(project);
     const func = lookup.functionAt(s.location);
-    if (func === null || func.getParameters().length === 0) {
+    // A call that makes a different request under each arm of a branch
+    // gives its function one client per request, and one wrapper.
+    if (
+      func === null ||
+      func.getParameters().length === 0 ||
+      wrappers.some((wrapper) => wrapper.func === func)
+    ) {
       continue;
     }
     const sink = sinkIn(func, pack, s, discovered, resolution);

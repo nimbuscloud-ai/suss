@@ -2219,6 +2219,22 @@ nothing. A URL the client reads without a request, a `data:` URL
 to that has a hole was worked out at runtime, so its path is left out
 and its host kept.
 
+A branch before the call can pick the request, as
+`fetch(id ? "/x/" + id : "/x")` or a record picked by a `?:` does. The
+evaluator joins the arms, so the call reads as no path, no method, or a
+path with a set of texts in it. When the reading lacks one of those,
+`requestAlternatives.ts` asks the call's `forks()` which branches the
+evaluator left open, and reads the call again through `takingArms` with
+each arm taken. Each request the arms give is a claim with the arms it
+was read under (`arms`), which the adapter turns into the conditions it
+hands `requestBindingFrom`. A branch is split only when its arms give
+different requests, and one inside an arm only once that arm is taken.
+When two different conditions both change the request, their arms may
+not all combine, so the call keeps its plain reading. So it does when
+an arm's method is the library's default in place of one suss could not
+read, and for a call whose class has construction sites. When every arm
+gives the same request, or no arm reads a path, the plain reading stays.
+
 The call's redirect option is read with `keywordAt`, or, for a method
 that says where the call passes its options object (`options`), as a
 property of that object. An option the call leaves out of an object

@@ -2,6 +2,6 @@
   "name": "@suss/client-web",
   "exports": 2,
   "internal": 1,
-  "consumers": 24,
+  "consumers": 26,
   "unfollowedCalls": 0
 }

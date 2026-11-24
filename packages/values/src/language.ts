@@ -216,6 +216,29 @@ export interface Lowering<N> {
    */
   readonly truthiness: Truthiness;
   readonly rows: readonly Row[];
+  /**
+   * What a branch statement or a `?:` in `root` tests, for a run that
+   * takes one of its arms. Null leaves the fork joined, as for a `switch`
+   * whose clauses fall into each other, whose arms the lowering does not
+   * write apart. A language that leaves this out never has a fork taken.
+   */
+  forkTest?(fork: N, root: N): ForkTest | null;
+}
+
+/** What a fork tests, as `Lowering.forkTest` says it. */
+export interface ForkTest {
+  /**
+   * The same for two forks that test the same thing: the condition's
+   * source text, with one leading negation taken off. A fork with more
+   * than two arms has a key of its own, and so does a condition with a
+   * call in it or one that reads a name `root` writes more than once,
+   * since two forks with that text may test different values.
+   */
+  readonly key: string;
+  /** Whether the condition was negated, so the key's first arm is this fork's second. */
+  readonly negated: boolean;
+  /** The names the condition reads. */
+  readonly reads: readonly string[];
 }
 
 export interface CallInput {

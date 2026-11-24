@@ -31,6 +31,7 @@ import type {
   ArgumentRead,
   AsCallFollowing,
   ByOrigin,
+  CallForks,
   CallOps,
   CallScope,
   CallsAndOptions,
@@ -388,6 +389,17 @@ class FactCall implements CallOps {
 
   constructionSites(): readonly string[] {
     return this.source.constructionSitesOf?.(this.key) ?? [];
+  }
+
+  forks(): CallForks | null {
+    return this.source.forksOf?.(this.key) ?? null;
+  }
+
+  takingArms(arms: ReadonlyMap<string, number>): CallOps {
+    const source = this.source.takingArms?.(arms);
+    return source === undefined
+      ? this
+      : (factCallOps(this.key, source) ?? this);
   }
 
   splats(): Splats {

@@ -132,6 +132,42 @@ Each adapter has a sound lowering beside its plain one, with its own
 rows: the logic operators, and nothing whose result kind depends on a
 hole, such as `+`.
 
+## Taking one arm of a branch
+
+Where two arms of an `if`, a `switch` or a `?:` meet, the engine joins
+what each left, so `id ? "/x/" + id : "/x"` reads as no path. A caller
+that wants each arm's value asks `forksIn` which branches the run left
+open, then evaluates again with `arms`, the arm to take for each one.
+The request reader in `@suss/recognize` does this to make one request
+per arm.
+
+```ts
+forkTest?(fork: N, root: N): ForkTest | null;  // on the Lowering
+evaluator.forksIn([node], { arms });            // the forks met, under the arms taken
+evaluator.evaluate(node, { arms });             // the value, those forks taking those arms
+```
+
+`forkTest` says what a fork tests. Two forks with the same key take the
+same arm, so the lowering gives a condition's text as its key only when
+two forks with that text test the same value: the condition calls
+nothing, and every name it reads is written at most once in the root.
+Any other fork, and every `switch`, gets a key of its own. A `switch`
+whose clauses fall into each other returns null and stays joined. One
+leading negation is folded, so `if (!id)` is the key `id` with its arms
+swapped. Arm 0 is the arm the condition being true takes, as the
+lowering writes the arms.
+
+Only the function the evaluated node is written in takes arms. An
+inlined call, an outer read and a loop's first pass join as they always
+do. The run reports a fork at the top of the function, or right inside
+an arm it took, and only when its arms left the state different. When
+the path to the node goes into an arm, or a guard's other arms return,
+that key is fixed for the rest of the run, and a later fork whose
+condition reads a name that test read is joined and not reported. A run
+says when an arm it took returned before the node, and when it used up
+its statement budget. Neither kind of run reads or writes the statement
+memo of that function.
+
 ## Bounds
 
 - `INLINE_DEPTH_CAP` limits how deep calls inline. Past it, a call is a

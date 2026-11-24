@@ -194,6 +194,20 @@ function namesWrittenOnce(root: Node): ReadonlySet<string> {
   return once;
 }
 
+/** The names `root` and the functions inside it write more than once. */
+export function namesWrittenAgain(root: Node): ReadonlySet<string> {
+  const writes = new Map<string, number>();
+  root.forEachDescendant((node) => {
+    if (Node.isIdentifier(node) && writesName(node)) {
+      const name = node.getText();
+      writes.set(name, (writes.get(name) ?? 0) + 1);
+    }
+  });
+  return new Set(
+    [...writes].flatMap(([name, count]) => (count > 1 ? [name] : [])),
+  );
+}
+
 function listUnder(map: Map<string, Node[]>, name: string, node: Node): void {
   const listed = map.get(name);
   if (listed === undefined) {

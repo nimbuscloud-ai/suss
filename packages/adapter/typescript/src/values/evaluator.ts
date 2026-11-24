@@ -1,7 +1,14 @@
 import { writtenValueRef } from "@suss/extractor";
-import { Evaluator, force, type Value, writtenLiteralOf } from "@suss/values";
+import {
+  Evaluator,
+  type ForksMet,
+  force,
+  type Value,
+  writtenLiteralOf,
+} from "@suss/values";
 
 import { createProgramMemo } from "../programMemo.js";
+import { forkTestOf } from "./forks.js";
 import { declaredParameters, typescriptLowering } from "./lowering.js";
 import { typescriptRows } from "./rows.js";
 import { typescriptSoundLowering } from "./soundLowering.js";
@@ -47,13 +54,14 @@ export function evaluatorFor(
   const key: object = resolution ?? project;
   let evaluator = evaluators.get(project, key);
   if (evaluator === undefined) {
-    evaluator = new Evaluator(
-      typescriptLowering(
+    evaluator = new Evaluator({
+      ...typescriptLowering(
         resolution === undefined
           ? { rows: typescriptRows }
           : { resolution, rows: typescriptRows },
       ),
-    );
+      forkTest: forkTestOf,
+    });
     evaluators.set(project, key, evaluator);
   }
   return evaluator;
@@ -83,19 +91,40 @@ export function parameterDefaults(
 /**
  * What an expression is worth where it is written, with nothing left
  * lazy. With a site, what it is worth when the receiver behind it is
- * the instance that site made; that run is not memoized.
+ * the instance that site made; that run is not memoized. With arms, a
+ * branch in its function whose key is listed takes the arm given.
  */
 export function evaluatedValue(
   node: Node,
   resolution: ResolutionStore | undefined,
   site?: string,
+  arms?: ReadonlyMap<string, number>,
 ): Value {
   const evaluator = evaluatorFor(node, resolution);
+  if (site === undefined && arms === undefined) {
+    return force(evaluator.evaluate(node));
+  }
   return force(
-    site === undefined
-      ? evaluator.evaluate(node)
-      : evaluator.evaluate(node, { site }),
+    evaluator.evaluate(node, {
+      ...(site === undefined ? {} : { site }),
+      ...(arms === undefined ? {} : { arms }),
+    }),
   );
+}
+
+/**
+ * The forks in the function the nodes are written in that reading them
+ * left open, under the arms already taken.
+ */
+export function forksAt(
+  nodes: readonly Node[],
+  resolution: ResolutionStore | undefined,
+  arms: ReadonlyMap<string, number>,
+): ForksMet<Node> | null {
+  const [first] = nodes;
+  return first === undefined
+    ? null
+    : evaluatorFor(first, resolution).forksIn(nodes, { arms });
 }
 
 /**

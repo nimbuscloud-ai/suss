@@ -23,9 +23,23 @@ import {
   handedNamesReaching,
   noteKeyRead,
 } from "@suss/resolution";
-import { concat, hostOf, pathOf, scalarOf, text } from "@suss/values";
+import {
+  concat,
+  hostOf,
+  literalOf as literalOfValue,
+  pathOf,
+  scalarOf,
+  text,
+} from "@suss/values";
 
-import { numberLiteralValue, rangeOf, stringLiteralValue } from "./ast.js";
+import {
+  children,
+  field,
+  numberLiteralValue,
+  pairValue,
+  rangeOf,
+  stringLiteralValue,
+} from "./ast.js";
 import { declaredName, filesDeclaring } from "./baseClass.js";
 import { decodedIn, encodedIn } from "./encoded.js";
 import { copingAt, keysSuppliedAt } from "./envReads.js";
@@ -46,8 +60,9 @@ import { noteClassesInRun } from "./reuse.js";
 import {
   constructionSitesOf,
   evaluatedValue,
+  forksAt,
   nodeOfResolutionKey,
-  stringValueOf,
+  type ParameterBindings,
 } from "./values/evaluator.js";
 import { writtenShapeOf } from "./writtenShape.js";
 
@@ -77,10 +92,21 @@ export function factSourceOf(db: Database): RubyFactSource {
   return source;
 }
 
-/** The fact source for one run's database. */
-export function rubyFactSource(db: Database): RubyFactSource {
+/**
+ * The fact source for one run's database. With arms, every value it
+ * evaluates takes them, as `CallOps.takingArms` reads a call.
+ */
+export function rubyFactSource(
+  db: Database,
+  arms?: ReadonlyMap<string, number>,
+): RubyFactSource {
   const nodeAt = (key: string | null): RbNode | null =>
     key === null ? null : nodeOfResolutionKey(key, db);
+  const evaluated = (
+    node: RbNode,
+    bindings?: ParameterBindings,
+    site?: string,
+  ): Value => evaluatedValue(node, db, bindings, site, arms);
   // A name has no node, so its value is what it was written as.
   const valueNode = (key: string): RbNode | null =>
     nodeAt(key) ?? nodeAt(writtenValueOf(db, key));
@@ -100,7 +126,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
   };
   const evaluatedAt = (value: ValueAt, site: string | undefined) => {
     const node = writtenNode(value);
-    return node === null ? null : evaluatedValue(node, db, undefined, site);
+    return node === null ? null : evaluated(node, undefined, site);
   };
   const textOf = (key: string): string => {
     const node = nodeAt(key);
@@ -152,7 +178,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
     writesNothing: (key) => nodeAt(key)?.type === "nil",
     nameOf: (key, unsettled) => {
       const node = valueNode(key);
-      const settled = node === null ? null : stringValueOf(node, db);
+      const settled = node === null ? null : literalOfValue(evaluated(node));
       if (settled !== null || unsettled !== "reference") {
         return settled;
       }
@@ -197,13 +223,11 @@ export function rubyFactSource(db: Database): RubyFactSource {
     handedReaching: (key) => handedNamesReaching(db, key, RUBY_PROGRAM),
     evaluatedOf: (key) => {
       const node = valueNode(key);
-      return node === null ? null : scalarOf(evaluatedValue(node, db));
+      return node === null ? null : scalarOf(evaluated(node));
     },
     evaluatedWith: (key, bindings) => {
       const node = valueNode(key);
-      return node === null
-        ? null
-        : scalarOf(evaluatedValue(node, db, bindings));
+      return node === null ? null : scalarOf(evaluated(node, bindings));
     },
     urlOf: (key, site, at) => {
       const value = evaluatedAt({ key, at }, site);
@@ -221,7 +245,7 @@ export function rubyFactSource(db: Database): RubyFactSource {
         hostValue,
         portNode === null || portNode.type === "nil"
           ? null
-          : evaluatedValue(portNode, db, undefined, site),
+          : evaluated(portNode, undefined, site),
       );
     },
     isStringOf: (key, site, at) =>
@@ -230,6 +254,13 @@ export function rubyFactSource(db: Database): RubyFactSource {
       const node = nodeAt(call);
       return node === null ? [] : constructionSitesOf(node, db);
     },
+    forksOf: (call) => {
+      const node = nodeAt(call);
+      return node === null
+        ? null
+        : forksAt(callArgumentNodes(node), db, arms ?? new Map());
+    },
+    takingArms: (taken) => rubyFactSource(db, taken),
     comesTo: (key) => {
       resolveValues(db, [key]);
       return answersFor(db, "wantedComesTo", key);
@@ -514,6 +545,15 @@ function literalOf(node: RbNode | null): string | number | boolean | null {
 /** The name at the end of a name key. */
 function nameIn(key: string): string {
   return key.slice(key.lastIndexOf("#") + 1);
+}
+
+/** The values a call passes, a keyword argument's value in place of its pair. */
+function callArgumentNodes(call: RbNode): RbNode[] {
+  const args = call.type === "call" ? field(call, "arguments") : null;
+  return children(args).flatMap((argument) => {
+    const value = argument.type === "pair" ? pairValue(argument) : argument;
+    return value === null ? [] : [value];
+  });
 }
 
 /**

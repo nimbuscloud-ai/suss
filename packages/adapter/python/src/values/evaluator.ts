@@ -27,6 +27,7 @@ import {
 } from "../facts/resolve.js";
 import { parameterShapes, readKey } from "../facts/values.js";
 import { bindModule } from "../scope.js";
+import { forkTests } from "./forks.js";
 import { pythonLowering } from "./lowering.js";
 import { originOf } from "./origin.js";
 import { pythonRows } from "./rows.js";
@@ -34,6 +35,7 @@ import { pythonSoundLowering } from "./soundLowering.js";
 
 import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { CallForks } from "@suss/extractor";
 import type { Origin, Value } from "@suss/values";
 import type { PyNode } from "../parser.js";
 import type { ModuleBinding } from "../scope.js";
@@ -69,13 +71,17 @@ export function bindEvaluator(db: Database, nodes: ProjectNodes): void {
 }
 
 function startEvaluators(db: Database, context: EvaluationContext): void {
-  evaluators.set(
-    db,
-    new Evaluator(
-      pythonLowering({ context, originOf: calleeOrigin, rows: pythonRows }),
-    ),
-  );
+  evaluators.set(db, plainEvaluatorOver(context));
   soundEvaluators.set(db, soundEvaluatorOver(context));
+}
+
+function plainEvaluatorOver(
+  context: EvaluationContext | null,
+): Evaluator<PyNode> {
+  return new Evaluator({
+    ...pythonLowering({ context, originOf: calleeOrigin, rows: pythonRows }),
+    forkTest: forkTests(),
+  });
 }
 
 function soundEvaluatorOver(
@@ -282,20 +288,59 @@ function resolutionKeysOf(
 /**
  * The abstract value `node` evaluates to, through the facts when `db` was
  * bound. With a site, the value when its receiver is the instance built
- * at that site. An evaluation under a site is not memoized.
+ * at that site. An evaluation under a site is not memoized. With arms, a
+ * branch in its function whose key is listed takes the arm given.
  */
 export function evaluatedValue(
   node: PyNode,
   db?: Database,
   site?: string,
+  arms?: ReadonlyMap<string, number>,
 ): Value {
   const evaluator = evaluatorFor(node, db);
+  const taking = arms === undefined ? {} : { arms };
   if (site === undefined) {
-    return force(evaluator.evaluate(node));
+    return force(evaluator.evaluate(node, taking));
   }
 
-  const underSite = (): Value => force(evaluator.evaluate(node, { site }));
+  const underSite = (): Value =>
+    force(evaluator.evaluate(node, { site, ...taking }));
   return db === undefined ? underSite() : evaluatingUnderSite(db, underSite);
+}
+
+/**
+ * The forks in the function the nodes are written in that reading them
+ * left open, under the arms already taken, each fork as the facts key it.
+ */
+export function forksAt(
+  nodes: readonly PyNode[],
+  db: Database,
+  arms: ReadonlyMap<string, number>,
+): CallForks | null {
+  const [first] = nodes;
+  const bound = projects.get(db);
+  if (first === undefined || bound === undefined) {
+    return null;
+  }
+  const met = evaluatorFor(first, db).forksIn(nodes, { arms });
+  const forks = met.forks.flatMap((fork) => {
+    const at = bound.keyOf(fork.at);
+    return at === null
+      ? []
+      : [
+          {
+            key: fork.key,
+            at,
+            arms: fork.arms,
+            negated: fork.negated,
+            under: fork.under,
+          },
+        ];
+  });
+  // A fork with no key cannot be taken again, so the reading is not one to split.
+  return forks.length < met.forks.length
+    ? null
+    : { forks, reached: met.reached, exhausted: met.exhausted };
 }
 
 /**
@@ -363,13 +408,7 @@ function evaluatorFor(
   const tree = node.tree;
   let local = withoutFacts.get(tree);
   if (local === undefined) {
-    local = new Evaluator(
-      pythonLowering({
-        context: null,
-        originOf: calleeOrigin,
-        rows: pythonRows,
-      }),
-    );
+    local = plainEvaluatorOver(null);
     withoutFacts.set(tree, local);
   }
   return local;

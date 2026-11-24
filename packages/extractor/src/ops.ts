@@ -1081,6 +1081,15 @@ export interface CallOps {
    * or for a class nothing in the run constructs.
    */
   constructionSites?(): readonly string[];
+  /**
+   * The branches and `?:` in the function the call is written in whose
+   * arm changes what the call's arguments come to, and which the
+   * evaluator could not settle. Null, or unset, where the adapter has no
+   * evaluator to ask.
+   */
+  forks?(): CallForks | null;
+  /** The same call, with every value read as if each fork with a listed key took that arm. */
+  takingArms?(arms: ReadonlyMap<string, number>): CallOps;
   /** Where the call unpacks a collection into its arguments, or unset where the adapter cannot say. */
   splats?(): Splats;
   /**
@@ -1553,6 +1562,10 @@ export interface FactSource {
   isStringOf?(key: string, site?: string, at?: ArgumentRead): boolean;
   /** What `CallOps.constructionSites` gives for the call at the key. */
   constructionSitesOf?(call: string): readonly string[];
+  /** What `CallOps.forks` gives for the call at the key. */
+  forksOf?(call: string): CallForks | null;
+  /** This source, with every value it evaluates read as `CallOps.takingArms` says. */
+  takingArms?(arms: ReadonlyMap<string, number>): FactSource;
   /** What `CallOps.splats` gives for the call at the key. */
   splatsOf?(call: string): Splats;
   /**
@@ -1708,6 +1721,31 @@ export interface FactSource {
 export interface Splats {
   readonly positionalFrom: number | null;
   readonly keywords: boolean;
+}
+
+/**
+ * The forks reading a call's arguments met, as `Evaluator.forksIn` gives
+ * them, with each fork's node as the source's key. `reached` is false
+ * when an arm the read took returns before the call, and `exhausted`
+ * true when the read stopped early, so it may have missed a fork.
+ */
+export interface CallForks {
+  readonly forks: readonly CallFork[];
+  readonly reached: boolean;
+  readonly exhausted: boolean;
+}
+
+/** One fork a read of a call's arguments met. */
+export interface CallFork {
+  /** What the fork tests, the same for two forks that test the same thing. */
+  readonly key: string;
+  /** The fork's node, as the source keys it. */
+  readonly at: string;
+  readonly arms: number;
+  /** Whether the key's arm 0 is this fork's arm 1. */
+  readonly negated: boolean;
+  /** The key of the taken fork whose arm this one is in, or null at the top of the function. */
+  readonly under: string | null;
 }
 
 /** The argument of one call a value was read off, by position or keyword. */

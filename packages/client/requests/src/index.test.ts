@@ -1,14 +1,19 @@
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   bindModule,
   discoverUnits,
+  extractPythonProject,
   factsForFile,
   parsePython,
 } from "@suss/adapter-python";
+import { evalPredicate } from "@suss/behavioral-ir";
 
 import { REQUESTS, requestsClient } from "./index.js";
 
+import type { BehavioralSummary } from "@suss/behavioral-ir";
 import type { RawCodeStructure } from "@suss/extractor";
 
 const FILE = "app/orders.py";
@@ -331,6 +336,93 @@ describe("a URL a splat fills", () => {
       ["GET", null],
       ["POST", null],
     ]);
+  });
+});
+
+describe("a request a branch before the call picks", () => {
+  const root = path.resolve(
+    __dirname,
+    "../../../../fixtures/branch-picked-request-python",
+  );
+
+  async function clientsOf(name: string): Promise<BehavioralSummary[]> {
+    const { summaries } = await extractPythonProject({
+      files: [path.join(root, "app/client.py")],
+      packs: [requestsClient()],
+      roots: [root],
+      workspaceRoot: root,
+      cacheDir: null,
+    });
+    return summaries.filter(
+      (summary) => summary.kind === "client" && summary.identity.name === name,
+    );
+  }
+
+  function requestOf(client: BehavioralSummary): string {
+    const semantics = client.identity.boundaryBinding?.semantics;
+    return semantics?.name === "rest"
+      ? `${semantics.method} ${semantics.path}`
+      : "";
+  }
+
+  /** The requests whose condition holds when the caller passes these arguments. */
+  function sentWith(
+    clients: readonly BehavioralSummary[],
+    env: Record<string, unknown>,
+  ): string[] {
+    return clients
+      .filter((client) =>
+        (client.bindingFrom?.when ?? []).every(
+          (one) => evalPredicate(one, env) === "true",
+        ),
+      )
+      .map(requestOf);
+  }
+
+  it("makes one client per arm of a record a branch picks", async () => {
+    const clients = await clientsOf("save_sprocket");
+    expect(clients.map(requestOf).sort()).toEqual([
+      "PATCH /sprockets/{param}",
+      "POST /sprockets",
+    ]);
+  });
+
+  it("makes one client per URL a branch picks, each under its arm's condition", async () => {
+    const clients = await clientsOf("load_gizmo");
+    expect(clients.map(requestOf).sort()).toEqual([
+      "GET /gizmos",
+      "GET /gizmos/{gizmo_id}",
+    ]);
+    expect(sentWith(clients, { gizmo_id: "g1" })).toEqual([
+      "GET /gizmos/{gizmo_id}",
+    ]);
+    expect(sentWith(clients, { gizmo_id: "" })).toEqual(["GET /gizmos"]);
+  });
+
+  it("makes one client per method a branch picks for a fixed URL", async () => {
+    const clients = await clientsOf("toggle_widget");
+    expect(sentWith(clients, { on: true })).toEqual(["PUT /widgets/current"]);
+    expect(sentWith(clients, { on: false })).toEqual([
+      "DELETE /widgets/current",
+    ]);
+  });
+
+  it("splits an elif chain one arm at a time", async () => {
+    const clients = await clientsOf("fetch_report");
+    expect(clients).toHaveLength(3);
+    expect(sentWith(clients, { period: "day" })).toEqual([
+      "GET /reports/daily",
+    ]);
+    expect(sentWith(clients, { period: "week" })).toEqual([
+      "GET /reports/weekly",
+    ]);
+    expect(sentWith(clients, { period: "year" })).toEqual(["GET /reports/all"]);
+  });
+
+  it("keeps one client when the branch changes neither the method nor the URL", async () => {
+    const clients = await clientsOf("ping_doohickey");
+    expect(clients.map(requestOf)).toEqual(["POST /doohickeys/ping"]);
+    expect(clients[0]?.bindingFrom).toBeUndefined();
   });
 });
 

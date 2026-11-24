@@ -10,7 +10,7 @@ import path from "node:path";
 import { Node, SyntaxKind } from "ts-morph";
 
 import { factReadOps, factValueOps } from "@suss/recognize/ops";
-import { hostOf, isLocalUrl, pathOf } from "@suss/values";
+import { hostOf, isLocalUrl, literalsOf, pathOf, scalarOf } from "@suss/values";
 
 import { resolvedModuleFile } from "../discovery/importScan.js";
 import {
@@ -20,7 +20,7 @@ import {
 } from "../discovery/resolveValue.js";
 import { dottedPathOf, nodeId } from "../facts/extract.js";
 import { decodedIn, encodedIn } from "../values/encoded.js";
-import { evaluatedValue } from "../values/evaluator.js";
+import { evaluatedValue, forksAt } from "../values/evaluator.js";
 import { readSitesOf } from "../values/readSites.js";
 import { typedAsExported, typedAsInheriting } from "../values/receiverType.js";
 import { fallbackOf, isDefaultedAt } from "../walk/defaulted.js";
@@ -51,6 +51,7 @@ import { keysSuppliedAt } from "./suppliedKeys.js";
 
 import type {
   AstCapableValueOps,
+  CallForks,
   CallOps,
   FactSource,
   ReadOps,
@@ -72,6 +73,8 @@ export interface FactSourceOptions {
    * finds it is off a runtime object.
    */
   readonly held?: Map<string, Node>;
+  /** The arm each fork takes in every value the source evaluates, by the fork's key. */
+  readonly arms?: ReadonlyMap<string, number>;
 }
 
 /** The read ops for one site a walk visits: a property read, an element read, a binding element or a call. */
@@ -124,7 +127,7 @@ export function factSourceFor(
   const resolve =
     options.resolve ??
     ((value: Node): Node | null => store.resolveWrittenValue(value));
-  const { extend } = options;
+  const { extend, arms } = options;
   const reading: CallReading = { resolve, resolution: store, originatesFrom };
   const keyOf = (node: Node | null): string | null =>
     node === null ? null : nodeId(peelValue(node));
@@ -180,7 +183,11 @@ export function factSourceFor(
     nameOf: (key, unsettled) =>
       at(key, null, (node) => readName(node, { resolve, unsettled })),
     namesOf: (key, cap) =>
-      at(key, null, (node) => stringValuesOf(node, store, cap)),
+      at(key, null, (node) =>
+        arms === undefined
+          ? stringValuesOf(node, store, cap)
+          : literalsOf(evaluatedValue(node, store, undefined, arms), cap),
+      ),
     argOf: (key) => at(key, null, effectArgOf),
     encodedOf: (key) => at(key, null, (node) => codecKeyed(encodedIn(node))),
     decodedOf: (key) => at(key, null, (node) => codecKeyed(decodedIn(node))),
@@ -211,10 +218,15 @@ export function factSourceFor(
       ]),
     handedReaching: (key) =>
       at(key, [], (node) => [...store.handedReaching(node)]),
-    evaluatedOf: (key) => at(key, null, (node) => scalarValueOf(node, store)),
+    evaluatedOf: (key) =>
+      at(key, null, (node) =>
+        arms === undefined
+          ? scalarValueOf(node, store)
+          : scalarOf(evaluatedValue(node, store, undefined, arms)),
+      ),
     urlOf: (key, site) =>
       at(key, null, (node) => {
-        const value = evaluatedValue(node, store, site);
+        const value = evaluatedValue(node, store, site, arms);
         return {
           path: pathOf(value),
           host: hostOf(value),
@@ -226,6 +238,14 @@ export function factSourceFor(
         const cls = node.getFirstAncestorByKind(SyntaxKind.ClassDeclaration);
         return cls === undefined ? [] : store.constructionSitesOf(cls);
       }),
+    forksOf: (call) =>
+      at(call, null, (node) =>
+        Node.isCallExpression(node) || Node.isNewExpression(node)
+          ? callForks(node.getArguments(), store, arms ?? new Map(), hold)
+          : null,
+      ),
+    takingArms: (taken) =>
+      factSourceFor(store, originatesFrom, { ...options, held, arms: taken }),
     comesTo: (key) =>
       at(key, [], (node) => store.resolveComesTo(node).map(nodeId)),
     classBodyCalls: (key) =>
@@ -468,6 +488,30 @@ export function statedFactKey(call: Node, store: ResolutionStore): string {
 /** The value's ops with the node they were read at, for a reader that still walks the tree. */
 function withNode(ops: ValueOps, node: Node): AstCapableValueOps {
   return Object.assign(ops, { ast: () => node });
+}
+
+/** The forks reading a call's arguments meets, each fork keyed the way the source keys its nodes. */
+function callForks(
+  args: readonly Node[],
+  store: ResolutionStore,
+  arms: ReadonlyMap<string, number>,
+  hold: (node: Node) => string,
+): CallForks | null {
+  const met = forksAt(args, store, arms);
+  if (met === null) {
+    return null;
+  }
+  return {
+    reached: met.reached,
+    exhausted: met.exhausted,
+    forks: met.forks.map((fork) => ({
+      key: fork.key,
+      at: hold(fork.at),
+      arms: fork.arms,
+      negated: fork.negated,
+      under: fork.under,
+    })),
+  };
 }
 
 /**

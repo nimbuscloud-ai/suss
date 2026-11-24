@@ -2,6 +2,8 @@ export {
   type EvaluateOptions,
   Evaluator,
   type EvaluatorOptions,
+  type Fork,
+  type ForksMet,
 } from "./engine.js";
 export {
   type Callee,
@@ -12,6 +14,7 @@ export {
   type Expression,
   expressionBodyOf,
   type Field,
+  type ForkTest,
   type FunctionBody,
   type FunctionShape,
   type Literal,
