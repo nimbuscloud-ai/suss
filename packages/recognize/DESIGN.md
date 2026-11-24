@@ -2233,7 +2233,7 @@ When two different conditions both change the request, their arms may
 not all combine, so the call keeps its plain reading. So it does when
 an arm's method is the library's default in place of one suss could not
 read, and for a call whose class has construction sites. When every arm
-gives the same request, the plain reading stays.
+gives the same request, or no arm reads a path, the plain reading stays.
 
 The call's redirect option is read with `keywordAt`, or, for a method
 that says where the call passes its options object (`options`), as a

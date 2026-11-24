@@ -63,7 +63,8 @@ export function lacking(reading: Reading | null): boolean {
 /**
  * One claim per request the arms of a branch before the call give, or
  * null when the call keeps its plain reading: the ops cannot take arms,
- * no fork changes the request, or the split gave up.
+ * no fork changes the request, no arm reads a path, or the split gave
+ * up.
  */
 export function alternativeClaims(
   ops: CallOps,
@@ -82,7 +83,9 @@ export function alternativeClaims(
     return null;
   }
   const requests = merged(leaves);
-  if (requests.length === 0 || (requests.length === 1 && plain !== null)) {
+  // Requests none of which pairs would only add unread clients.
+  const anyPath = requests.some((claim) => claim.path !== null);
+  if (!anyPath || (requests.length === 1 && plain !== null)) {
     return null;
   }
   return requests;

@@ -1452,6 +1452,26 @@ describe("a request a branch before the call picks", () => {
     expect(first?.arms).toEqual([{ at: "fork:id", arm: 1 }]);
   });
 
+  it("keeps the plain request when no arm reads a path either", () => {
+    expect(
+      claimsOf(REQUESTS, {
+        method: "get",
+        from: ["httplib"],
+        args: [at(undefined)],
+        forks: openForks(forkOf("eu")),
+        argsUnder: (arms) =>
+          arms.has("eu")
+            ? [
+                at(
+                  undefined,
+                  arms.get("eu") === 0 ? "eu.example.com" : "us.example.com",
+                ),
+              ]
+            : undefined,
+      }),
+    ).toEqual([{ method: "GET", path: null, host: undefined }]);
+  });
+
   it("keeps the plain request when no fork changes it", () => {
     expect(
       claimsOf(REQUESTS, {
