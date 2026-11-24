@@ -183,8 +183,8 @@ export interface EvaluateOptions<N = unknown> {
   /**
    * The arm to take at each fork in the function the expression is
    * written in whose condition does not settle, by the fork's key from
-   * `Lowering.forkTest`. As with `given`, the function's own statements
-   * are not memoized, and the result comes back with nothing left lazy.
+   * `Lowering.forkTest`. The function's own statements are not memoized
+   * in that run.
    */
   readonly arms?: ReadonlyMap<string, number>;
 }
@@ -299,13 +299,15 @@ export class Evaluator<N extends object> {
   evaluate(node: N, options: EvaluateOptions<N> = {}): Value {
     this.statements = 0;
     this.exhausted = false;
-    if (options.arms !== undefined) {
-      return this.takingArms(newForkRun(options.arms), () =>
-        this.withGiven(options.given, () =>
-          forcedThrough(this.evaluateUnderSite(node, options)),
-        ),
-      );
-    }
+    // A run takes its arms as it goes, so what it leaves lazy comes out
+    // the same when the caller forces it later.
+    const { arms } = options;
+    return arms === undefined
+      ? this.runOf(node, options)
+      : this.takingArms(newForkRun(arms), () => this.runOf(node, options));
+  }
+
+  private runOf(node: N, options: EvaluateOptions<N>): Value {
     if (this.sound) {
       return this.withinBudget(() =>
         forcedThrough(this.evaluateUnderSite(node, options)),
@@ -331,11 +333,7 @@ export class Evaluator<N extends object> {
     for (const node of nodes) {
       this.statements = 0;
       this.exhausted = false;
-      this.takingArms(run, () =>
-        this.withGiven(options.given, () =>
-          forcedThrough(this.evaluateUnderSite(node, options)),
-        ),
-      );
+      this.takingArms(run, () => this.runOf(node, options));
       exhausted = exhausted || this.exhausted;
     }
     return { forks: [...run.met.values()], reached: run.reached, exhausted };
