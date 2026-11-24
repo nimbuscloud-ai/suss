@@ -112,6 +112,8 @@ function withNodeMembers(
     argument: (index) => ops.argument(index),
     callee: () => ops.callee(),
     constructionSites: () => ops.constructionSites?.() ?? [],
+    forks: () => ops.forks?.() ?? null,
+    takingArms: (arms) => ops.takingArms?.(arms) ?? ops,
     propertyAt: (index, property, unsettled) =>
       ops.propertyAt(index, property, unsettled),
     valueAt: (index) => ops.valueAt(index),

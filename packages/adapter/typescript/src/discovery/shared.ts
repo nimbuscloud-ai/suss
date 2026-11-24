@@ -364,8 +364,20 @@ export function unitDedupKey(unit: DiscoveredUnit): string {
       ? ""
       : `${unit.operationInfo.operationType}.${unit.operationInfo.operationName ?? unit.name}`,
     unit.callSite?.under ?? "",
+    armsKeyOf(unit.callSite?.request),
   ];
   return parts.join("-");
+}
+
+/**
+ * What tells apart the requests one call makes under the arms of a
+ * branch before it: the request itself, since two may share no arm.
+ */
+function armsKeyOf(request: RequestClaim | undefined): string {
+  if (request?.arms === undefined) {
+    return "";
+  }
+  return `${request.method} ${request.host ?? ""} ${request.path}`;
 }
 
 /** One function exported under two names is two boundaries, so each name keeps its unit. */

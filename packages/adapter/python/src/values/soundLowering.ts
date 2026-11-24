@@ -264,6 +264,23 @@ function namesWrittenOnce(root: PyNode): ReadonlySet<string> {
   return once;
 }
 
+/** The names `root` and the functions inside it write more than once. */
+export function namesWrittenAgain(root: PyNode): ReadonlySet<string> {
+  const writes = new Map<string, number>();
+  const visit = (node: PyNode): void => {
+    for (const child of children(node)) {
+      if (child.type === "identifier" && writesName(child)) {
+        writes.set(child.text, (writes.get(child.text) ?? 0) + 1);
+      }
+      visit(child);
+    }
+  };
+  visit(root);
+  return new Set(
+    [...writes].flatMap(([name, count]) => (count > 1 ? [name] : [])),
+  );
+}
+
 /** Whether an identifier binds the name it spells, or writes to it. */
 function writesName(id: PyNode): boolean {
   if (BINDING_PLACES.some((type) => inside(id, type))) {

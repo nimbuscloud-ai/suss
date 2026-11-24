@@ -31,12 +31,14 @@ import {
   writtenValueUnder,
 } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
+import { forkTests } from "./forks.js";
 import { declaredParameters, rubyLowering } from "./lowering.js";
 import { rubyRows } from "./rows.js";
 import { rubySoundLowering } from "./soundLowering.js";
 
 import type { ValueRef } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
+import type { CallForks } from "@suss/extractor";
 import type { Value } from "@suss/values";
 import type { RbNode } from "../parser.js";
 import type { EvaluationContext } from "./lowering.js";
@@ -86,8 +88,17 @@ function startEvaluators(
   context: EvaluationContext,
   named: ReadonlyMap<string, number>,
 ): void {
-  evaluators.set(db, new Evaluator(rubyLowering({ context, rows: rubyRows })));
+  evaluators.set(db, plainEvaluatorOver(context));
   soundEvaluators.set(db, soundEvaluatorOver(context, named));
+}
+
+function plainEvaluatorOver(
+  context: EvaluationContext | null,
+): Evaluator<RbNode> {
+  return new Evaluator({
+    ...rubyLowering({ context, rows: rubyRows }),
+    forkTest: forkTests(),
+  });
 }
 
 function soundEvaluatorOver(
@@ -359,20 +370,23 @@ export type ParameterBindings = ReadonlyMap<string, string>;
 /**
  * The abstract value `node` comes down to, through the facts when `db`
  * was bound. With a site, the value when its receiver is the instance
- * that site made. That evaluation is not memoized.
+ * that site made. That evaluation is not memoized. With arms, a branch
+ * in its method whose key is listed takes the arm given.
  */
 export function evaluatedValue(
   node: RbNode,
   db?: Database,
   bindings?: ParameterBindings,
   site?: string,
+  arms?: ReadonlyMap<string, number>,
 ): Value {
   const evaluator = evaluatorFor(node, db);
+  const taking = arms === undefined ? {} : { arms };
   if (bindings === undefined) {
     return force(
       site === undefined
-        ? evaluator.evaluate(node)
-        : evaluator.evaluate(node, { site }),
+        ? evaluator.evaluate(node, taking)
+        : evaluator.evaluate(node, { site, ...taking }),
     );
   }
   const supplied = new Map(
@@ -382,8 +396,43 @@ export function evaluatedValue(
     evaluator.evaluate(node, {
       bindings: supplied,
       ...(site === undefined ? {} : { site }),
+      ...taking,
     }),
   );
+}
+
+/**
+ * The forks in the method the nodes are written in that reading them
+ * left open, under the arms already taken, each fork as the facts key it.
+ */
+export function forksAt(
+  nodes: readonly RbNode[],
+  db: Database,
+  arms: ReadonlyMap<string, number>,
+): CallForks | null {
+  const [first] = nodes;
+  if (first === undefined) {
+    return null;
+  }
+  const met = evaluatorFor(first, db).forksIn(nodes, { arms });
+  const forks = met.forks.flatMap((fork) => {
+    const file = filesByTree.get(fork.at.tree);
+    return file === undefined
+      ? []
+      : [
+          {
+            key: fork.key,
+            at: nodeId(file, fork.at),
+            arms: fork.arms,
+            negated: fork.negated,
+            under: fork.under,
+          },
+        ];
+  });
+  // A fork with no key cannot be taken again, so the reading is not one to split.
+  return forks.length < met.forks.length
+    ? null
+    : { forks, reached: met.reached, exhausted: met.exhausted };
 }
 
 /**
@@ -454,7 +503,7 @@ function evaluatorFor(
   const tree = node.tree;
   let local = withoutFacts.get(tree);
   if (local === undefined) {
-    local = new Evaluator(rubyLowering({ context: null, rows: rubyRows }));
+    local = plainEvaluatorOver(null);
     withoutFacts.set(tree, local);
   }
   return local;

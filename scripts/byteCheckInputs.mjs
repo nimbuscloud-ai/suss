@@ -199,6 +199,20 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/body-field-guards"),
     ...packs("nextjs", "fetch"),
   ]),
+  fixture("branch-picked-request", [
+    ...dir("fixtures/branch-picked-request"),
+    ...packs("fetch"),
+  ]),
+  fixture("branch-picked-request-python", [
+    ...lang("python"),
+    ...dir("fixtures/branch-picked-request-python"),
+    ...packs("requests"),
+  ]),
+  fixture("branch-picked-request-ruby", [
+    ...lang("ruby"),
+    ...dir("fixtures/branch-picked-request-ruby"),
+    ...packs("faraday"),
+  ]),
   fixture("cloudflare-worker-stores", [
     ...dir("fixtures/cloudflare-worker-stores"),
     ...packs(

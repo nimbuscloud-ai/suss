@@ -43,8 +43,10 @@ import { returnPathBranches } from "./responseStatus.js";
 import {
   askWrittenValues,
   evaluatedValue,
+  nodeOfResolutionKey,
   parameterDefaults,
 } from "./values/evaluator.js";
+import { forkArmCondition } from "./values/forks.js";
 
 import type { StatusMembers } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
@@ -52,6 +54,7 @@ import type {
   CallOps,
   ClientResponse,
   ConditionInfo,
+  ForkArm,
   PackTally,
   RawBranch,
   RawCodeStructure,
@@ -300,7 +303,7 @@ function clientUnit(
   const bindingFrom = takesParameters(method)
     ? requestBindingFrom(
         claim.read.stated,
-        requestGate(method, request.call, options.facts),
+        requestGate(method, request.call, options.facts, claim.arms ?? []),
         sourcesOfValues({ facts: options.facts, unit: method }),
       )
     : undefined;
@@ -350,17 +353,34 @@ function clientUnit(
  * arm returns.
  */
 /**
- * The conditions every path to the request passes, with a subject that
- * is a parameter read as that input and a written value read as the
- * literal it comes to, `:post` included, so a caller's argument can
- * settle them.
+ * The conditions every path to the request passes, and those of the arms
+ * the request was read under, with a subject that is a parameter read
+ * as that input and a written value read as the literal it comes to,
+ * `:post` included, so a caller's argument can settle them.
  */
 function requestGate(
   method: RbNode,
   call: RbNode,
   facts: Database,
+  arms: readonly ForkArm[],
 ): RawCondition[] {
-  const paths = pathsToCall(method, call, facts) ?? [];
+  const taken = arms.flatMap((one) => {
+    const fork = nodeOfResolutionKey(one.at, facts);
+    const condition = fork === null ? null : forkArmCondition(fork, one.arm);
+    return condition === null ? [] : [condition];
+  });
+  // A path through the arm already tests what the arm does.
+  const paths = (pathsToCall(method, call, facts) ?? [[]]).map((path) => [
+    ...path,
+    ...taken.filter(
+      (one) =>
+        !path.some(
+          (written) =>
+            written.sourceText === one.sourceText &&
+            written.polarity === one.polarity,
+        ),
+    ),
+  ]);
   const operands = gateOperands(paths);
   if (operands.length === 0) {
     return sharedGatingConditions(paths);

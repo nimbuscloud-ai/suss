@@ -35,9 +35,12 @@ import type {
 } from "@suss/values";
 import type {
   BindingElement,
+  CaseClause,
+  DefaultClause,
   FunctionLikeDeclaration,
   ObjectBindingPattern,
   ParameterDeclaration,
+  SwitchStatement,
 } from "ts-morph";
 import type { ResolutionStore } from "../facts/store.js";
 
@@ -149,6 +152,21 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
     truthiness: javascriptTruthiness,
     rows,
   };
+}
+
+/**
+ * The clauses of a `switch` the engine reads as arms. An empty clause
+ * falls into the next one, so it is no arm of its own, unless it is the
+ * last.
+ */
+export function switchArms(
+  node: SwitchStatement,
+): (CaseClause | DefaultClause)[] {
+  const clauses = node.getClauses();
+  return clauses.filter(
+    (clause, at) =>
+      clause.getStatements().length > 0 || at === clauses.length - 1,
+  );
 }
 
 /** The name a hole takes for an expression nothing could read. */
@@ -377,18 +395,10 @@ function statementOf(node: Node): Statement<Node> {
     };
   }
   if (Node.isSwitchStatement(node)) {
-    // An empty clause falls through into the next one, so it is no arm
-    // of its own.
-    const clauses = node.getClauses();
     return {
       kind: "branch",
       condition: null,
-      arms: clauses
-        .filter(
-          (clause, at) =>
-            clause.getStatements().length > 0 || at === clauses.length - 1,
-        )
-        .map((clause) => clause.getStatements()),
+      arms: switchArms(node).map((clause) => clause.getStatements()),
     };
   }
   if (Node.isIterationStatement(node)) {

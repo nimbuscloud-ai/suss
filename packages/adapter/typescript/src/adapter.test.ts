@@ -3834,7 +3834,7 @@ describe("consumer extraction", () => {
     ]);
   });
 
-  it("spells a prefix written in a branch as a set, and a joined list as a hole over segments", async () => {
+  it("reads each prefix a branch picks as a request of its own, and a joined list as a hole over segments", async () => {
     const project = createTestProject();
     project.createSourceFile(
       "consumer.ts",
@@ -3869,7 +3869,8 @@ describe("consumer extraction", () => {
       })
       .sort();
     expect(paths).toEqual([
-      "GET (/api|/api/v2)/orders",
+      "GET /api/orders",
+      "GET /api/v2/orders",
       "GET /files/{value*}",
       "GET /items/{value}",
     ]);
@@ -3981,9 +3982,10 @@ describe("consumer extraction", () => {
       })
       .sort();
     expect(paths).toEqual([
-      "(/returns/v2|/shipping/v3)/orders",
       "/after",
       "/labels/open",
+      "/returns/v2/orders",
+      "/shipping/v3/orders",
     ]);
   });
 

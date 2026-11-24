@@ -67,6 +67,8 @@ export function deferredCallOps(
     isFrom: (origin) => stated().isFrom(origin),
     calleeSettledFrom: (origin) => stated().calleeSettledFrom?.(origin),
     constructionSites: () => stated().constructionSites?.() ?? [],
+    forks: () => stated().forks?.() ?? null,
+    takingArms: (arms) => stated().takingArms?.(arms) ?? stated(),
     argumentCount: () => stated().argumentCount(),
     nameAt: (index, unsettled) => stated().nameAt(index, unsettled),
     receiver: () => stated().receiver(),
