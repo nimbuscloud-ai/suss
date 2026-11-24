@@ -192,3 +192,40 @@ describe("the rule printed for a store's access finding", () => {
     expect(acceptingRule(unused[0] as Finding)).toBeNull();
   });
 });
+
+describe("the rule printed for a call to a route its service does not serve", () => {
+  const location = {
+    file: "lib/panel.ts",
+    range: { start: 4, end: 7 },
+    exportName: "loadSummary",
+  };
+  const side = { summary: "lib/panel.ts::loadSummary", location };
+  const missing: Finding = {
+    kind: "restMethodOnUnknownPath",
+    boundary: {
+      transport: "http",
+      semantics: {
+        name: "rest",
+        method: "GET",
+        path: "/api/orders/{id}/summary",
+      },
+      recognition: "fetch",
+    },
+    provider: side,
+    consumer: side,
+    description: "loadSummary calls GET /api/orders/{id}/summary",
+    severity: "error",
+    target: { service: "shop", routes: 1, nearby: [] },
+  };
+
+  it("picks out the caller by its summary, and matches the finding", () => {
+    const rule = acceptingRule(missing);
+
+    expect(rule).toEqual({
+      kind: "restMethodOnUnknownPath",
+      boundary: "GET /api/orders/{id}/summary",
+      consumer: { summary: "lib/panel.ts::loadSummary" },
+    });
+    expect(accepted([missing], rule as object)).toEqual([true]);
+  });
+});
