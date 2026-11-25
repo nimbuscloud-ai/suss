@@ -447,6 +447,27 @@ describe("discoverUnits: decoratedClassRoute (flask-restx style)", () => {
     ]);
   });
 
+  it("reads Werkzeug's path converter as one or more segments", async () => {
+    const filesSource = [
+      "from myapp.wrappers.restx import route",
+      "",
+      "",
+      '@route("/files/<path:rest>")',
+      "class FileServe:",
+      "    def get(self, rest):",
+      "        return {}",
+      "",
+    ].join("\n");
+    const units = await unitsOf(filesSource, [flaskRestxLike]);
+    const get = units.find((u) => u.identity.name === "FileServe.get");
+    expect(get?.boundaryBinding?.semantics).toEqual({
+      name: "rest",
+      method: "GET",
+      path: "/files/{rest+}",
+    });
+    expect(get?.parameters?.map((one) => one.role)).toEqual(["pathParams"]);
+  });
+
   it("reads Werkzeug's converter-argument forms, lazily to the first closing parenthesis", async () => {
     const argsSource = [
       "from myapp.wrappers.restx import route",
@@ -980,7 +1001,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     ).toEqual({ type: "literal", value: 200 });
   });
 
-  it("reads Starlette's typed converters and drops the converter from the canonical path", async () => {
+  it("reads Starlette's typed converters, and a path converter as the rest of the path", async () => {
     const typedSource = [
       "from fastapi import FastAPI",
       "",
@@ -997,7 +1018,7 @@ describe("discoverUnits: decoratedFunctionRoute (FastAPI style)", () => {
     expect(readFile?.boundaryBinding?.semantics).toEqual({
       name: "rest",
       method: "GET",
-      path: "/files/{item_id}/{file_path}",
+      path: "/files/{item_id}/{file_path*}",
     });
     expect(readFile?.parameters).toEqual([
       {
