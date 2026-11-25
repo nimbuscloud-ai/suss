@@ -1445,6 +1445,59 @@ to a library function, a write through a parameter, a `yield` or a
 `with`, so reading the steps backwards misses exactly the spellings
 that matter here.
 
+## Where an app goes
+
+```python
+app = FastAPI()
+app.include_router(orders)
+app.frontend("/", directory="site")   # a method the pack does not read
+Exporter().expose(app)                # a library call handed the app
+add_health(app)                       # the project's own function
+```
+
+A missing-route check trusts the route table only when nothing else
+can add a route to the app. The first two calls after the construction
+are ones the pack reads. The `frontend` method and the library call
+may each serve any path, and the project's own function adds routes
+that suss reads. A served-beside reader asks these rules where the app
+goes from its construction, and the answer says which call each read
+of it meets:
+
+```
+heldBy(x, y)                     the value built at x is held at y: x
+                                 itself, a name written with it, the
+                                 name another module imports it under
+                                 or a read of it off that module, the
+                                 parameter a project function takes it
+                                 as, or a call to a project function
+                                 that returns it
+wantedHeldCall(x, c, n)          the method n is called on it at c
+wantedHeldArgument(x, c)         it is passed to the call c
+wantedHeldInto(x, c)             c is one of those, and goes to a project
+                                 function whose parameter takes it
+wantedHeldStored(x, o)           it is held by the object o, stored on
+                                 it, or stored under a key of it
+wantedHeldPartCall(x, c, n)      a method is called on its member n at c
+wantedHeldPartArgument(x, c, r, n)  its member n, read at r, is passed
+                                 to the call c
+wantedHeldPartPassed(x, r, n)    its member n, read at r, is passed on
+                                 in any way `passedOn` counts
+```
+
+A caller asks with `wantedHolders(x)` and reads the answer with
+`heldUsesOf`. The rules follow the app only through the project's own
+code, since a call whose function is in the run is one suss reads. The
+reader decides what each call means: a method the pack reads or lists
+as unable to serve, a library call the pack lists as one that runs the
+app as it is, or anything else, which may serve any path.
+
+Python and TypeScript ask this question. TypeScript reads the facts of
+every file a registering pack applies to before discovery starts, so
+the answer covers the files that import the app or the framework; a
+project function in a file that imports neither is not followed, and a
+call into it counts as one suss does not read. Rails builds no app
+object, so Ruby has nothing to ask it about.
+
 ## A read of the environment
 
 A service that reads its configuration through one helper writes no
