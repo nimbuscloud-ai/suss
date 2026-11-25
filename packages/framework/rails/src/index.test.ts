@@ -266,6 +266,27 @@ describe("railsFramework", () => {
         },
       ]);
     });
+
+    it("lists every route the file declares with the action it sends to, each as its action's binding writes it", () => {
+      const pack = railsFramework({
+        root: path.join(fixtureRoot, "app"),
+        routesFile: path.join(fixtureRoot, "config/routes.rb"),
+      });
+      const declared = pattern(pack).declaredRoutes?.() ?? [];
+
+      expect(declared).toContainEqual({
+        method: "GET",
+        path: "/orders/:order_id/items",
+        to: "items#index",
+      });
+      expect(
+        declared.find((route) => route.to === "admin/reports#index"),
+      ).toEqual({
+        method: "GET",
+        path: "/admin/reports",
+        to: "admin/reports#index",
+      });
+    });
   });
 
   describe("when the routes file does not exist", () => {

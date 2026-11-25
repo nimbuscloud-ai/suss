@@ -247,7 +247,7 @@ describe("an Express app whose client calls a renamed route", () => {
 });
 
 describe("a Rails app a Worker calls through the base URL its deployment sets", () => {
-  it("reports the call once, and not one under a mounted engine or a Ruby call under a base the deployment sets", async () => {
+  it("reports the call once, and not one under a mounted engine, one to a controller suss does not read, or a Ruby call under a base the deployment sets", async () => {
     const app = copyOf("missing-route-rails", "rails");
     const config = path.join(app, "suss.rails.json");
     fs.writeFileSync(

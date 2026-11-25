@@ -243,8 +243,13 @@ function hostUnread(semantics: RestSemantics): boolean {
 function servedPath(semantics: RestSemantics, path: string): string {
   const normalized = normalizePath(path);
   return semantics.optionalFormat === true
-    ? `${normalized}(|.{format})`
+    ? withOptionalFormat(normalized)
     : normalized;
+}
+
+/** A route path with the `.{format}` a framework may add after it, the way pairing reads `optionalFormat`. */
+export function withOptionalFormat(path: string): string {
+  return `${path}(|.{format})`;
 }
 
 function withoutHost(semantics: RestSemantics): RestSemantics {

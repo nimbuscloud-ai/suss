@@ -34,6 +34,7 @@ function action(recognition: string): BehavioralSummary {
 
 function packWith(
   routedElsewhere: ControllerActions["routedElsewhere"],
+  declaredRoutes?: ControllerActions["declaredRoutes"],
 ): RubyPack {
   return {
     name: "shop-rails",
@@ -41,7 +42,9 @@ function packWith(
       {
         type: "controllerActions",
         routesFile: "/shop/config/routes.rb",
+        optionalFormat: true,
         routedElsewhere,
+        declaredRoutes,
       } as unknown as ControllerActions,
     ],
     servedBeside: { staticDirectories: ["/shop/no-such-directory"] },
@@ -91,6 +94,49 @@ describe("what a Ruby framework pack states beside its routes", () => {
         file: "/shop/config/routes.rb",
         line: 1,
         written: "the routing",
+      },
+    ]);
+  });
+
+  it("lists each declared route no recognized action serves, such as one to a controller suss does not read", () => {
+    const own = action("shop-rails");
+
+    stampRubyServedBeside(
+      [own],
+      [
+        packWith(
+          () => [],
+          () => [
+            { method: "GET", path: "/orders/:id/totals", to: "orders#totals" },
+            { method: "GET", path: "/orders/:id/feed", to: "feeds#show" },
+            {
+              method: "GET",
+              path: "/orders/:id/feed.rss",
+              formatless: true,
+              to: "feeds#rss",
+            },
+          ],
+        ),
+      ],
+      () => undefined,
+    );
+
+    expect(readServedBesideMetadata(own)?.entries).toEqual([
+      {
+        by: "unread",
+        path: "/orders/:id/feed(|.{format})",
+        methods: ["GET"],
+        file: "/shop/config/routes.rb",
+        line: 1,
+        written: "feeds#show",
+      },
+      {
+        by: "unread",
+        path: "/orders/:id/feed.rss",
+        methods: ["GET"],
+        file: "/shop/config/routes.rb",
+        line: 1,
+        written: "feeds#rss",
       },
     ]);
   });

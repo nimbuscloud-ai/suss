@@ -308,6 +308,7 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
     },
     routingGaps: () => routeTable().gaps,
     routedElsewhere: () => routeTable().elsewhere,
+    declaredRoutes: () => routeTable().declared,
     optionalFormat: true,
   };
 

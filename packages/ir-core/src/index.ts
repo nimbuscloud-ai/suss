@@ -218,6 +218,7 @@ export {
   pathShape,
   routePathAdmits,
   routePathsMeet,
+  withOptionalFormat,
 } from "./semantics/rest.js";
 export {
   applySuppressionsToFindings,

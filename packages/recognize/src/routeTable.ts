@@ -349,6 +349,11 @@ export function composeRoutes(
   return {
     routesFor: (controllerKey, action) =>
       walk.routes.get(controllerKey)?.get(action) ?? [],
+    routed: [...walk.routes].flatMap(([controllerKey, byAction]) =>
+      [...byAction].flatMap(([action, routes]) =>
+        routes.map((route) => ({ controllerKey, action, route })),
+      ),
+    ),
     gaps: walk.gaps,
     outcomes: walk.outcomes,
   };

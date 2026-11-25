@@ -1052,7 +1052,7 @@ function respondingHelpersOf(
 }
 
 /** Rails, like a framework modelled on it, adds no format to a path that ends in a slash. */
-function servesFormat(
+export function servesFormat(
   pattern: ControllerActions,
   route: ControllerRoute,
 ): boolean {

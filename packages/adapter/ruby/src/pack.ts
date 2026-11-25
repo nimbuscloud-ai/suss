@@ -520,6 +520,11 @@ export interface ControllerRoute {
   formatless?: true;
 }
 
+/** A route the routing declares, with the action it sends to as the routing writes it, such as `orders#show`. */
+export interface DeclaredRoute extends ControllerRoute {
+  to: string;
+}
+
 /**
  * A class whose ancestry reaches one of `baseClassNames` or
  * `ancestryRootClassNames` is a controller, and every instance method it
@@ -586,6 +591,12 @@ export interface ControllerActions {
    * read at all, which may serve any path.
    */
   routedElsewhere?: () => readonly ServedBesideEntry[];
+  /**
+   * Every route the routing declares. A route no action in the run
+   * serves goes to a controller suss did not recognize, such as an
+   * `ActionController::Metal` subclass, so it may serve its path.
+   */
+  declaredRoutes?: () => readonly DeclaredRoute[];
   /** The class-level calls that run one of the controller's own methods around its actions, Rails' `before_action` and `rescue_from`. */
   filters?: RbControllerFilter[];
 }

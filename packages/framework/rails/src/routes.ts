@@ -21,7 +21,7 @@ import { composeRoutes, rowRoutes } from "@suss/recognize";
 
 import { pathWithOptionalGroups } from "./optionalSegments.js";
 
-import type { RbInflections } from "@suss/adapter-ruby";
+import type { DeclaredRoute, RbInflections } from "@suss/adapter-ruby";
 import type { ServedBesideEntry } from "@suss/behavioral-ir";
 import type {
   ExpandsRole,
@@ -63,6 +63,8 @@ export interface RouteTable {
    * declaration left unread may serve any path at all.
    */
   readonly elsewhere: readonly ServedBesideEntry[];
+  /** Every route the routing declares, with the action it sends to. */
+  readonly declared: readonly DeclaredRoute[];
 }
 
 /**
@@ -391,6 +393,7 @@ export function readRoutes(input: RoutesInput): RouteTable {
           written: "a routes file that does not exist",
         },
       ],
+      declared: [],
     };
   }
   const drawDirectory = drawDirectoryOf(input.routesFile.file);
@@ -412,6 +415,12 @@ export function readRoutes(input: RoutesInput): RouteTable {
     fileFound: true,
     gaps: gapMessages(set.gaps, drawDirectory),
     elsewhere: set.gaps.map((gap) => routedElsewhere(gap, input)),
+    declared: set.routed.map(({ controllerKey, action, route }) => ({
+      method: route.method,
+      path: pathWithOptionalGroups(route.path),
+      ...(route.formatless === true ? { formatless: true } : {}),
+      to: `${controllerKey}#${action}`,
+    })),
   };
 }
 

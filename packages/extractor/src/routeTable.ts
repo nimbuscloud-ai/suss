@@ -555,8 +555,16 @@ export type RouteOutcome =
 export interface RouteSet {
   /** Every distinct route that reaches the action, in the order the table declares them. */
   routesFor(controllerKey: string, action: string): readonly TableRoute[];
+  /** Every route the table read, with the controller and action it reaches. */
+  readonly routed: readonly RoutedAction[];
   /** The entries left unread, in the order the walk met them. */
   readonly gaps: readonly RouteGap[];
   /** Each route an entry whose handler is a value serves, and each such entry or list item left unread, in walk order. */
   readonly outcomes: readonly RouteOutcome[];
+}
+
+export interface RoutedAction {
+  readonly controllerKey: string;
+  readonly action: string;
+  readonly route: TableRoute;
 }
