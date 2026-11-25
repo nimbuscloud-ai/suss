@@ -28,6 +28,7 @@
   "basePath": "Next.js: next.config key that puts every route under a prefix",
   "i18n": "Next.js: next.config key that puts every route under a locale",
   "pageExtensions": "Next.js: next.config key that changes which files are pages and routes",
+  "exportPathMap": "Next.js: next.config key that serves pages at paths of its own, in an export and under next dev",
   "matcher": "Next.js: middleware config property listing the paths it runs for",
   "pathToRegexp": "suss: served-beside pattern syntax tag, the path-to-regexp syntax Next.js matchers use"
 }

@@ -293,6 +293,13 @@ export interface ValueOps {
   flag(): boolean | null;
   /** What this object states, entry by entry. Empty for anything else. */
   entries(unsettled: UnsettledName): readonly ValueEntry[];
+  /**
+   * Whether this object is built with a spread that `entries` leaves
+   * out, because what it unpacks does not come to an object written
+   * out, such as a value a library call returns. Unset in an adapter
+   * that cannot say, which a reader takes as yes.
+   */
+  spreadsUnread?(): boolean;
   /** What this list states, item by item. Empty for anything else. */
   items(): readonly ValueOps[];
   /** What one named property of this object states, or null for none. */

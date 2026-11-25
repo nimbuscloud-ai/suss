@@ -138,7 +138,7 @@ const SERVED_BESIDE: ServedBesideDeclaration = {
       { key: "rewrites", by: "rewrite" },
       { key: "redirects", by: "redirect" },
     ],
-    unread: ["basePath", "i18n", "pageExtensions"],
+    unread: ["basePath", "i18n", "pageExtensions", "exportPathMap"],
   },
   middleware: {
     files: MIDDLEWARE_FILES,

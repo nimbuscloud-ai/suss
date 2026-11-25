@@ -1039,6 +1039,10 @@ class FactValue implements ValueOps {
     ).map(({ key, held }) => ({ key, value: factValueOps(held, this.facts) }));
   }
 
+  spreadsUnread(): boolean {
+    return hasUnreadSpread(this.shaped(), this.facts);
+  }
+
   /**
    * A list written out gives its items. A list built by mapping gives
    * one item, the value every element is built as, since each element
@@ -2714,6 +2718,32 @@ function spreadEntries(
         )
       : [entry],
   );
+}
+
+/**
+ * Whether a spread the object is written with, or one in an object it
+ * spreads, unpacks something other than an object written out, whose
+ * entries `spreadEntries` therefore leaves out.
+ */
+function hasUnreadSpread(
+  object: string,
+  source: FactSource,
+  within: ReadonlySet<string> = new Set(),
+): boolean {
+  if (within.has(object) || source.shapeOf(object) !== "object") {
+    return false;
+  }
+  const inside = new Set(within).add(object);
+  return writtenEntries(object, "unread", source).some((entry) => {
+    if (!("spread" in entry)) {
+      return false;
+    }
+    const unpacked = spreadObject(entry.spread, source);
+    return (
+      source.shapeOf(unpacked) !== "object" ||
+      hasUnreadSpread(unpacked, source, inside)
+    );
+  });
 }
 
 /**

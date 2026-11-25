@@ -835,6 +835,13 @@ describe("factValueOps over a spread", () => {
     );
   });
 
+  it("says whether a spread unpacks something other than an object written out", () => {
+    // `row` spreads `make()`, a call the facts do not settle on an object.
+    expect(factValueOps("rowName", spreads()).spreadsUnread?.()).toBe(true);
+    expect(factValueOps("ring", spreads()).spreadsUnread?.()).toBe(false);
+    expect(factValueOps("base", spreads()).spreadsUnread?.()).toBe(false);
+  });
+
   it("reads an object that spreads itself once", () => {
     const ring = factValueOps("ring", spreads());
 

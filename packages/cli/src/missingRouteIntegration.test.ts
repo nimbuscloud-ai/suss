@@ -197,6 +197,17 @@ describe("a Next.js app whose client calls a renamed route", () => {
 
     expect(findings.map((f) => f.description)).toEqual([RENAMED]);
   }, 120_000);
+
+  it("reads a config the program leaves out, past a spread in webpack, with a redirect a host decides", async () => {
+    const app = copyOf("missing-route-nextjs", "next-config-js");
+    fs.rmSync(path.join(app, "next.config.ts"));
+    fs.writeFileSync(path.join(app, "next.config.mjs"), CONFIG_MODULE);
+    fs.appendFileSync(path.join(app, "lib", "panel.ts"), DOCS_CALL);
+
+    const findings = await nextjsFindings(app);
+
+    expect(findings.map((f) => f.description)).toEqual([RENAMED]);
+  }, 120_000);
 });
 
 const CONFIRM_EMAIL = `export default async function confirmEmail(
@@ -228,6 +239,38 @@ export async function confirmEmail(token: string) {
 
 export async function listMembers() {
   return (await axios.get("/api/members")).data;
+}
+`;
+
+// A config in JavaScript, which the fixture's tsconfig leaves out.
+const CONFIG_MODULE = `const nextConfig = {
+  webpack(config) {
+    return { ...config, resolve: { ...config.resolve } };
+  },
+  async rewrites() {
+    return [
+      { source: "/legacy/:path*", destination: "https://old.example.com/:path*" },
+    ];
+  },
+  async redirects() {
+    return [
+      {
+        source: "/docs/:path*",
+        has: [{ type: "host", value: "docs.example.com" }],
+        destination: "https://example.com/docs/:path*",
+        permanent: false,
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+`;
+
+const DOCS_CALL = `
+export async function openDocs() {
+  const res = await fetch("/docs/intro");
+  return res.ok;
 }
 `;
 

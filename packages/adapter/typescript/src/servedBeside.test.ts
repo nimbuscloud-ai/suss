@@ -2,16 +2,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { Project } from "ts-morph";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { readServedBesideMetadata } from "@suss/behavioral-ir";
-import { createFixtureProject } from "@suss/test-project";
+import { testCompilerOptions } from "@suss/test-project";
 
 import { createTypeScriptAdapter } from "./adapter.js";
 import { pathToRegexpSource } from "./servedBeside.js";
 
 import type { ServedBesideEntry } from "@suss/behavioral-ir";
 import type { PatternPack } from "@suss/extractor";
+import type { CompilerOptions } from "ts-morph";
 
 function matches(pattern: string, path: string): boolean {
   const source = pathToRegexpSource(pattern);
@@ -119,7 +121,7 @@ const nextLike: PatternPack = {
     ],
     staticDirectories: ["public"],
     config: {
-      files: ["shop.config.ts"],
+      files: ["shop.config.ts", "shop.config.mjs", "shop.config.js"],
       rules: [
         { key: "rewrites", by: "rewrite" },
         { key: "redirects", by: "redirect" },
@@ -150,6 +152,7 @@ afterEach(() => {
 async function statedFor(
   files: Record<string, string>,
   pack: PatternPack = nextLike,
+  compilerOptions: CompilerOptions = {},
 ): Promise<ServedBesideEntry[] | undefined> {
   const root = fs.realpathSync(
     fs.mkdtempSync(path.join(os.tmpdir(), "suss-served-beside-")),
@@ -159,8 +162,16 @@ async function statedFor(
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     fs.writeFileSync(path.join(root, file), text);
   }
+  const project = new Project({
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: { ...testCompilerOptions, ...compilerOptions },
+  });
+  project.addSourceFilesAtPaths([
+    path.join(root, "**/*.ts"),
+    path.join(root, "**/*.tsx"),
+  ]);
   const adapter = createTypeScriptAdapter({
-    project: createFixtureProject(root, "**/*.ts", "**/*.tsx"),
+    project,
     frameworks: [pack],
     projectRoot: root,
   });
@@ -225,7 +236,7 @@ describe("what a file-convention framework serves beside its routes", () => {
     });
     const spread = await statedFor({
       "app/api/orders/route.ts": ROUTE,
-      "shop.config.ts": "const base = {};\nexport default { ...base };\n",
+      "shop.config.ts": `import { base } from "shared-config";\nexport default { ...base };\n`,
     });
     const wrapped = await statedFor({
       "app/api/orders/route.ts": ROUTE,
@@ -235,6 +246,72 @@ describe("what a file-convention framework serves beside its routes", () => {
     expect(moved?.map((entry) => entry.by)).toEqual(["unread"]);
     expect(spread?.map((entry) => entry.by)).toEqual(["unread"]);
     expect(wrapped?.map((entry) => entry.by)).toEqual(["unread"]);
+  });
+
+  it("reads past a spread that cannot route a request, and not past one in a rule", async () => {
+    const entries = await statedFor({
+      "app/api/orders/route.ts": ROUTE,
+      "shop.config.ts": `
+        import { shared, legacy } from "shared-config";
+        const common = { reactStrictMode: true };
+        export default {
+          ...common,
+          images: { ...shared.images },
+          env: { ...shared.env },
+          webpack(config) {
+            return { ...config, resolve: { ...config.resolve } };
+          },
+          async headers() {
+            return [...shared.headers];
+          },
+          async rewrites() {
+            return [{ ...legacy, source: "/old/:path*" }];
+          },
+          async redirects() {
+            return [{ source: "/home", destination: "/", permanent: true }];
+          },
+        };
+      `,
+    });
+
+    expect(entries?.map((entry) => [entry.by, entry.path ?? null])).toEqual([
+      ["unread", null],
+      ["redirect", "/home"],
+    ]);
+  });
+
+  it("keeps a rule a host, a header or a cookie decides as serving its path", async () => {
+    const entries = await statedFor({
+      "app/api/orders/route.ts": ROUTE,
+      "shop.config.ts": `
+        export default {
+          async redirects() {
+            return [
+              {
+                source: "/docs/:path*",
+                has: [{ type: "host", value: "docs.example.com" }],
+                destination: "https://example.com/docs/:path*",
+                permanent: false,
+              },
+            ];
+          },
+          async rewrites() {
+            return [
+              {
+                source: "/beta/:path*",
+                missing: [{ type: "cookie", key: "stable" }],
+                destination: "/preview/:path*",
+              },
+            ];
+          },
+        };
+      `,
+    });
+
+    expect(entries?.map((entry) => [entry.by, entry.path])).toEqual([
+      ["rewrite", "/beta/:path*"],
+      ["redirect", "/docs/:path*"],
+    ]);
   });
 
   it("covers every path for a rule list it cannot read and a middleware with no matcher", async () => {
@@ -303,6 +380,45 @@ describe("what a file-convention framework serves beside its routes", () => {
       ["unread", "/api/legacy", null],
       ["unread", "/api/old", null],
     ]);
+  });
+
+  it("reads a JavaScript config in a program that does not allow JavaScript", async () => {
+    const config = `
+      import { legacy } from "./legacy.mjs";
+      const config = {
+        async rewrites() {
+          return [{ source: "/old/:path*", destination: "/new/:path*" }, legacy];
+        },
+      };
+      export default config;
+    `;
+    const legacy = `export const legacy = { source: "/legacy", destination: "/" };\n`;
+    const typesOnly = { allowJs: false };
+    const module = await statedFor(
+      {
+        "app/api/orders/route.ts": ROUTE,
+        "shop.config.mjs": config,
+        "legacy.mjs": legacy,
+      },
+      nextLike,
+      typesOnly,
+    );
+    const script = await statedFor(
+      {
+        "app/api/orders/route.ts": ROUTE,
+        "shop.config.js": config,
+        "legacy.mjs": legacy,
+      },
+      nextLike,
+      typesOnly,
+    );
+
+    const read = [
+      ["rewrite", "/old/:path*"],
+      ["rewrite", "/legacy"],
+    ];
+    expect(module?.map((entry) => [entry.by, entry.path])).toEqual(read);
+    expect(script?.map((entry) => [entry.by, entry.path])).toEqual(read);
   });
 
   it("says nothing for a pack that recognized no route", async () => {

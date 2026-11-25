@@ -15,8 +15,11 @@ import picomatch from "picomatch";
 import { boundaryKey, restBinding } from "@suss/behavioral-ir";
 import { stampServedBeside, staticDirectoryEntries } from "@suss/extractor";
 
+import { projectWithoutTsconfig } from "./bootstrap/noTsconfigProject.js";
+import { checkerReads } from "./bootstrap/sourceFileLookup.js";
 import { moduleOpsFor } from "./discovery/declared.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
+import { ResolutionStore } from "./facts/store.js";
 
 import type { BehavioralSummary, ServedBesideEntry } from "@suss/behavioral-ir";
 import type {
@@ -31,7 +34,6 @@ import type {
 } from "@suss/extractor";
 import type { Project, SourceFile } from "ts-morph";
 import type { MountBeside } from "./discovery/mountPrefix.js";
-import type { ResolutionStore } from "./facts/store.js";
 
 export interface ServedBesideRun {
   frameworks: readonly PatternPack[];
@@ -335,12 +337,13 @@ function configEntries(
   if (config === null) {
     return [unreadEntry(file, "the object the config file exports")];
   }
-  // A spread's entries are dropped when its object does not settle, and
-  // they may be the very rules this reads, so any spread covers every path.
+  // A spread the config's own object is written with may bring in the
+  // very keys this reads. One inside another key's value, such as the
+  // `webpack` function's, cannot send a request anywhere.
   const keys = config.entries("nothing");
   if (
     keys.some((entry) => entry.key === null) ||
-    (config.source?.() ?? "...").includes("...")
+    config.spreadsUnread?.() !== false
   ) {
     return [unreadEntry(file, "a key the config spreads or computes")];
   }
@@ -365,9 +368,14 @@ function ruleEntries(
   if (lists === null) {
     return [unreadEntry(file, `the rules ${by}s returns`)];
   }
+  // A rule's `has` and `missing` conditions are left out: a relative
+  // call goes to whatever host serves the app, so the condition may be true.
   return lists.flatMap((list) =>
     list.map((rule) => {
-      const source = rule.property("source")?.evaluated?.() ?? null;
+      const source =
+        rule.object?.()?.spreadsUnread?.() === true
+          ? null
+          : (rule.property("source")?.evaluated?.() ?? null);
       return typeof source === "string"
         ? patternEntry(by, source, file, syntax)
         : unreadEntry(file, `a ${by} whose source is not one string`);
@@ -613,20 +621,39 @@ function firstExisting(root: string, files: readonly string[]): string | null {
 
 /**
  * The module ops for a file, loading it into the program when the
- * project's own config leaves it out, as it does a `.js` config file.
+ * project's own config leaves it out. The checker cannot read a
+ * JavaScript file in a program that does not allow JavaScript, so such
+ * a file, often the framework's config, is read in a project of its own
+ * made the way a codebase with no tsconfig is read.
  */
 function moduleReader(
   run: ServedBesideRun,
 ): (file: string) => ModuleOps | null {
+  let javascript: { project: Project; store: ResolutionStore } | null = null;
   return (file) => {
-    let sourceFile = run.project.getSourceFile(file);
-    if (sourceFile === undefined) {
-      try {
-        sourceFile = run.project.addSourceFileAtPath(file);
-      } catch {
-        return null;
-      }
+    if (checkerReads(run.project, file)) {
+      return moduleOpsIn(run.project, run.store, file);
     }
-    return moduleOpsFor(sourceFile, run.store);
+    javascript ??= {
+      project: projectWithoutTsconfig(),
+      store: ResolutionStore.forPacks(run.frameworks),
+    };
+    return moduleOpsIn(javascript.project, javascript.store, file);
   };
+}
+
+function moduleOpsIn(
+  project: Project,
+  store: ResolutionStore,
+  file: string,
+): ModuleOps | null {
+  let sourceFile = project.getSourceFile(file);
+  if (sourceFile === undefined) {
+    try {
+      sourceFile = project.addSourceFileAtPath(file);
+    } catch {
+      return null;
+    }
+  }
+  return moduleOpsFor(sourceFile, store);
 }
