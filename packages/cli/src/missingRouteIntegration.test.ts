@@ -8,105 +8,25 @@
  */
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { runCli } from "./run.js";
+import {
+  contract,
+  edit,
+  fixtureCopier,
+  missingRoutes,
+  typescript,
+} from "./__fixtures__/missingRoute.js";
 
 import type { Finding } from "@suss/behavioral-ir";
 
-const repoRoot = path.resolve(__dirname, "../../..");
-
-let root: string;
-
-async function run(argv: string[]): Promise<number> {
-  const swallow = (() => true) as typeof process.stdout.write;
-  const origOut = process.stdout.write.bind(process.stdout);
-  const origErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = swallow;
-  process.stderr.write = swallow;
-  try {
-    return await runCli(argv);
-  } finally {
-    process.stdout.write = origOut;
-    process.stderr.write = origErr;
-  }
-}
-
-/** A fresh copy of a fixture, which a test may edit. */
-function copyOf(fixture: string, label: string): string {
-  const at = path.join(root, label);
-  fs.cpSync(path.join(repoRoot, "fixtures", fixture), at, { recursive: true });
-  return at;
-}
-
-/** Runs each command into one summaries folder and returns the missing-route findings. */
-async function missingRoutes(
-  app: string,
-  commands: Array<{ cwd?: string; argv: (out: string) => string[] }>,
-): Promise<Finding[]> {
-  const summaries = path.join(app, ".summaries");
-  fs.mkdirSync(summaries, { recursive: true });
-  const before = process.cwd();
-  try {
-    for (const [at, command] of commands.entries()) {
-      process.chdir(command.cwd ?? app);
-      expect(await run(command.argv(path.join(summaries, `${at}.json`)))).toBe(
-        0,
-      );
-    }
-  } finally {
-    process.chdir(before);
-  }
-  const written = path.join(app, "check.json");
-  await run([
-    "check",
-    "--dir",
-    summaries,
-    "--json",
-    "--fail-on",
-    "none",
-    "--allow-empty",
-    "-o",
-    written,
-  ]);
-  const report = JSON.parse(fs.readFileSync(written, "utf-8")) as {
-    findings: Finding[];
-  };
-  return report.findings.filter((f) => f.kind === "restMethodOnUnknownPath");
-}
-
-function typescript(...packs: string[]) {
-  return (out: string) => [
-    "extract",
-    "-p",
-    "tsconfig.json",
-    ...packs.flatMap((pack) => ["-f", pack]),
-    "--no-cache",
-    "-o",
-    out,
-  ];
-}
+const copyOf = fixtureCopier("suss-missing-route-");
 
 async function nextjsFindings(app: string): Promise<Finding[]> {
   return missingRoutes(app, [{ argv: typescript("nextjs", "fetch") }]);
 }
-
-function edit(file: string, from: string, to: string): void {
-  const text = fs.readFileSync(file, "utf-8");
-  expect(text).toContain(from);
-  fs.writeFileSync(file, text.replace(from, to));
-}
-
-beforeAll(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-route-"));
-});
-
-afterAll(() => {
-  fs.rmSync(root, { recursive: true, force: true });
-});
 
 const RENAMED =
   "loadSummary calls GET /api/orders/{id}/summary, and shop, the service it calls, does not serve that path. Every call gets a 404. Routes nearby: GET /api/orders/{id}/totals.";
@@ -370,17 +290,7 @@ describe("a Rails app a Worker calls through the base URL its deployment sets", 
         ],
       },
       { cwd: web, argv: typescript("fetch") },
-      {
-        cwd: web,
-        argv: (out) => [
-          "contract",
-          "--from",
-          "wrangler",
-          "wrangler.toml",
-          "-o",
-          out,
-        ],
-      },
+      { cwd: web, argv: contract("wrangler", "wrangler.toml") },
     ]);
 
     expect(findings.map((f) => f.description)).toEqual([

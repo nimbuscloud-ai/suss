@@ -10,99 +10,22 @@
  */
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { runCli } from "./run.js";
+import {
+  contract,
+  edit,
+  fixtureCopier,
+  missingRoutes,
+  python,
+  typescript,
+} from "./__fixtures__/missingRoute.js";
 
 import type { Finding } from "@suss/behavioral-ir";
 
-const repoRoot = path.resolve(__dirname, "../../..");
-
-let root: string;
-
-async function run(argv: string[]): Promise<number> {
-  const swallow = (() => true) as typeof process.stdout.write;
-  const origOut = process.stdout.write.bind(process.stdout);
-  const origErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = swallow;
-  process.stderr.write = swallow;
-  try {
-    return await runCli(argv);
-  } finally {
-    process.stdout.write = origOut;
-    process.stderr.write = origErr;
-  }
-}
-
-/** A fresh copy of a fixture, which a test may edit. */
-function copyOf(fixture: string, label: string): string {
-  const at = path.join(root, label);
-  fs.cpSync(path.join(repoRoot, "fixtures", fixture), at, { recursive: true });
-  return at;
-}
-
-function edit(file: string, from: string, to: string): void {
-  const text = fs.readFileSync(file, "utf-8");
-  expect(text).toContain(from);
-  fs.writeFileSync(file, text.replace(from, to));
-}
-
-/** Runs each command into one summaries folder and returns the missing-route findings. */
-async function missingRoutes(
-  app: string,
-  commands: Array<{ cwd: string; argv: (out: string) => string[] }>,
-): Promise<Finding[]> {
-  const summaries = path.join(app, ".summaries");
-  fs.mkdirSync(summaries, { recursive: true });
-  const before = process.cwd();
-  try {
-    for (const [at, command] of commands.entries()) {
-      process.chdir(command.cwd);
-      expect(await run(command.argv(path.join(summaries, `${at}.json`)))).toBe(
-        0,
-      );
-    }
-  } finally {
-    process.chdir(before);
-  }
-  const written = path.join(app, "check.json");
-  await run([
-    "check",
-    "--dir",
-    summaries,
-    "--json",
-    "--fail-on",
-    "none",
-    "--allow-empty",
-    "-o",
-    written,
-  ]);
-  const report = JSON.parse(fs.readFileSync(written, "utf-8")) as {
-    findings: Finding[];
-  };
-  return report.findings.filter((f) => f.kind === "restMethodOnUnknownPath");
-}
-
-function python(...packs: string[]) {
-  return (out: string) => [
-    "extract",
-    "--lang",
-    "python",
-    "--dir",
-    ".",
-    ...packs.flatMap((pack) => ["-f", pack]),
-    "--no-cache",
-    "-o",
-    out,
-  ];
-}
-
-function contract(from: string, file: string) {
-  return (out: string) => ["contract", "--from", from, file, "-o", out];
-}
+const copyOf = fixtureCopier("suss-missing-route-py-");
 
 /** The shop's FastAPI app, and the sync job whose Lambda deployment sets the shop's address. */
 async function fastapiFindings(app: string): Promise<Finding[]> {
@@ -119,30 +42,10 @@ async function flaskFindings(app: string): Promise<Finding[]> {
   const web = path.join(app, "web");
   return missingRoutes(app, [
     { cwd: path.join(app, "shop"), argv: python("flask-restx") },
-    {
-      cwd: web,
-      argv: (out) => [
-        "extract",
-        "-p",
-        "tsconfig.json",
-        "-f",
-        "fetch",
-        "--no-cache",
-        "-o",
-        out,
-      ],
-    },
+    { cwd: web, argv: typescript("fetch") },
     { cwd: web, argv: contract("wrangler", "wrangler.toml") },
   ]);
 }
-
-beforeAll(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "suss-missing-route-py-"));
-});
-
-afterAll(() => {
-  fs.rmSync(root, { recursive: true, force: true });
-});
 
 const FASTAPI_RENAMED =
   "sync_order calls GET /orders/{param}/summary, and the service it calls does not serve that path. Every call gets a 404. Routes nearby: GET /orders/{order_id}/totals.";
