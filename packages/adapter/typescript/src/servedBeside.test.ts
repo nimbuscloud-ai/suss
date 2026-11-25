@@ -462,6 +462,7 @@ const expressLike: PatternPack = {
         by: "proxy",
       },
     ],
+    inert: ["listen"],
   },
 };
 
@@ -515,5 +516,87 @@ describe("what a router framework's mounts serve beside its routes", () => {
       ["mount", "/reports/{path*}", null],
       ["mount", null, null],
     ]);
+  });
+});
+
+describe("where an app the pack builds goes", () => {
+  const withRunner: PatternPack = {
+    ...expressLike,
+    servedBeside: {
+      ...expressLike.servedBeside,
+      runners: [
+        {
+          origin: "imported",
+          importedFrom: ["node:http"],
+          named: ["createServer"],
+        },
+      ],
+    },
+  };
+
+  /** Each entry that covers any path, by what the source writes there and the methods it covers. */
+  const unread = (entries: readonly ServedBesideEntry[] | undefined) =>
+    (entries ?? [])
+      .filter((entry) => entry.by === "unread")
+      .map((entry) => [entry.written ?? null, entry.methods ?? null])
+      .sort();
+
+  it("covers any path wherever the app meets code suss does not read", async () => {
+    const entries = await statedFor(
+      {
+        "src/server.ts": `
+          import express from "express";
+          import { mountDocs, wrap, describe } from "docs-kit";
+
+          export const app = express();
+          app.get("/orders", (req, res) => res.json({}));
+          app.frontend("/");
+          mountDocs(app);
+          export const served = wrap(app);
+          app.router.use(wrap);
+          describe(app.title);
+        `,
+        "src/legacy.ts": `
+          import { app } from "./server";
+
+          app.get("/legacy", (req, res) => res.json({}));
+        `,
+      },
+      withRunner,
+    );
+
+    expect(unread(entries)).toEqual([
+      ["app.frontend", null],
+      ["app.get", ["GET"]],
+      ["app.router.use", null],
+      ["app.title", null],
+      ["mountDocs", null],
+      ["wrap", null],
+    ]);
+  });
+
+  it("leaves out a listed method, a runner and the project's own function", async () => {
+    const entries = await statedFor(
+      {
+        "src/server.ts": `
+          import http from "node:http";
+          import express, { type Express } from "express";
+
+          const app = express();
+          app.get("/orders", (req, res) => res.json({}));
+
+          function addHealth(server: Express) {
+            server.get("/health", (req, res) => res.json({ ok: true }));
+          }
+
+          addHealth(app);
+          http.createServer(app);
+          app.listen(3000);
+        `,
+      },
+      withRunner,
+    );
+
+    expect(unread(entries)).toEqual([]);
   });
 });

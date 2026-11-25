@@ -43,6 +43,8 @@ import {
   fallbackAroundOneUnder,
   fallbackWrittenAs,
   type HandedInAt,
+  type HeldUses,
+  HOLDERS_QUESTION,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -50,6 +52,7 @@ import {
   readClassBodyCalls,
   readDispatchOutcomes,
   readElementsRun,
+  readHeldUses,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -166,6 +169,7 @@ type Question =
   | typeof ELEMENTS_RUN_QUESTION
   | "wantedSubject"
   | "wantedUses"
+  | typeof HOLDERS_QUESTION
   | SourceQuestion;
 
 /** One place a value's walk ended, with the nodes the store keyed it by. */
@@ -1763,6 +1767,19 @@ export class ResolutionStore {
     const uses = this.askLocalUses(declaration);
     this.localUses.set(id, uses);
     return uses;
+  }
+
+  /** Where the value built at each key goes, through the project code it is passed to, over the files read so far. */
+  heldUsesOf(keys: readonly string[]): Map<string, HeldUses> {
+    try {
+      for (const key of keys) {
+        this.wantKey(HOLDERS_QUESTION, key);
+      }
+      this.derive();
+      return new Map(keys.map((key) => [key, readHeldUses(this.db, key)]));
+    } finally {
+      this.forgetQuery();
+    }
   }
 
   private askLocalUses(declaration: VariableDeclaration): ValueUses {

@@ -218,6 +218,11 @@ export function buildMountPrefixIndex(
     }
   }
 
+  const servers = new Map(
+    [...subjectIdsByPack].filter(([packName]) =>
+      servingCallsByPack.has(packName),
+    ),
+  );
   const globalPrefixes = agreedGlobalPrefixes(globalPrefixWork, resolution);
   const versionings = agreedVersionings(versioningWork, resolution);
   if (
@@ -225,7 +230,9 @@ export function buildMountPrefixIndex(
     globalPrefixes.size === 0 &&
     versionings.size === 0
   ) {
-    return servedBeside.size === 0 ? NO_MOUNTS : { ...NO_MOUNTS, servedBeside };
+    return servedBeside.size === 0 && servers.size === 0
+      ? NO_MOUNTS
+      : { ...NO_MOUNTS, servedBeside, servers };
   }
 
   const edges: MountEdges = edgesByChild;
@@ -242,6 +249,7 @@ export function buildMountPrefixIndex(
     globalPrefixes,
     versionings,
     servedBeside,
+    servers,
   };
 
   function recordedPrefixFor(id: string): string {

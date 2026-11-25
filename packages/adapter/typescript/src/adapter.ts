@@ -3494,6 +3494,7 @@ function readWalkedFiles(reading: FileReading): FilesRead {
       root: reading.runRoot,
       sourceFiles,
       mounts: mountPrefixes.servedBeside ?? new Map(),
+      servers: mountPrefixes.servers ?? new Map(),
     }),
   );
   timer.time("liftSchemasOntoDocuments", () =>

@@ -77,6 +77,8 @@ export interface MountPrefixIndex {
   versionings?: ReadonlyMap<string, AppVersioning>;
   /** By pack, the mount calls that serve requests beside the routes suss read. */
   servedBeside?: ReadonlyMap<string, readonly MountBeside[]>;
+  /** By pack that states what it serves beside its routes, the creation site of every app and router it builds. */
+  servers?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** One mount call this file states, before it's folded into the index. */
@@ -111,8 +113,7 @@ export function discoverRegistrationCalls(
   );
   const registrationMethods = registrationMethodsOf(match);
   if (
-    registrationSubjects.size === 0 &&
-    !storeCanFindSubjects(sourceFile, match, resolution, registrationMethods)
+    !looksForRegistrations(sourceFile, match, registrationSubjects, resolution)
   ) {
     return results;
   }
@@ -560,6 +561,24 @@ export function receiverOf(
     match.importName,
   );
   return candidates > 1 ? { kind: "several", candidates } : NOT_A_ROUTABLE;
+}
+
+/** Whether route discovery reads a file's registration calls for the pattern at all. */
+export function looksForRegistrations(
+  sourceFile: SourceFile,
+  match: Extract<DiscoveryPattern["match"], { type: "registrationCall" }>,
+  subjects: ReadonlyMap<string, Node>,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return (
+    subjects.size > 0 ||
+    storeCanFindSubjects(
+      sourceFile,
+      match,
+      resolution,
+      registrationMethodsOf(match),
+    )
+  );
 }
 
 /**

@@ -55,6 +55,28 @@ function responseChain(...methodChain: string[]) {
  * it may be a router whose routes suss did not see.
  */
 const SERVED_BESIDE: ServedBesideDeclaration = {
+  // Settings, lifecycle and lookups. `param` runs only for a route that
+  // matched, so it cannot serve a path no route serves.
+  inert: [
+    "listen",
+    "set",
+    "enable",
+    "disable",
+    "engine",
+    "locals",
+    "param",
+    "on",
+    "render",
+  ],
+  // An HTTP server and a test client serve the app with the routes it has.
+  runners: [
+    {
+      origin: "imported",
+      importedFrom: ["http", "node:http", "https", "node:https"],
+      named: ["createServer"],
+    },
+    { origin: "imported", importedFrom: ["supertest"], named: ["default"] },
+  ],
   servingCalls: [
     { module: "express", names: ["static"], by: "static" },
     { module: "serve-static", names: ["default"], by: "static" },

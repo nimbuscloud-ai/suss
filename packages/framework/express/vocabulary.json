@@ -23,5 +23,14 @@
   "request": "suss: input role",
   "next": "suss: input role",
   "createProxyMiddleware": "http-proxy-middleware: the proxy middleware factory",
-  "legacyCreateProxyMiddleware": "http-proxy-middleware: the version 2 factory kept in version 3"
+  "legacyCreateProxyMiddleware": "http-proxy-middleware: the version 2 factory kept in version 3",
+  "listen": "Express: the app method that starts an HTTP server for the app",
+  "enable": "Express: the app method that turns a setting on",
+  "disable": "Express: the app method that turns a setting off",
+  "engine": "Express: the app method that registers a template engine",
+  "locals": "Express: the app's object of values every rendered template sees",
+  "on": "Express: the app method that listens for an event, such as `mount`",
+  "createServer": "Node: the http and https function that serves a request handler, such as an Express app",
+  "https": "Node: the module that serves HTTPS",
+  "supertest": "supertest: the test client package, whose default export calls an app in place"
 }

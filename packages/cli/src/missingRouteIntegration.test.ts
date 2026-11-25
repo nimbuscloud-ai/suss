@@ -254,11 +254,118 @@ describe("an Express app whose client calls a renamed route", () => {
       { argv: typescript("express", "fetch") },
     ]);
 
-    expect(findings.map((f) => f.description)).toEqual([
-      "loadSummary calls GET /api/orders/{id}/summary, and orders-api, the service it calls, does not serve that path. Every call gets a 404. Routes nearby: GET /api/orders/{id}/totals.",
-    ]);
+    expect(findings.map((f) => f.description)).toEqual([EXPRESS_RENAMED]);
+  }, 120_000);
+
+  it.each([
+    [
+      "a method the pack does not read is called on the app",
+      "unread-method",
+      ['app.frontend("/");'],
+    ],
+    [
+      "the app is handed to a library call",
+      "library-call",
+      ['import { mountDocs } from "docs-kit";', "mountDocs(app);"],
+    ],
+    [
+      "a library wraps the app",
+      "wrapped",
+      [
+        'import { edgeProxy } from "edge-kit";',
+        "export const served = edgeProxy(app);",
+      ],
+    ],
+    [
+      "a route is added on the app in a file that does not import Express",
+      "imported-app",
+      ["export { app };", "", 'import "./legacy";'],
+      [
+        'import { app } from "./server";',
+        "",
+        'app.get("/api/orders/:id/summary", (req, res) => res.json({}));',
+      ],
+    ],
+  ])(
+    "reports nothing once %s",
+    async (_label, slug, lines, legacy = []) => {
+      const app = copyOf("missing-route-express", `express-${slug}`);
+      fs.appendFileSync(serverOf(app), ["", ...lines, ""].join("\n"));
+      if (legacy.length > 0) {
+        fs.writeFileSync(
+          path.join(app, "src", "legacy.ts"),
+          [...legacy, ""].join("\n"),
+        );
+      }
+
+      expect(await expressFindings(app)).toEqual([]);
+    },
+    120_000,
+  );
+
+  it("still reports the call when the app gets a setting and is served by an HTTP server and a test client", async () => {
+    const app = copyOf("missing-route-express", "express-runners");
+    edit(serverOf(app), "app.listen(3000);", "");
+    fs.appendFileSync(
+      serverOf(app),
+      [
+        "",
+        'import http from "node:http";',
+        'import request from "supertest";',
+        "",
+        'app.set("trust proxy", true);',
+        'app.locals.title = "orders";',
+        "http.createServer(app).listen(3000);",
+        'export const probe = request(app).get("/api/orders/1/totals");',
+        "",
+      ].join("\n"),
+    );
+
+    expect(
+      (await expressFindings(app)).map((finding) => finding.description),
+    ).toEqual([EXPRESS_RENAMED]);
+  }, 120_000);
+
+  it("still reports the call when the app is handed to the project's own function that adds routes", async () => {
+    const app = copyOf("missing-route-express", "express-project-setup");
+    fs.writeFileSync(
+      path.join(app, "src", "health.ts"),
+      [
+        'import type { Express } from "express";',
+        "",
+        "export function addHealth(server: Express) {",
+        '  server.get("/health", (req, res) => res.json({ ok: true }));',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    fs.appendFileSync(
+      serverOf(app),
+      [
+        "",
+        'import { addHealth } from "./health";',
+        "",
+        "addHealth(app);",
+        "",
+      ].join("\n"),
+    );
+
+    expect(
+      (await expressFindings(app)).map((finding) => finding.description),
+    ).toEqual([EXPRESS_RENAMED]);
   }, 120_000);
 });
+
+const EXPRESS_RENAMED =
+  "loadSummary calls GET /api/orders/{id}/summary, and orders-api, the service it calls, does not serve that path. Every call gets a 404. Routes nearby: GET /api/orders/{id}/totals.";
+
+function serverOf(app: string): string {
+  return path.join(app, "src", "server.ts");
+}
+
+async function expressFindings(app: string): Promise<Finding[]> {
+  return missingRoutes(app, [{ argv: typescript("express", "fetch") }]);
+}
 
 describe("a Rails app a Worker calls through the base URL its deployment sets", () => {
   it("reports the call once, and not one under a mounted engine, one to a controller suss does not read, or a Ruby call under a base the deployment sets", async () => {

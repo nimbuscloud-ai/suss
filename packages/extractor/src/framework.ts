@@ -1819,6 +1819,20 @@ export interface ServedBesideDeclaration {
   servingCalls?: readonly ServingCall[];
   /** How `config` and `middleware` write a path. Defaults to `"routePath"`, the pack's own route syntax. */
   patternSyntax?: "routePath" | "pathToRegexp";
+  /**
+   * The methods and attributes of an app or a router the pack builds
+   * that cannot serve a request, such as Express's `listen` or `locals`.
+   * Any other method the pack does not register with may serve any path,
+   * and so may any other attribute that has a method called on it or is
+   * passed on.
+   */
+  inert?: readonly string[];
+  /**
+   * Library calls that are handed an app and serve it as it is, adding no
+   * route, such as `http.createServer(app)`. An app handed to any other
+   * library call may serve any path.
+   */
+  runners?: readonly ReceiverOrigin[];
 }
 
 export interface ServedPages {

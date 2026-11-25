@@ -11,15 +11,24 @@ import fs from "node:fs";
 import path from "node:path";
 
 import picomatch from "picomatch";
+import { Node } from "ts-morph";
 
 import { boundaryKey, restBinding } from "@suss/behavioral-ir";
 import { stampServedBeside, staticDirectoryEntries } from "@suss/extractor";
+import { fileOfKey } from "@suss/resolution";
 
 import { projectWithoutTsconfig } from "./bootstrap/noTsconfigProject.js";
 import { checkerReads } from "./bootstrap/sourceFileLookup.js";
 import { moduleOpsFor } from "./discovery/declared.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
+import {
+  looksForRegistrations,
+  methodsRegisteredOn,
+  registrationMethodsOf,
+  registrationSubjectsOf,
+} from "./discovery/registrationCall.js";
 import { ResolutionStore } from "./facts/store.js";
+import { opsOverFacts } from "./resolve/opsOverFacts.js";
 
 import type { BehavioralSummary, ServedBesideEntry } from "@suss/behavioral-ir";
 import type {
@@ -44,6 +53,8 @@ export interface ServedBesideRun {
   sourceFiles: readonly SourceFile[];
   /** What each pack's mount calls serve beside its routes, by pack. */
   mounts: ReadonlyMap<string, readonly MountBeside[]>;
+  /** By pack, the creation site of every app and router it builds. */
+  servers: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 type Syntax = NonNullable<ServedBesideDeclaration["patternSyntax"]>;
@@ -82,8 +93,170 @@ export function stampServedBesideOn(
         ? []
         : middlewareEntries(declared.middleware, root, read, syntax)),
       ...mountEntries(run.mounts.get(pack.name) ?? []),
+      ...heldEntries(pack, declared, run),
     ]);
   }
+}
+
+/**
+ * Where each app or router the pack builds meets code suss does not
+ * read: a method the pack neither registers with nor lists as inert, a
+ * library call it is handed to that is not a runner, an object it is
+ * stored on, or a member of it put to either use. Each may serve any
+ * path. A call into the project's own code is followed, not counted.
+ */
+function heldEntries(
+  pack: PatternPack,
+  declared: ServedBesideDeclaration,
+  run: ServedBesideRun,
+): ServedBesideEntry[] {
+  const servers = run.servers.get(pack.name);
+  if (servers === undefined || servers.size === 0) {
+    return [];
+  }
+  const uses = [...run.store.heldUsesOf([...servers]).values()];
+  const inert = new Set(declared.inert ?? []);
+  const known = new Set([...methodsRegisteredOn(pack.discovery), ...inert]);
+  const onServers = new Set(
+    uses.flatMap((one) =>
+      one.calls.filter((c) => known.has(c.method)).map((c) => c.call),
+    ),
+  );
+  const runs = runnerTest(declared, run.store);
+  const at = unreadEntryAt(run.store);
+  const routeCalls = uses.flatMap((one) => one.calls);
+  const entries = uses.flatMap((one) => {
+    const runnerReads = new Set(
+      one.partArguments.filter((p) => runs(p.call)).map((p) => p.read),
+    );
+    return [
+      ...one.calls.filter((c) => !known.has(c.method)).map((c) => c.call),
+      ...one.arguments.filter(
+        (call) => !one.into.has(call) && !onServers.has(call) && !runs(call),
+      ),
+      ...one.stored,
+      ...one.partCalls.filter((p) => !inert.has(p.member)).map((p) => p.call),
+      ...one.partsPassed
+        .filter((p) => !inert.has(p.member) && !runnerReads.has(p.read))
+        .map((p) => p.read),
+    ].flatMap(at);
+  });
+  return [
+    ...new Map(
+      [...entries, ...routesNotRead(pack, routeCalls, run.store)].map((one) => [
+        JSON.stringify(one),
+        one,
+      ]),
+    ).values(),
+  ];
+}
+
+/**
+ * Each route registered on an app or a router the pack builds in a file
+ * whose registrations discovery does not read, such as a file that
+ * imports the app and not the framework. It may serve its method on any
+ * path.
+ */
+function routesNotRead(
+  pack: PatternPack,
+  calls: readonly { call: string; method: string }[],
+  store: ResolutionStore,
+): ServedBesideEntry[] {
+  const patterns = pack.discovery.flatMap((pattern) =>
+    pattern.match.type === "registrationCall" ? [pattern.match] : [],
+  );
+  const verbs = new Set(patterns.flatMap(registrationMethodsOf));
+  const readIn = new Map<SourceFile, boolean>();
+  const looked = (file: SourceFile): boolean => {
+    const known = readIn.get(file);
+    if (known !== undefined) {
+      return known;
+    }
+    const reads = patterns.some((match) =>
+      looksForRegistrations(
+        file,
+        match,
+        registrationSubjectsOf(
+          file,
+          match.importModule,
+          match.importName,
+          store,
+        ),
+        store,
+      ),
+    );
+    readIn.set(file, reads);
+    return reads;
+  };
+  return calls.flatMap(({ call, method }) => {
+    const node = verbs.has(method)
+      ? store.factAccess().nodeOf(call)
+      : undefined;
+    // `app.get("env")` with no handler reads a setting.
+    if (
+      node === undefined ||
+      !Node.isCallExpression(node) ||
+      node.getArguments().length < 2 ||
+      looked(node.getSourceFile())
+    ) {
+      return [];
+    }
+    return [
+      {
+        by: "unread" as const,
+        ...(method === "all" ? {} : { methods: [method.toUpperCase()] }),
+        file: node.getSourceFile().getFilePath(),
+        line: node.getStartLineNumber(),
+        written: node.getExpression().getText(),
+      },
+    ];
+  });
+}
+
+/** Whether the call at a key is one of the pack's runners, which serve an app as it is. */
+function runnerTest(
+  declared: ServedBesideDeclaration,
+  store: ResolutionStore,
+): (key: string) => boolean {
+  const runners = declared.runners ?? [];
+  const originatesFrom = (value: Node, module: string): boolean =>
+    store.originatesFrom(value, module);
+  return (key) => {
+    const node = store.factAccess().nodeOf(key);
+    if (
+      runners.length === 0 ||
+      node === undefined ||
+      !(Node.isCallExpression(node) || Node.isNewExpression(node))
+    ) {
+      return false;
+    }
+    const ops = opsOverFacts(node, { resolution: store, originatesFrom });
+    return runners.some((origin) => ops.isFrom(origin));
+  };
+}
+
+/** An entry saying what is at a key may serve any path. */
+function unreadEntryAt(
+  store: ResolutionStore,
+): (key: string) => ServedBesideEntry[] {
+  return (key) => {
+    const node = store.factAccess().nodeOf(key);
+    if (node === undefined) {
+      return [{ by: "unread", file: fileOfKey(key), line: 1 }];
+    }
+    const written =
+      Node.isCallExpression(node) || Node.isNewExpression(node)
+        ? node.getExpression().getText()
+        : node.getText();
+    return [
+      {
+        by: "unread",
+        file: node.getSourceFile().getFilePath(),
+        line: node.getStartLineNumber(),
+        written: written.slice(0, 200),
+      },
+    ];
+  };
 }
 
 /** Each page file's path, which serves GET. */
