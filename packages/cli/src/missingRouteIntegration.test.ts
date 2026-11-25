@@ -383,39 +383,80 @@ async function expressFindings(app: string): Promise<Finding[]> {
 
 describe("a Rails app a Worker calls through the base URL its deployment sets", () => {
   it("reports the call once, and not one under a mounted engine, one to a controller suss does not read, or a Ruby call under a base the deployment sets", async () => {
-    const app = copyOf("missing-route-rails", "rails");
-    const config = path.join(app, "suss.rails.json");
-    fs.writeFileSync(
-      config,
-      JSON.stringify({
-        root: path.join(app, "app"),
-        routesFile: path.join(app, "config", "routes.rb"),
-      }),
+    const findings = await railsFindings(
+      copyOf("missing-route-rails", "rails"),
     );
-    const web = path.join(app, "web");
-    const findings = await missingRoutes(app, [
-      {
-        argv: (out) => [
-          "extract",
-          "--lang",
-          "ruby",
-          "--dir",
-          app,
-          "-f",
-          `rails=${config}`,
-          "-f",
-          "faraday",
-          "--no-cache",
-          "-o",
-          out,
-        ],
-      },
-      { cwd: web, argv: typescript("fetch") },
-      { cwd: web, argv: contract("wrangler", "wrangler.toml") },
-    ]);
 
     expect(findings.map((f) => f.description)).toEqual([
       "loadSummary calls GET /orders/{id}/summary, and the service it calls does not serve that path. Every call gets a 404. Routes nearby: GET /orders/{id}/totals.",
     ]);
   }, 120_000);
+
+  it.each([
+    [
+      "the app loads its gems with Bundler.require",
+      "bundler",
+      "application.rb",
+      [
+        'require "rails"',
+        "",
+        "Bundler.require(*Rails.groups)",
+        "",
+        "module Shop",
+        "  class Application < Rails::Application",
+        "  end",
+        "end",
+      ],
+    ],
+    [
+      "an initializer adds middleware",
+      "middleware",
+      "initializers/legacy.rb",
+      ["Rails.application.config.middleware.use LegacySummary"],
+    ],
+  ])(
+    "reports nothing once %s",
+    async (_label, slug, file, lines) => {
+      const app = copyOf("missing-route-rails", `rails-${slug}`);
+      const at = path.join(app, "config", file);
+      fs.mkdirSync(path.dirname(at), { recursive: true });
+      fs.writeFileSync(at, [...lines, ""].join("\n"));
+
+      expect(await railsFindings(app)).toEqual([]);
+    },
+    120_000,
+  );
 });
+
+/** The Rails app's summaries, and the Worker's with its deployment, checked together. */
+async function railsFindings(app: string): Promise<Finding[]> {
+  const config = path.join(app, "suss.rails.json");
+  fs.writeFileSync(
+    config,
+    JSON.stringify({
+      root: path.join(app, "app"),
+      routesFile: path.join(app, "config", "routes.rb"),
+    }),
+  );
+  const web = path.join(app, "web");
+  return missingRoutes(app, [
+    {
+      argv: (out) => [
+        "extract",
+        "--lang",
+        "ruby",
+        "--dir",
+        app,
+        "-f",
+        `rails=${config}`,
+        "-f",
+        "faraday",
+        "--no-cache",
+        "-o",
+        out,
+      ],
+    },
+    { cwd: web, argv: typescript("fetch") },
+    { cwd: web, argv: contract("wrangler", "wrangler.toml") },
+  ]);
+}
