@@ -14,6 +14,8 @@ import {
   callsRun,
   declaredTypesOf,
   environmentsReaching,
+  fallbackAroundOne,
+  fallbackAroundOneUnder,
   handedNamesReaching,
   readUses,
   resolutionProgram,
@@ -174,6 +176,40 @@ export function writtenValueOf(db: Database, key: string): string | null {
     (keys) => resolveWritten(db, keys),
     undefined,
     answersFromTestsLeftOut(key, (file) => isTestFileIn(db, file)),
+  );
+}
+
+/**
+ * The expression a value reader evaluates for `key`: the one
+ * `writtenValueOf` gives, or the fallback that expression is a branch
+ * of when the other branch came to nothing the rules could find. The
+ * reader's own `or` then takes the default and marks it as taken over a
+ * value that did not read.
+ */
+export function evaluatedAsOf(db: Database, key: string): string | null {
+  const written = writtenValueOf(db, key);
+  if (written === null) {
+    return null;
+  }
+  return (
+    fallbackAroundOne(db, key, (keys) => resolveWritten(db, keys)) ?? written
+  );
+}
+
+/** `evaluatedAsOf`, when the value's receiver is the instance built at `site`. */
+export function evaluatedAsUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string | null {
+  const written = writtenValueUnder(db, key, site);
+  if (written === null) {
+    return null;
+  }
+  return (
+    fallbackAroundOneUnder(db, key, site, (pairs) => {
+      askResolutionUnder(db, pairs);
+    }) ?? written
   );
 }
 

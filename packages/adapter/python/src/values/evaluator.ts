@@ -17,13 +17,13 @@ import { Evaluator, force, literalOf, writtenLiteralOf } from "@suss/values";
 import { enclosingFunction, field } from "../ast.js";
 import {
   constructionSites,
+  evaluatedAsOf,
+  evaluatedAsUnder,
   evaluatingUnderSite,
   resolveCalls,
   settledFunction,
   settleWrittenValues,
-  writtenValueOf,
   writtenValuesOf,
-  writtenValueUnder,
 } from "../facts/resolve.js";
 import { parameterShapes, readKey } from "../facts/values.js";
 import { bindModule } from "../scope.js";
@@ -461,8 +461,8 @@ function projectOver(db: Database, nodes: ProjectNodes): BoundProject {
       }
       const answer =
         site === undefined
-          ? writtenValueOf(db, key)
-          : writtenValueUnder(db, key, site);
+          ? evaluatedAsOf(db, key)
+          : evaluatedAsUnder(db, key, site);
       if (answer === null) {
         return null;
       }

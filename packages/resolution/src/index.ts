@@ -152,6 +152,7 @@ export {
   type AskUnder,
   allocationSitesOf,
   comesToUnder,
+  fallbackAroundOneUnder,
   isWrittenAsUnder,
   objectOfUnder,
   writtenValueUnder,
@@ -168,6 +169,7 @@ export {
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
   answersFromTestsLeftOut,
+  fallbackAroundOne,
   fallbackWrittenAs,
   writtenValueOf,
   writtenValuesByKey,

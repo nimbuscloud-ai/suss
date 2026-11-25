@@ -39,6 +39,8 @@ import {
   DISPATCH_QUESTION,
   ELEMENTS_RUN_QUESTION,
   type ExplainStats,
+  fallbackAroundOne,
+  fallbackAroundOneUnder,
   fallbackWrittenAs,
   type HandedInAt,
   proofRules,
@@ -264,6 +266,8 @@ export interface EnvironmentNamers {
 /** What one value is written as, kept per declaration. */
 interface WrittenAnswer {
   written: Node | null;
+  /** What a value reader evaluates, which `resolveEvaluatedValue` says. */
+  evaluated: Node | null;
   /** The class the value refers to, which `written` leaves out. */
   writtenClass: Node | null;
   walked: readonly string[];
@@ -373,7 +377,7 @@ export class ResolutionStore {
    */
   private readonly exportTables = new Map<string, Map<string, Node[]>>();
   /** Keyed by value and site both, since one value differs per site. */
-  private readonly writtenUnderSite = new Map<string, Node | null>();
+  private readonly evaluatedUnderSite = new Map<string, Node | null>();
   private readonly constructionSites = new Map<string, string[]>();
   /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
   private readonly localUses = new Map<string, ValueUses>();
@@ -747,9 +751,21 @@ export class ResolutionStore {
     return this.writtenAnswers([value], "writtenClass").get(value) ?? null;
   }
 
+  /**
+   * What a value reader evaluates for a value: the expression
+   * `resolveWrittenValue` gives, or the fallback that expression is a
+   * branch of when the other branch came to nothing the rules could
+   * find, as `process.env.API_URL` does in `process.env.API_URL || ""`.
+   * The reader's own `||` then takes the default and marks it as taken
+   * over a value that did not read.
+   */
+  resolveEvaluatedValue(value: Node): Node | null {
+    return this.writtenAnswers([value], "evaluated").get(value) ?? null;
+  }
+
   private writtenAnswers(
     values: readonly Node[],
-    wanted: "written" | "writtenClass",
+    wanted: "written" | "evaluated" | "writtenClass",
   ): Map<Node, Node | null> {
     const found = new Map<Node, Node | null>();
     const asked = new Map<string, Node>();
@@ -785,8 +801,11 @@ export class ResolutionStore {
 
     this.askAboutAll([...asked.values()], "wantedWritten", () => {
       for (const [key, target] of asked) {
+        const written = this.lookupWritten(target);
         this.writtenValues.set(key, {
-          written: this.lookupWritten(target),
+          written,
+          evaluated:
+            written === null ? null : (this.fallbackAround(target) ?? written),
           writtenClass: this.lookupWrittenClass(target),
           walked: this.lastQueryWalked,
           extractedAt: this.fullyExtracted.size,
@@ -800,15 +819,15 @@ export class ResolutionStore {
   }
 
   /**
-   * The same question under one construction site: what the value is
-   * when the receiver behind it is the instance that site made. A field
-   * two constructions fill differently settles here and not context
-   * free, where two answers are ambiguity.
+   * `resolveEvaluatedValue` under one construction site: what the value
+   * is when the receiver behind it is the instance that site made. A
+   * field two constructions fill differently settles here and not
+   * context free, where two answers are ambiguity.
    */
-  resolveWrittenValueUnder(value: Node, site: string): Node | null {
+  resolveEvaluatedValueUnder(value: Node, site: string): Node | null {
     const target = factKeyOf(value);
     const key = nodeId(target);
-    const cached = this.writtenUnderSite.get(`${key}|${site}`);
+    const cached = this.evaluatedUnderSite.get(`${key}|${site}`);
     if (cached !== undefined) {
       return cached;
     }
@@ -827,20 +846,43 @@ export class ResolutionStore {
     // A question nobody could finish is cached as no answer, so a second
     // caller asking about the same pair does not start the walk again.
     if (outcome === "abandoned") {
-      this.writtenUnderSite.set(`${key}|${site}`, null);
+      this.evaluatedUnderSite.set(`${key}|${site}`, null);
       return null;
     }
 
-    const answer = writtenValueUnder(this.db, key, site, (pairs) => {
+    const ask = (pairs: ReadonlyArray<readonly [string, string]>): void => {
       askResolutionUnder(this.db, pairs, resolutionUnderProgram());
-    });
-    const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
-    const written =
-      node === null || node === target || !Node.isExpression(node)
+    };
+    const answer = writtenValueUnder(this.db, key, site, ask);
+    const written = this.expressionAt(answer, target);
+    const evaluated =
+      written === null
         ? null
-        : node;
-    this.writtenUnderSite.set(`${key}|${site}`, written);
-    return written;
+        : (this.expressionAt(
+            fallbackAroundOneUnder(this.db, key, site, ask),
+            target,
+          ) ?? written);
+    this.evaluatedUnderSite.set(`${key}|${site}`, evaluated);
+    return evaluated;
+  }
+
+  /** The expression at a fact key, unless it is the value asked about. */
+  private expressionAt(key: string | null, asked: Node): Node | null {
+    const node = key === null ? null : (this.table.byId.get(key) ?? null);
+    return node === null || node === asked || !Node.isExpression(node)
+      ? null
+      : node;
+  }
+
+  /** The fallback `resolveEvaluatedValue` reads in place of the one branch `lookupWritten` gave. */
+  private fallbackAround(value: Node): Node | null {
+    const fallback = fallbackAroundOne(this.db, nodeId(value), (keys) => {
+      for (const behind of keys) {
+        this.wantKey("wantedWritten", behind);
+      }
+      this.derive();
+    });
+    return this.expressionAt(fallback, value);
   }
 
   /**

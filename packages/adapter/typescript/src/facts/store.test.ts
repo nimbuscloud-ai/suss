@@ -3284,7 +3284,7 @@ describe("reading a value under one construction", () => {
     store.notePossibleCallers(project.getSourceFiles());
     return store
       .constructionSitesOf(cls)
-      .map((site) => store.resolveWrittenValueUnder(read, site)?.getText())
+      .map((site) => store.resolveEvaluatedValueUnder(read, site)?.getText())
       .map((written) => written ?? "nothing")
       .sort();
   }
@@ -3352,7 +3352,7 @@ describe("reading a value under one construction", () => {
     expect(
       store
         .constructionSitesOf(cls)
-        .map((site) => store.resolveWrittenValueUnder(read, site)?.getText()),
+        .map((site) => store.resolveEvaluatedValueUnder(read, site)?.getText()),
     ).toEqual(['"/orders"']);
   });
 

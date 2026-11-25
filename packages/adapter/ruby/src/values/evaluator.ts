@@ -24,11 +24,11 @@ import {
 import { children, enclosingDefinition, field, METHOD_TYPES } from "../ast.js";
 import {
   constructionSites,
+  evaluatedAsOf,
+  evaluatedAsUnder,
   resolveValues,
   settledFunction,
-  writtenValueOf,
   writtenValuesOf,
-  writtenValueUnder,
 } from "../facts/resolve.js";
 import { nodeId, readKey } from "../facts/values.js";
 import { forkTests } from "./forks.js";
@@ -529,8 +529,8 @@ function contextOver(db: Database, nodes: ProjectNodes): EvaluationContext {
       const key = readKey(file, node, enclosingDefinition(node));
       const answer =
         site === undefined
-          ? writtenValueOf(db, key)
-          : writtenValueUnder(db, key, site);
+          ? evaluatedAsOf(db, key)
+          : evaluatedAsUnder(db, key, site);
       if (answer === null) {
         return null;
       }
