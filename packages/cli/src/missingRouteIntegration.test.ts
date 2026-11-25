@@ -178,7 +178,58 @@ describe("a Next.js app whose client calls a renamed route", () => {
 
     expect(findings.map((f) => f.description)).toEqual([RENAMED]);
   }, 120_000);
+
+  it("reports only the renamed route beside a route file it does not read and a write to axios's default base", async () => {
+    const app = copyOf("missing-route-nextjs", "next-unread");
+    const auth = path.join(app, "pages", "api", "auth");
+    fs.mkdirSync(auth, { recursive: true });
+    fs.writeFileSync(
+      path.join(auth, "confirm-email.ts"),
+      'export { default } from "../../../lib/confirmEmail";\n',
+    );
+    fs.writeFileSync(path.join(app, "lib", "confirmEmail.ts"), CONFIRM_EMAIL);
+    fs.writeFileSync(path.join(app, "lib", "setup.ts"), DEFAULT_BASE);
+    fs.writeFileSync(path.join(app, "lib", "account.ts"), ACCOUNT_CALLS);
+
+    const findings = await missingRoutes(app, [
+      { argv: typescript("nextjs", "fetch", "axios") },
+    ]);
+
+    expect(findings.map((f) => f.description)).toEqual([RENAMED]);
+  }, 120_000);
 });
+
+const CONFIRM_EMAIL = `export default async function confirmEmail(
+  _req: unknown,
+  res: { json: (body: unknown) => void },
+) {
+  res.json({ confirmed: true });
+}
+`;
+
+const DEFAULT_BASE = `import axios from "axios";
+
+export function configureApi() {
+  axios.defaults.baseURL = process.env.SHOP_API_URL;
+}
+`;
+
+// The shop serves neither path itself: the first goes to a route file
+// suss does not read, and the second to the host the deployment sets.
+const ACCOUNT_CALLS = `import axios from "axios";
+
+export async function confirmEmail(token: string) {
+  const res = await fetch("/api/auth/confirm-email", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+  return res.ok;
+}
+
+export async function listMembers() {
+  return (await axios.get("/api/members")).data;
+}
+`;
 
 const SHOP_BASE_FILE = `export const SHOP_BASE = process.env.SHOP_API_URL ?? "";
 `;

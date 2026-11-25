@@ -431,6 +431,71 @@ async function rubyMarks(): Promise<string[]> {
   return marksOf(summaries);
 }
 
+const DEFAULTS_SETUP = `
+  import axios from "axios";
+
+  export function configure() {
+    axios.defaults.baseURL = process.env.RELAY_BASE;
+  }
+`;
+
+const DEFAULTS_CALLS = `
+  import axios from "axios";
+
+  const own = axios.create({ baseURL: "/api" });
+  const bare = axios.create({ timeout: 5000 });
+
+  export function teams() {
+    return axios.get("/teams");
+  }
+
+  export function members() {
+    return bare.get("/members");
+  }
+
+  export function invites() {
+    return axios.get("https://hooks.example.com/invites");
+  }
+
+  export function projects() {
+    return own.get("/projects");
+  }
+`;
+
+/** The marks on the calls in DEFAULTS_CALLS, with the file that writes axios's default base or without it. */
+async function defaultsMarks(written: boolean): Promise<string[]> {
+  const project = createTestProject();
+  if (written) {
+    project.createSourceFile("/setup.ts", DEFAULTS_SETUP);
+  }
+  project.createSourceFile("/calls.ts", DEFAULTS_CALLS);
+  const adapter = createTypeScriptAdapter({
+    project,
+    frameworks: [axiosPack()],
+  });
+  return marksOf(await adapter.extractAll());
+}
+
+describe("a base the program writes to a library's defaults", () => {
+  it("marks each relative call on a client with no base of its own, in every file", async () => {
+    expect(await defaultsMarks(true)).toEqual([
+      "/api/projects read in full",
+      "/invites read in full",
+      "/members part unread",
+      "/teams part unread",
+    ]);
+  });
+
+  it("marks nothing when the program does not write it", async () => {
+    expect(await defaultsMarks(false)).toEqual([
+      "/api/projects read in full",
+      "/invites read in full",
+      "/members read in full",
+      "/teams read in full",
+    ]);
+  });
+});
+
 describe("a URL whose base the deployment sets", () => {
   it("is marked in TypeScript through every way the base reaches the call, and a relative URL is not", async () => {
     expect(await typescriptMarks()).toEqual(SHARED_MARKS);

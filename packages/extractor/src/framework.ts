@@ -2299,6 +2299,13 @@ export type RequestRecognizer<TCtx = unknown> = ((
   readonly response: ClientResponse;
   /** The methods table's entries in the order the pack wrote them, which a claim's `read.entry` is one of. */
   readonly entries: readonly string[];
+  /**
+   * The path of properties on the client where the library keeps a base
+   * URL for every client built without one, `["defaults", "baseURL"]`
+   * for axios. An adapter notes the program's writes to it, which
+   * `CallOps.propertyWrites` gives back.
+   */
+  readonly defaultBase?: readonly string[];
 };
 
 /**

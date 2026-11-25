@@ -145,6 +145,7 @@ export function factSourceFor(
       at(key, ops, (node) => noteValueNode(withNode(ops, node), node)),
     read: (key) => at(key, undefined, access.state),
     writtenAs: (key) => at(key, null, (node) => keyOf(resolve(node))),
+    propertyWritesOf: (path) => store.watchedWritesThrough(path),
     anchorCalls: (key, origin) =>
       at(key, [], (node) =>
         store

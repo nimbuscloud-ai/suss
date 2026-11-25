@@ -391,6 +391,13 @@ exitCall(r)                 r ends the process, as a pack's exit
 exitCodeWrite(x)            x is assigned to where a pack says the exit
                             code goes, as in process.exitCode = x. The
                             store reads it the same way (TypeScript)
+writesThrough(o, p)         an assignment's target is the dotted path p
+                            read off o, a member read keyed as the value
+                            it is: o is axios.defaults in
+                            axios.defaults.baseURL = url, for the path
+                            defaults.baseURL a client pack watches. The
+                            store reads it, and no rule does
+                            (TypeScript)
 ```
 
 Classes:

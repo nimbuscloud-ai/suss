@@ -315,14 +315,30 @@ interface EnvironmentAsked {
   reached: Map<string, Set<string>>;
 }
 
+/** A write to a watched path: the member read it is made through, and the file it is in. */
+interface WatchedWrite {
+  read: string;
+  file: string;
+}
+
 /**
  * What the packs say about the process: the streams it writes to, the
  * calls that end it, and where its exit code is assigned. An exit call
- * is whatever an exit terminal a pack declares matches by name.
+ * is whatever an exit terminal a pack declares matches by name. Beside
+ * those, the default base URL each client library keeps, whose writes
+ * the walk notes.
  */
 export function runtimeSpellingsOf(
   packs: readonly PatternPack[],
 ): RuntimeSpellings {
+  const defaultBases = new Map<string, readonly string[]>();
+  for (const { defaultBase } of packs.flatMap(
+    (pack) => pack.requestRecognizers ?? [],
+  )) {
+    if (defaultBase !== undefined) {
+      defaultBases.set(defaultBase.join("."), defaultBase);
+    }
+  }
   return {
     streamObjects: packs.flatMap((pack) => pack.streamObjects ?? []),
     exitCalls: packs.flatMap((pack) =>
@@ -333,6 +349,7 @@ export function runtimeSpellingsOf(
       ),
     ),
     exitCodeWrites: packs.flatMap((pack) => pack.exitCodeWrites ?? []),
+    watchedWrites: [...defaultBases.values()],
   };
 }
 
@@ -416,6 +433,8 @@ export class ResolutionStore {
   private readonly callsStated = new Set<string>();
   /** Containers whose writes `dispatchedFunctions` has already stated. */
   private readonly containersRead = new Set<string>();
+  /** See `readWatchedWrites`, by the path written with dots. */
+  private watched: ReadonlyMap<string, readonly WatchedWrite[]> | null = null;
 
   private stale = true;
 
@@ -1446,6 +1465,66 @@ export class ResolutionStore {
       this.forgetQuery();
     }
     return [...found.values()];
+  }
+
+  /**
+   * Find every write to a path the packs watch, once per run and before
+   * the walk asks about one. Only a file whose text spells one of the
+   * paths is read, and every call in it is stated, so a write inside a
+   * function or a callback is found as well as one at the top level. A
+   * test's setup writes for the test alone, so test files are left out.
+   */
+  readWatchedWrites(sourceFiles: readonly SourceFile[]): void {
+    if (this.watched !== null) {
+      return;
+    }
+    const found = new Map<string, WatchedWrite[]>();
+    this.watched = found;
+    const spellings = this.table.watchedWrites.map((path) => path.join("."));
+    if (spellings.length === 0) {
+      return;
+    }
+    const siteFiles = new Set(
+      sourceFiles.filter((one) => {
+        const production = !one.isInNodeModules() && !inTestFile(one);
+        const text = production ? one.getFullText() : "";
+        return spellings.some((spelling) => text.includes(spelling));
+      }),
+    );
+    for (const sourceFile of siteFiles) {
+      this.stateCallsIn(sourceFile);
+    }
+    for (const [read, path] of this.db.facts("writesThrough")) {
+      const sourceFile = this.table.byId.get(String(read))?.getSourceFile();
+      if (sourceFile === undefined || !siteFiles.has(sourceFile)) {
+        continue;
+      }
+      const writes = found.get(String(path)) ?? [];
+      writes.push({ read: String(read), file: sourceFile.getFilePath() });
+      found.set(String(path), writes);
+    }
+  }
+
+  /**
+   * The keys of the member reads the program writes `path` through. A
+   * walk that asks depends on each file that writes it, so a change to
+   * one reads the walk again.
+   */
+  watchedWritesThrough(path: readonly string[]): readonly string[] {
+    const writes = this.watched?.get(path.join(".")) ?? [];
+    for (const write of writes) {
+      recordFileDependency(write.file);
+    }
+    return writes.map((write) => write.read);
+  }
+
+  /** The files that write a path the packs watch. */
+  filesWritingWatched(): ReadonlySet<string> {
+    return new Set(
+      [...(this.watched?.values() ?? [])].flatMap((writes) =>
+        writes.map((write) => write.file),
+      ),
+    );
   }
 
   /** The values that end up as the exit code: an exit call's first argument, or what is assigned to the code. */

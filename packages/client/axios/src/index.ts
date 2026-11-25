@@ -148,7 +148,12 @@ export const AXIOS = httpRequests({
 })
   .methods(METHODS)
   .calls(CONFIG_CALL)
-  .baseUrl({ at: 0, property: ["baseURL"], joins: "appended" })
+  .baseUrl({
+    at: 0,
+    property: ["baseURL"],
+    joins: "appended",
+    defaults: ["defaults", "baseURL"],
+  })
   .response(CHAIN_RESPONSE)
   .example('axios.get("https://api.example.com/orders")');
 

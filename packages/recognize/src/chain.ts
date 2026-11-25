@@ -1341,6 +1341,14 @@ export interface BaseUrlLink {
    * host. Any other library sends it to the host after the `//`.
    */
   readonly schemeRelative?: "path";
+  /**
+   * Where the library keeps a base URL that a client built without one
+   * of its own takes, as a path of properties on the client:
+   * `["defaults", "baseURL"]` for axios, which `axios.defaults.baseURL =
+   * url` sets. When the program writes it, a relative call on such a
+   * client goes wherever the deployment points it.
+   */
+  readonly defaults?: readonly string[];
 }
 
 /**

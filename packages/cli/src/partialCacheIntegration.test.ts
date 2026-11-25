@@ -199,6 +199,45 @@ describe("a partial run of the extraction cache", () => {
     expect(recordedFiles()).not.toContain(path.join(tmpDir, "src", "audit.ts"));
     expect(partial.written).toBe(fresh.written);
   });
+
+  it("reads an unchanged file's call again once another file writes the library's default base, and once it stops", () => {
+    configProject();
+    const unwritten = [
+      'import axios from "axios";',
+      "",
+      "export function configure(): void {}",
+    ];
+    write("src/setup.ts", unwritten);
+    write("src/teams.ts", [
+      'import axios from "axios";',
+      "",
+      "export function teams() {",
+      '  return axios.get("/teams");',
+      "}",
+    ]);
+    const axios = ["-f", "axios"];
+    extract("cold", axios);
+
+    write("src/setup.ts", [
+      'import axios from "axios";',
+      "",
+      "export function configure(): void {",
+      "  axios.defaults.baseURL = process.env.TEAMS_API_URL;",
+      "}",
+    ]);
+    const written = extract("written", axios);
+    const writtenFresh = extract("written-fresh", [...axios, "--no-cache"]);
+
+    expect(written.written).toContain('"urlPartUnread":true');
+    expect(written.written).toBe(writtenFresh.written);
+
+    write("src/setup.ts", unwritten);
+    const removed = extract("removed", axios);
+    const removedFresh = extract("removed-fresh", [...axios, "--no-cache"]);
+
+    expect(removed.written).not.toContain('"urlPartUnread"');
+    expect(removed.written).toBe(removedFresh.written);
+  });
 });
 
 function names(run: Run): string[] {

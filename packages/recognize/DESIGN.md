@@ -228,6 +228,7 @@ under `ops`.
 | `receiverValue()` | the value the method is called on as the source writes it, `db` in `db.query(User)` and `Orders.query()` in `Orders.query().first()`, with no name followed (optional) |
 | `chainedOn()` | the call made on what this call returns, `.set(v)` for `db.update(t)` in `db.update(t).set(v)`, or null when the result is stored, returned or passed instead (optional) |
 | `member()` | the member read the call is made on, `db.user` in `db.user.findMany()`, as ops whose method is the member's name (optional) |
+| `propertyWrites(path)` | the member reads the program writes the property at the end of `path` through, anywhere in the run, `axios.defaults` for `axios.defaults.baseURL = url`, each as ops whose method is `path[0]`. Only a path a request recognizer's `defaultBase` gives is noted (optional) |
 | `file()` | the path of the file the call is in (optional) |
 | `argument(index)` | the call that argument is, as ops of its own |
 | `callee()` | the call the callee itself was written as |
@@ -300,6 +301,7 @@ languages, and the pg and BigQuery Ruby packs list `ruby`.
 | op | read from |
 |---|---|
 | `method()`, `calleeText()` | `call(r, c)`, then `readsProperty(c, o, n)` for the method, with the adapter's `memberName` turning a class's own spelling back into the plain name, or the source text of `c` |
+| `propertyWrites(path)` | the adapter's `propertyWritesOf`, each key read as `member()` reads one. TypeScript states a `writesThrough(read, path)` row for each write whose target ends with a path the packs watch, from the files whose text spells it; Python and Ruby state none |
 | `argumentCount()`, `argument(k)`, `nameAt(k)`, `valueAt(k)` | `callArg(r, k, a)`, and `callArgCount` where an adapter states it |
 | `receiver()` | a name or a field followed to what it was written as, through the adapter's `writtenAs`, and then through a call into a project function to what it returns |
 | `callee()`, `argument(k)` | a name followed to what it was written as, through the adapter's `writtenAs`. A field is not followed, since the readers of a command object rely on reading a name alone |

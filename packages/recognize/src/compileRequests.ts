@@ -87,9 +87,11 @@ export function compileRequests(
       ? null
       : claimsAt(requesting, matched, ops);
   };
+  const defaultBase = requesting.base?.defaults;
   return Object.assign(hook, {
     response: requesting.response,
     entries: Object.keys(requesting.table),
+    ...(defaultBase === undefined ? {} : { defaultBase }),
   });
 }
 
@@ -324,8 +326,11 @@ function readingOf(
     }) ?? meaning.redirects;
   const stated = statedRequest(sent, own, base);
   // An absolute URL replaces the base, so only a relative one leaves part unread.
+  const baseUnread =
+    based.unread ||
+    (own.host === undefined && takesWrittenDefault(requesting, base, ops));
   const partUnread =
-    own.tookDefault === true || (based.unread && own.host === undefined);
+    own.tookDefault === true || (baseUnread && own.host === undefined);
   const claim: RequestClaim = {
     method: sent.method,
     path: placed.path,
@@ -339,7 +344,7 @@ function readingOf(
         ? { options: placeOf(meaning.options) }
         : {}),
       ...(base === null ? {} : { base: { ...base.url, joins: base.joins } }),
-      ...(based.unread ? { baseUnread: true as const } : {}),
+      ...(baseUnread ? { baseUnread: true as const } : {}),
       ...(stated === undefined ? {} : { stated }),
     },
   };
@@ -348,6 +353,26 @@ function readingOf(
     methodOpen: sent.methodOpen,
     methodGuessed: sent.methodGuessed,
   };
+}
+
+/**
+ * Whether the call's client takes a base the program writes to the
+ * library's defaults, as `axios.defaults.baseURL = url` sets one. The
+ * client was built with no base of its own, and the write is made
+ * through something the client comes from, such as the library itself.
+ */
+function takesWrittenDefault(
+  requesting: Requesting,
+  base: Base | null,
+  ops: CallOps,
+): boolean {
+  const path = requesting.base?.defaults;
+  if (path === undefined || base !== null) {
+    return false;
+  }
+  return (ops.propertyWrites?.(path) ?? []).some((write) =>
+    receiverFrom(requesting.client, write),
+  );
 }
 
 /** The values the request's method and host came from, or undefined when the call states neither as a value. */

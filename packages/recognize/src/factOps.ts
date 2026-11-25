@@ -201,6 +201,12 @@ class FactCall implements CallOps {
     return this.calleeRead?.name ?? null;
   }
 
+  propertyWrites(path: readonly string[]): readonly CallOps[] {
+    return (this.source.propertyWritesOf?.(path) ?? []).flatMap(
+      (read) => memberOpsAt(read, this.source) ?? [],
+    );
+  }
+
   calleeText(): string {
     return this.source.textOf(this.calleeKey);
   }

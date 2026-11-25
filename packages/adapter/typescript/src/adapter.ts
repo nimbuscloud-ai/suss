@@ -3236,6 +3236,10 @@ function readWalkedFiles(reading: FileReading): FilesRead {
   // filled it.
   resolution.notePossibleCallers(packsByFile.keys());
 
+  // A write to a library's default base changes calls in files that
+  // never import the one making it.
+  timer.time("watchedWrites", () => resolution.readWatchedWrites(sourceFiles));
+
   // A route on a mounted router needs the mount's prefix folded into
   // its path before the walk below builds its binding.
   const mountPrefixes = timer.time("mountPrefix", () =>
@@ -3265,7 +3269,7 @@ function readWalkedFiles(reading: FileReading): FilesRead {
   // dependencies unchanged, every consumed mount prefix resolving
   // the same against this run's index, and the same packs applying.
   const validRoots = new Set<string>();
-  if (plan !== null) {
+  if (plan !== null && !changesWatchedWrite(plan, resolution)) {
     const packNamesByPath = new Map<string, string>();
     for (const [sf, packs] of packsByFile) {
       packNamesByPath.set(
@@ -3516,6 +3520,21 @@ function readWalkedFiles(reading: FileReading): FilesRead {
     closureFacts,
     reusedOwners: merged.reusedOwners,
   };
+}
+
+/**
+ * Whether a file that changed since the stored run now writes a
+ * library's default base, such as `axios.defaults.baseURL`. Such a write
+ * changes a call in a file that never imports the one making it, so no
+ * stored walk can be kept. A write taken away is caught by the stored
+ * walks' own dependencies on the file that made it.
+ */
+function changesWatchedWrite(
+  plan: PartialPlan<TsCacheMeta, ScanRecord>,
+  resolution: ResolutionStore,
+): boolean {
+  const writing = resolution.filesWritingWatched();
+  return [...plan.changed].some((file) => writing.has(file));
 }
 
 /**

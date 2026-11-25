@@ -61,6 +61,7 @@ export function deferredCallOps(
     site: () => nodeId(call),
     file: () => call.getSourceFile().getFilePath(),
     mentions: (word) => fileMentions(call.getSourceFile(), word),
+    propertyWrites: (path) => stated().propertyWrites?.(path) ?? [],
     receiverIsFrom: (origin) => stated().receiverIsFrom(origin),
     receiverSettledFrom: (origin) => stated().receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => stated().receiverGlobal?.(paths),

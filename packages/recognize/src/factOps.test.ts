@@ -132,6 +132,21 @@ describe("factCallOps", () => {
     expect(opsAt("send").method()).toBeNull();
   });
 
+  it("gives each member read the adapter says a path is written through, as ops asked where its object came from", () => {
+    const writes = source({
+      propertyWritesOf: (path) =>
+        path.join(".") === "set.ttl" ? ["client.set"] : [],
+    });
+    const [write, ...more] =
+      opsAt("send", writes).propertyWrites?.(["set", "ttl"]) ?? [];
+
+    expect(more).toEqual([]);
+    expect(write?.method()).toBe("set");
+    expect(write?.receiverIsFrom(constructedFrom("ioredis"))).toBe(true);
+    expect(opsAt("send", writes).propertyWrites?.(["other"])).toEqual([]);
+    expect(opsAt("send").propertyWrites?.(["set", "ttl"])).toEqual([]);
+  });
+
   it("follows a receiver kept in a name to the construction it was written as", () => {
     const receiver = opsAt("set").receiver();
 

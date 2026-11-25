@@ -950,6 +950,14 @@ export function lastValueWins<T extends { readonly key: string | null }>(
 export interface CallOps {
   /** Which method the call reaches for, spelled as the source spells it. */
   method(): string | null;
+  /**
+   * The member reads the program writes the property at the end of
+   * `path` through, anywhere in the run, each as ops whose callee is
+   * the read of `path[0]`: `axios.defaults` for `axios.defaults.baseURL
+   * = url` and `["defaults", "baseURL"]`. Only a path a request
+   * recognizer's `defaultBase` gives is noted. Unset finds none.
+   */
+  propertyWrites?(path: readonly string[]): readonly CallOps[];
   /** Whether the receiver came from where the origin says. */
   receiverIsFrom(origin: ReceiverOrigin): boolean;
   /**
@@ -1396,6 +1404,12 @@ export interface FactSource {
   read(key: string): void;
   /** The key a name or field was written as, by the adapter's own rules, or null. */
   writtenAs(key: string): string | null;
+  /**
+   * The keys of the member reads the program writes the property at the
+   * end of `path` through, as `CallOps.propertyWrites` says. Unset finds
+   * none.
+   */
+  propertyWritesOf?(path: readonly string[]): readonly string[];
   /** Every key a name or field was written as, for one written as more than one, where `writtenAs` gives none. Unset says nothing. */
   writtenAsEach?(key: string): readonly string[];
   /** The keys of the values in the collection a call returns, in order, or null when the rules settle the call on no one collection. Unset says nothing. */
