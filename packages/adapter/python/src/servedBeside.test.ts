@@ -195,6 +195,7 @@ describe("what a Python framework serves beside its routes", () => {
       );
 
     expect(await at("app = FastAPI(docs_url=None)")).toEqual([]);
+    expect(await at('app = FastAPI(docs_url="")')).toEqual([]);
     expect(await at('app = FastAPI(docs_url="/help")')).toEqual([
       "page GET /help",
     ]);
@@ -254,6 +255,37 @@ describe("what a Python framework serves beside its routes", () => {
       "unread * any",
       "middleware * any",
     ]);
+  });
+
+  it("lists middleware that may send something other than what its continuation returned", async () => {
+    const middleware = async (body: readonly string[]): Promise<string[]> =>
+      (
+        await besideOf(fastapiPack, [
+          ...FASTAPI_APP,
+          "",
+          "from fastapi.responses import FileResponse",
+          "",
+          '@app.middleware("http")',
+          "async def fallback(request, call_next):",
+          ...body,
+        ])
+      ).filter((entry) => entry.startsWith("middleware"));
+
+    expect(
+      await middleware([
+        "    response = await call_next(request)",
+        "    if response.status_code == 404:",
+        '        return FileResponse("index.html")',
+        "    return response",
+      ]),
+    ).toEqual(["middleware * any"]);
+    expect(
+      await middleware([
+        "    response = await call_next(request)",
+        '    response.headers["x-served-by"] = "shop"',
+        "    return response",
+      ]),
+    ).toEqual([]);
   });
 
   it("writes nothing for a pack that states nothing, or that recognized no route", async () => {

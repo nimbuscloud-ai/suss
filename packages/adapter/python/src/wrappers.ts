@@ -42,7 +42,11 @@ import {
 } from "./discovery.js";
 import { factSourceOf } from "./factSource.js";
 import { nameKeyIn } from "./facts/values.js";
-import { bodyTerminals, enumerateBodyBranches } from "./paths/bodyBranches.js";
+import {
+  bodyTerminals,
+  enumerateBodyBranches,
+  returnStatements,
+} from "./paths/bodyBranches.js";
 import {
   bodyCalls,
   enclosingStatement,
@@ -109,6 +113,12 @@ export interface RouteWrapperQuery {
 interface Registered {
   reference: WrapperReference;
   form: PyWrapperForm;
+}
+
+/** A middleware or an error handler registered on the app, and whether it may replace the response its continuation returned. */
+export interface AppWrapper {
+  reference: WrapperReference;
+  mayReplaceResponse: boolean;
 }
 
 /**
@@ -188,6 +198,8 @@ export class PythonWrapperIndex {
     { file: string; names: string[]; declaresSource: boolean }
   >();
   private readonly unitsByFile = new Map<string, RawCodeStructure[]>();
+  /** The wrapper references whose middleware may send something other than what its continuation returned. */
+  private readonly replacing = new Set<string>();
   /** By pattern and router key: whether a form registers on that router for its own routes. */
   private readonly routersAsked = new Map<
     PythonDiscoveryPattern,
@@ -310,6 +322,9 @@ export class PythonWrapperIndex {
       name: target.name,
       ...(isThrowForm(declared.form) ? { onThrow: true } : {}),
     };
+    if (mayReplaceResponse(target.node, declared.form, this.options.facts)) {
+      this.replacing.add(referenceKey(reference));
+    }
     if (declared.form.type === "dependency") {
       this.dependencyParameterTable.set(referenceKey(reference), {
         file: target.file.file,
@@ -328,9 +343,16 @@ export class PythonWrapperIndex {
    * decorator. The library runs them for a request no route matches too,
    * where a dependency runs only once a route has matched.
    */
-  decoratedOnApp(pack: string): WrapperReference[] {
-    return (this.everyRoute.get(pack) ?? []).flatMap((registered) =>
-      registered.form.type === "decoratedWrapper" ? [registered.reference] : [],
+  decoratedOnApp(pack: string): AppWrapper[] {
+    return (this.everyRoute.get(pack) ?? []).flatMap(({ form, reference }) =>
+      form.type === "decoratedWrapper"
+        ? [
+            {
+              reference,
+              mayReplaceResponse: this.replacing.has(referenceKey(reference)),
+            },
+          ]
+        : [],
     );
   }
 
@@ -1258,6 +1280,43 @@ function continuationStatements(
       : (field(param, "name")?.text ??
         (param.type === "identifier" ? param.text : null));
   return continuation === null ? [] : callsThrough(node, continuation, facts);
+}
+
+/**
+ * Whether a middleware may send something other than what its
+ * continuation returned. Its unit stops at the call, so a `return` after
+ * it of anything else, such as a page sent in place of a 404, is unread.
+ */
+function mayReplaceResponse(
+  node: PyNode,
+  form: PyWrapperForm,
+  facts: Database | undefined,
+): boolean {
+  const calls = continuationStatements(node, form, facts);
+  const first = calls[0];
+  if (first === undefined) {
+    return false;
+  }
+  const handedBack = new Set(calls.flatMap(resultName));
+  return returnStatements(field(node, "body")).some(
+    (statement) =>
+      spanOf(statement).start > spanOf(first).start &&
+      !calls.some((call) => call.id === statement.id) &&
+      !returnsName(statement, handedBack),
+  );
+}
+
+/** The name a statement gives the continuation's result, `response` in `response = await call_next(request)`. */
+function resultName(statement: PyNode): string[] {
+  const written =
+    statement.type === "expression_statement" ? statement.namedChild(0) : null;
+  const left = written?.type === "assignment" ? field(written, "left") : null;
+  return left?.type === "identifier" ? [left.text] : [];
+}
+
+function returnsName(statement: PyNode, names: ReadonlySet<string>): boolean {
+  const value = statement.namedChild(0);
+  return value?.type === "identifier" && names.has(value.text);
 }
 
 /** The statements in a function's body that call the name `callee`. */

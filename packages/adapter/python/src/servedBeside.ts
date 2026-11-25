@@ -226,7 +226,8 @@ function builtInEntries(
     builtIn.keyword === undefined
       ? builtIn.path
       : keywordText(at.call, builtIn.keyword, builtIn.path);
-  if (written === false) {
+  // Both libraries test the keyword for truth, so an empty path turns it off.
+  if (written === false || written === "") {
     return [];
   }
   const methods = [...builtIn.methods];
@@ -541,10 +542,8 @@ function unfollowedEntries(
 }
 
 /**
- * Each middleware or error handler a decorator registers on the app
- * that responds to a request itself with anything but an error status.
- * The library runs it whether or not a route matches, so it may serve a
- * path no route does.
+ * Each app-wide middleware or error handler that responds itself with anything but an error
+ * status, or may replace what its continuation returned. It runs whether or not a route matches.
  */
 function respondingWrappers(
   pack: PythonPack,
@@ -553,9 +552,14 @@ function respondingWrappers(
 ): ServedBesideEntry[] {
   const index = wrapperIndex(summaries);
   const files = new Map(run.files.map((file) => [file.displayPath, file.file]));
-  return run.wrappers.decoratedOnApp(pack.name).flatMap((reference) => {
+  return run.wrappers.decoratedOnApp(pack.name).flatMap((registered) => {
+    const { reference } = registered;
     const wrapper = wrapperFor(index, reference);
-    if (wrapper !== undefined && !respondsItself(wrapper)) {
+    if (
+      wrapper !== undefined &&
+      !registered.mayReplaceResponse &&
+      !respondsItself(wrapper)
+    ) {
       return [];
     }
     return [

@@ -624,7 +624,7 @@ What each server serves:
 
 | Part | Read from | Example |
 | --- | --- | --- |
-| `builtIn` | a keyword of the construction, the path when it is left out, nothing for `None` or `False` | FastAPI's `docs_url`, `/docs`; flask-restx's `doc`, under every prefix of the pack's routes |
+| `builtIn` | a keyword of the construction, the path when it is left out, nothing for `None`, `False` or an empty string | FastAPI's `docs_url`, `/docs`; flask-restx's `doc`, under every prefix of the pack's routes |
 | `staticFolder` | the folder keyword and the path keyword of the construction | Flask's `static_folder` and `static_url_path`, served at `/static` |
 | `unreadKeywords` | a keyword that hands the construction routes the pack does not read | `FastAPI(routes=[...])` |
 | `route` call | a route added by a call, at its path, for the methods it lists | `app.add_api_route("/health", f)`, `@app.route("/health")` |
@@ -634,7 +634,7 @@ What each server serves:
 
 A mount whose value the pack's route table reads as the carrier of a root, the blueprint a flask-restx `Api` is built on, adds nothing, since the table puts the root's routes under the same path.
 
-Two parts come from the run rather than the pack. A mount the route table could not follow, such as `include_router` of a router a library builds, serves everything under the path it is mounted at, or any path when that did not read. And a middleware, a `before_request` hook or an error handler registered on the app by a decorator runs whether or not a route matches, so one that responds itself with anything but a 4xx or 5xx status it states may serve any path.
+Two parts come from the run rather than the pack. A mount the route table could not follow, such as `include_router` of a router a library builds, serves everything under the path it is mounted at, or any path when that did not read. And a middleware, a `before_request` hook or an error handler registered on the app by a decorator runs whether or not a route matches, so one that responds itself with anything but a 4xx or 5xx status it states may serve any path. So may a middleware that sends something other than what its continuation returned, such as a page in place of a 404, since its unit stops reading at the call.
 
 Not read yet:
 
