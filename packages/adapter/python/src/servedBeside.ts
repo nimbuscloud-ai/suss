@@ -368,7 +368,14 @@ function methodsOf(serving: PyRouteCall, call: CallOps): string[] | null {
     PyRouteCall["methods"],
     readonly string[]
   >;
-  const listed = pickedFrom(call, [pick]);
+  return methodsListed(pickedFrom(call, [pick]), unstated);
+}
+
+/** The methods a list gives, upper-cased, the unstated ones when the call passes none, or null for every method. */
+function methodsListed(
+  listed: ValueOps | undefined,
+  unstated: readonly string[] | undefined,
+): string[] | null {
   if (listed === undefined || listed.nothing?.() === true) {
     return unstated === undefined ? null : [...unstated];
   }
@@ -414,10 +421,12 @@ function mountEntries(serving: PyMountCall, at: CallSite): ServedBesideEntry[] {
 
 /** The call that built the value a mount mounts, or null when it comes to none. */
 function mountedValue(serving: PyMountCall, call: CallOps): CallOps | null {
-  return (
-    pickedFrom(call, serving.app)?.asCall?.({ follow: "namesAndFields" }) ??
-    null
-  );
+  return builtBy(pickedFrom(call, serving.app));
+}
+
+/** The call a value was built by, through names and fields, or null when it comes to none. */
+function builtBy(value: ValueOps | undefined): CallOps | null {
+  return value?.asCall?.({ follow: "namesAndFields" }) ?? null;
 }
 
 /** The path a mount puts its value under: the one it states, else the one the value's construction states, else the root. Null when it does not read. */
@@ -615,9 +624,7 @@ function carriersOf(pack: PythonPack, calls: readonly FileCall[]): Set<string> {
           call.method() === carrier.handedBy &&
           call.receiverIsFrom(root));
       const site = handing
-        ? pickedFrom(call, [carrier.at])
-            ?.asCall?.({ follow: "namesAndFields" })
-            ?.site?.()
+        ? builtBy(pickedFrom(call, [carrier.at]))?.site?.()
         : undefined;
       if (site !== undefined) {
         sites.add(site);
@@ -701,7 +708,10 @@ function pathPicked(
   call: CallOps,
   picks: readonly EntryPick[],
 ): string | null | undefined {
-  const value = pickedFrom(call, picks);
+  return pathWritten(pickedFrom(call, picks));
+}
+
+function pathWritten(value: ValueOps | undefined): string | null | undefined {
   if (value === undefined || value.nothing?.() === true) {
     return undefined;
   }
