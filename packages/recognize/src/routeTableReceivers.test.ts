@@ -14,6 +14,7 @@ import type {
   DecoratedDefinition,
   ModuleOps,
   RouteOutcome,
+  RouteSet,
   RouteTableDeclaration,
   RouteTableMatch,
   ScopesRole,
@@ -251,12 +252,19 @@ function compose(
   files: readonly FileSpec[],
   table: RouteTableDeclaration = TABLE,
 ): readonly RouteOutcome[] {
+  return composedSet(files, table).outcomes;
+}
+
+function composedSet(
+  files: readonly FileSpec[],
+  table: RouteTableDeclaration = TABLE,
+): RouteSet {
   return composeRoutes(table, {
     files: files.map(file),
     ownerOf: () => ({ table: "app" }),
     include: () => null,
     naming: { singular: (word) => word, plural: (word) => word },
-  }).outcomes;
+  });
 }
 
 /** Each outcome on a line: a route by its method, path and handler, and an unread one by its reason. */
@@ -897,6 +905,27 @@ describe("a route a table whose entries are made on a value claims no path for",
         ]),
       ),
     ).toEqual([]);
+  });
+
+  it("records a mount of a value no role reads as unread at the path it puts the value under", () => {
+    const root = app();
+    const items = router(path("/items"));
+    const gaps = composedSet([
+      {
+        path: MAIN,
+        calls: [
+          root,
+          items,
+          include(root, ref(items), path("/api")),
+          include(root, ref(call({ name: "Other" })), path("/auth")),
+          include(root, opaque("x")),
+          include(root, unlistable(), path("/plugins")),
+          include(root, ref(call({ name: "Other" })), opaque("prefix")),
+        ],
+      },
+    ]).gaps.map((gap) => (gap.kind === "unread" ? (gap.at ?? null) : gap));
+
+    expect(gaps).toEqual(["/auth", "", "/plugins", null]);
   });
 });
 
