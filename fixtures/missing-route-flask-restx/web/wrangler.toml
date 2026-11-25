@@ -6,3 +6,4 @@ compatibility_date = "2026-01-01"
 
 [vars]
 SHOP_API_URL = "http://shop.internal"
+PAYMENTS_API_URL = "https://api.payments-provider.com"

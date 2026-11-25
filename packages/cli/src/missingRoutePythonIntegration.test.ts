@@ -233,7 +233,7 @@ describe("a flask-restx app whose Worker client calls a renamed route", () => {
   const storefront = (app: string): string =>
     path.join(app, "web", "src", "storefront.ts");
 
-  it("reports the call once, and none of the calls the static folder, a blueprint, the Swagger document or a path route serves", async () => {
+  it("reports the call once, and none of the calls the static folder, a blueprint, the Swagger document, a path route or a public host serves", async () => {
     const findings = await flaskFindings(
       copyOf("missing-route-flask-restx", "flask"),
     );

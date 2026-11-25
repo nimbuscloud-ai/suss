@@ -23,6 +23,14 @@ export async function loadSpec() {
   return res.json();
 }
 
+export async function charge(amount: number) {
+  const res = await fetch(`${process.env.PAYMENTS_API_URL}/v1/charges`, {
+    method: "POST",
+    body: JSON.stringify({ amount }),
+  });
+  return res.json();
+}
+
 export async function loadExport(id: string) {
   const res = await fetch(`${process.env.SHOP_API_URL}/api/files/exports/${id}/report.csv`);
   return res.json();

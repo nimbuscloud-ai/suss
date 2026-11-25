@@ -23,9 +23,12 @@ import {
   bucketsMeet,
   compareRanks,
   groundBinding,
+  hostCanBeOwn,
   isCatchAll,
   methodsAgree,
+  nameReference,
   normalizePath,
+  originHost,
 } from "@suss/ir-core";
 
 import { isContractDocument } from "../contract/declaredContract.js";
@@ -37,6 +40,7 @@ import type {
   Finding,
   ServedBesideEntry,
 } from "@suss/behavioral-ir";
+import type { Deployment } from "@suss/ir-core";
 
 /** A call suss read in full whose service it could not settle, so nothing judged it. */
 export interface UncheckedRoute {
@@ -95,12 +99,13 @@ export function checkUnknownRoutes(
     ) {
       continue;
     }
-    const grounded = groundBinding(binding, deployment(consumer));
+    const deployed = deployment(consumer);
+    const grounded = groundBinding(binding, deployed);
     const call = fullyReadCall(grounded, consumer);
     if (call === null) {
       continue;
     }
-    const target = targetOf(consumer, binding, call, services);
+    const target = targetOf(consumer, binding, call, services, deployed);
     if (target.kind === "unsettled") {
       unchecked.push({
         consumer: summaryIdentifier(consumer),
@@ -178,13 +183,15 @@ function segmentFullyRead(segment: string): boolean {
  * code makes the call, and a base URL the deployment fills in goes to
  * the one service that serves routes under the path the base gives. A
  * host written out is another company's API, or a service of this run
- * that nothing ties to a workspace, which leaves the call unsettled.
+ * that nothing ties to a workspace, which leaves the call unsettled, and
+ * so does a public host the deployment sets the base to.
  */
 function targetOf(
   consumer: BehavioralSummary,
   written: BoundaryBinding,
   call: RestCall,
   services: ReadonlyMap<string, Service>,
+  deployed: Deployment,
 ): Target {
   const semantics = written.semantics;
   if (semantics.name !== "rest" || call.host !== undefined) {
@@ -197,9 +204,24 @@ function targetOf(
     };
   }
   const base = OPENING_HOLE.exec(semantics.path ?? "");
-  if (base !== null) {
-    return serviceUnderBase(call.path, base[1] ?? "", services);
+  if (base === null) {
+    return ownService(consumer, services);
   }
+  const host = publicHostDeployed(written, deployed);
+  if (host !== null) {
+    return {
+      kind: "unsettled",
+      reason: `the deployment sets the base URL to the public host ${host}, which may be another company's API, and nothing says a service in this run serves it`,
+    };
+  }
+  return serviceUnderBase(call.path, base[1] ?? "", services);
+}
+
+/** A relative call goes to the service whose code makes it, when that code serves routes. */
+function ownService(
+  consumer: BehavioralSummary,
+  services: ReadonlyMap<string, Service>,
+): Target {
   const own = services.get(workspaceOf(consumer));
   if (own === undefined || own.routes.length === 0) {
     return {
@@ -209,6 +231,21 @@ function targetOf(
     };
   }
   return { kind: "service", service: own };
+}
+
+/**
+ * The host the deployment sets the call's base URL to, when that host
+ * cannot be the project's own. A private name, such as `shop.internal`
+ * or a container's, is one of the run's services or nothing at all.
+ */
+function publicHostDeployed(
+  written: BoundaryBinding,
+  deployed: Deployment,
+): string | null {
+  const reference = nameReference(written);
+  const base = reference === null ? null : deployed.setTo(reference);
+  const host = base === null ? undefined : originHost(base);
+  return host === undefined || hostCanBeOwn(host) ? null : host;
 }
 
 /**
