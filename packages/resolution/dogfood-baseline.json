@@ -1,7 +1,7 @@
 {
   "name": "@suss/resolution",
-  "exports": 112,
-  "internal": 104,
-  "consumers": 213,
+  "exports": 114,
+  "internal": 106,
+  "consumers": 231,
   "unfollowedCalls": 38
 }

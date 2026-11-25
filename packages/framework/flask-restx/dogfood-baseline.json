@@ -2,6 +2,6 @@
   "name": "@suss/framework-flask-restx",
   "exports": 5,
   "internal": 0,
-  "consumers": 11,
+  "consumers": 13,
   "unfollowedCalls": 0
 }
