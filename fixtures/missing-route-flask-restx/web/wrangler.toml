@@ -1,0 +1,8 @@
+# The storefront Worker, which calls the shop's Flask app on the private network.
+
+name = "storefront"
+main = "src/storefront.ts"
+compatibility_date = "2026-01-01"
+
+[vars]
+SHOP_API_URL = "http://shop.internal"
