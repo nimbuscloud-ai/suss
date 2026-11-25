@@ -19,4 +19,4 @@ Most unpaired calls are not missing routes. On a public Next.js app, a check lea
 ## Gotchas
 
 - **The provider side repeats the consumer.** There is no route to point at, and a finding has to name a provider. `target` on the finding gives the service, its route count and the routes nearby.
-- **A Ruby run labels no workspace.** Every Ruby summary is in the unnamed service, and a TypeScript client always has a workspace, so a relative call from a frontend in the same repository never reaches the Rails routes. A base URL the deployment sets can.
+- **A Ruby or Python run labels no workspace.** Every Ruby and Python summary is in the unnamed service, and a TypeScript client always has a workspace, so a relative call from a frontend in the same repository never reaches the Rails, FastAPI or flask-restx routes. A base URL the deployment sets can, from a Worker's `wrangler.toml` or a Lambda's `serverless.yml`.

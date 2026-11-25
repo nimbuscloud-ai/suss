@@ -91,6 +91,8 @@ servedBeside: {
 
 `pages` lists the files the framework serves a page from, each read for its path the way a route file is. `staticDirectories` lists the directories whose files are served at their own path. `config` says which config file to read, the keys whose function returns rules with a `source`, and the keys suss does not read, any of which makes every path uncertain. `middleware` says which file exports a matcher for the function that runs in front of the routes, and a file with no matcher covers every path. `servingCalls` lists the library functions whose result serves requests when the pack's mount method is handed it; a mount of anything else the pack cannot follow covers its prefix. The Next.js, Express and Rails packs state this. The adapter writes what it found on every route the pack recognized, under `metadata.servedBeside`.
 
+A `PythonPack` states the same under `servedBeside` as a list of `servers`: the app, a router or a blueprint, each with the paths it serves of its own accord, its static folder, and the calls on it that mount another app, add a route, add middleware or add an error handler. The FastAPI and flask-restx packs state this, and the Python adapter's DESIGN.md says how each part is read.
+
 ## `DiscoveryMatch` variants
 
 ### `registrationCall`
