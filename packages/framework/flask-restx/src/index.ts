@@ -15,6 +15,9 @@ import { z } from "zod";
 import { constructedFrom } from "@suss/recognize";
 
 import type {
+  PyNotFound,
+  PyServedBeside,
+  PyServingCall,
   PythonPack,
   PyWrapperForm,
   RouterUnreadWords,
@@ -26,7 +29,7 @@ import type { PackDeclaration } from "@suss/ir-core";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "2";
+const VERSION = "3";
 
 /**
  * The CLI checks a `-f flask-restx=config.json` file against this schema.
@@ -157,6 +160,140 @@ export function flaskRestxWrappers(
   ];
 }
 
+const PAGE_METHODS = ["GET", "HEAD"];
+
+/** The decorators Flask adds a view serving one method with, and that method. */
+const FLASK_SHORTCUTS: Record<string, string> = {
+  get: "GET",
+  post: "POST",
+  put: "PUT",
+  patch: "PATCH",
+  delete: "DELETE",
+};
+
+/** The routes a Flask app or blueprint adds as Flask itself does, which the route table does not read. */
+const FLASK_ROUTE_CALLS: Record<string, PyServingCall> = {
+  route: {
+    serves: "route",
+    path: [{ at: 0 }, { keyword: "rule" }],
+    methods: { pick: { keyword: "methods" }, unstated: ["GET"] },
+  },
+  // A view class lists its own methods, so one passed with none may serve any.
+  add_url_rule: {
+    serves: "route",
+    path: [{ at: 0 }, { keyword: "rule" }],
+    methods: { pick: { keyword: "methods" } },
+  },
+  ...Object.fromEntries(
+    Object.entries(FLASK_SHORTCUTS).map(([name, method]) => [
+      name,
+      {
+        serves: "route",
+        path: [{ at: 0 }, { keyword: "rule" }],
+        methods: [method],
+      } satisfies PyServingCall,
+    ]),
+  ),
+};
+
+/** A resource flask-restx adds by a call rather than a decorator, which the route table does not read. */
+const ADD_RESOURCE: Record<string, PyServingCall> = {
+  add_resource: {
+    serves: "route",
+    path: [{ at: 1 }],
+    methods: { pick: { keyword: "methods" } },
+  },
+};
+
+/** Werkzeug's not-found error, which Flask hands to a handler registered for its status or for any class it descends from. */
+const NOT_FOUND: PyNotFound = {
+  status: 404,
+  modules: ["werkzeug.exceptions", "werkzeug"],
+  ancestors: ["Exception", "BaseException"],
+};
+
+/**
+ * What a flask-restx app serves beside the resources the table reads.
+ * Flask serves the app's static folder and whatever its own `route` and
+ * the blueprints it registers serve, apart from the blueprint an `Api`
+ * is built on. flask-restx serves its Swagger UI and `swagger.json`
+ * under the prefix it gives the resources. A route added by a call on a
+ * blueprint or a namespace, and an error handler for the not-found
+ * error, may serve any path.
+ */
+export function flaskRestxServedBeside(
+  modules: readonly string[],
+): PyServedBeside {
+  return {
+    servers: [
+      {
+        made: constructedFrom({ from: ["flask"], named: ["Flask"] }),
+        paths: "asWritten",
+        staticFolder: {
+          folder: { keyword: "static_folder", default: "static" },
+          urlPath: "static_url_path",
+          positionalBefore: 1,
+          methods: PAGE_METHODS,
+        },
+        calls: {
+          ...FLASK_ROUTE_CALLS,
+          register_blueprint: {
+            serves: "mount",
+            at: [{ keyword: "url_prefix" }],
+            app: [{ at: 0 }, { keyword: "blueprint" }],
+            ownPath: [{ keyword: "url_prefix" }],
+            exceptCarriers: true,
+          },
+          register_error_handler: {
+            serves: "errorHandler",
+            handles: [{ at: 0 }, { keyword: "code_or_exception" }],
+            notFound: NOT_FOUND,
+          },
+        },
+      },
+      {
+        made: constructedFrom({ from: ["flask"], named: ["Blueprint"] }),
+        paths: "underPrefix",
+        servedWhereRegistered: true,
+        staticFolder: {
+          folder: { keyword: "static_folder", default: null },
+          urlPath: "static_url_path",
+          positionalBefore: 2,
+          methods: PAGE_METHODS,
+        },
+        calls: {
+          ...FLASK_ROUTE_CALLS,
+          register_blueprint: {
+            serves: "mount",
+            at: [{ keyword: "url_prefix" }],
+            app: [{ at: 0 }, { keyword: "blueprint" }],
+            exceptCarriers: true,
+          },
+          app_errorhandler: {
+            serves: "errorHandler",
+            handles: [{ at: 0 }, { keyword: "code" }],
+            notFound: NOT_FOUND,
+          },
+        },
+      },
+      {
+        made: constructedFrom({ from: modules, named: ["Api"] }),
+        paths: "underPrefix",
+        builtIn: [
+          { keyword: "doc", path: "/", methods: PAGE_METHODS, under: "routes" },
+          { path: "/swagger.json", methods: PAGE_METHODS, under: "routes" },
+        ],
+        calls: ADD_RESOURCE,
+      },
+      {
+        made: constructedFrom({ from: modules, named: ["Namespace"] }),
+        paths: "underPrefix",
+        calls: ADD_RESOURCE,
+      },
+    ],
+  };
+}
+
 /** Why a route the table found has no path, said of the namespace or the API it is declared on. */
 export const ROUTER_UNREAD: RouterUnreadWords = {
   unreached:
@@ -200,6 +337,7 @@ export function flaskRestxFramework(
     name: "flask-restx",
     version: VERSION,
     protocol: "http",
+    servedBeside: flaskRestxServedBeside(modules),
     ...(options.wrapperModules !== undefined
       ? { projectModules: options.wrapperModules }
       : {}),
