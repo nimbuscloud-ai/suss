@@ -593,8 +593,8 @@ export interface RawCodeStructure {
   failureDelivery?: FailureDelivery;
   /** Whether this client follows a redirect or hands the 3xx back. */
   redirectDelivery?: RedirectDelivery;
-  /** True when the client's URL took a fallback's default over a value that did not read. */
-  urlTookDefault?: boolean;
+  /** True when part of the client's URL comes from a value that did not read and the path does not show it. */
+  urlPartUnread?: boolean;
   /** Statuses the handler's own code lists as possible responses, such as FastAPI's `responses=`. */
   declaredStatuses?: number[];
   /** Left exactly as written, because the extractor does not depend on
@@ -1049,8 +1049,8 @@ function buildHttpMetadataValue(raw: RawCodeStructure): HttpMetadata | null {
   if (raw.redirectDelivery !== undefined) {
     http.redirectDelivery = raw.redirectDelivery;
   }
-  if (raw.urlTookDefault === true) {
-    http.urlTookDefault = true;
+  if (raw.urlPartUnread === true) {
+    http.urlPartUnread = true;
   }
   if (raw.declaredStatuses !== undefined && raw.declaredStatuses.length > 0) {
     http.declaredStatuses = raw.declaredStatuses;

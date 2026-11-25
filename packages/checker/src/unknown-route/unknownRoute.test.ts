@@ -336,9 +336,9 @@ describe("a call to a route its service does not serve", () => {
     expect(findings).toEqual([]);
   });
 
-  it("is not reported when the URL took a default over a value suss could not read", () => {
+  it("is not reported when part of the URL comes from a value suss could not read", () => {
     const call = client("createTeam", "POST", "/teams");
-    call.metadata = withHttpMetadata(undefined, { urlTookDefault: true });
+    call.metadata = withHttpMetadata(undefined, { urlPartUnread: true });
 
     expect(findingsOf([...renamedShop(), call])).toEqual([]);
   });

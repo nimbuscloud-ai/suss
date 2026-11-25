@@ -2189,11 +2189,12 @@ export interface RequestClaim {
   /** What the call does with a redirect, when it says so itself. */
   readonly redirectDelivery?: RedirectDelivery;
   /**
-   * True when the URL took a fallback's default over a value that did
-   * not read, as `${process.env.API_URL ?? ""}/orders` does, so the path
-   * is the default's and the deployment may send the call elsewhere.
+   * True when part of the URL comes from a value that did not read and
+   * the path does not show it: a fallback's default taken over such a
+   * value, as in `${process.env.API_URL ?? ""}/orders`, or a base URL
+   * left out of the path. The deployment may send the call elsewhere.
    */
-  readonly urlTookDefault?: true;
+  readonly urlPartUnread?: true;
   /** The construction of the call's class this request was read under, when the URL differs between them. */
   readonly site?: string;
   /**
@@ -2239,6 +2240,12 @@ export interface RequestRead {
   readonly base?: UrlTarget & {
     readonly joins: "appended" | "resolved" | "asWritten";
   };
+  /**
+   * Set when the construction states a base suss did not read in full
+   * and the path leaves it out, so a call read again under a caller's
+   * values leaves it out too.
+   */
+  readonly baseUnread?: true;
   /** The values the call states its method and host as, for an adapter that asks where they came from. */
   readonly stated?: StatedRequest;
 }

@@ -311,10 +311,11 @@ function readingOf(
     built ??= constructionOf(ops);
     return built;
   };
-  const base =
+  const based =
     requesting.base === null
-      ? null
+      ? NO_BASE
       : baseOf(requesting.base, construction(), site);
+  const { base } = based;
   const placed = underBase(base, own, sent.written);
   const redirectDelivery =
     redirectAt(requesting.response, meaning, ops, {
@@ -322,15 +323,15 @@ function readingOf(
       link: requesting.base,
     }) ?? meaning.redirects;
   const stated = statedRequest(sent, own, base);
-  const tookDefault =
-    own.tookDefault === true ||
-    (base?.url.tookDefault === true && own.host === undefined);
+  // An absolute URL replaces the base, so only a relative one leaves part unread.
+  const partUnread =
+    own.tookDefault === true || (based.unread && own.host === undefined);
   const claim: RequestClaim = {
     method: sent.method,
     path: placed.path,
     host: placed.host,
     ...(redirectDelivery === undefined ? {} : { redirectDelivery }),
-    ...(tookDefault ? { urlTookDefault: true as const } : {}),
+    ...(partUnread ? { urlPartUnread: true as const } : {}),
     read: {
       entry,
       ...sent.read,
@@ -338,6 +339,7 @@ function readingOf(
         ? { options: placeOf(meaning.options) }
         : {}),
       ...(base === null ? {} : { base: { ...base.url, joins: base.joins } }),
+      ...(based.unread ? { baseUnread: true as const } : {}),
       ...(stated === undefined ? {} : { stated }),
     },
   };
@@ -520,11 +522,16 @@ function urlArgument(ops: CallOps, pick: OneArgument): ValueOps | null {
   if (pick.property !== undefined && ops.valueAt(pick.at) !== null) {
     return UNREAD;
   }
+  return splatMayFill(ops, pick) ? UNREAD : null;
+}
+
+/** Whether a `*args` or a `**kwargs` the call passes can fill the place `pick` reads. */
+function splatMayFill(ops: CallOps, pick: OneArgument): boolean {
   const splats = ops.splats?.();
   const from = splats?.positionalFrom ?? null;
   const positional = from !== null && from <= pick.at;
   const keyword = splats?.keywords === true && pick.keyword !== undefined;
-  return positional || keyword ? UNREAD : null;
+  return positional || keyword;
 }
 
 /** A URL argument suss cannot read, which reads as no URL at all. */
@@ -613,33 +620,67 @@ function constructionOf(ops: CallOps): CallOps | null {
  * appended to has a hole only when the program works it out at runtime,
  * and a guess in front of every path would move each to a route nobody
  * serves, so its path is left out and its host kept.
+ *
+ * `unread` is set when the construction states a base suss did not read
+ * in full and the call's path leaves it out: a base left out as above,
+ * one that took a fallback's default, one refused because its path ends
+ * in a hole, and one in an options object suss cannot read.
  */
 function baseOf(
-  link: BaseUrlLink | null,
+  link: BaseUrlLink,
   built: CallOps | null,
   site: string | undefined,
-): Base | null {
-  if (link === null || built === null) {
-    return null;
+): BaseRead {
+  if (built === null) {
+    return NO_BASE;
   }
   const stated = statedValue(built, link.at);
   if (stated === null) {
-    return null;
+    const unread =
+      optionsUnread(built, link.at) || splatMayFill(built, link.at);
+    return { base: null, unread };
   }
   const url = BASE_READ[link.reads ?? "url"](built, link, site, stated);
-  if (url === null || refusedBase(link, url)) {
-    return null;
+  if (url === null) {
+    return NO_BASE;
+  }
+  if (refusedBase(link, url)) {
+    return { base: null, unread: endsInHole(url.path) };
   }
   const guessed =
     link.joins === "appended" &&
     url.path !== undefined &&
     hasNameHole(url.path);
   return {
-    url: guessed ? { path: undefined, host: url.host } : url,
-    joins: link.joins,
-    link,
-    stated,
+    base: {
+      url: guessed ? { path: undefined, host: url.host } : url,
+      joins: link.joins,
+      link,
+      stated,
+    },
+    unread: guessed || url.tookDefault === true || nothingRead(url, stated),
   };
+}
+
+/** Whether a base gave neither a path nor a host, and is not the empty string, which gives neither too. */
+function nothingRead(url: UrlTarget, stated: ValueOps): boolean {
+  return (
+    url.path === undefined &&
+    url.host === undefined &&
+    stated.evaluated?.() !== ""
+  );
+}
+
+/** The base a construction gives its client, and whether suss left part of it out of the call's path. */
+interface BaseRead {
+  readonly base: Base | null;
+  readonly unread: boolean;
+}
+
+const NO_BASE: BaseRead = { base: null, unread: false };
+
+function endsInHole(path: string | undefined): boolean {
+  return path?.endsWith("}") === true;
 }
 
 /** The base a client was built with, and the link that says how its library uses it. */

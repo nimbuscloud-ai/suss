@@ -1678,8 +1678,8 @@ function extractFromSourceFile(
         if (request.redirectDelivery !== undefined) {
           raw.redirectDelivery = request.redirectDelivery;
         }
-        if (request.urlTookDefault === true) {
-          raw.urlTookDefault = true;
+        if (request.urlPartUnread === true) {
+          raw.urlPartUnread = true;
         }
         stampClientBinding(raw, unit.callSite, requestBinding(request, pack));
         stampBindingFrom(raw, unit.func, request, resolution);
@@ -2048,6 +2048,7 @@ interface WrapperSink {
    * base in front of a hole would settle every wrapper on the first round.
    */
   base: RequestRead["base"];
+  baseUnread: boolean;
 }
 
 function expandWrapperCallers(
@@ -2217,6 +2218,7 @@ function sinkIn(
       extraction,
       statedMethod: semantics?.name === "rest" ? semantics.method : null,
       base: read?.base,
+      baseUnread: read?.baseUnread === true,
     };
   }
   return null;
@@ -2504,8 +2506,11 @@ function buildCallerSummary(
     host: reading.host ?? base?.host,
     recognition: wrapperBinding?.recognition ?? "unknown",
   });
-  if (reading.tookDefault === true) {
-    raw.urlTookDefault = true;
+  if (
+    reading.tookDefault === true ||
+    (wrapper.sink.baseUnread && reading.host === undefined)
+  ) {
+    raw.urlPartUnread = true;
   }
   Object.assign(raw, clientResponseFieldsThroughWrapper(wrapper.summary));
 

@@ -922,12 +922,15 @@ export const HttpMetadataSchema = z.object({
    */
   redirectDelivery: z.enum(["followed", "response"]).optional(),
   /**
-   * True when the client's URL took a fallback's default where the
-   * value before it did not read, as `${process.env.API_URL ?? ""}/orders`
-   * does. The binding has the default, and the deployment may send the
-   * call somewhere else.
+   * True when part of the client's URL comes from a value that did not
+   * read and the binding's path does not show it. Either the URL took a
+   * fallback's default over that value, as
+   * `${process.env.API_URL ?? ""}/orders` does, or the client was built
+   * on a base URL suss left out of the path, as
+   * `axios.create({ baseURL: process.env.API_URL })` is. The deployment
+   * may send the call somewhere else.
    */
-  urlTookDefault: z.boolean().optional(),
+  urlPartUnread: z.boolean().optional(),
   /**
    * Statuses the handler's own code lists as responses it may send,
    * whether or not a path read here produces them: FastAPI's

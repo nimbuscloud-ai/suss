@@ -138,8 +138,8 @@ function bindingIsItsOwn(consumer: BehavioralSummary): boolean {
 /**
  * The call's method and path when suss read both in full: a method other
  * than "any", and a path whose every segment is text or a whole-segment
- * parameter, with no base URL left open, no set of texts, and no default
- * taken over a value suss could not read. Null for anything else, since
+ * parameter, with no base URL left open, no set of texts, and no part
+ * from a value suss could not read. Null for anything else, since
  * a path with a piece suss could not read may be one the service serves.
  */
 function fullyReadCall(
@@ -160,7 +160,7 @@ function fullyReadCall(
   if (!path.split("/").every(segmentFullyRead)) {
     return null;
   }
-  if (readHttpMetadata(consumer)?.urlTookDefault === true) {
+  if (readHttpMetadata(consumer)?.urlPartUnread === true) {
     return null;
   }
   return host === undefined ? { method, path } : { method, path, host };

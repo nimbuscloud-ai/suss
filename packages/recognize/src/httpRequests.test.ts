@@ -856,8 +856,9 @@ describe("a base URL the client was built with", () => {
     expect(under("/v1")).toEqual([
       { method: "GET", path: "/orders", host: undefined },
     ]);
+    // Whether this one is refused depends on what the hole comes to.
     expect(under("/v1/{version}")).toEqual([
-      { method: "GET", path: "/orders", host: undefined },
+      { method: "GET", path: "/orders", host: undefined, urlPartUnread: true },
     ]);
     expect(under("/v1/")).toEqual([
       { method: "GET", path: "/orders", host: "api.example.com" },
@@ -1351,7 +1352,7 @@ describe("a request chain over options objects", () => {
     ).toEqual([]);
   });
 
-  it("leaves out the path of a base with a hole, and keeps its host", () => {
+  it("leaves out the path of a base with a hole, keeps its host, and says part of the URL did not read", () => {
     expect(
       claimsOf(CONFIGURED, {
         method: "get",
@@ -1361,7 +1362,54 @@ describe("a request chain over options objects", () => {
           baseURL: at("{env}/v1", "api.example.com"),
         }),
       }),
-    ).toEqual([{ method: "GET", path: "/orders", host: "api.example.com" }]);
+    ).toEqual([
+      {
+        method: "GET",
+        path: "/orders",
+        host: "api.example.com",
+        urlPartUnread: true,
+      },
+    ]);
+  });
+
+  it("says part of the URL did not read when the client's base did not, and pairs by the call's path all the same", () => {
+    const under = (receiverValue: Stated) =>
+      claimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [at("/orders")],
+        receiverValue,
+      });
+    const unread = [
+      { method: "GET", path: "/orders", host: undefined, urlPartUnread: true },
+    ];
+
+    // An environment read with no default, which gives no path or host.
+    expect(under(builtWith({ baseURL: at(undefined) }))).toEqual(unread);
+    // A default taken over a value that did not read.
+    expect(
+      under(
+        builtWith({
+          baseURL: {
+            url: { path: undefined, host: undefined, tookDefault: true },
+          },
+        }),
+      ),
+    ).toEqual(unread);
+    // An options object suss cannot read, which may set a base.
+    expect(
+      under({
+        madeBy: callOps({ method: "create", args: [{ object: false }] }),
+      }),
+    ).toEqual(unread);
+    // The empty string gives no path or host either, and is read in full.
+    expect(
+      under(builtWith({ baseURL: { ...at(undefined), evaluated: "" } })),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+    // So is a client built with no base at all.
+    expect(under(builtWith({}))).toEqual([
+      { method: "GET", path: "/orders", host: undefined },
+    ]);
   });
 });
 

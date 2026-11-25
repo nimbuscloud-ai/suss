@@ -166,7 +166,72 @@ describe("a Next.js app whose client calls a renamed route", () => {
 
     expect(await nextjsFindings(app)).toEqual([]);
   }, 120_000);
+
+  it("reports only the renamed route when other calls go under a base URL the deployment sets", async () => {
+    const app = copyOf("missing-route-nextjs", "next-env-base");
+    fs.writeFileSync(path.join(app, "lib", "env.ts"), SHOP_BASE_FILE);
+    fs.writeFileSync(path.join(app, "lib", "remote.ts"), REMOTE_CALLS);
+
+    const findings = await missingRoutes(app, [
+      { argv: typescript("nextjs", "fetch", "axios") },
+    ]);
+
+    expect(findings.map((f) => f.description)).toEqual([RENAMED]);
+  }, 120_000);
 });
+
+const SHOP_BASE_FILE = `export const SHOP_BASE = process.env.SHOP_API_URL ?? "";
+`;
+
+// None of these paths is served by the shop, and each call goes to
+// whatever host the deployment sets.
+const REMOTE_CALLS = `import axios from "axios";
+
+import { SHOP_BASE } from "./env";
+
+const BASE = process.env.SHOP_API_URL || "";
+
+const api = axios.create({ baseURL: process.env.SHOP_API_URL });
+const fallbackApi = axios.create({ baseURL: BASE });
+
+export async function listAccounts() {
+  return (await api.get("/api/accounts")).data;
+}
+
+export async function listInvoices() {
+  return (await fallbackApi.get("/api/invoices")).data;
+}
+
+export async function listTeams() {
+  const res = await fetch(\`\${BASE}/api/teams\`);
+  return res.json();
+}
+
+export async function listShared() {
+  const res = await fetch(\`\${SHOP_BASE}/api/shared\`);
+  return res.json();
+}
+
+class Links {
+  private base = process.env.LINK_API_URL || "";
+
+  async create() {
+    const res = await fetch(\`\${this.base}/api/links\`, { method: "POST" });
+    return res.json();
+  }
+}
+
+export const links = new Links();
+
+async function shopGet(path: string) {
+  const res = await fetch(\`\${BASE}\${path}\`);
+  return res.json();
+}
+
+export async function listWrapped() {
+  return shopGet("/api/wrapped");
+}
+`;
 
 describe("an Express app whose client calls a renamed route", () => {
   it("reports the call once, and not the one its static mount serves", async () => {
@@ -182,7 +247,7 @@ describe("an Express app whose client calls a renamed route", () => {
 });
 
 describe("a Rails app a Worker calls through the base URL its deployment sets", () => {
-  it("reports the call once, and not the one under a path an engine is mounted at", async () => {
+  it("reports the call once, and not one under a mounted engine or a Ruby call under a base the deployment sets", async () => {
     const app = copyOf("missing-route-rails", "rails");
     const config = path.join(app, "suss.rails.json");
     fs.writeFileSync(
@@ -203,6 +268,8 @@ describe("a Rails app a Worker calls through the base URL its deployment sets", 
           app,
           "-f",
           `rails=${config}`,
+          "-f",
+          "faraday",
           "--no-cache",
           "-o",
           out,
