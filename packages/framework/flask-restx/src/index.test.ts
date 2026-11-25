@@ -18,7 +18,7 @@ describe("flaskRestxFramework", () => {
   it("accepts flask_restx's own module by default", () => {
     const pack = flaskRestxFramework();
     expect(pack.name).toBe("flask-restx");
-    expect(pack.version).toBe("3");
+    expect(pack.version).toBe("4");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {

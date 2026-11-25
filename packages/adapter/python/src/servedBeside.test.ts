@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { readServedBesideMetadata } from "@suss/behavioral-ir";
-import { constructedFrom } from "@suss/recognize";
+import { constructedFrom, imported } from "@suss/recognize";
 
 import {
   fastapiTestRoutes,
@@ -24,9 +24,13 @@ import type { PyServedBeside, PythonPack } from "./pack.js";
 async function besideOf(
   pack: PythonPack,
   lines: readonly string[],
+  others: Readonly<Record<string, readonly string[]>> = {},
 ): Promise<string[]> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "python-beside-"));
-  fs.writeFileSync(path.join(dir, "main.py"), [...lines, ""].join("\n"));
+  for (const [file, text] of Object.entries({ "main.py": lines, ...others })) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), [...text, ""].join("\n"));
+  }
   const { summaries } = await extractPythonProject({
     files: findPythonFiles(dir),
     roots: [dir],
@@ -45,6 +49,7 @@ async function besideOf(
 }
 
 const FASTAPI_BESIDE: PyServedBeside = {
+  runners: [imported({ from: ["uvicorn"], named: ["run"] })],
   servers: [
     {
       made: constructedFrom({ from: ["fastapi"], named: ["FastAPI"] }),
@@ -53,6 +58,7 @@ const FASTAPI_BESIDE: PyServedBeside = {
         { keyword: "docs_url", path: "/docs", methods: ["GET"], under: "app" },
       ],
       unreadKeywords: ["routes"],
+      inert: ["on_event", "state"],
       calls: {
         add_api_route: {
           serves: "route",
@@ -298,6 +304,80 @@ describe("what a Python framework serves beside its routes", () => {
         "app = FastAPI()",
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("where a Python app goes", () => {
+  const unreadOf = (beside: readonly string[]): string[] =>
+    beside.filter((entry) => entry.startsWith("unread"));
+
+  it("covers any path wherever the app meets code suss does not read", async () => {
+    const beside = await besideOf(fastapiPack, [
+      ...FASTAPI_APP,
+      "",
+      "from shop_metrics import Exporter, describe",
+      "from edge_proxy import EdgeMiddleware",
+      "",
+      'app.frontend("/", directory="site")',
+      "Exporter().expose(app)",
+      "served = EdgeMiddleware(app)",
+      'app.router.add_route("/x", order)',
+      'registry = {"app": app}',
+      "describe(app.router)",
+    ]);
+
+    expect(unreadOf(beside)).toEqual([
+      "unread * any",
+      "unread * any",
+      "unread * any",
+      "unread * any",
+      "unread * any",
+      "unread * any",
+    ]);
+  });
+
+  it("leaves out what the pack lists, a runner, a server it builds, and the project's own function", async () => {
+    const beside = await besideOf(fastapiPack, [
+      ...FASTAPI_APP,
+      "",
+      "import uvicorn",
+      "",
+      "sub = FastAPI()",
+      'app.mount("/sub", sub)',
+      "app.state.ready = True",
+      "",
+      '@app.on_event("startup")',
+      "def started():",
+      "    pass",
+      "",
+      "def add_health(server):",
+      '    server.add_api_route("/health", order)',
+      "",
+      "add_health(app)",
+      "uvicorn.run(app)",
+      "uvicorn.run(app.router)",
+    ]);
+
+    expect(beside.filter((entry) => !entry.startsWith("page"))).toEqual([
+      "mount * /sub/{path*}",
+      "unread GET /health",
+    ]);
+  });
+
+  it("reads a serving call on the app a module of its package imports", async () => {
+    const beside = await besideOf(fastapiPack, ["from app.main import app"], {
+      "app/__init__.py": [],
+      "app/main.py": FASTAPI_APP,
+      "app/legacy.py": [
+        "from app.main import app",
+        "",
+        'app.mount("/legacy", None)',
+      ],
+    });
+
+    expect(beside.filter((entry) => !entry.startsWith("page"))).toEqual([
+      "mount * /legacy/{path*}",
+    ]);
   });
 });
 

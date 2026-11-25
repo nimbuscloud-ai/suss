@@ -670,7 +670,7 @@ function nameIn(key: string): string {
  * `file:start-end`, a module name's `file#name`, or a local name's
  * `file:start-end#name`.
  */
-function fileWriting(key: string): string {
+export function fileWriting(key: string): string {
   const scope = key.includes("#") ? key.slice(0, key.lastIndexOf("#")) : key;
   return /:\d+-\d+$/.test(scope)
     ? scope.slice(0, scope.lastIndexOf(":"))

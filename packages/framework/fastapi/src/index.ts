@@ -33,7 +33,7 @@ import type { CallbackMethod } from "@suss/recognize";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "4";
+const VERSION = "5";
 
 /**
  * The CLI checks a `-f fastapi=config.json` file against this schema. A
@@ -178,6 +178,13 @@ const STARLETTE_ROUTE: PyServingCall = {
   methods: { pick: { keyword: "methods" } },
 };
 
+/** A websocket route, which a client opens with a GET. */
+const WEBSOCKET_ROUTE: PyServingCall = {
+  serves: "route",
+  path: [{ at: 0 }, { keyword: "path" }],
+  methods: ["GET"],
+};
+
 /** The routes an app or a router adds that the route table does not read. */
 const ROUTE_CALLS: Record<string, PyServingCall> = {
   add_api_route: {
@@ -187,7 +194,34 @@ const ROUTE_CALLS: Record<string, PyServingCall> = {
   },
   add_route: STARLETTE_ROUTE,
   route: STARLETTE_ROUTE,
+  websocket: WEBSOCKET_ROUTE,
+  api_websocket_route: WEBSOCKET_ROUTE,
+  add_api_websocket_route: WEBSOCKET_ROUTE,
+  websocket_route: WEBSOCKET_ROUTE,
+  add_websocket_route: WEBSOCKET_ROUTE,
 };
+
+/** What an app and a router have that cannot serve a request: lifecycle hooks, lookups, and settings. */
+const INERT = [
+  "on_event",
+  "add_event_handler",
+  "url_path_for",
+  "openapi",
+  "openapi_schema",
+  "dependency_overrides",
+  "state",
+];
+
+/** Library calls handed an app that serve it with the routes it has: a server, and a client that calls it in place. */
+const RUNNERS = [
+  imported({ from: ["uvicorn"], named: ["run"] }),
+  imported({ from: ["hypercorn.asyncio", "hypercorn.trio"], named: ["serve"] }),
+  imported({
+    from: ["fastapi.testclient", "starlette.testclient"],
+    named: ["TestClient"],
+  }),
+  imported({ from: ["httpx"], named: ["ASGITransport", "AsyncClient"] }),
+];
 
 /** Each module that exports one of Starlette's middleware classes: Starlette's own, and FastAPI's re-export. */
 function shippedMiddleware(
@@ -206,11 +240,14 @@ function shippedMiddleware(
  * under a path. A route added by a call, middleware the library does not
  * ship, and an error handler for the not-found error may serve any path.
  * Starlette's CORS middleware responds to a preflight `OPTIONS` itself.
+ * So may any other method, and any library call the app is handed to
+ * other than a server or a test client.
  */
 export function fastapiServedBeside(
   modules: readonly string[],
 ): PyServedBeside {
   return {
+    runners: RUNNERS,
     servers: [
       {
         made: constructedFrom({ from: modules, named: ["FastAPI"] }),
@@ -229,6 +266,7 @@ export function fastapiServedBeside(
           under: "app" as const,
         })),
         unreadKeywords: ["routes", "middleware", "exception_handlers"],
+        inert: INERT,
         calls: {
           ...ROUTE_CALLS,
           mount: {
@@ -278,6 +316,7 @@ export function fastapiServedBeside(
       {
         made: constructedFrom({ from: modules, named: ["APIRouter"] }),
         paths: "underPrefix",
+        inert: INERT,
         calls: ROUTE_CALLS,
       },
     ],

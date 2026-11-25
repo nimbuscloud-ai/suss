@@ -18,10 +18,13 @@ import { restBinding, wrapperFor, wrapperIndex } from "@suss/behavioral-ir";
 import { stampServedBeside } from "@suss/extractor";
 import { boundaryKey } from "@suss/ir-core";
 import { constructedFrom, imported, pickedFrom } from "@suss/recognize";
+import { factCallOps } from "@suss/recognize/ops";
 
 import { rangeOf } from "./ast.js";
 import { pythonModuleOps } from "./declaredDiscovery.js";
 import { routePathIn } from "./discovery.js";
+import { factSourceOf, fileWriting } from "./factSource.js";
+import { heldUsesIn } from "./facts/resolve.js";
 import { nodeOfResolutionKey } from "./values/evaluator.js";
 
 import type {
@@ -32,7 +35,9 @@ import type {
 } from "@suss/behavioral-ir";
 import type { Database } from "@suss/datalog";
 import type { CallOps, EntryPick, ModuleOps, ValueOps } from "@suss/extractor";
+import type { HeldUses } from "@suss/resolution";
 import type { BoundPythonFile } from "./boundFiles.js";
+import type { PythonFactSource } from "./factSource.js";
 import type {
   PyBuiltInPath,
   PyErrorHandlerCall,
@@ -88,6 +93,7 @@ export function stampPythonServedBeside(
     const reading: Reading = { ...pending, registered: registrationsIn(sites) };
     stampServedBeside(summaries, pack.name, [
       ...sites.flatMap((site) => siteEntries({ ...site, reading })),
+      ...heldEntries(declared, sites, reading),
       ...unfollowedEntries(pack, run),
       ...routesNothingServes(pack, summaries, run),
       ...respondingWrappers(pack, summaries, run),
@@ -202,6 +208,168 @@ function registrationsIn(
     }
   }
   return registered;
+}
+
+/** What the reading of where each server goes needs besides the server in hand. */
+interface HeldReading {
+  declared: PyServedBeside;
+  reading: Reading;
+  source: PythonFactSource;
+  /** The calls the site reading above read. */
+  read: ReadonlySet<string>;
+  /** The methods the pack's route tables and wrappers read on a server. */
+  packMethods: ReadonlySet<string>;
+  /** The calls on any server whose method the pack reads or lists as inert. */
+  onServers: ReadonlySet<string>;
+}
+
+/**
+ * Where each server the pack builds meets code suss does not read. A
+ * method the pack neither reads nor lists as inert, a library call it is
+ * handed to that is not a runner, an object it is stored on, and a member
+ * of it put to either use each may serve any path.
+ */
+function heldEntries(
+  declared: PyServedBeside,
+  sites: readonly Omit<CallSite, "reading">[],
+  reading: Reading,
+): ServedBesideEntry[] {
+  const built = new Map<string, PyServer>();
+  for (const at of sites) {
+    const key = at.call.isFrom(at.server.made) ? at.call.site?.() : undefined;
+    if (key !== undefined) {
+      built.set(key, at.server);
+    }
+  }
+  const uses = heldUsesIn(reading.facts, [...built.keys()]);
+  const packMethods = methodsThePackReads(reading.pack);
+  const knows = (server: PyServer, method: string): boolean =>
+    packMethods.has(method) ||
+    Object.hasOwn(server.calls, method) ||
+    (server.inert ?? []).includes(method);
+  const held: HeldReading = {
+    declared,
+    reading,
+    source: factSourceOf(reading.facts),
+    read: new Set(sites.flatMap((at) => at.call.site?.() ?? [])),
+    packMethods,
+    onServers: new Set(
+      [...built].flatMap(([key, server]) =>
+        (uses.get(key)?.calls ?? [])
+          .filter((one) => knows(server, one.method))
+          .map((one) => one.call),
+      ),
+    ),
+  };
+  return [...built].flatMap(([key, server]) => {
+    const one = uses.get(key);
+    return one === undefined ? [] : serverEntries(server, one, held);
+  });
+}
+
+function serverEntries(
+  server: PyServer,
+  uses: HeldUses,
+  held: HeldReading,
+): ServedBesideEntry[] {
+  const inert = new Set(server.inert ?? []);
+  const runnerReads = new Set(
+    uses.partArguments
+      .filter((one) => runsAsItIs(one.call, held))
+      .map((one) => one.read),
+  );
+  return [
+    ...uses.calls.flatMap(({ call, method }) =>
+      calledEntries(server, call, method, held),
+    ),
+    ...uses.arguments
+      .filter((call) => !handedSafely(call, uses.into, held))
+      .map((call) => unreadAt(call, held)),
+    ...uses.stored.map((object) => unreadAt(object, held)),
+    ...uses.partCalls
+      .filter(({ member }) => !inert.has(member))
+      .map(({ call }) => unreadAt(call, held)),
+    ...uses.partsPassed
+      .filter(
+        ({ read, member }) => !inert.has(member) && !runnerReads.has(read),
+      )
+      .map(({ read }) => unreadAt(read, held)),
+  ];
+}
+
+/**
+ * A method called on a server may serve any path unless the pack reads
+ * or lists it. A serving call counts as read only when the site reading
+ * reached it, which it does wherever the app is.
+ */
+function calledEntries(
+  server: PyServer,
+  call: string,
+  method: string,
+  held: HeldReading,
+): ServedBesideEntry[] {
+  const serving = Object.hasOwn(server.calls, method);
+  const listed =
+    held.packMethods.has(method) || (server.inert ?? []).includes(method);
+  return (serving && held.read.has(call)) || (!serving && listed)
+    ? []
+    : [unreadAt(call, held)];
+}
+
+/** Whether a call a server is handed to goes into the project, is made on a server the pack reads, builds a server, or runs the server as it is. */
+function handedSafely(
+  call: string,
+  into: ReadonlySet<string>,
+  held: HeldReading,
+): boolean {
+  if (into.has(call) || held.onServers.has(call)) {
+    return true;
+  }
+  const ops = factCallOps(call, held.source);
+  return (
+    ops !== null &&
+    (held.declared.servers.some((server) => ops.isFrom(server.made)) ||
+      runsAsItIs(call, held))
+  );
+}
+
+function runsAsItIs(call: string, held: HeldReading): boolean {
+  const ops = factCallOps(call, held.source);
+  return (
+    ops !== null &&
+    (held.declared.runners ?? []).some((origin) => ops.isFrom(origin))
+  );
+}
+
+/** Each method a route table or a wrapper of the pack reads on a server, such as `get`, `include_router` and `middleware`. */
+function methodsThePackReads(pack: PythonPack): Set<string> {
+  return new Set(
+    pack.discovery.flatMap((pattern) => {
+      const { roles, roots } = pattern.routes.table;
+      return [
+        ...Object.keys(roles),
+        ...(roots.carrier?.handedBy === undefined
+          ? []
+          : [roots.carrier.handedBy]),
+        ...(pattern.wrappers ?? []).flatMap((wrapper) =>
+          wrapper.type === "decoratedWrapper" ? [wrapper.attribute] : [],
+        ),
+      ];
+    }),
+  );
+}
+
+/** Something at `key` that may serve any path. */
+function unreadAt(key: string, held: HeldReading): ServedBesideEntry {
+  const node = nodeOfResolutionKey(key, held.reading.facts);
+  const written =
+    factCallOps(key, held.source)?.calleeText() ?? node?.text.split("\n")[0];
+  return {
+    by: "unread",
+    file: fileWriting(key),
+    line: node === null ? 1 : rangeOf(node).start,
+    ...(written === undefined ? {} : { written }),
+  };
 }
 
 /** What a server's construction states: the paths it serves of its own accord, its static folder, and what it is handed that the pack does not read. */

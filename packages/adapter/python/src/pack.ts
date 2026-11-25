@@ -24,6 +24,7 @@ import type {
   LibraryEnvVars,
   PackWords,
   PatternPack,
+  ReceiverOrigin,
   RequestRecognizer,
   RouteTableDeclaration,
   ServingCall,
@@ -124,6 +125,12 @@ export interface PythonPack {
 export interface PyServedBeside {
   /** The objects the framework serves requests through, such as the app, a router and a blueprint. */
   servers: readonly PyServer[];
+  /**
+   * Library calls that are handed a server and serve it as it is, adding
+   * no route, such as `uvicorn.run(app)` or a test client. A server
+   * handed to any other library call may serve any path.
+   */
+  runners?: readonly ReceiverOrigin[];
 }
 
 export interface PyServer {
@@ -144,6 +151,13 @@ export interface PyServer {
   unreadKeywords?: readonly string[];
   /** The methods called on it that serve requests beside the routes the pack reads, by method name. */
   calls: Readonly<Record<string, PyServingCall>>;
+  /**
+   * Its methods and attributes that cannot serve a request, such as
+   * FastAPI's `on_event` or Flask's `config`. Any other method the pack
+   * does not read may serve any path, and so may any other attribute
+   * that has a method called on it or is passed on.
+   */
+  inert?: readonly string[];
 }
 
 export interface PyBuiltInPath {

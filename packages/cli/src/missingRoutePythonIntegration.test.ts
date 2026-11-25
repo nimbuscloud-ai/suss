@@ -126,6 +126,95 @@ describe("a FastAPI app whose Lambda client calls a renamed route", () => {
 
     expect(await fastapiFindings(app)).toEqual([]);
   }, 120_000);
+
+  it.each([
+    [
+      "a method the pack does not read is called on the app",
+      "unread-method",
+      ['app.frontend("/", directory="site")'],
+    ],
+    [
+      "the app is handed to a library call",
+      "library-call",
+      ["from shop_metrics import Exporter", "", "Exporter().expose(app)"],
+    ],
+    [
+      "a library wraps the app",
+      "wrapped",
+      [
+        "from edge_proxy import EdgeMiddleware",
+        "",
+        "served = EdgeMiddleware(app)",
+      ],
+    ],
+    [
+      "a method is called on the app's router",
+      "router-method",
+      ['app.router.add_route("/orders/{order_id}/summary", download)'],
+    ],
+  ])(
+    "reports nothing once %s",
+    async (_label, slug, lines) => {
+      const app = copyOf("missing-route-fastapi", `fastapi-${slug}`);
+      fs.appendFileSync(main(app), ["", ...lines, ""].join("\n"));
+
+      expect(await fastapiFindings(app)).toEqual([]);
+    },
+    120_000,
+  );
+
+  it("still reports the call when the app gets a startup hook and is run by a server and a test client", async () => {
+    const app = copyOf("missing-route-fastapi", "fastapi-runners");
+    fs.appendFileSync(
+      main(app),
+      [
+        "",
+        "import uvicorn",
+        "from fastapi.testclient import TestClient",
+        "",
+        "client = TestClient(app)",
+        "app.state.ready = True",
+        "",
+        "",
+        '@app.on_event("startup")',
+        "def started():",
+        "    pass",
+        "",
+        "",
+        'if __name__ == "__main__":',
+        "    uvicorn.run(app, port=8000)",
+        "",
+      ].join("\n"),
+    );
+
+    expect(
+      (await fastapiFindings(app)).map((finding) => finding.description),
+    ).toEqual([FASTAPI_RENAMED]);
+  }, 120_000);
+
+  it("still reports the call when the app is handed to the project's own function that adds routes", async () => {
+    const app = copyOf("missing-route-fastapi", "fastapi-project-setup");
+    fs.writeFileSync(
+      path.join(app, "shop", "app", "health.py"),
+      [
+        "def add_health(server):",
+        '    @server.get("/health")',
+        "    def health():",
+        '        return {"ok": True}',
+        "",
+      ].join("\n"),
+    );
+    fs.appendFileSync(
+      main(app),
+      ["", "from app.health import add_health", "", "add_health(app)", ""].join(
+        "\n",
+      ),
+    );
+
+    expect(
+      (await fastapiFindings(app)).map((finding) => finding.description),
+    ).toEqual([FASTAPI_RENAMED]);
+  }, 120_000);
 });
 
 const FLASK_RENAMED =

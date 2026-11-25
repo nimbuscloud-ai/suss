@@ -16,7 +16,9 @@ import {
   environmentsReaching,
   fallbackAroundOne,
   fallbackAroundOneUnder,
+  type HeldUses,
   handedNamesReaching,
+  heldUsesOf,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -406,6 +408,14 @@ export function containedValues(db: Database, objectKey: string): string[] {
 export function usesOf(db: Database, key: string): ValueUses {
   askResolution(db, [key], USES_QUESTION, programFor(db));
   return readUses(db, key);
+}
+
+/** Where the value built at each key goes, through the project code it is passed to. */
+export function heldUsesIn(
+  db: Database,
+  keys: readonly string[],
+): Map<string, HeldUses> {
+  return heldUsesOf(db, keys, programFor(db));
 }
 
 /** The object a call returns, when the rules settled it on one. */

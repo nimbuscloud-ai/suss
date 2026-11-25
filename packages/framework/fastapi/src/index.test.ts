@@ -25,7 +25,7 @@ describe("fastapiFramework", () => {
   it("accepts fastapi's own module by default", () => {
     const pack = fastapiFramework();
     expect(pack.name).toBe("fastapi");
-    expect(pack.version).toBe("4");
+    expect(pack.version).toBe("5");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
