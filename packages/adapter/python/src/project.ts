@@ -94,6 +94,7 @@ import {
 } from "./reuse.js";
 import { buildRouteTables } from "./routeTables.js";
 import { bindModule } from "./scope.js";
+import { stampPythonServedBeside } from "./servedBeside.js";
 import { pythonSourceRoots } from "./sourceRoots.js";
 import { stdlibReads } from "./stdlib/dispatch.js";
 import { claimsLambdas, subUnitClaims } from "./subUnits.js";
@@ -1011,6 +1012,13 @@ async function runPython(
   const resolvedImports = importedFilesByFile(db, displayPathOf);
   stampModuleImports(summaries, (file) => resolvedImports.get(file) ?? []);
   stampModules(summaries, declaredModules, options.workspaceRoot);
+  stampPythonServedBeside(summaries, {
+    packs: options.packs,
+    files: bound,
+    facts: db,
+    routes: plainRoutes,
+    wrappers: wrapperIndex,
+  });
 
   for (const summary of summaries) {
     const absoluteFile =

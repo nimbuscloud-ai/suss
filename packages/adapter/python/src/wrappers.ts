@@ -324,6 +324,17 @@ export class PythonWrapperIndex {
   }
 
   /**
+   * The middleware and error handlers registered on the pack's app by a
+   * decorator. The library runs them for a request no route matches too,
+   * where a dependency runs only once a route has matched.
+   */
+  decoratedOnApp(pack: string): WrapperReference[] {
+    return (this.everyRoute.get(pack) ?? []).flatMap((registered) =>
+      registered.form.type === "decoratedWrapper" ? [registered.reference] : [],
+    );
+  }
+
+  /**
    * The unit for the closure a project's decorator hands back, built once
    * however many routes the decorator is written on. Its name is what
    * calling the decorator writes, since the decorator may have a summary
