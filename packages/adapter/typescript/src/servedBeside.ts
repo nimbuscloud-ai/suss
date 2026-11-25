@@ -12,6 +12,7 @@ import path from "node:path";
 
 import picomatch from "picomatch";
 
+import { boundaryKey, restBinding } from "@suss/behavioral-ir";
 import { stampServedBeside, staticDirectoryEntries } from "@suss/extractor";
 
 import { moduleOpsFor } from "./discovery/declared.js";
@@ -19,6 +20,8 @@ import { routePathFromFile } from "./discovery/filenameRoute.js";
 
 import type { BehavioralSummary, ServedBesideEntry } from "@suss/behavioral-ir";
 import type {
+  BindingExtraction,
+  DiscoveryPattern,
   ModuleOps,
   PatternPack,
   ServedBesideDeclaration,
@@ -63,8 +66,12 @@ export function stampServedBesideOn(
     const syntax = declared.patternSyntax ?? "routePath";
     const read = moduleReader(run);
     const configFile = firstExisting(root, declared.config?.files ?? []);
+    const inProgram = run.sourceFiles.map((one) => one.getFilePath());
+    const leftOut = filesTheProgramLeavesOut(pack, declared, inProgram);
     stampServedBeside(summaries, pack.name, [
-      ...pageEntries(declared, run.sourceFiles),
+      ...pageEntries(declared, [...inProgram, ...leftOut]),
+      ...unreadRouteFiles(pack, summaries, run.sourceFiles, read),
+      ...routeFilesLeftOut(pack, leftOut),
       ...staticDirectoryEntries(root, declared.staticDirectories ?? []),
       ...(declared.config === undefined || configFile === null
         ? []
@@ -80,12 +87,11 @@ export function stampServedBesideOn(
 /** Each page file's path, which serves GET. */
 function pageEntries(
   declared: ServedBesideDeclaration,
-  sourceFiles: readonly SourceFile[],
+  files: readonly string[],
 ): ServedBesideEntry[] {
   return (declared.pages ?? []).flatMap((pages) => {
     const matches = picomatch(pages.filePattern, { dot: true });
-    return sourceFiles.flatMap((sourceFile) => {
-      const file = sourceFile.getFilePath();
+    return files.flatMap((file) => {
       const served = matches(file) ? routePathFromFile(file, pages.path) : null;
       if (served === null) {
         return [];
@@ -101,6 +107,213 @@ function pageEntries(
           line: 1,
         },
       ];
+    });
+  });
+}
+
+type FileRoutePattern = DiscoveryPattern & {
+  match: Extract<DiscoveryPattern["match"], { type: "fileConvention" }>;
+  bindingExtraction: BindingExtraction & {
+    path: Extract<BindingExtraction["path"], { type: "fromFilename" }>;
+  };
+};
+
+/**
+ * Each route file the run didn't read a route from, and each method a
+ * route file exports that didn't give a route, such as a handler
+ * re-exported from another module. The framework still serves them, so
+ * such a file covers its path for every method, and such an export
+ * covers its own method there.
+ */
+function unreadRouteFiles(
+  pack: PatternPack,
+  summaries: readonly BehavioralSummary[],
+  sourceFiles: readonly SourceFile[],
+  read: (file: string) => ModuleOps | null,
+): ServedBesideEntry[] {
+  const served = boundariesOf(summaries, pack.name);
+  return pack.discovery.filter(isFileRoute).flatMap((pattern) => {
+    const matches = picomatch(pattern.match.filePattern, { dot: true });
+    return sourceFiles.flatMap((sourceFile) => {
+      const file = sourceFile.getFilePath();
+      const path = matches(file)
+        ? routePathFromFile(file, pattern.bindingExtraction.path)
+        : null;
+      if (path === null) {
+        return [];
+      }
+      const servesMethod = (method: string): boolean => {
+        const key = fileRouteKey(pack, method, path);
+        return key !== null && served.has(key);
+      };
+      const unread = { by: "unread" as const, path, file, line: 1 };
+      if (!methodsOf(pattern).some(servesMethod)) {
+        return [{ ...unread, written: "a route file suss did not read" }];
+      }
+      return exportedMethods(pattern, file, read)
+        .filter((method) => !servesMethod(method))
+        .map((method) => ({
+          ...unread,
+          methods: [method],
+          written: `the ${method} export`,
+        }));
+    });
+  });
+}
+
+function isFileRoute(pattern: DiscoveryPattern): pattern is FileRoutePattern {
+  return (
+    pattern.match.type === "fileConvention" &&
+    pattern.bindingExtraction?.path.type === "fromFilename"
+  );
+}
+
+/** The boundary of each summary the pack recognized. */
+function boundariesOf(
+  summaries: readonly BehavioralSummary[],
+  pack: string,
+): Set<string> {
+  const served = new Set<string>();
+  for (const summary of summaries) {
+    const binding = summary.identity.boundaryBinding;
+    const key = binding?.recognition === pack ? boundaryKey(binding) : null;
+    if (key !== null) {
+      served.add(key);
+    }
+  }
+  return served;
+}
+
+/** The boundary a route the pack reads from a file has, as its discovery binds one. */
+function fileRouteKey(
+  pack: PatternPack,
+  method: string,
+  path: string,
+): string | null {
+  return boundaryKey(
+    restBinding({
+      transport: pack.protocol,
+      recognition: pack.name,
+      method,
+      path,
+    }),
+  );
+}
+
+/** Every method a route the pattern finds can be bound to. */
+function methodsOf(pattern: FileRoutePattern): readonly string[] {
+  const { method } = pattern.bindingExtraction;
+  return method.type === "literal" ? [method.value] : pattern.match.exportNames;
+}
+
+/**
+ * The methods a route file exports, for a pattern that takes the method
+ * from the export's name and so has one export per method.
+ */
+function exportedMethods(
+  pattern: FileRoutePattern,
+  file: string,
+  read: (file: string) => ModuleOps | null,
+): string[] {
+  if (pattern.bindingExtraction.method.type !== "fromExportName") {
+    return [];
+  }
+  const methods = new Set(pattern.match.exportNames);
+  return (read(file)?.exports() ?? [])
+    .map((exported) => exported.name)
+    .filter((name) => methods.has(name));
+}
+
+/**
+ * The files on disk in each routing directory the program has a route
+ * or a page in, `app` or `pages`, that the program leaves out, such as a
+ * `.js` route in a project whose tsconfig includes only TypeScript.
+ * Discovery never sees them, so they are read here by where they are.
+ */
+function filesTheProgramLeavesOut(
+  pack: PatternPack,
+  declared: ServedBesideDeclaration,
+  inProgram: readonly string[],
+): string[] {
+  const conventions = [
+    ...pack.discovery.filter(isFileRoute).map((pattern) => ({
+      filePattern: pattern.match.filePattern,
+      root: pattern.bindingExtraction.path.root,
+    })),
+    ...(declared.pages ?? []).map((pages) => ({
+      filePattern: pages.filePattern,
+      root: pages.path.root,
+    })),
+  ];
+  const directories = new Set<string>();
+  for (const { filePattern, root } of conventions) {
+    const matches = picomatch(filePattern, { dot: true });
+    for (const file of inProgram) {
+      const directory = matches(file) ? routingDirectoryOf(file, root) : null;
+      if (directory !== null && !directory.includes("/node_modules/")) {
+        directories.add(directory);
+      }
+    }
+  }
+  const known = new Set(inProgram);
+  const onDisk = new Set([...directories].flatMap(filesUnder));
+  return [...onDisk].filter((file) => !known.has(file)).sort();
+}
+
+/** The first directory above a file named as the convention's root, which its route path is measured from. */
+function routingDirectoryOf(file: string, root: string): string | null {
+  const parts = file.split("/");
+  const rootParts = root.split("/").filter((part) => part.length > 0);
+  for (let start = 0; start + rootParts.length < parts.length; start += 1) {
+    if (rootParts.every((part, index) => parts[start + index] === part)) {
+      return parts.slice(0, start + rootParts.length).join("/");
+    }
+  }
+  return null;
+}
+
+/** Every file under a directory, with `node_modules` left out. */
+function filesUnder(directory: string): string[] {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(directory, {
+      recursive: true,
+      withFileTypes: true,
+    });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        !entry.parentPath.split(path.sep).includes("node_modules"),
+    )
+    .map((entry) => path.join(entry.parentPath, entry.name));
+}
+
+/** Each route file the program leaves out, which covers its path for every method. */
+function routeFilesLeftOut(
+  pack: PatternPack,
+  leftOut: readonly string[],
+): ServedBesideEntry[] {
+  return pack.discovery.filter(isFileRoute).flatMap((pattern) => {
+    const matches = picomatch(pattern.match.filePattern, { dot: true });
+    return leftOut.flatMap((file) => {
+      const served = matches(file)
+        ? routePathFromFile(file, pattern.bindingExtraction.path)
+        : null;
+      return served === null
+        ? []
+        : [
+            {
+              by: "unread" as const,
+              path: served,
+              file,
+              line: 1,
+              written: "a route file the program leaves out",
+            },
+          ];
     });
   });
 }

@@ -67,7 +67,7 @@ const nextLike: PatternPack = {
       kind: "handler",
       match: {
         type: "fileConvention",
-        filePattern: "**/app/**/route.ts",
+        filePattern: "**/app/**/route.{ts,js}",
         exportNames: ["GET", "POST"],
       },
       bindingExtraction: {
@@ -80,13 +80,30 @@ const nextLike: PatternPack = {
         },
       },
     },
+    {
+      kind: "handler",
+      match: {
+        type: "fileConvention",
+        filePattern: "**/pages/api/**/*.{ts,js}",
+        exportNames: ["default"],
+      },
+      bindingExtraction: {
+        method: { type: "literal", value: "*" },
+        path: {
+          type: "fromFilename",
+          root: "pages",
+          dropBasenames: ["index"],
+          dynamic: "brackets",
+        },
+      },
+    },
   ],
   terminals: routeTerminals,
   inputMapping: { type: "positionalParams", params: [] },
   servedBeside: {
     pages: [
       {
-        filePattern: "**/app/**/page.tsx",
+        filePattern: "**/app/**/page.{tsx,jsx}",
         path: {
           type: "fromFilename",
           root: "app",
@@ -238,6 +255,53 @@ describe("what a file-convention framework serves beside its routes", () => {
       ["unread", null],
       ["unread", null],
       ["middleware", "/{path*}"],
+    ]);
+  });
+
+  it("covers the path of a route file it read no route from, and the method of an export that gave none", async () => {
+    const entries = await statedFor({
+      "app/api/orders/route.ts": ROUTE,
+      "app/api/session/route.ts": `
+        import { makeHandlers } from "auth-kit";
+        export const { GET, POST } = makeHandlers();
+      `,
+      "app/api/teams/route.ts": `
+        import { makeHandlers } from "auth-kit";
+        export async function GET() { return Response.json({}); }
+        export const { POST } = makeHandlers();
+      `,
+      "pages/api/confirm.ts": `export { default } from "../../lib/confirm";\n`,
+      "lib/confirm.ts": `
+        export default function confirm(req, res) { return res.json({}); }
+      `,
+    });
+
+    expect(
+      entries?.map((entry) => [entry.by, entry.path, entry.methods ?? null]),
+    ).toEqual([
+      ["unread", "/api/session", null],
+      ["unread", "/api/teams", ["POST"]],
+      ["unread", "/api/confirm", null],
+    ]);
+  });
+
+  it("reads the route and page files the program leaves out where its routes and pages are", async () => {
+    // The project these tests build takes only `.ts` and `.tsx` files.
+    const entries = await statedFor({
+      "app/api/orders/route.ts": ROUTE,
+      "app/api/legacy/route.js": "export async function POST() {}\n",
+      "app/about/page.jsx": "export default function About() {}\n",
+      "pages/api/new.ts": "export default function handler() {}\n",
+      "pages/api/old.js": "export default function handler() {}\n",
+      "scripts/app/route.js": "export async function GET() {}\n",
+    });
+
+    expect(
+      entries?.map((entry) => [entry.by, entry.path, entry.methods ?? null]),
+    ).toEqual([
+      ["page", "/about", ["GET", "HEAD"]],
+      ["unread", "/api/legacy", null],
+      ["unread", "/api/old", null],
     ]);
   });
 
