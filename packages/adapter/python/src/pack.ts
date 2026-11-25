@@ -192,7 +192,7 @@ export interface PyMountCall {
   serves: "mount";
   at: readonly EntryPick[];
   app: readonly EntryPick[];
-  /** Where the mounted value's construction states a path of its own, which serves when the mount states none. */
+  /** Where the mounted value's construction states a path of its own, which the framework uses when the mount states none. */
   ownPath?: readonly EntryPick[];
   /** Calls whose result serves static files, such as `StaticFiles(...)`. */
   staticServers?: readonly ServingCall[];
