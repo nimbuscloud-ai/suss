@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { readServedBesideMetadata } from "@suss/behavioral-ir";
 
 import {
   flaskRestxFramework,
@@ -17,7 +18,7 @@ describe("flaskRestxFramework", () => {
   it("accepts flask_restx's own module by default", () => {
     const pack = flaskRestxFramework();
     expect(pack.name).toBe("flask-restx");
-    expect(pack.version).toBe("2");
+    expect(pack.version).toBe("3");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
@@ -193,5 +194,136 @@ describe("the path the shipped pack composes for a blueprint-mounted route", () 
         "OrderDetail.get",
       ),
     ).toBe("/api/v1/orders/{order_id}");
+  });
+});
+
+/** What the pack states beside the app's routes, each as `by methods path`, with `*` for every method and `any` for any path. */
+async function besideOf(lines: readonly string[]): Promise<string[]> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flask-restx-beside-"));
+  fs.writeFileSync(path.join(dir, "app.py"), [...lines, ""].join("\n"));
+  const { summaries } = await extractPythonProject({
+    files: findPythonFiles(dir),
+    roots: [dir],
+    packs: [flaskRestxFramework()],
+    workspaceRoot: dir,
+  });
+  const route = summaries.find(
+    (summary) =>
+      summary.identity.boundaryBinding?.recognition === "flask-restx",
+  );
+  const statement =
+    route === undefined ? undefined : readServedBesideMetadata(route);
+  return (statement?.entries ?? []).map(
+    (entry) =>
+      `${entry.by} ${entry.methods?.join(",") ?? "*"} ${entry.path ?? "any"}`,
+  );
+}
+
+const ORDERS_API = [
+  "from flask import Blueprint, Flask",
+  "from flask_restx import Api, Namespace, Resource",
+  "",
+  "app = Flask(__name__)",
+  'api_bp = Blueprint("api", __name__, url_prefix="/api")',
+  "api = Api(api_bp, doc=False)",
+  'ns = Namespace("orders", path="/orders")',
+  "",
+  '@ns.route("/<int:order_id>")',
+  "class OrderDetail(Resource):",
+  "    def get(self, order_id):",
+  "        return {}",
+  "",
+  "api.add_namespace(ns)",
+  "app.register_blueprint(api_bp)",
+];
+
+describe("what a flask-restx app serves beside its resources", () => {
+  it("lists the static folder, Flask's own routes under where each blueprint is registered, and the Swagger document", async () => {
+    const beside = await besideOf([
+      ...ORDERS_API,
+      'reports = Blueprint("reports", __name__)',
+      'drafts = Blueprint("drafts", __name__, url_prefix="/drafts")',
+      'app.register_blueprint(reports, url_prefix="/reports")',
+      "",
+      '@app.route("/health", methods=["GET", "POST"])',
+      "def health():",
+      "    return {}",
+      "",
+      '@reports.get("/<path:name>")',
+      "def report(name):",
+      "    return {}",
+      "",
+      '@drafts.route("/<int:draft_id>")',
+      "def draft(draft_id):",
+      "    return {}",
+      "",
+      'api.add_resource(OrderDetail, "/legacy/<int:order_id>")',
+    ]);
+
+    expect(beside).toEqual([
+      "static GET,HEAD /static/{path*}",
+      "page GET,HEAD /swagger.json",
+      "page GET,HEAD /api/swagger.json",
+      "page GET,HEAD /api/orders/swagger.json",
+      "mount * /reports/{path*}",
+      "unread GET,POST /health",
+      "unread GET /reports/{name+}",
+      "unread GET any",
+      "unread * any",
+    ]);
+  });
+
+  it("serves the static folder where its keywords put it, and nothing when it is None", async () => {
+    const at = async (construction: string): Promise<string[]> =>
+      (
+        await besideOf(
+          ORDERS_API.map((line) =>
+            line === "app = Flask(__name__)" ? construction : line,
+          ),
+        )
+      ).filter((entry) => entry.startsWith("static"));
+
+    expect(
+      await at(
+        'app = Flask(__name__, static_folder="../web/dist", static_url_path="")',
+      ),
+    ).toEqual(["static GET,HEAD /{path*}"]);
+    expect(await at('app = Flask(__name__, static_folder="assets")')).toEqual([
+      "static GET,HEAD /assets/{path*}",
+    ]);
+    expect(await at("app = Flask(__name__, static_folder=None)")).toEqual([]);
+    expect(await at("app = Flask(__name__, static_folder=FOLDER)")).toEqual([
+      "static GET,HEAD any",
+    ]);
+  });
+
+  it("lists a hook or an error handler only when it may respond to a path no route serves", async () => {
+    const beside = await besideOf([
+      "from flask import request, send_file",
+      ...ORDERS_API,
+      "",
+      "app.register_error_handler(404, lambda error: send_file('index.html'))",
+      "app.register_error_handler(ValueError, lambda error: ({}, 400))",
+      "",
+      "@app.before_request",
+      "def check_token():",
+      '    if request.headers.get("x-block"):',
+      '        return {"error": "blocked"}, 403',
+      "    return None",
+      "",
+      "@app.errorhandler(404)",
+      "def not_found(error):",
+      '    return {"error": "not found"}, 404',
+      "",
+      "@app.errorhandler(500)",
+      "def single_page(error):",
+      '    return send_file("index.html")',
+    ]);
+
+    expect(
+      beside.filter(
+        (entry) => entry.startsWith("unread") || entry.startsWith("middleware"),
+      ),
+    ).toEqual(["unread * any", "middleware * any"]);
   });
 });

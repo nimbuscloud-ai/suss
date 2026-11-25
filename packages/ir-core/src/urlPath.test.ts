@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
+import { originHost, pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
 
 describe("pathAfterOrigin", () => {
   it("takes the origin off an absolute URL", () => {
@@ -36,5 +36,17 @@ describe("statesAnOrigin", () => {
     expect(statesAnOrigin("//backend.internal/orders")).toBe(true);
     expect(statesAnOrigin("/orders")).toBe(false);
     expect(statesAnOrigin("/api/v2")).toBe(false);
+  });
+});
+
+describe("originHost", () => {
+  it("reads the host an origin states, with its port and without its user", () => {
+    expect(originHost("https://API.Payments.com/v1")).toBe("api.payments.com");
+    expect(originHost("http://user:secret@shop.internal:8080")).toBe(
+      "shop.internal:8080",
+    );
+    expect(originHost("//cdn.example.org/a.js")).toBe("cdn.example.org");
+    expect(originHost("/orders")).toBeUndefined();
+    expect(originHost("file:///etc/hosts")).toBeUndefined();
   });
 });

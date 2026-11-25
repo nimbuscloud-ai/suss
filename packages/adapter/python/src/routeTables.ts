@@ -22,6 +22,7 @@ import { nodeOfResolutionKey } from "./values/evaluator.js";
 import type { Database } from "@suss/datalog";
 import type {
   CallOps,
+  RouteGap,
   RouteOutcome,
   MountHop as TableHop,
 } from "@suss/extractor";
@@ -67,6 +68,18 @@ export interface DeclaredRouteIndex {
     pattern: PythonDiscoveryPattern,
     routerKey: string,
   ): MountHop[] | null;
+  /** What the table could not follow, such as a mount of a router a library builds, with the path it is mounted at when that read. */
+  unfollowed(pattern: PythonDiscoveryPattern): readonly RouteGap[];
+  /** Every route the table read off a decorator, once for each way a walk reached it. */
+  declared(pattern: PythonDiscoveryPattern): readonly TableDeclared[];
+}
+
+/** A route the table read off a decorator: the method it serves and its whole path as the library writes it, each null where it did not read. */
+export interface TableDeclared {
+  method: string | null;
+  path: string | null;
+  /** The decorator's call. */
+  call: CallOps;
 }
 
 type Unread = Extract<RouteOutcome, { kind: "unread"; handler: unknown }>;
@@ -80,6 +93,7 @@ interface PatternRoutes {
     ReadonlyMap<string, readonly TableHop[]>
   >;
   readonly folded: Map<string, DeclaredRoute[]>;
+  readonly gaps: readonly RouteGap[];
 }
 
 export function buildRouteTables(
@@ -101,7 +115,7 @@ export function buildRouteTables(
   const byPattern = new Map<PythonDiscoveryPattern, PatternRoutes>();
   for (const pattern of patterns) {
     const set = composeAppRoutes(pattern.routes.table, sources);
-    byPattern.set(pattern, indexOutcomes(set.outcomes));
+    byPattern.set(pattern, { ...indexOutcomes(set.outcomes), gaps: set.gaps });
   }
   const sentencesOf = (pattern: PythonDiscoveryPattern): Sentences => ({
     words: pattern.routes.unread,
@@ -132,10 +146,33 @@ export function buildRouteTables(
       const [only, ...more] = [...(chains?.values() ?? [])];
       return only === undefined || more.length > 0 ? null : hopsOf(only, facts);
     },
+
+    unfollowed(pattern) {
+      return byPattern.get(pattern)?.gaps ?? [];
+    },
+
+    declared(pattern) {
+      const byDecorator = byPattern.get(pattern)?.byDecorator ?? new Map();
+      return [...byDecorator.values()].flatMap((outcomes: readonly Walked[]) =>
+        outcomes.flatMap((outcome) =>
+          outcome.entry.form === "call"
+            ? [
+                {
+                  method: outcome.method ?? null,
+                  path: outcome.kind === "route" ? outcome.path : null,
+                  call: outcome.entry.call,
+                },
+              ]
+            : [],
+        ),
+      );
+    },
   };
 }
 
-function indexOutcomes(outcomes: readonly RouteOutcome[]): PatternRoutes {
+function indexOutcomes(
+  outcomes: readonly RouteOutcome[],
+): Omit<PatternRoutes, "gaps"> {
   const byDecorator = new Map<string, Walked[]>();
   const chains = new Map<string, Map<string, readonly TableHop[]>>();
   for (const outcome of outcomes) {

@@ -434,6 +434,25 @@ export const FIXTURE_INPUTS = [
     ...project("fixtures/missing-route-express/tsconfig.json"),
     ...packs("express", "fetch"),
   ]),
+  fixture("missing-route-fastapi/shop", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-fastapi/shop"),
+    ...packs("fastapi"),
+  ]),
+  fixture("missing-route-fastapi/sync", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-fastapi/sync"),
+    ...packs("httpx", "aws-lambda-python"),
+  ]),
+  fixture("missing-route-flask-restx/shop", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-flask-restx/shop"),
+    ...packs("flask-restx"),
+  ]),
+  fixture("missing-route-flask-restx/web", [
+    ...project("fixtures/missing-route-flask-restx/web/tsconfig.json"),
+    ...packs("fetch"),
+  ]),
   fixture("missing-route-nextjs", [
     ...project("fixtures/missing-route-nextjs/tsconfig.json"),
     ...packs("nextjs", "fetch"),

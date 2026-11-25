@@ -19,12 +19,14 @@ import type {
   ClassBodyDeclaration,
   ConstructedFrom,
   DeclaredDiscoveryPattern,
+  EntryPick,
   InvocationRecognizer,
   LibraryEnvVars,
   PackWords,
   PatternPack,
   RequestRecognizer,
   RouteTableDeclaration,
+  ServingCall,
   TestCasesMatch,
 } from "@suss/extractor";
 import type { CallbackMethod, Chain } from "@suss/recognize";
@@ -105,6 +107,128 @@ export interface PythonPack {
   tests?: PyTestCases[];
   /** How the library runs a project function as a background job, and the calls that enqueue one. DESIGN.md says how each is read. */
   jobQueues?: PyJobQueue[];
+  /**
+   * For a REST framework, what else serves a request that no route in
+   * the table matches, and where the adapter reads each part. A check
+   * reports a call to a path no route serves only in a service whose
+   * packs all state this.
+   */
+  servedBeside?: PyServedBeside;
+}
+
+/**
+ * What a Python framework serves beside the routes its pack reads. The
+ * DESIGN.md section "What serves requests beside the routes" says what
+ * the adapter adds to it and how each part is read.
+ */
+export interface PyServedBeside {
+  /** The objects the framework serves requests through, such as the app, a router and a blueprint. */
+  servers: readonly PyServer[];
+}
+
+export interface PyServer {
+  made: ConstructedFrom;
+  /**
+   * Where a path a call on it states is served: at that path, on the
+   * app, or under a prefix this reading does not put together, on a
+   * router or a blueprint, so such a call may serve any path.
+   */
+  paths: "asWritten" | "underPrefix";
+  /** Whether a path a call on it states is served under each path the app registers it at, as a Flask blueprint's is, when the reading finds every registration. */
+  servedWhereRegistered?: true;
+  /** Paths the framework serves of its own accord, each moved or turned off by a keyword of the construction. */
+  builtIn?: readonly PyBuiltInPath[];
+  /** The folder of static files the construction states, which the framework serves at a path of its own. */
+  staticFolder?: PyStaticFolder;
+  /** Keywords that hand the construction routes, middleware or handlers the pack does not read. */
+  unreadKeywords?: readonly string[];
+  /** The methods called on it that serve requests beside the routes the pack reads, by method name. */
+  calls: Readonly<Record<string, PyServingCall>>;
+}
+
+export interface PyBuiltInPath {
+  /** The keyword that moves it, or turns it off when it is `None` or `False`. Unset for a path no keyword changes. */
+  keyword?: string;
+  /** The path when the keyword is left out. */
+  path: string;
+  methods: readonly string[];
+  /**
+   * `app` serves it at the path as written. `routes` serves it under the
+   * prefix the app gives the pack's routes, which this reading does not
+   * put together, so it is listed under every prefix of every route.
+   */
+  under: "app" | "routes";
+}
+
+export interface PyStaticFolder {
+  /** The keyword that states the folder, and the folder when it is left out, or null for none. */
+  folder: { keyword: string; default: string | null };
+  /** The keyword that states the path the folder is served at. Left out, it is `/` and the folder's last name. */
+  urlPath: string;
+  /** How many arguments come before these two, so a call that passes more by position may state either. */
+  positionalBefore: number;
+  methods: readonly string[];
+}
+
+/** What a call on a server registers. */
+export type PyServingCall =
+  | PyRouteCall
+  | PyMountCall
+  | PyMiddlewareCall
+  | PyErrorHandlerCall;
+
+/** A route the pack's table does not read, such as `add_api_route` on FastAPI or `route` on a Flask app. */
+export interface PyRouteCall {
+  serves: "route";
+  path: readonly EntryPick[];
+  /** The methods it serves: fixed, or read from a list the call passes, with those it serves when the call passes none. Unset `unstated` means any. */
+  methods:
+    | readonly string[]
+    | { pick: EntryPick; unstated?: readonly string[] };
+}
+
+/** Another app, a blueprint or a static file server mounted at a path. */
+export interface PyMountCall {
+  serves: "mount";
+  at: readonly EntryPick[];
+  app: readonly EntryPick[];
+  /** Where the mounted value's construction states a path of its own, which the framework uses when the mount states none. */
+  ownPath?: readonly EntryPick[];
+  /** Calls whose result serves static files, such as `StaticFiles(...)`. */
+  staticServers?: readonly ServingCall[];
+  /** Leave out a value the pack's route table reads as the carrier of a root, such as the blueprint a flask-restx `Api` is built on. */
+  exceptCarriers?: true;
+}
+
+/** Middleware added by a call, which may respond to any request itself unless it is one of `known`. */
+export interface PyMiddlewareCall {
+  serves: "middleware";
+  middleware: readonly EntryPick[];
+  /** The middleware the library ships, and the methods each responds to on its own, none for most. */
+  known: readonly PyKnownMiddleware[];
+}
+
+export interface PyKnownMiddleware {
+  module: string;
+  names: readonly string[];
+  /** The methods it responds to on any path, as CORS middleware responds to a preflight `OPTIONS`. */
+  respondsTo: readonly string[];
+}
+
+/** An error handler added by a call, which may serve a path no route serves when it handles the library's not-found error. */
+export interface PyErrorHandlerCall {
+  serves: "errorHandler";
+  handles: readonly EntryPick[];
+  notFound: PyNotFound;
+}
+
+/** The error a library raises for a path no route serves, and the ways a handler can be registered for it. */
+export interface PyNotFound {
+  status: number;
+  /** The modules whose exception classes may be it, or one it descends from. */
+  modules: readonly string[];
+  /** The language's classes it descends from, so that a handler registered for one catches it too. */
+  ancestors: readonly string[];
 }
 
 /**

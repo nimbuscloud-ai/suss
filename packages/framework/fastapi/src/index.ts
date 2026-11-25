@@ -18,6 +18,9 @@ import { STATUS_CONSTANTS } from "./statusConstants.js";
 
 import type {
   ParameterSource,
+  PyKnownMiddleware,
+  PyServedBeside,
+  PyServingCall,
   PythonPack,
   PyWrapperForm,
   RouterUnreadWords,
@@ -30,7 +33,7 @@ import type { CallbackMethod } from "@suss/recognize";
  * What the extraction cache keys this pack's results on. Bump it on any
  * change to the units it finds or what it reads into them.
  */
-const VERSION = "3";
+const VERSION = "4";
 
 /**
  * The CLI checks a `-f fastapi=config.json` file against this schema. A
@@ -166,6 +169,121 @@ export function fastapiWrappers(modules: readonly string[]): PyWrapperForm[] {
   ];
 }
 
+const PAGE_METHODS = ["GET", "HEAD"];
+
+/** The methods Starlette's `Route` serves when the call lists none: those its endpoint class defines, or GET for a function. */
+const STARLETTE_ROUTE: PyServingCall = {
+  serves: "route",
+  path: [{ at: 0 }, { keyword: "path" }],
+  methods: { pick: { keyword: "methods" } },
+};
+
+/** The routes an app or a router adds that the route table does not read. */
+const ROUTE_CALLS: Record<string, PyServingCall> = {
+  add_api_route: {
+    serves: "route",
+    path: [{ at: 0 }, { keyword: "path" }],
+    methods: { pick: { keyword: "methods" }, unstated: ["GET"] },
+  },
+  add_route: STARLETTE_ROUTE,
+  route: STARLETTE_ROUTE,
+};
+
+/** Each module that exports one of Starlette's middleware classes: Starlette's own, and FastAPI's re-export. */
+function shippedMiddleware(
+  name: string,
+  className: string,
+  respondsTo: readonly string[],
+): PyKnownMiddleware[] {
+  return [`starlette.middleware.${name}`, `fastapi.middleware.${name}`].map(
+    (module) => ({ module, names: [className], respondsTo }),
+  );
+}
+
+/**
+ * What FastAPI serves beside the routes the table reads. The app serves
+ * its OpenAPI document and its docs pages, and whatever `mount` puts
+ * under a path. A route added by a call, middleware the library does not
+ * ship, and an error handler for the not-found error may serve any path.
+ * Starlette's CORS middleware responds to a preflight `OPTIONS` itself.
+ */
+export function fastapiServedBeside(
+  modules: readonly string[],
+): PyServedBeside {
+  return {
+    servers: [
+      {
+        made: constructedFrom({ from: modules, named: ["FastAPI"] }),
+        paths: "asWritten",
+        builtIn: [
+          { keyword: "openapi_url", path: "/openapi.json" },
+          { keyword: "docs_url", path: "/docs" },
+          { keyword: "redoc_url", path: "/redoc" },
+          {
+            keyword: "swagger_ui_oauth2_redirect_url",
+            path: "/docs/oauth2-redirect",
+          },
+        ].map((page) => ({
+          ...page,
+          methods: PAGE_METHODS,
+          under: "app" as const,
+        })),
+        unreadKeywords: ["routes", "middleware", "exception_handlers"],
+        calls: {
+          ...ROUTE_CALLS,
+          mount: {
+            serves: "mount",
+            at: [{ at: 0 }, { keyword: "path" }],
+            app: [{ at: 1 }, { keyword: "app" }],
+            staticServers: ["starlette.staticfiles", "fastapi.staticfiles"].map(
+              (module) => ({
+                module,
+                names: ["StaticFiles"],
+                by: "static" as const,
+              }),
+            ),
+          },
+          add_middleware: {
+            serves: "middleware",
+            middleware: [{ at: 0 }, { keyword: "middleware_class" }],
+            known: [
+              ...shippedMiddleware("cors", "CORSMiddleware", ["OPTIONS"]),
+              ...shippedMiddleware("gzip", "GZipMiddleware", []),
+              ...shippedMiddleware("trustedhost", "TrustedHostMiddleware", []),
+              ...shippedMiddleware(
+                "httpsredirect",
+                "HTTPSRedirectMiddleware",
+                [],
+              ),
+              ...shippedMiddleware("sessions", "SessionMiddleware", []),
+            ],
+          },
+          add_exception_handler: {
+            serves: "errorHandler",
+            handles: [{ at: 0 }, { keyword: "exc_class_or_status_code" }],
+            notFound: {
+              status: 404,
+              modules: [
+                "starlette.exceptions",
+                "fastapi",
+                "fastapi.exceptions",
+              ],
+              // Starlette hands its not-found error to the handler for
+              // its own class first, so these are here only to be safe.
+              ancestors: ["Exception", "BaseException"],
+            },
+          },
+        },
+      },
+      {
+        made: constructedFrom({ from: modules, named: ["APIRouter"] }),
+        paths: "underPrefix",
+        calls: ROUTE_CALLS,
+      },
+    ],
+  };
+}
+
 /** Why a route the table found has no path, said of the router it is declared on. */
 export const ROUTER_UNREAD: RouterUnreadWords = {
   unreached:
@@ -234,6 +352,7 @@ export function fastapiFramework(options: FastapiPackOptions = {}): PythonPack {
     version: VERSION,
     protocol: "http",
     requestSpelling: REQUEST_SPELLING,
+    servedBeside: fastapiServedBeside(modules),
     ...(options.wrapperModules !== undefined
       ? { projectModules: options.wrapperModules }
       : {}),

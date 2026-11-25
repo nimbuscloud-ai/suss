@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { extractPythonProject, findPythonFiles } from "@suss/adapter-python";
+import { readServedBesideMetadata } from "@suss/behavioral-ir";
 
 import {
   fastapiFramework,
@@ -24,7 +25,7 @@ describe("fastapiFramework", () => {
   it("accepts fastapi's own module by default", () => {
     const pack = fastapiFramework();
     expect(pack.name).toBe("fastapi");
-    expect(pack.version).toBe("3");
+    expect(pack.version).toBe("4");
     expect(pack.protocol).toBe("http");
     expect(pack.discovery).toEqual([
       {
@@ -203,6 +204,130 @@ describe("a route an api_route decorator declares", () => {
       "orders POST /orders",
       "replace_item PUT /v1/items/{item_id}",
       "tag PATCH /tags",
+    ]);
+  });
+});
+
+/** What the pack states beside the app's one route, each as `by methods path`, with `*` for every method and `any` for any path. */
+async function besideOf(lines: readonly string[]): Promise<string[]> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fastapi-beside-"));
+  fs.writeFileSync(path.join(dir, "main.py"), [...lines, ""].join("\n"));
+  const { summaries } = await extractPythonProject({
+    files: findPythonFiles(dir),
+    roots: [dir],
+    packs: [fastapiFramework()],
+    workspaceRoot: dir,
+  });
+  const route = summaries.find(
+    (summary) => summary.identity.boundaryBinding?.recognition === "fastapi",
+  );
+  const statement =
+    route === undefined ? undefined : readServedBesideMetadata(route);
+  return (statement?.entries ?? []).map(
+    (entry) =>
+      `${entry.by} ${entry.methods?.join(",") ?? "*"} ${entry.path ?? "any"}`,
+  );
+}
+
+const ORDERS_APP = [
+  "from fastapi import APIRouter, FastAPI",
+  "",
+  "app = FastAPI()",
+  'router = APIRouter(prefix="/v1")',
+  "",
+  '@router.get("/orders/{order_id}")',
+  "def order(order_id: str):",
+  "    return {}",
+  "",
+  "app.include_router(router)",
+];
+
+describe("what FastAPI serves beside its routes", () => {
+  it("lists the docs pages, each mount, and each route a call adds, at its path", async () => {
+    const beside = await besideOf([
+      ...ORDERS_APP,
+      "",
+      "from fastapi.staticfiles import StaticFiles",
+      "from auth_library import auth_router",
+      "from legacy import legacy_app",
+      "",
+      'app.mount("/static/", StaticFiles(directory="static"))',
+      'app.mount("/legacy", legacy_app)',
+      'app.include_router(auth_router, prefix="/auth")',
+      'app.add_api_route("/health", order)',
+      'app.add_route("/files/{rest:path}", order)',
+      'router.add_api_route("/extra", order, methods=["POST"])',
+    ]);
+
+    expect(beside).toEqual([
+      "page GET,HEAD /openapi.json",
+      "page GET,HEAD /docs",
+      "page GET,HEAD /redoc",
+      "page GET,HEAD /docs/oauth2-redirect",
+      "static GET,HEAD /static/{path*}",
+      "mount * /legacy/{path*}",
+      "unread GET /health",
+      "unread * /files/{rest*}",
+      "unread POST any",
+      "mount * /auth/{path*}",
+    ]);
+  });
+
+  it("moves or leaves out a docs page its keyword moves or turns off, and lists one it cannot read as any path", async () => {
+    const beside = await besideOf([
+      ...ORDERS_APP.map((line) =>
+        line === "app = FastAPI()"
+          ? 'app = FastAPI(docs_url="/help", redoc_url=None, openapi_url=SPEC_URL)'
+          : line,
+      ),
+    ]);
+
+    expect(beside).toEqual([
+      "page GET,HEAD any",
+      "page GET,HEAD /help",
+      "page GET,HEAD /docs/oauth2-redirect",
+    ]);
+  });
+
+  it("lists middleware and an error handler only when either may respond to a path no route serves", async () => {
+    const beside = await besideOf([
+      ...ORDERS_APP,
+      "",
+      "from fastapi.middleware.cors import CORSMiddleware",
+      "from fastapi.middleware.gzip import GZipMiddleware",
+      "from fastapi.responses import FileResponse, JSONResponse",
+      "from starlette.exceptions import HTTPException",
+      "from rate_limits import RateLimited, limited",
+      "from metrics import MetricsMiddleware",
+      "",
+      "app.add_middleware(CORSMiddleware, allow_origins=['*'])",
+      "app.add_middleware(GZipMiddleware)",
+      "app.add_middleware(MetricsMiddleware)",
+      "app.add_exception_handler(RateLimited, limited)",
+      "app.add_exception_handler(404, limited)",
+      "",
+      '@app.middleware("http")',
+      "async def timing(request, call_next):",
+      "    response = await call_next(request)",
+      '    response.headers["x-time"] = "1"',
+      "    return response",
+      "",
+      '@app.middleware("http")',
+      "async def guard(request, call_next):",
+      '    if request.headers.get("x-block"):',
+      '        return JSONResponse({"detail": "blocked"}, status_code=403)',
+      "    return await call_next(request)",
+      "",
+      "@app.exception_handler(HTTPException)",
+      "async def single_page(request, exc):",
+      '    return FileResponse("index.html")',
+    ]);
+
+    expect(beside.filter((entry) => !entry.startsWith("page"))).toEqual([
+      "middleware OPTIONS any",
+      "middleware * any",
+      "unread * any",
+      "middleware * any",
     ]);
   });
 });

@@ -486,4 +486,22 @@ describe("a call whose base URL the deployment fills in", () => {
       "2 services in this run serve routes under /, where the deployment's base URL points, and nothing says which one the call reaches",
     ]);
   });
+
+  it("is listed as unchecked when the deployment sets the base to a public host", () => {
+    const result = checked([
+      ...backend(),
+      client("charge", "POST", "{PAYMENTS_URL}/v1/charges", {
+        workspace: "storefront",
+        file: "web/charge.ts",
+      }),
+      runtime({ PAYMENTS_URL: "https://api.payments-provider.com" }),
+    ]);
+
+    expect(
+      result.findings.filter((f) => f.kind === "restMethodOnUnknownPath"),
+    ).toEqual([]);
+    expect(result.unchecked.routes.map((u) => u.reason)).toEqual([
+      "the deployment sets the base URL to the public host api.payments-provider.com, which may be another company's API, and nothing says a service in this run serves it",
+    ]);
+  });
 });

@@ -236,7 +236,12 @@ export {
 } from "./suppressions.js";
 export { TEST_TITLE_SEPARATOR, testUnitName } from "./testName.js";
 export { bodyShapesMatch, type MatchResult } from "./typeShapeMatch.js";
-export { hostCanBeOwn, pathAfterOrigin, statesAnOrigin } from "./urlPath.js";
+export {
+  hostCanBeOwn,
+  originHost,
+  pathAfterOrigin,
+  statesAnOrigin,
+} from "./urlPath.js";
 
 // ---------------------------------------------------------------------------
 // Boundary binding constructors
