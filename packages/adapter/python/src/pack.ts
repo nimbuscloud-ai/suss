@@ -126,9 +126,9 @@ export interface PyServedBeside {
   /** The objects the framework serves requests through, such as the app, a router and a blueprint. */
   servers: readonly PyServer[];
   /**
-   * Library calls that are handed a server and serve it as it is, adding
-   * no route, such as `uvicorn.run(app)` or a test client. A server
-   * handed to any other library call may serve any path.
+   * Library calls handed a server or its members that add no route, such
+   * as `uvicorn.run(app)` or a test client. A server handed to any other
+   * library call may serve any path.
    */
   runners?: readonly ReceiverOrigin[];
 }

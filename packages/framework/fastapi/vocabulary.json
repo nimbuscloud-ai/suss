@@ -76,5 +76,6 @@
   "TestClient": "Starlette: the test client that calls an app in place, which FastAPI re-exports from fastapi.testclient",
   "httpx": "httpx: the HTTP client package",
   "ASGITransport": "httpx: the transport that sends a client's requests to an ASGI app in place",
-  "AsyncClient": "httpx: the async client, which older versions point at an app with `app=`"
+  "AsyncClient": "httpx: the async client, which older versions point at an app with `app=`",
+  "get_openapi": "FastAPI: the function in fastapi.openapi.utils that builds an OpenAPI document from an app's title and routes"
 }

@@ -212,7 +212,7 @@ const INERT = [
   "state",
 ];
 
-/** Library calls handed an app that serve it with the routes it has: a server, and a client that calls it in place. */
+/** Library calls handed an app or its members that add no route: a server, a client that calls the app in place, and the OpenAPI builder. */
 const RUNNERS = [
   imported({ from: ["uvicorn"], named: ["run"] }),
   imported({ from: ["hypercorn.asyncio", "hypercorn.trio"], named: ["serve"] }),
@@ -221,6 +221,8 @@ const RUNNERS = [
     named: ["TestClient"],
   }),
   imported({ from: ["httpx"], named: ["ASGITransport", "AsyncClient"] }),
+  // Reads the app's title and routes into an OpenAPI document.
+  imported({ from: ["fastapi.openapi.utils"], named: ["get_openapi"] }),
 ];
 
 /** Each module that exports one of Starlette's middleware classes: Starlette's own, and FastAPI's re-export. */
