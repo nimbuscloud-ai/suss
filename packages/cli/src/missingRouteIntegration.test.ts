@@ -286,6 +286,20 @@ describe("an Express app whose client calls a renamed route", () => {
         'app.get("/api/orders/:id/summary", (req, res) => res.json({}));',
       ],
     ],
+    [
+      "the project's own function adds a route in a file that does not import Express",
+      "untyped-helper",
+      ['import { addLegacy } from "./legacy";', "", "addLegacy(app);"],
+      [
+        "interface RouteSink {",
+        "  get(path: string, handler: (req: unknown, res: { json(body: unknown): void }) => void): void;",
+        "}",
+        "",
+        "export function addLegacy(sink: RouteSink) {",
+        '  sink.get("/legacy", (req, res) => res.json({}));',
+        "}",
+      ],
+    ],
   ])(
     "reports nothing once %s",
     async (_label, slug, lines, legacy = []) => {

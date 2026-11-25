@@ -317,7 +317,7 @@ export interface ExpandedRegistrations {
  * fills in at each call site instead. The call sites have the path and
  * the handler the caller supplied, which the body does not.
  */
-function expandedAtCallSites(
+export function expandedAtCallSites(
   call: Node,
   method: string,
   expanded: ExpandedRegistrations | undefined,

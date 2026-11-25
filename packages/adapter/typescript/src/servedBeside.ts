@@ -22,6 +22,8 @@ import { checkerReads } from "./bootstrap/sourceFileLookup.js";
 import { moduleOpsFor } from "./discovery/declared.js";
 import { routePathFromFile } from "./discovery/filenameRoute.js";
 import {
+  type ExpandedRegistrations,
+  expandedAtCallSites,
   looksForRegistrations,
   methodsRegisteredOn,
   registrationMethodsOf,
@@ -55,6 +57,8 @@ export interface ServedBesideRun {
   mounts: ReadonlyMap<string, readonly MountBeside[]>;
   /** By pack, the creation site of every app and router it builds. */
   servers: ReadonlyMap<string, ReadonlySet<string>>;
+  /** The registrations inside project helpers that their call sites fill in. */
+  helpers: ExpandedRegistrations;
 }
 
 type Syntax = NonNullable<ServedBesideDeclaration["patternSyntax"]>;
@@ -143,10 +147,10 @@ function heldEntries(
   });
   return [
     ...new Map(
-      [...entries, ...routesNotRead(pack, routeCalls, run.store)].map((one) => [
-        JSON.stringify(one),
-        one,
-      ]),
+      [
+        ...entries,
+        ...routesNotRead(pack, routeCalls, run.store, run.helpers),
+      ].map((one) => [JSON.stringify(one), one]),
     ).values(),
   ];
 }
@@ -154,13 +158,14 @@ function heldEntries(
 /**
  * Each route registered on an app or a router the pack builds in a file
  * whose registrations discovery does not read, such as a file that
- * imports the app and not the framework. It may serve its method on any
- * path.
+ * imports the app and not the framework, unless a project helper's call
+ * sites fill it in. It may serve its method on any path.
  */
 function routesNotRead(
   pack: PatternPack,
   calls: readonly { call: string; method: string }[],
   store: ResolutionStore,
+  helpers: ExpandedRegistrations,
 ): ServedBesideEntry[] {
   const patterns = pack.discovery.flatMap((pattern) =>
     pattern.match.type === "registrationCall" ? [pattern.match] : [],
@@ -197,7 +202,8 @@ function routesNotRead(
       node === undefined ||
       !Node.isCallExpression(node) ||
       node.getArguments().length < 2 ||
-      looked(node.getSourceFile())
+      looked(node.getSourceFile()) ||
+      expandedAtCallSites(node, method, helpers)
     ) {
       return [];
     }
@@ -253,7 +259,7 @@ function unreadEntryAt(
         by: "unread",
         file: node.getSourceFile().getFilePath(),
         line: node.getStartLineNumber(),
-        written: written.slice(0, 200),
+        written: (written.split("\n")[0] ?? "").slice(0, 200),
       },
     ];
   };
