@@ -28,25 +28,24 @@ const MIDDLEWARE_CHANGES = new Set([
 
 const BUNDLER = spelled("Bundler");
 
-/** Each place under `config/` that hands the app to code suss does not read, covering every path. */
+/** Each file under `config/` that hands the app to code suss does not read, once for each way it does, covering every path. */
 export function configuredBeside(
   railsRoot: string,
   displayPathOf: (file: string) => string,
 ): ServedBesideEntry[] {
   const config = path.join(railsRoot, "config");
   const application = path.join(config, "application.rb");
-  return rubyFilesUnder(config).flatMap((file) =>
-    moduleOpsForFile(file)
+  return rubyFilesUnder(config).flatMap((file) => {
+    const written = moduleOpsForFile(file)
       .calls("file")
-      .flatMap((call) =>
-        writtenFor(call, file === application).map((written) => ({
-          by: "unread" as const,
-          file: displayPathOf(file),
-          line: 1,
-          written,
-        })),
-      ),
-  );
+      .flatMap((call) => writtenFor(call, file === application));
+    return [...new Set(written)].map((one) => ({
+      by: "unread" as const,
+      file: displayPathOf(file),
+      line: 1,
+      written: one,
+    }));
+  });
 }
 
 /** What an entry says of the call, or nothing for a call that hands nothing on. */

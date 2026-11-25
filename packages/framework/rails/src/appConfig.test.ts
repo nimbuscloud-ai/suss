@@ -45,6 +45,7 @@ describe("what a Rails app's configuration hands to code suss does not read", ()
         ],
         "initializers/legacy.rb": [
           "Rails.application.config.middleware.use LegacySummary",
+          "Rails.application.config.middleware.use LegacyFeed",
         ],
         "environments/production.rb": [
           "Rails.application.configure do",
