@@ -27,6 +27,7 @@ import {
   takesLeftWhenFalse,
   isPresent as takesLeftWhenPresent,
 } from "./operations.js";
+import { requestUrlOf } from "./routePath.js";
 import { testTruthiness } from "./testLowering.js";
 import {
   concat,
@@ -321,10 +322,30 @@ describe("caseRows", () => {
 });
 
 describe("environmentRead", () => {
-  it("takes the default when one is written", () => {
-    expect(literalOf(environmentRead([text("PREFIX"), text("/api")]))).toBe(
-      "/api",
-    );
+  it("takes the default when one is written, marked as taken over a value that did not read", () => {
+    const read = environmentRead([text("PREFIX"), text("/api")]);
+
+    expect(literalOf(read)).toBe("/api");
+    expect(takenOverUnread(read)).toBe(true);
+  });
+
+  it("keeps the mark in a string built from the default, and in its URL", () => {
+    const url = concat([
+      environmentRead([text("BASE"), text("")]),
+      text("/teams"),
+    ]);
+
+    expect(literalOf(url)).toBe("/teams");
+    expect(takenOverUnread(url)).toBe(true);
+    expect(requestUrlOf(url)).toEqual({
+      path: "/teams",
+      host: undefined,
+      tookDefault: true,
+    });
+    expect(requestUrlOf(text("/teams"))).toEqual({
+      path: "/teams",
+      host: undefined,
+    });
   });
 
   it("leaves a hole named after the variable otherwise", () => {

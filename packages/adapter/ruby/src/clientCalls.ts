@@ -340,6 +340,7 @@ function clientUnit(
     ...(claim.redirectDelivery === undefined
       ? {}
       : { redirectDelivery: claim.redirectDelivery }),
+    ...(claim.urlPartUnread === true ? { urlPartUnread: true } : {}),
     bodyContent: "statements",
     dependencyCalls: [],
     declaredContract: null,

@@ -39,8 +39,12 @@ import {
   DISPATCH_QUESTION,
   ELEMENTS_RUN_QUESTION,
   type ExplainStats,
+  fallbackAroundOne,
+  fallbackAroundOneUnder,
   fallbackWrittenAs,
   type HandedInAt,
+  type HeldUses,
+  HOLDERS_QUESTION,
   proofRules,
   queryFacts,
   RESOLUTION_QUESTIONS,
@@ -48,6 +52,7 @@ import {
   readClassBodyCalls,
   readDispatchOutcomes,
   readElementsRun,
+  readHeldUses,
   readUses,
   resolutionProgram,
   resolutionUnderProgram,
@@ -164,6 +169,7 @@ type Question =
   | typeof ELEMENTS_RUN_QUESTION
   | "wantedSubject"
   | "wantedUses"
+  | typeof HOLDERS_QUESTION
   | SourceQuestion;
 
 /** One place a value's walk ended, with the nodes the store keyed it by. */
@@ -264,6 +270,8 @@ export interface EnvironmentNamers {
 /** What one value is written as, kept per declaration. */
 interface WrittenAnswer {
   written: Node | null;
+  /** What a value reader evaluates, which `resolveEvaluatedValue` says. */
+  evaluated: Node | null;
   /** The class the value refers to, which `written` leaves out. */
   writtenClass: Node | null;
   walked: readonly string[];
@@ -311,14 +319,30 @@ interface EnvironmentAsked {
   reached: Map<string, Set<string>>;
 }
 
+/** A write to a watched path: the member read it is made through, and the file it is in. */
+interface WatchedWrite {
+  read: string;
+  file: string;
+}
+
 /**
  * What the packs say about the process: the streams it writes to, the
  * calls that end it, and where its exit code is assigned. An exit call
- * is whatever an exit terminal a pack declares matches by name.
+ * is whatever an exit terminal a pack declares matches by name. Beside
+ * those, the default base URL each client library keeps, whose writes
+ * the walk notes.
  */
 export function runtimeSpellingsOf(
   packs: readonly PatternPack[],
 ): RuntimeSpellings {
+  const defaultBases = new Map<string, readonly string[]>();
+  for (const { defaultBase } of packs.flatMap(
+    (pack) => pack.requestRecognizers ?? [],
+  )) {
+    if (defaultBase !== undefined) {
+      defaultBases.set(defaultBase.join("."), defaultBase);
+    }
+  }
   return {
     streamObjects: packs.flatMap((pack) => pack.streamObjects ?? []),
     exitCalls: packs.flatMap((pack) =>
@@ -329,6 +353,7 @@ export function runtimeSpellingsOf(
       ),
     ),
     exitCodeWrites: packs.flatMap((pack) => pack.exitCodeWrites ?? []),
+    watchedWrites: [...defaultBases.values()],
   };
 }
 
@@ -373,7 +398,7 @@ export class ResolutionStore {
    */
   private readonly exportTables = new Map<string, Map<string, Node[]>>();
   /** Keyed by value and site both, since one value differs per site. */
-  private readonly writtenUnderSite = new Map<string, Node | null>();
+  private readonly evaluatedUnderSite = new Map<string, Node | null>();
   private readonly constructionSites = new Map<string, string[]>();
   /** What each local's reads do with it, by its declaration. A local's function is walked whole, so an answer stays true. */
   private readonly localUses = new Map<string, ValueUses>();
@@ -412,6 +437,8 @@ export class ResolutionStore {
   private readonly callsStated = new Set<string>();
   /** Containers whose writes `dispatchedFunctions` has already stated. */
   private readonly containersRead = new Set<string>();
+  /** See `readWatchedWrites`, by the path written with dots. */
+  private watched: ReadonlyMap<string, readonly WatchedWrite[]> | null = null;
 
   private stale = true;
 
@@ -747,9 +774,21 @@ export class ResolutionStore {
     return this.writtenAnswers([value], "writtenClass").get(value) ?? null;
   }
 
+  /**
+   * What a value reader evaluates for a value: the expression
+   * `resolveWrittenValue` gives, or the fallback that expression is a
+   * branch of when the other branch came to nothing the rules could
+   * find, as `process.env.API_URL` does in `process.env.API_URL || ""`.
+   * The reader's own `||` then takes the default and marks it as taken
+   * over a value that did not read.
+   */
+  resolveEvaluatedValue(value: Node): Node | null {
+    return this.writtenAnswers([value], "evaluated").get(value) ?? null;
+  }
+
   private writtenAnswers(
     values: readonly Node[],
-    wanted: "written" | "writtenClass",
+    wanted: "written" | "evaluated" | "writtenClass",
   ): Map<Node, Node | null> {
     const found = new Map<Node, Node | null>();
     const asked = new Map<string, Node>();
@@ -785,8 +824,11 @@ export class ResolutionStore {
 
     this.askAboutAll([...asked.values()], "wantedWritten", () => {
       for (const [key, target] of asked) {
+        const written = this.lookupWritten(target);
         this.writtenValues.set(key, {
-          written: this.lookupWritten(target),
+          written,
+          evaluated:
+            written === null ? null : (this.fallbackAround(target) ?? written),
           writtenClass: this.lookupWrittenClass(target),
           walked: this.lastQueryWalked,
           extractedAt: this.fullyExtracted.size,
@@ -800,15 +842,15 @@ export class ResolutionStore {
   }
 
   /**
-   * The same question under one construction site: what the value is
-   * when the receiver behind it is the instance that site made. A field
-   * two constructions fill differently settles here and not context
-   * free, where two answers are ambiguity.
+   * `resolveEvaluatedValue` under one construction site: what the value
+   * is when the receiver behind it is the instance that site made. A
+   * field two constructions fill differently settles here and not
+   * context free, where two answers are ambiguity.
    */
-  resolveWrittenValueUnder(value: Node, site: string): Node | null {
+  resolveEvaluatedValueUnder(value: Node, site: string): Node | null {
     const target = factKeyOf(value);
     const key = nodeId(target);
-    const cached = this.writtenUnderSite.get(`${key}|${site}`);
+    const cached = this.evaluatedUnderSite.get(`${key}|${site}`);
     if (cached !== undefined) {
       return cached;
     }
@@ -827,20 +869,43 @@ export class ResolutionStore {
     // A question nobody could finish is cached as no answer, so a second
     // caller asking about the same pair does not start the walk again.
     if (outcome === "abandoned") {
-      this.writtenUnderSite.set(`${key}|${site}`, null);
+      this.evaluatedUnderSite.set(`${key}|${site}`, null);
       return null;
     }
 
-    const answer = writtenValueUnder(this.db, key, site, (pairs) => {
+    const ask = (pairs: ReadonlyArray<readonly [string, string]>): void => {
       askResolutionUnder(this.db, pairs, resolutionUnderProgram());
-    });
-    const node = answer === null ? null : (this.table.byId.get(answer) ?? null);
-    const written =
-      node === null || node === target || !Node.isExpression(node)
+    };
+    const answer = writtenValueUnder(this.db, key, site, ask);
+    const written = this.expressionAt(answer, target);
+    const evaluated =
+      written === null
         ? null
-        : node;
-    this.writtenUnderSite.set(`${key}|${site}`, written);
-    return written;
+        : (this.expressionAt(
+            fallbackAroundOneUnder(this.db, key, site, ask),
+            target,
+          ) ?? written);
+    this.evaluatedUnderSite.set(`${key}|${site}`, evaluated);
+    return evaluated;
+  }
+
+  /** The expression at a fact key, unless it is the value asked about. */
+  private expressionAt(key: string | null, asked: Node): Node | null {
+    const node = key === null ? null : (this.table.byId.get(key) ?? null);
+    return node === null || node === asked || !Node.isExpression(node)
+      ? null
+      : node;
+  }
+
+  /** The fallback `resolveEvaluatedValue` reads in place of the one branch `lookupWritten` gave. */
+  private fallbackAround(value: Node): Node | null {
+    const fallback = fallbackAroundOne(this.db, nodeId(value), (keys) => {
+      for (const behind of keys) {
+        this.wantKey("wantedWritten", behind);
+      }
+      this.derive();
+    });
+    return this.expressionAt(fallback, value);
   }
 
   /**
@@ -1406,6 +1471,66 @@ export class ResolutionStore {
     return [...found.values()];
   }
 
+  /**
+   * Find every write to a path the packs watch, once per run and before
+   * the walk asks about one. Only a file whose text spells one of the
+   * paths is read, and every call in it is stated, so a write inside a
+   * function or a callback is found as well as one at the top level. A
+   * test's setup writes for the test alone, so test files are left out.
+   */
+  readWatchedWrites(sourceFiles: readonly SourceFile[]): void {
+    if (this.watched !== null) {
+      return;
+    }
+    const found = new Map<string, WatchedWrite[]>();
+    this.watched = found;
+    const spellings = this.table.watchedWrites.map((path) => path.join("."));
+    if (spellings.length === 0) {
+      return;
+    }
+    const siteFiles = new Set(
+      sourceFiles.filter((one) => {
+        const production = !one.isInNodeModules() && !inTestFile(one);
+        const text = production ? one.getFullText() : "";
+        return spellings.some((spelling) => text.includes(spelling));
+      }),
+    );
+    for (const sourceFile of siteFiles) {
+      this.stateCallsIn(sourceFile);
+    }
+    for (const [read, path] of this.db.facts("writesThrough")) {
+      const sourceFile = this.table.byId.get(String(read))?.getSourceFile();
+      if (sourceFile === undefined || !siteFiles.has(sourceFile)) {
+        continue;
+      }
+      const writes = found.get(String(path)) ?? [];
+      writes.push({ read: String(read), file: sourceFile.getFilePath() });
+      found.set(String(path), writes);
+    }
+  }
+
+  /**
+   * The keys of the member reads the program writes `path` through. A
+   * walk that asks depends on each file that writes it, so a change to
+   * one reads the walk again.
+   */
+  watchedWritesThrough(path: readonly string[]): readonly string[] {
+    const writes = this.watched?.get(path.join(".")) ?? [];
+    for (const write of writes) {
+      recordFileDependency(write.file);
+    }
+    return writes.map((write) => write.read);
+  }
+
+  /** The files that write a path the packs watch. */
+  filesWritingWatched(): ReadonlySet<string> {
+    return new Set(
+      [...(this.watched?.values() ?? [])].flatMap((writes) =>
+        writes.map((write) => write.file),
+      ),
+    );
+  }
+
   /** The values that end up as the exit code: an exit call's first argument, or what is assigned to the code. */
   private exitSinks(): string[] {
     const sinks = this.db
@@ -1642,6 +1767,19 @@ export class ResolutionStore {
     const uses = this.askLocalUses(declaration);
     this.localUses.set(id, uses);
     return uses;
+  }
+
+  /** Where the value built at each key goes, through the project code it is passed to, over the files read so far. */
+  heldUsesOf(keys: readonly string[]): Map<string, HeldUses> {
+    try {
+      for (const key of keys) {
+        this.wantKey(HOLDERS_QUESTION, key);
+      }
+      this.derive();
+      return new Map(keys.map((key) => [key, readHeldUses(this.db, key)]));
+    } finally {
+      this.forgetQuery();
+    }
   }
 
   private askLocalUses(declaration: VariableDeclaration): ValueUses {

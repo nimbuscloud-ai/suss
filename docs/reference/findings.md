@@ -365,6 +365,62 @@ An operation meets a route of the same shape however each side spells the parame
 
 **A bug when:** the operation was removed from the code and the contract still declares it. Take it out of the contract.
 
+### `restMethodOnUnknownPath`
+
+**Severity:** error.
+
+A client calls a path its own service does not serve. Somebody renamed or removed the route and left the client calling the old one, so every call gets a 404, or a 405 when the service serves the path under another method.
+
+`fixtures/missing-route-nextjs` is a Next.js app whose order route was renamed from `summary` to `totals`, with the order panel still calling the old name:
+
+```ts
+// app/api/orders/[id]/totals/route.ts
+export async function GET(_request: Request, context: { params: { id: string } }) {
+  return NextResponse.json({ id: context.params.id, total: 42 });
+}
+
+// lib/panel.ts
+export async function loadSummary(id: string) {
+  const res = await fetch(`/api/orders/${id}/summary`);
+  return (await res.json()).total;
+}
+```
+
+```bash
+suss extract -p tsconfig.json -f nextjs -f fetch -o .suss/code.json
+suss check --dir .suss
+```
+
+```
+[ERROR] restMethodOnUnknownPath
+  loadSummary calls GET /api/orders/{id}/summary, and shop, the service it calls, does not serve that path. Every call gets a 404. Routes nearby: GET /api/orders/{id}/totals.
+  consumer: lib/panel.ts::loadSummary (lib/panel.ts:4)
+  service: shop, 1 route read
+  boundary: fetch (http) GET /api/orders/{id}/summary
+  to silence this one, add to the rules in .sussignore.yml:
+    - kind: restMethodOnUnknownPath
+      boundary: "GET /api/orders/{id}/summary"
+      consumer: { summary: "lib/panel.ts::loadSummary" }
+      reason: TODO say why you accept this
+```
+
+In the JSON, `provider` repeats the consumer, since there is no route to point at, and `target` gives the service, how many routes suss read for it, and the routes nearby: the ones at the same path with another method, and the ones whose path differs from the call's in one written segment, which is usually where the route moved.
+
+A call that pairs with nothing is reported only when suss read enough to say the route is not there:
+
+- **It knows which service the call goes to.** A relative URL goes to the workspace whose code makes the call. A base URL the deployment sets, such as `${process.env.API_URL}/orders` with `API_URL` in a `wrangler.toml`, goes to the one service that serves routes under the path the base gives, unless the deployment sets it to a public host, which may be another company's API. A call to a host the code writes out is not reported: it may be another company's API, or a service of this run that nothing ties to a workspace.
+- **It read the whole call.** The method is known, and every segment of the path is text or a whole-segment parameter. A path with a piece suss could not read in full, such as `{slug}.json`, a base URL nothing sets, or a default taken over an environment variable suss could not read, as `${process.env.API_URL ?? ""}/orders`, is not reported. The same goes when that default reaches the call through a name, an import, a field or the value a client is built with, and for a call on a client built on a base suss could not read, as `axios.create({ baseURL: process.env.API_URL })`, `httpx.Client(base_url=os.environ["API_URL"])` or `Faraday.new(url: ENV["API_URL"])`. A write to a library's default base anywhere in the run, as `axios.defaults.baseURL = process.env.API_URL`, does the same for every relative call on a client of that library built without a base of its own. Such a client has `urlPartUnread` on its http metadata.
+- **It read the service's whole route table.** Every route has a method and a path, none takes every path, and the framework pack that read each route states what else in the framework serves requests, and none of those covers the call. The Next.js pack reads pages and metadata files, the files under `public`, the rewrites and redirects `next.config` exports, and the matcher `middleware.ts` or `proxy.ts` exports, in TypeScript or JavaScript. A rule a host, a header or a cookie decides still covers its path. A config it cannot read, such as one wrapped in a plugin call, written with `module.exports`, or spreading an object it cannot follow into the config or into a rule, or one that sets `basePath`, `i18n`, `pageExtensions` or `exportPathMap`, covers every path. A route file suss did not read a route from, such as a `pages/api` file whose default export is re-exported from another module, covers its own path for every method, and so does a `.js` route file beside the others that the TypeScript program leaves out. The Express pack reads `express.static` and the proxy libraries it lists, and a mount of anything it cannot follow covers the mount's prefix. The Rails pack reads the files under `public`, and an engine `mount` puts under a path covers that path, while any other declaration in `config/routes.rb` it does not read covers every path. A route whose controller suss does not recognize, such as one built on `ActionController::Metal`, covers its own path. A service whose pack states none of this, such as one Hono serves, is not checked.
+
+  The FastAPI pack reads the docs pages and the OpenAPI document the app serves, each `mount` under its path, a route added by `add_api_route` or `add_route`, middleware added by `add_middleware`, and an error handler added for the not-found error. The flask-restx pack reads Flask's static folder, Flask's own routes and the blueprints the app registers, and the Swagger UI and `swagger.json` flask-restx serves. A route added on a router, a blueprint or a namespace whose prefix suss cannot put together covers every path, and so does middleware the library does not ship, and an `include_router` or `add_namespace` of something the route table does not read covers its prefix. Middleware, a `before_request` hook or an error handler registered on the app by a decorator covers every path when it responds with anything but an error status. A Python run gives its routes no workspace, so a relative call from a frontend package goes under `unchecked.routes`; a client whose base URL a deployment sets, such as a Worker's `wrangler.toml` or a Lambda's `serverless.yml`, reaches them.
+- **No route in the service can take the call, whatever its parameters are.** A call to `/workspaces/{id}/{kind}` may reach `/workspaces/{id}/invites`, so it is not reported.
+
+A call that meets everything but the first goes under `unchecked.routes` in the JSON, with the reason, and the text report lists it. That keeps "suss checked and found nothing" apart from "suss could not tell which service the call goes to", such as a relative call from a frontend package that serves no routes of its own and reaches the API through a proxy.
+
+**Legitimate when:** something suss does not read serves the path: a reverse proxy or a load balancer rule in front of the app, a route a plugin adds, or a file the build copies in. Suppress the call with the rule it prints.
+
+**A bug when:** the route was renamed or removed and the client was not updated, or the client has a typo in its path. Point the client at the route that serves it now, which is usually among the routes nearby.
+
 ## GraphQL findings
 
 Most GraphQL failures come through the generic kinds: `boundaryFieldUnknown` for a selection the schema does not declare, `ambiguousProvider` for one field two services implement. This kind is about how GraphQL clients ship documents.
@@ -598,9 +654,8 @@ Storage reports it for a container. A table declared as `{StageName}-orders-blue
 
 ## Reserved kinds
 
-These six are in the enum and no checker emits them today. Each is a failure mode different enough from the generic kinds to keep its own name.
+These five are in the enum and no checker emits them today. Each is a failure mode different enough from the generic kinds to keep its own name.
 
-- `restMethodOnUnknownPath`: error. The consumer's call targets a `(method, path)` the provider does not expose, so every call to the missing endpoint returns a 404 the caller wrote no branch for. It is about which boundary the call reaches, where `boundaryFieldUnknown` is about a field, so the two stay separate. Today's pairing layer leaves both summaries unmatched, which quietly hides what is probably a typo. The emitter ships once pairing has a "consumer with no provider" finding distinct from "unmatched".
 - `authPolicyMismatch`: error. The provider requires authentication and the consumer's call does not supply it, so the request is rejected whenever it runs. It needs auth-policy modeling on both sides, OpenAPI security schemes against the client's own header or interceptor patterns.
 - `boundaryFieldRequired`: error. The provider declares a field as required and the consumer does not supply it, so the provider rejects the request every time: a 4xx, or a component that fails to render. The `aspect` would point at the payload. It takes the place of `requiredHeaderMissing`, `componentRequiredPropMissing` and `graphqlRequiredArgMissing`.
 - `boundaryConstraintViolation`: error. The value has the type the provider declared and breaks a value-level rule it declared, such as enum membership or a length. It takes the place of `storageEnumConstraintViolation` and `graphqlEnumValueUnknown`.

@@ -67,6 +67,7 @@ export {
   isLocalUrl,
   pathIsOnlyHoles,
   pathOf,
+  requestUrlOf,
   routePatternOf,
   statedRequestPath,
 } from "./routePath.js";

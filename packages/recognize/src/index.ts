@@ -49,6 +49,7 @@ export {
   composeAppRoutes,
   composeRoutes,
   joinedTablePath,
+  pickedFrom,
   rowRoutes,
 } from "./routeTable.js";
 export { runtimeReads } from "./runtimeReads.js";

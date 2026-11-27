@@ -60,6 +60,7 @@ import {
   type BodyPropertyWrites,
   describeWrites,
   type FieldDeclaration,
+  isAssignmentOperator,
   isWrittenAgain,
   namedStoresOf,
   notePropertyWrite,
@@ -136,21 +137,29 @@ export interface NodeTable {
   exitCalls: readonly string[];
   /** Dotted paths a pack says the exit code is assigned to. */
   exitCodeWrites: readonly string[];
+  /**
+   * Paths of properties whose writes are noted, through whatever object
+   * they are written on: the base URL a client library keeps for every
+   * client, `["defaults", "baseURL"]` for axios.
+   */
+  watchedWrites: readonly (readonly string[])[];
   /** The modules the packs' generators write into the project. */
   generated: GeneratedModules;
 }
 
-/** How the packs in a run spell the parts of the process nothing declares. */
+/** How the packs in a run spell the parts of the process nothing declares, and the library defaults they watch. */
 export interface RuntimeSpellings {
   streamObjects: readonly string[];
   exitCalls: readonly string[];
   exitCodeWrites: readonly string[];
+  watchedWrites: readonly (readonly string[])[];
 }
 
 export const NO_RUNTIME_SPELLINGS: RuntimeSpellings = {
   streamObjects: [],
   exitCalls: [],
   exitCodeWrites: [],
+  watchedWrites: [],
 };
 
 export function createNodeTable(
@@ -2625,6 +2634,7 @@ function recordBodyCalls(
   }
   notePropertyWrite(writes, node);
   emitExitCodeWrite(db, table, node);
+  emitWatchedWrite(db, table, node);
   const call = peelValue(node);
   if (!isCall(call)) {
     return false;
@@ -2667,6 +2677,45 @@ function emitExitCodeWrite(db: Database, table: NodeTable, node: Node): void {
   fact(db, "exitCodeWrite", emitValue(db, table, node.getRight()));
 }
 
+/**
+ * `axios.defaults.baseURL = url`: a write to a property path the packs
+ * watch, stated as the member read it is made through, `axios.defaults`,
+ * so a question can ask where that read's object came from.
+ */
+function emitWatchedWrite(db: Database, table: NodeTable, node: Node): void {
+  if (
+    table.watchedWrites.length === 0 ||
+    !Node.isBinaryExpression(node) ||
+    !isAssignmentOperator(node.getOperatorToken().getKind())
+  ) {
+    return;
+  }
+  for (const path of table.watchedWrites) {
+    const read = readWrittenThrough(node.getLeft(), path);
+    if (read !== null) {
+      fact(db, "writesThrough", emitValue(db, table, read), path.join("."));
+    }
+  }
+}
+
+/** The read of `path[0]` a write's target is made through, or null when the target does not end with the path. */
+function readWrittenThrough(
+  target: Node,
+  path: readonly string[],
+): PropertyAccessExpression | null {
+  let at = target;
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    if (!Node.isPropertyAccessExpression(at) || at.getName() !== path[index]) {
+      return null;
+    }
+    if (index === 0) {
+      return at;
+    }
+    at = at.getExpression();
+  }
+  return null;
+}
+
 /** A call or a construction, which the rules read as a call of the class. */
 function isCall(node: Node): node is CallExpression | NewExpression {
   return Node.isCallExpression(node) || Node.isNewExpression(node);
@@ -2700,6 +2749,7 @@ function emitTopLevelStatements(
       emitStatementCall(db, table, expression);
       notePropertyWrite(writes, expression);
       emitExitCodeWrite(db, table, expression);
+      emitWatchedWrite(db, table, expression);
       continue;
     }
     // A write under a branch or a loop settles nothing on its own, but
@@ -2710,6 +2760,7 @@ function emitTopLevelStatements(
           return true;
         }
         notePropertyWrite(writes, node);
+        emitWatchedWrite(db, table, node);
         return false;
       });
     }

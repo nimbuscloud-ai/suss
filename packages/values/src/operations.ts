@@ -413,8 +413,10 @@ export function caseRows(lower: string, upper: string): Row[] {
 export function environmentRead(args: readonly Value[]): Value {
   const name = literalOf(operand(args[0]));
   const fallbackValue = args[1];
+  // The deployment sets the variable or leaves it to the default, which
+  // is read the way the default of `x || default` is.
   if (fallbackValue !== undefined) {
-    return force(fallbackValue);
+    return overUnread(force(fallbackValue));
   }
   return hole(name ?? "value");
 }

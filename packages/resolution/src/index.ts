@@ -54,6 +54,12 @@ export {
   handedNamesReaching,
   stateHandedIn,
 } from "./handedIn.js";
+export {
+  type HeldUses,
+  HOLDERS_QUESTION,
+  heldUsesOf,
+  readHeldUses,
+} from "./heldBy.js";
 export { boundByImport } from "./importBinding.js";
 export { memberOf } from "./members.js";
 export {
@@ -152,6 +158,7 @@ export {
   type AskUnder,
   allocationSitesOf,
   comesToUnder,
+  fallbackAroundOneUnder,
   isWrittenAsUnder,
   objectOfUnder,
   writtenValueUnder,
@@ -168,6 +175,7 @@ export {
 export { type NameWrite, valueLeftByWrites } from "./writes.js";
 export {
   answersFromTestsLeftOut,
+  fallbackAroundOne,
   fallbackWrittenAs,
   writtenValueOf,
   writtenValuesByKey,
@@ -225,6 +233,7 @@ export type {
 import { constant, lit, rule, variable as v } from "@suss/datalog";
 
 import { CLASS_BODY_QUESTIONS, CLASS_BODY_RULES } from "./classBody.js";
+import { HELD_BY_QUESTIONS, heldByRules } from "./heldBy.js";
 import { PASSED_ON_RULES, USES_QUESTIONS } from "./passedOn.js";
 import { SELF_QUESTIONS, SELF_RULES } from "./receiverSelf.js";
 import { RUNS_CALL_QUESTIONS, RUNS_CALL_RULES } from "./runsCall.js";
@@ -2346,6 +2355,8 @@ const STATED_RULES = [
 
   ...PASSED_ON_RULES,
 
+  ...heldByRules(NAMESPACE_IMPORT),
+
   ...SELF_RULES,
 
   ...RUNS_CALL_RULES,
@@ -3170,6 +3181,8 @@ export const RESOLUTION_QUESTIONS = [
   ),
 
   ...USES_QUESTIONS,
+
+  ...HELD_BY_QUESTIONS,
 
   ...SELF_QUESTIONS,
 

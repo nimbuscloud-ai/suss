@@ -2,6 +2,7 @@
   "axios": "axios: the default export",
   "create": "axios: factory method building a configured instance",
   "baseURL": "axios: config field every request path is sent under",
+  "defaults": "axios: the config every client built without its own options takes, axios.defaults",
   "maxRedirects": "axios: config field capping how many redirects it follows",
   "url": "axios: config field with the request path",
   "method": "axios: config field with the HTTP method",

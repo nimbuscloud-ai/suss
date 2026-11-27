@@ -193,8 +193,14 @@ export function piecesOf(value: Value): readonly Piece[] {
   return [holePiece("value")];
 }
 
+/**
+ * The values written one after another. A string built from a default
+ * taken over an unread value keeps that mark, so a reader of the whole
+ * string, such as a request's URL, can tell it was not read in full.
+ */
 export function concat(values: readonly Value[]): Value {
-  return string(values.flatMap((value) => piecesOf(value)));
+  const joined = string(values.flatMap((value) => piecesOf(value)));
+  return values.some(takenOverUnread) ? overUnread(joined) : joined;
 }
 
 /** The one literal a value is, when it is exactly one. */

@@ -110,6 +110,7 @@ export type {
 export type {
   ControllerActions,
   ControllerRoute,
+  DeclaredRoute,
   GraphqlObjectFields,
   LibraryException,
   RbAddressingCall,

@@ -15,7 +15,7 @@
 
 import { patternHole, rangedHole, setPiece } from "@suss/ir-core";
 
-import { literalOf } from "./value.js";
+import { literalOf, takenOverUnread } from "./value.js";
 
 import type { Piece, Value } from "./value.js";
 
@@ -230,6 +230,23 @@ export function isLocalUrl(value: Value): boolean {
     first.options.length > 0 &&
     first.options.every((option) => LOCAL_SCHEME.test(option))
   );
+}
+
+/**
+ * Where a request with this URL goes: its path, its host, and whether
+ * part of it is a fallback's default taken over a value that did not
+ * read. Every adapter's client reader reads a URL through this.
+ */
+export function requestUrlOf(value: Value): {
+  path: string | undefined;
+  host: string | undefined;
+  tookDefault?: true;
+} {
+  return {
+    path: pathOf(value),
+    host: hostOf(value),
+    ...(takenOverUnread(value) ? { tookDefault: true as const } : {}),
+  };
 }
 
 /**

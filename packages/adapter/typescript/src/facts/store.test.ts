@@ -11,7 +11,7 @@ import { profileEvaluation } from "@suss/datalog";
 import { createTestProject, testCompilerOptions } from "@suss/test-project";
 
 import { createDependencySink, withDependencySink } from "../depTracking.js";
-import { nodeId } from "./extract.js";
+import { NO_RUNTIME_SPELLINGS, nodeId } from "./extract.js";
 import { ResolutionStore } from "./store.js";
 
 function projectOf(files: Record<string, string>): Project {
@@ -3284,7 +3284,7 @@ describe("reading a value under one construction", () => {
     store.notePossibleCallers(project.getSourceFiles());
     return store
       .constructionSitesOf(cls)
-      .map((site) => store.resolveWrittenValueUnder(read, site)?.getText())
+      .map((site) => store.resolveEvaluatedValueUnder(read, site)?.getText())
       .map((written) => written ?? "nothing")
       .sort();
   }
@@ -3352,7 +3352,7 @@ describe("reading a value under one construction", () => {
     expect(
       store
         .constructionSitesOf(cls)
-        .map((site) => store.resolveWrittenValueUnder(read, site)?.getText()),
+        .map((site) => store.resolveEvaluatedValueUnder(read, site)?.getText()),
     ).toEqual(['"/orders"']);
   });
 
@@ -3652,5 +3652,78 @@ describe("the facts the store states for a node asked about", () => {
     const open = file.getClassOrThrow("Panel").getMethodOrThrow("open");
 
     expect(callsStatedFor(open)).toEqual(['track("open")']);
+  });
+});
+
+describe("the writes to a path the packs watch", () => {
+  const WATCHING = {
+    ...NO_RUNTIME_SPELLINGS,
+    watchedWrites: [["defaults", "baseURL"]],
+  };
+
+  function writesIn(files: Record<string, string>): {
+    store: ResolutionStore;
+    through: string[];
+  } {
+    const project = projectOf(files);
+    const store = new ResolutionStore([], [], WATCHING);
+    store.readWatchedWrites(project.getSourceFiles());
+    const access = store.factAccess();
+    const through = store
+      .watchedWritesThrough(["defaults", "baseURL"])
+      .map((key) => access.nodeOf(key)?.getText() ?? "")
+      .sort();
+    return { store, through };
+  }
+
+  it("finds a write at the top level, under a block, and inside a callback, and not a read or a test's write", () => {
+    const { store, through } = writesIn({
+      "/panel.test.ts": "harness.defaults.baseURL = 'http://localhost';\n",
+      "/setup.ts": "axios.defaults.baseURL = process.env.API_URL;\n",
+      "/under.ts": "if (ready) {\n  api.defaults.baseURL = '/v2';\n}\n",
+      "/panel.ts": [
+        "export function Panel() {",
+        "  useEffect(() => {",
+        "    client.defaults.baseURL ||= '/v1';",
+        "  }, []);",
+        "}",
+      ].join("\n"),
+      "/read.ts": "export const base = axios.defaults.baseURL;\n",
+      "/other.ts": "settings.baseURL = '/v3';\n",
+    });
+
+    expect(through).toEqual([
+      "api.defaults",
+      "axios.defaults",
+      "client.defaults",
+    ]);
+    expect([...store.filesWritingWatched()].sort()).toEqual([
+      "/panel.ts",
+      "/setup.ts",
+      "/under.ts",
+    ]);
+  });
+
+  it("puts each writing file in the dependencies of the walk that asks", () => {
+    const { store } = writesIn({
+      "/setup.ts": "axios.defaults.baseURL = process.env.API_URL;\n",
+    });
+    const sink = createDependencySink();
+    withDependencySink(sink, () =>
+      store.watchedWritesThrough(["defaults", "baseURL"]),
+    );
+
+    expect([...sink.files]).toEqual(["/setup.ts"]);
+  });
+
+  it("finds nothing when no pack watches a path", () => {
+    const project = projectOf({
+      "/setup.ts": "axios.defaults.baseURL = process.env.API_URL;\n",
+    });
+    const store = new ResolutionStore();
+    store.readWatchedWrites(project.getSourceFiles());
+
+    expect(store.watchedWritesThrough(["defaults", "baseURL"])).toEqual([]);
+    expect(store.filesWritingWatched().size).toBe(0);
   });
 });

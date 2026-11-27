@@ -4,6 +4,7 @@ import { Database } from "@suss/datalog";
 
 import {
   answersFromTestsLeftOut,
+  fallbackAroundOne,
   writtenValueOf,
   writtenValuesByKey,
   writtenValuesOf,
@@ -166,6 +167,53 @@ describe("a value written as a fallback", () => {
       db.add("wantedFallbackBehind", ["f.py:0-30", "f.py:7-19"]);
     });
     expect(answer).toBe("f.py:0-30");
+  });
+});
+
+describe("a fallback whose first branch came to nothing", () => {
+  /** `name = a or b`, where nothing says what `a` at 7-12 is, so `b` at 16-19 is the one expression. */
+  function oneBranchFacts(): Database {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:16-19"]);
+    db.add("wantedFallbackBehind", ["f.py:1-5", "f.py:7-19"]);
+    return db;
+  }
+
+  function askAboutFallback(db: Database): (keys: readonly string[]) => void {
+    return (keys) => {
+      if (keys.includes("f.py:7-19")) {
+        db.add("wantedIsWrittenAs", ["f.py:7-19", "f.py:16-19"]);
+      }
+    };
+  }
+
+  it("is written as the branch that resolved, for a reader of the written expression", () => {
+    const db = oneBranchFacts();
+    expect(writtenValueOf(db, "f.py:1-5", askAboutFallback(db))).toBe(
+      "f.py:16-19",
+    );
+  });
+
+  it("is read whole by a value reader, so its own fallback takes the default", () => {
+    const db = oneBranchFacts();
+    expect(fallbackAroundOne(db, "f.py:1-5", askAboutFallback(db))).toBe(
+      "f.py:7-19",
+    );
+  });
+
+  it("is not read whole when the one expression came through no fallback", () => {
+    const db = new Database();
+    db.add("wantedIsWrittenAs", ["f.py:1-5", "f.py:16-19"]);
+    expect(fallbackAroundOne(db, "f.py:1-5", () => undefined)).toBeNull();
+  });
+
+  it("is not read whole when the fallback was written as something else too", () => {
+    const db = oneBranchFacts();
+    const answer = fallbackAroundOne(db, "f.py:1-5", (keys) => {
+      askAboutFallback(db)(keys);
+      db.add("wantedIsWrittenAs", ["f.py:7-19", "f.py:30-34"]);
+    });
+    expect(answer).toBeNull();
   });
 });
 

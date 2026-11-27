@@ -13,6 +13,8 @@ import {
   askResolution,
   askResolutionUnder,
   askSources,
+  fallbackAroundOne,
+  fallbackAroundOneUnder,
   INSTANCE_STEP,
   readUses,
   resolutionProgram,
@@ -153,6 +155,41 @@ export function writtenValueOf(db: Database, key: string): string | null {
     (keys) => resolveValues(db, keys),
     undefined,
     answersFromTestsLeftOut(key, (file) => isTestFileIn(db, file)),
+  );
+}
+
+/**
+ * The expression a value reader evaluates for `key`: the one
+ * `writtenValueOf` gives, or the fallback that expression is a branch
+ * of when the other branch came to nothing the rules could find. The
+ * reader's own `||` then takes the default and marks it as taken over a
+ * value that did not read.
+ */
+export function evaluatedAsOf(db: Database, key: string): string | null {
+  const written = writtenValueOf(db, key);
+  if (written === null) {
+    return null;
+  }
+  return (
+    fallbackAroundOne(db, key, (keys) => resolveValues(db, keys)) ?? written
+  );
+}
+
+/** `evaluatedAsOf`, when the value's receiver is the instance one construction site made. */
+export function evaluatedAsUnder(
+  db: Database,
+  key: string,
+  site: string,
+): string | null {
+  const written = writtenValueUnder(db, key, site);
+  if (written === null) {
+    return null;
+  }
+  const program = resolutionUnderProgram(RUBY_RULES);
+  return (
+    fallbackAroundOneUnder(db, key, site, (pairs) => {
+      askResolutionUnder(db, pairs, program);
+    }) ?? written
   );
 }
 

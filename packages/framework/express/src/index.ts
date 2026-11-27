@@ -6,7 +6,7 @@ import {
   wrapperDiscovery,
 } from "@suss/extractor";
 
-import type { PatternPack } from "@suss/extractor";
+import type { PatternPack, ServedBesideDeclaration } from "@suss/extractor";
 import type { PackDeclaration } from "@suss/ir-core";
 
 // Express accepts every verb in the `methods` package. This list has the
@@ -48,6 +48,47 @@ function responseChain(...methodChain: string[]) {
   };
 }
 
+/**
+ * The libraries whose middleware serves requests of its own when it is
+ * mounted: a static file server, or a proxy to another service. A mount
+ * of anything else the pack does not read covers its prefix too, since
+ * it may be a router whose routes suss did not see.
+ */
+const SERVED_BESIDE: ServedBesideDeclaration = {
+  // Settings, lifecycle and lookups. `param` runs only for a route that
+  // matched, so it cannot serve a path no route serves.
+  inert: [
+    "listen",
+    "set",
+    "enable",
+    "disable",
+    "engine",
+    "locals",
+    "param",
+    "on",
+    "render",
+  ],
+  // An HTTP server and a test client serve the app with the routes it has.
+  runners: [
+    {
+      origin: "imported",
+      importedFrom: ["http", "node:http", "https", "node:https"],
+      named: ["createServer"],
+    },
+    { origin: "imported", importedFrom: ["supertest"], named: ["default"] },
+  ],
+  servingCalls: [
+    { module: "express", names: ["static"], by: "static" },
+    { module: "serve-static", names: ["default"], by: "static" },
+    {
+      module: "http-proxy-middleware",
+      names: ["createProxyMiddleware", "legacyCreateProxyMiddleware"],
+      by: "proxy",
+    },
+    { module: "express-http-proxy", names: ["default"], by: "proxy" },
+  ],
+};
+
 /** The express pack takes no options, so the CLI refuses any key. */
 export const optionsSchema = z.object({}).strict();
 
@@ -60,6 +101,7 @@ export function expressFramework(
     name: "express",
     protocol: "http",
     languages: ["typescript", "javascript"],
+    servedBeside: SERVED_BESIDE,
 
     // Routes go on `Router()` or on `express()`, and either can be mounted
     // with `app.use(prefix, router)`. A route on a mounted router is

@@ -98,6 +98,8 @@ interface Call {
   /** The receiver as the source writes it. */
   readonly receiverValue?: Stated;
   readonly built?: Readonly<Record<number, CallOps>>;
+  /** The member reads the program writes each dotted path through. */
+  readonly writes?: Readonly<Record<string, readonly CallOps[]>>;
   readonly writtenAs?: CallOps;
   readonly splats?: Splats;
   /** Whether the call is written in `ENCLOSING`. Left out, the ops cannot say. */
@@ -166,6 +168,8 @@ function callOps(
     receiverValue: () =>
       call.receiverValue === undefined ? null : valueOps(call.receiverValue),
     argument: (index: number) => call.built?.[index] ?? null,
+    propertyWrites: (path: readonly string[]) =>
+      call.writes?.[path.join(".")] ?? [],
     callee: () => call.writtenAs ?? null,
     splats: () => call.splats ?? { positionalFrom: null, keywords: false },
     ...(call.inFunction === undefined
@@ -856,8 +860,9 @@ describe("a base URL the client was built with", () => {
     expect(under("/v1")).toEqual([
       { method: "GET", path: "/orders", host: undefined },
     ]);
+    // Whether this one is refused depends on what the hole comes to.
     expect(under("/v1/{version}")).toEqual([
-      { method: "GET", path: "/orders", host: undefined },
+      { method: "GET", path: "/orders", host: undefined, urlPartUnread: true },
     ]);
     expect(under("/v1/")).toEqual([
       { method: "GET", path: "/orders", host: "api.example.com" },
@@ -1351,7 +1356,7 @@ describe("a request chain over options objects", () => {
     ).toEqual([]);
   });
 
-  it("leaves out the path of a base with a hole, and keeps its host", () => {
+  it("leaves out the path of a base with a hole, keeps its host, and says part of the URL did not read", () => {
     expect(
       claimsOf(CONFIGURED, {
         method: "get",
@@ -1361,7 +1366,107 @@ describe("a request chain over options objects", () => {
           baseURL: at("{env}/v1", "api.example.com"),
         }),
       }),
-    ).toEqual([{ method: "GET", path: "/orders", host: "api.example.com" }]);
+    ).toEqual([
+      {
+        method: "GET",
+        path: "/orders",
+        host: "api.example.com",
+        urlPartUnread: true,
+      },
+    ]);
+  });
+
+  it("says part of the URL did not read when the client's base did not, and pairs by the call's path all the same", () => {
+    const under = (receiverValue: Stated) =>
+      claimsOf(CONFIGURED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [at("/orders")],
+        receiverValue,
+      });
+    const unread = [
+      { method: "GET", path: "/orders", host: undefined, urlPartUnread: true },
+    ];
+
+    // An environment read with no default, which gives no path or host.
+    expect(under(builtWith({ baseURL: at(undefined) }))).toEqual(unread);
+    // A default taken over a value that did not read.
+    expect(
+      under(
+        builtWith({
+          baseURL: {
+            url: { path: undefined, host: undefined, tookDefault: true },
+          },
+        }),
+      ),
+    ).toEqual(unread);
+    // An options object suss cannot read, which may set a base.
+    expect(
+      under({
+        madeBy: callOps({ method: "create", args: [{ object: false }] }),
+      }),
+    ).toEqual(unread);
+    // The empty string gives no path or host either, and is read in full.
+    expect(
+      under(builtWith({ baseURL: { ...at(undefined), evaluated: "" } })),
+    ).toEqual([{ method: "GET", path: "/orders", host: undefined }]);
+    // So is a client built with no base at all.
+    expect(under(builtWith({}))).toEqual([
+      { method: "GET", path: "/orders", host: undefined },
+    ]);
+  });
+
+  it("says part of the URL did not read for a client with no base of its own once the program writes the library's default base", () => {
+    const DEFAULTED = httpRequests({
+      client: anyOf(
+        imported({ from: ["confhttp"], named: ["default"] }),
+        constructedFrom("confhttp"),
+      ),
+    })
+      .methods({ get: { sends: "GET", url: { at: 0 } } })
+      .baseUrl({
+        at: 0,
+        property: ["baseURL"],
+        joins: "appended",
+        defaults: ["defaults", "baseURL"],
+      });
+    const through = (from: string) => ({
+      "defaults.baseURL": [callOps({ method: "defaults", from: [from] })],
+    });
+    const call = (
+      url: Stated,
+      writes: NonNullable<Call["writes"]>,
+      receiverValue?: Stated,
+    ) =>
+      claimsOf(DEFAULTED, {
+        method: "get",
+        from: ["confhttp"],
+        args: [url],
+        writes,
+        ...(receiverValue === undefined ? {} : { receiverValue }),
+      });
+    const read = { method: "GET", path: "/orders", host: undefined };
+    const unread = [{ ...read, urlPartUnread: true }];
+
+    expect(call(at("/orders"), through("confhttp"))).toEqual(unread);
+    expect(call(at("/orders"), through("confhttp"), builtWith({}))).toEqual(
+      unread,
+    );
+    // A call with a host of its own, or on a client built with a base of
+    // its own, does not take the default.
+    expect(call(at("/orders", "api.example.com"), through("confhttp"))).toEqual(
+      [{ ...read, host: "api.example.com" }],
+    );
+    expect(
+      call(
+        at("/orders"),
+        through("confhttp"),
+        builtWith({ baseURL: at("/v1") }),
+      ),
+    ).toEqual([{ ...read, path: "/v1/orders" }]);
+    // A write through another library's object, or none, leaves it read.
+    expect(call(at("/orders"), through("otherhttp"))).toEqual([read]);
+    expect(call(at("/orders"), {})).toEqual([read]);
   });
 });
 
