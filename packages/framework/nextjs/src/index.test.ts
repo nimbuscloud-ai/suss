@@ -493,3 +493,31 @@ describe("server actions", () => {
     expect(actionsOf(summaries)).toEqual([]);
   });
 });
+
+describe("what the pack reads besides its routes", () => {
+  const missingRoute = path.resolve(
+    __dirname,
+    "../../../../fixtures/missing-route-nextjs",
+  );
+
+  it("keys the cache on the config file above the files a run reads", () => {
+    const inputs = nextjsFramework().discoveryInputs?.([
+      path.join(missingRoute, "app/api/orders/[id]/totals/route.ts"),
+      path.join(missingRoute, "lib/panel.ts"),
+    ]);
+
+    expect(inputs).toContain(path.join(missingRoute, "next.config.ts"));
+  });
+
+  it("states its pages, its public files, its config's rules and its middleware matcher", () => {
+    const declared = nextjsFramework().servedBeside;
+
+    expect(declared?.staticDirectories).toEqual(["public"]);
+    expect(declared?.config?.rules.map((rule) => rule.key)).toEqual([
+      "rewrites",
+      "redirects",
+    ]);
+    expect(declared?.middleware?.files).toContain("src/proxy.ts");
+    expect(declared?.patternSyntax).toBe("pathToRegexp");
+  });
+});

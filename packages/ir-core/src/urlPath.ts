@@ -35,6 +35,18 @@ export function statesAnOrigin(text: string): boolean {
   return SCHEME_ORIGIN.test(text) || PROTOCOL_RELATIVE_ORIGIN.test(text);
 }
 
+/** The host the origin at the start of the text states, lowercased and with its port, or undefined when it states none. */
+export function originHost(text: string): string | undefined {
+  const origin =
+    SCHEME_ORIGIN.exec(text)?.[0] ?? PROTOCOL_RELATIVE_ORIGIN.exec(text)?.[0];
+  if (origin === undefined) {
+    return undefined;
+  }
+  const authority = origin.slice(origin.indexOf("//") + 2);
+  const host = authority.slice(authority.lastIndexOf("@") + 1).toLowerCase();
+  return host === "" ? undefined : host;
+}
+
 // Suffixes kept for private networks and for examples. A name under one
 // of them is never someone else's public API.
 const PRIVATE_SUFFIXES = [

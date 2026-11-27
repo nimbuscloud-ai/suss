@@ -265,6 +265,9 @@ export function watchRouteTables(
     // The wrapper index notes what it reads through the mounts, in terms
     // it can look up again.
     mountsAbove: routes.mountsAbove,
+    // Read once a run, after every discovery, so no replay depends on them.
+    unfollowed: routes.unfollowed,
+    declared: routes.declared,
   };
 }
 

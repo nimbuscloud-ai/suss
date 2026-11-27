@@ -118,10 +118,10 @@ export function typescriptLowering(options: LoweringOptions): Lowering<Node> {
       }
       const target = peelValue(node);
       if (site !== undefined) {
-        return resolution.resolveWrittenValueUnder(target, site);
+        return resolution.resolveEvaluatedValueUnder(target, site);
       }
       return (
-        resolution.resolveWrittenValue(target) ??
+        resolution.resolveEvaluatedValue(target) ??
         resolution.resolveObject(target)
       );
     },

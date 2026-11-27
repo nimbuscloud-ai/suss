@@ -93,6 +93,7 @@ function withNodeMembers(
   };
   const added: AstCapableOps = {
     method: () => ops.method(),
+    propertyWrites: (path) => ops.propertyWrites?.(path) ?? [],
     receiverIsFrom: (origin) => ops.receiverIsFrom(origin),
     receiverSettledFrom: (origin) => ops.receiverSettledFrom?.(origin),
     receiverGlobal: (paths) => ops.receiverGlobal?.(paths),

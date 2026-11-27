@@ -454,7 +454,7 @@ function mayWrite(raw: ts.Node): boolean {
 }
 
 /** Whether a token is `=` or one of the compound assignments. */
-function isAssignmentOperator(kind: SyntaxKind): boolean {
+export function isAssignmentOperator(kind: SyntaxKind): boolean {
   return (
     kind >= SyntaxKind.FirstAssignment && kind <= SyntaxKind.LastAssignment
   );

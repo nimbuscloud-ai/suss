@@ -10,7 +10,7 @@
  * question, the same way the context-free readers need `askResolution`.
  */
 
-import { answersAt, coveringFallback } from "./writtenValue.js";
+import { answersAt, aroundOne, coveringFallback } from "./writtenValue.js";
 
 import type { Database } from "@suss/datalog";
 import type { FallbackRelations } from "./writtenValue.js";
@@ -76,10 +76,26 @@ export function writtenValueUnder(
   if (answers.length === 1) {
     return answers[0] as string;
   }
-  const askAtSite = (keys: readonly string[]): void => {
+  return coveringFallback(db, key, UNDER_SITE, site, askingAt(site, ask));
+}
+
+/** `fallbackAroundOne` under this site. */
+export function fallbackAroundOneUnder(
+  db: Database,
+  key: string,
+  site: string,
+  ask: AskUnder,
+): string | null {
+  return aroundOne(db, key, UNDER_SITE, site, askingAt(site, ask));
+}
+
+function askingAt(
+  site: string,
+  ask: AskUnder,
+): (keys: readonly string[]) => void {
+  return (keys) => {
     ask(keys.map((value) => [value, site] as const));
   };
-  return coveringFallback(db, key, UNDER_SITE, site, askAtSite);
 }
 
 const UNDER_SITE: FallbackRelations = {

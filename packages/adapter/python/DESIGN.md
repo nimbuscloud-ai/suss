@@ -4,7 +4,7 @@
 
 ## Path templates
 
-A pack declares which syntax its library uses for path parameters, under `pathParamSyntax`. The adapter reads two. `"braces"` covers `{name}` and `{name:converter}`, the syntax FastAPI gets from Starlette. `"flaskConverters"` covers `<name>`, `<converter:name>`, and `<converter(arguments):name>`, the syntax flask-restx gets from Werkzeug. With either one, the adapter rewrites the path into the IR's plain-brace form and treats the parameters in the template as path parameters.
+A pack declares which syntax its library uses for path parameters, under `pathParamSyntax`. The adapter reads two. `"braces"` covers `{name}` and `{name:converter}`, the syntax FastAPI gets from Starlette. `"flaskConverters"` covers `<name>`, `<converter:name>`, and `<converter(arguments):name>`, the syntax flask-restx gets from Werkzeug. With either one, the adapter rewrites the path into the IR's plain-brace form and treats the parameters in the template as path parameters. Each library's `path` converter takes the rest of the path, slashes included, so `{rest:path}` comes out as `{rest*}`, since Starlette's matches nothing too, and `<path:rest>` as `{rest+}`, since Werkzeug's needs at least one character. Any other converter takes one segment.
 
 When a pack declares nothing, the adapter keeps its paths exactly as written and does not treat any parameter as a path parameter. When a pack declares a syntax the adapter has no reader for, the adapter still discovers its routes, but gives them no path and records a gap. Packs written against 0.3 relied on brace parsing applying to every path, so those packs now have to declare `"braces"` explicitly.
 
@@ -610,6 +610,39 @@ Not read yet:
 - A dependency's own dependencies. `Depends(f)` where `f` takes `g: str = Depends(g)` reads `f` only.
 - A parameter default that refers to something other than a function at module scope, such as a method or a variable bound inside a function.
 - Flask's `before_request` on a blueprint. A flask-restx route is decorated on a namespace, and the blueprint is where it is mounted, so only the app's hook is read.
+
+## What serves requests beside the routes
+
+`suss check` reports a call to a path no route serves only when the framework pack that read the service's routes states what else serves requests there. A pack states it under `servedBeside`, and the adapter writes what it read on every route the pack recognized, as `metadata.servedBeside`. Each entry is a path, or no path when the entry may serve any path, and the methods it serves, or none for every method.
+
+The pack lists the objects the framework serves requests through, under `servers`. Each says which construction makes it, with `made`, and where a path a call on it states is served:
+
+- `asWritten`, for the app. A path the call states is served as written.
+- `underPrefix`, for a router, a blueprint, an `Api` or a `Namespace`. The reading does not put the prefix together, so a call on one may serve any path. A server with `servedWhereRegistered`, a Flask blueprint, is served under each path the app's `register_blueprint` puts it at, when the reading finds every registration and each path reads.
+
+What each server serves:
+
+| Part | Read from | Example |
+| --- | --- | --- |
+| `builtIn` | a keyword of the construction, the path when it is left out, nothing for `None`, `False` or an empty string | FastAPI's `docs_url`, `/docs`; flask-restx's `doc`, under every prefix of the pack's routes |
+| `staticFolder` | the folder keyword and the path keyword of the construction | Flask's `static_folder` and `static_url_path`, served at `/static` |
+| `unreadKeywords` | a keyword that hands the construction routes the pack does not read | `FastAPI(routes=[...])` |
+| `route` call | a route added by a call, at its path, for the methods it lists | `app.add_api_route("/health", f)`, `@app.route("/health")` |
+| `mount` call | everything under the path the mount states, or the one the mounted value's construction states | `app.mount("/static", StaticFiles(...))`, `app.register_blueprint(bp)` |
+| `middleware` call | every path, unless the class is one the library ships that serves nothing of its own | `app.add_middleware(MetricsMiddleware)` |
+| `errorHandler` call | every path, when it may be registered for the library's not-found error | `app.add_exception_handler(404, f)` |
+
+A mount whose value the pack's route table reads as the carrier of a root, the blueprint a flask-restx `Api` is built on, adds nothing, since the table puts the root's routes under the same path.
+
+Two parts come from the run rather than the pack. A mount the route table could not follow, such as `include_router` of a router a library builds, serves everything under the path it is mounted at, or any path when that did not read. And a middleware, a `before_request` hook or an error handler registered on the app by a decorator runs whether or not a route matches, so one that responds itself with anything but a 4xx or 5xx status it states may serve any path. So may a middleware that sends something other than what its continuation returned, such as a page in place of a 404, since its unit stops reading at the call.
+
+Not read yet:
+
+- A library call handed the app, such as `Instrumentator().expose(app)`, which may add routes of its own.
+- A route added on `app.router` or appended to `app.routes`, and a mount on `app.router`.
+- A WSGI or ASGI wrapper around the app, such as `DispatcherMiddleware` or `app.wsgi_app = ...`.
+- A blueprint's `before_app_request` hook, which runs for every request to the app.
+- `FastAPI(middleware=[Middleware(CORSMiddleware)])` reads as any path, where `add_middleware(CORSMiddleware)` reads as `OPTIONS` only.
 
 ## Background jobs
 

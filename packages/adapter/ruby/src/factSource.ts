@@ -27,7 +27,7 @@ import {
   concat,
   hostOf,
   literalOf as literalOfValue,
-  pathOf,
+  requestUrlOf,
   scalarOf,
   text,
 } from "@suss/values";
@@ -231,9 +231,7 @@ export function rubyFactSource(
     },
     urlOf: (key, site, at) => {
       const value = evaluatedAt({ key, at }, site);
-      return value === null
-        ? null
-        : { path: pathOf(value), host: hostOf(value) };
+      return value === null ? null : requestUrlOf(value);
     },
     hostOf: (host, port, site) => {
       const hostValue = evaluatedAt(host, site);

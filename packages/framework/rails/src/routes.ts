@@ -21,7 +21,8 @@ import { composeRoutes, rowRoutes } from "@suss/recognize";
 
 import { pathWithOptionalGroups } from "./optionalSegments.js";
 
-import type { RbInflections } from "@suss/adapter-ruby";
+import type { DeclaredRoute, RbInflections } from "@suss/adapter-ruby";
+import type { ServedBesideEntry } from "@suss/behavioral-ir";
 import type {
   ExpandsRole,
   ExpansionRow,
@@ -56,6 +57,14 @@ export interface RouteTable {
    * fall back to the naming convention.
    */
   readonly fileFound: boolean;
+  /**
+   * What the routing sends to something suss does not read: an app a
+   * `mount` puts under a path covers every path under it, and any other
+   * declaration left unread may serve any path at all.
+   */
+  readonly elsewhere: readonly ServedBesideEntry[];
+  /** Every route the routing declares, with the action it sends to. */
+  readonly declared: readonly DeclaredRoute[];
 }
 
 /**
@@ -376,6 +385,15 @@ export function readRoutes(input: RoutesInput): RouteTable {
       gaps: [
         `${input.routesFile.displayPath} does not exist, so this run assumes each action's path and method from Rails' RESTful naming convention instead of reading it from routing`,
       ],
+      elsewhere: [
+        {
+          by: "unread",
+          file: input.routesFile.file,
+          line: 1,
+          written: "a routes file that does not exist",
+        },
+      ],
+      declared: [],
     };
   }
   const drawDirectory = drawDirectoryOf(input.routesFile.file);
@@ -396,5 +414,49 @@ export function readRoutes(input: RoutesInput): RouteTable {
       routesWithOptionalGroups(set, controllerKey, action),
     fileFound: true,
     gaps: gapMessages(set.gaps, drawDirectory),
+    elsewhere: set.gaps.map((gap) => routedElsewhere(gap, input)),
+    declared: set.routed.map(({ controllerKey, action, route }) => ({
+      method: route.method,
+      path: pathWithOptionalGroups(route.path),
+      ...(route.formatless === true ? { formatless: true } : {}),
+      to: `${controllerKey}#${action}`,
+    })),
   };
+}
+
+/**
+ * What one declaration the table left unread may serve: every path
+ * under the place a mount puts an app suss does not read, and any path
+ * for anything else.
+ */
+function routedElsewhere(gap: RouteGap, input: RoutesInput): ServedBesideEntry {
+  const file = sourceFileOf(gap.file, input);
+  if (gap.kind === "unread" && gap.at !== undefined) {
+    const at = gap.at.replace(/\/+$/, "");
+    return {
+      by: "mount",
+      path: `${at}/{path*}`,
+      file,
+      line: 1,
+      written: gap.name,
+    };
+  }
+  return { by: "unread", file, line: 1, written: gap.name };
+}
+
+/** The file a gap's display path is for, so the CLI can measure it from the project. */
+function sourceFileOf(displayPath: string, input: RoutesInput): string {
+  const sources = [
+    input.routesFile,
+    ...input.routesFiles,
+    ...input.engines.flatMap((engine) =>
+      engine.routesFile === null
+        ? []
+        : [{ file: engine.routesFile, displayPath: engine.displayPath }],
+    ),
+  ];
+  return (
+    sources.find((source) => source.displayPath === displayPath)?.file ??
+    displayPath
+  );
 }

@@ -150,13 +150,17 @@ export function renderRule(rule) {
 
 /**
  * A finding between two declarations of a table has no transition, and
- * its rule picks it out by the column's field instead.
+ * its rule picks it out by the column's field instead. A call to a route
+ * that is not there has neither, and its rule picks out the caller.
  *
  * @param {NonNullable<NonNullable<SinceFinding["rule"]>["provider"]>} side
  */
 function ruleSideText(side) {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
+  }
+  if ("summary" in side) {
+    return `{ summary: ${JSON.stringify(side.summary)} }`;
   }
   return `{ field: ${JSON.stringify(side.field)} }`;
 }

@@ -349,6 +349,11 @@ export function composeRoutes(
   return {
     routesFor: (controllerKey, action) =>
       walk.routes.get(controllerKey)?.get(action) ?? [],
+    routed: [...walk.routes].flatMap(([controllerKey, byAction]) =>
+      [...byAction].flatMap(([action, routes]) =>
+        routes.map((route) => ({ controllerKey, action, route })),
+      ),
+    ),
     gaps: walk.gaps,
     outcomes: walk.outcomes,
   };
@@ -757,7 +762,7 @@ function carrierName(
 }
 
 /** The value the first pick that gives one reads off a call, with only the keywords those picks name read. */
-function pickedFrom(
+export function pickedFrom(
   call: CallOps,
   picks: readonly EntryPick[],
 ): ValueOps | undefined {
@@ -2597,7 +2602,14 @@ function readMount(
     mountPath === null ||
     walk.mounting.has(owner.name)
   ) {
-    walk.gaps.push({ kind: "unread", file: walk.file, name: entry.name });
+    walk.gaps.push({
+      kind: "unread",
+      file: walk.file,
+      name: entry.name,
+      ...(owner === null && mountPath !== null
+        ? { at: joinRoutePath(scope.pathPrefix, mountPath) }
+        : {}),
+    });
     return;
   }
   const root = walk.mounted.get(owner.name);
@@ -2690,7 +2702,9 @@ function valueMounted(entry: ReceiverEntry, walk: Walk): Mounted | null {
 /**
  * A mount of a value the source built, such as `include_router(router,
  * prefix=...)`: the call that built each value is walked as an entry,
- * under the mount's path.
+ * under the mount's path. A mount of a value the table does not read,
+ * such as a router a library builds, is recorded as unread at the path
+ * it is mounted at, since that value may serve any path under it.
  */
 function readValueMount(
   role: MountRole,
@@ -2700,21 +2714,45 @@ function readValueMount(
   walk: Walk,
 ): void {
   const mounted = mountedOf(firstPicked(entry.args, role.table), walk);
-  if (mounted.kind === "unlisted") {
-    return;
-  }
   const at = prefixRead(
     firstPicked(entry.args, role.at),
     role.noValue ?? "unreadable",
     scope,
   );
-  for (const value of mounted.calls) {
+  const calls = mounted.kind === "unlisted" ? [] : mounted.calls;
+  const walked = calls.map((value) =>
     walkMountedValue(
       value,
       mountedScope(at, prefix, entry, value, scope, walk),
       walk,
-    );
+    ),
+  );
+  if (walked.length > 0 && walked.every((read) => read)) {
+    return;
   }
+  const path = mountedPath(at, prefix, scope, walk);
+  walk.gaps.push({
+    kind: "unread",
+    file: walk.file,
+    name: entry.name,
+    ...(path === null ? {} : { at: path }),
+  });
+}
+
+/** The path a mount puts its value under, or null when it did not read or the value's own path decides it. */
+function mountedPath(
+  at: PrefixRead,
+  prefix: "inFront" | "replaces",
+  scope: Scope,
+  walk: Walk,
+): string | null {
+  if (scope.unread !== null || at.kind === "unreadable") {
+    return null;
+  }
+  if (at.kind === "stated") {
+    return joinTablePath(walk, scope.pathPrefix, at.value);
+  }
+  return prefix === "inFront" ? scope.pathPrefix : null;
 }
 
 /**
@@ -2754,11 +2792,14 @@ function mountedScope(
     : withUnread(placed, { reason: "rivalledMount", loops, router: value });
 }
 
-/** A mounted value, read by the role for the call that built it, named the way that call's own file names it. */
-function walkMountedValue(value: CallOps, scope: Scope, walk: Walk): void {
+/**
+ * A mounted value, read by the role for the call that built it, named
+ * the way that call's own file names it. False when no role reads it.
+ */
+function walkMountedValue(value: CallOps, scope: Scope, walk: Walk): boolean {
   const name = builtName(value, walk);
   if (name === null || !Object.hasOwn(walk.table.roles, name)) {
-    return;
+    return false;
   }
   readAs(
     walk.table.roles[name] as RouteRole,
@@ -2770,6 +2811,7 @@ function walkMountedValue(value: CallOps, scope: Scope, walk: Walk): void {
     scope,
     walk,
   );
+  return true;
 }
 
 /**

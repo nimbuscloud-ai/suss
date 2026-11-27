@@ -70,5 +70,12 @@
   "StandardError": "language: Ruby's base class of every exception rescue_from catches by default",
   "Exception": "language: Ruby's root of the exception hierarchy",
   "IndexError": "language: Ruby's exception that ActionController::UnpermittedParameters inherits from",
-  "KeyError": "language: Ruby's exception that ActionController::ParameterMissing inherits from"
+  "KeyError": "language: Ruby's exception that ActionController::ParameterMissing inherits from",
+  "public": "language: Ruby's visibility keyword. Rails: the directory whose files it serves ahead of the routes",
+  "Bundler": "Bundler: the gem loader, whose `require` in config/application.rb loads every gem the Gemfile lists",
+  "require": "language: Ruby's method that loads a file. Bundler: the method that loads the Gemfile's gems, each of which can add routes or middleware through its railtie",
+  "use": "Rails: the config.middleware method that adds a middleware to the stack",
+  "insert_before": "Rails: the config.middleware method that adds a middleware ahead of another",
+  "insert_after": "Rails: the config.middleware method that adds a middleware after another",
+  "swap": "Rails: the config.middleware method that puts a middleware in another's place"
 }

@@ -228,6 +228,7 @@ under `ops`.
 | `receiverValue()` | the value the method is called on as the source writes it, `db` in `db.query(User)` and `Orders.query()` in `Orders.query().first()`, with no name followed (optional) |
 | `chainedOn()` | the call made on what this call returns, `.set(v)` for `db.update(t)` in `db.update(t).set(v)`, or null when the result is stored, returned or passed instead (optional) |
 | `member()` | the member read the call is made on, `db.user` in `db.user.findMany()`, as ops whose method is the member's name (optional) |
+| `propertyWrites(path)` | the member reads the program writes the property at the end of `path` through, anywhere in the run, `axios.defaults` for `axios.defaults.baseURL = url`, each as ops whose method is `path[0]`. Only a path a request recognizer's `defaultBase` gives is noted (optional) |
 | `file()` | the path of the file the call is in (optional) |
 | `argument(index)` | the call that argument is, as ops of its own |
 | `callee()` | the call the callee itself was written as |
@@ -254,6 +255,7 @@ walk it:
 | `text()` | the string the source wrote, or null for anything else |
 | `flag()` | the yes or no the source wrote, taking a number the way it takes a boolean |
 | `entries(unsettled)` | what an object states, as key and value per entry |
+| `spreadsUnread()` | whether the object is built with a spread `entries` leaves out, since what it unpacks does not come to an object written out (optional) |
 | `items()` | what a list states, item by item |
 | `writtenItems()` | the text of each item of a list written at this spot, a spread as written, without following a name; null for anything else |
 | `listed()` | the list a value comes to through names, without following a call, as its key and each entry the source writes, a spread marked as one |
@@ -300,6 +302,7 @@ languages, and the pg and BigQuery Ruby packs list `ruby`.
 | op | read from |
 |---|---|
 | `method()`, `calleeText()` | `call(r, c)`, then `readsProperty(c, o, n)` for the method, with the adapter's `memberName` turning a class's own spelling back into the plain name, or the source text of `c` |
+| `propertyWrites(path)` | the adapter's `propertyWritesOf`, each key read as `member()` reads one. TypeScript states a `writesThrough(read, path)` row for each write whose target ends with a path the packs watch, from the files whose text spells it; Python and Ruby state none |
 | `argumentCount()`, `argument(k)`, `nameAt(k)`, `valueAt(k)` | `callArg(r, k, a)`, and `callArgCount` where an adapter states it |
 | `receiver()` | a name or a field followed to what it was written as, through the adapter's `writtenAs`, and then through a call into a project function to what it returns |
 | `callee()`, `argument(k)` | a name followed to what it was written as, through the adapter's `writtenAs`. A field is not followed, since the readers of a command object rely on reading a name alone |
@@ -309,6 +312,7 @@ languages, and the pg and BigQuery Ruby packs list `ruby`.
 | `enclosingBody()` on a call | the `makesCall(f, r)` rows on the call, the one whose `f` starts last. TypeScript and Python state one, and Ruby states one for the method and one for each block around the call, so the last is the innermost block |
 | `enclosingBody()` on a value | the `enclosingBody()` of the call a block is written with, through `callBlock(r, b)`, or of the call `passedTo()` gives; else the `containsFn(f, g)` rows on the value, the one whose `f` starts last. Ruby states `containsFn` from the method around a block or a lambda, so the call is asked first |
 | `propertyAt`, `property`, `entries`, `items` | `holdsProperty`, `writtenEntryAt` and `holdsUnderKey`, with a computed key read off `computedKeyAt` at the entry's position through `nameOf`. A call into a project function is read as the one value it returns, through `writtenAs` on the call, and a library call or a construction stays as written. An object's spread is read in its place, its name or project call followed the same way, or failing that through `comesTo`, and a key written twice keeps its first place and takes the later value. A list built by mapping is one item, read off `eachElement`: what the function a call hands over returns, from its one `returnsValue` row, or the element a comprehension writes. A list's spread is left out |
+| `spreadsUnread()` | the same `writtenEntryAt` rows, true when a spread's object, followed the way `entries` follows it, is not one `shapeOf` calls an object, in the object or in any object it spreads |
 | `object()` | the value itself when it is an object written out, or else the one object among the adapter's `comesTo` answers, any function among them left out. `comesTo(x, z)` follows names and calls that return their argument, and never a factory call |
 | `function()` | `func(x)` on the value itself, or else the one function among the `comesTo` answers, or else the adapter's `givesBack`: what `givesBackUnwrapped`, then `givesBack`, says a factory call returns |
 | `parts()`, `holes()`, `interpolated()` | `partAt` and `holeAt`, on the value a name was written as, or on what a call into a project function returns, through `writtenAs` on the call, so a statement a helper builds keeps its pieces. A value written as neither a literal nor a template takes its parts from the adapter's `partsOf`, which Python reads through its evaluator, so `"SELECT id" + " FROM users"` has parts and no holes |

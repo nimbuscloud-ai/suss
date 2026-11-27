@@ -30,6 +30,8 @@ export async function getUser(id: string) {
 
 `getUser` is discovered as a client boundary at `GET /api/users/{id}`, the same as if `api` had been built in that file. The path comes from its own call site, and the instance's `baseURL` goes in front of it. On the provider side, a spec's `servers[0].url` already goes in front of the routes it declares, and the two sides only pair when both are read the same way. An absolute base keeps only its path, so `https://petstore3.swagger.io/api/v3` gives `/api/v3`. A base of `/` adds nothing. A base computed at run time leaves the path as the call site wrote it, so the pack does not guess. The import can also come through a barrel that re-exports the instance, and resolution follows that chain back to where the instance was constructed.
 
+A program can also set the base for every client at once with `axios.defaults.baseURL = process.env.API_URL`. When it writes that anywhere in the run outside a test file, a relative call on `axios` itself, or on an instance built without a `baseURL` of its own, is marked as having a part of its URL suss did not read, since the deployment decides where it goes. A call with an absolute URL, or on an instance that states its own `baseURL`, is read as before. Only a write in that form is noted. suss does not see `Object.assign(axios.defaults, ...)`, or a write through a local set to `axios.defaults`.
+
 A wrapper written by hand around the instance works too, as long as it is a single method or function whose body passes its own path argument directly into one call on a resolved instance:
 
 ```ts

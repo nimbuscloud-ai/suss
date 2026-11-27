@@ -102,6 +102,20 @@ export function createProjectWithoutTsconfig(rootDir: string): {
   project: Project;
   files: string[];
 } {
+  const project = projectWithoutTsconfig();
+  const files = findSourceFiles(rootDir);
+  for (const file of files) {
+    try {
+      project.addSourceFileAtPath(file);
+    } catch {
+      // Skip a file that will not parse; the rest still extract.
+    }
+  }
+  return { project, files };
+}
+
+/** An empty project with the options a codebase with no tsconfig is read under, JavaScript allowed. */
+export function projectWithoutTsconfig(): Project {
   const project = new Project({
     skipAddingFilesFromTsConfig: true,
     compilerOptions: {
@@ -120,16 +134,7 @@ export function createProjectWithoutTsconfig(rootDir: string): {
     },
   });
   pinAutomaticTypes(project);
-
-  const files = findSourceFiles(rootDir);
-  for (const file of files) {
-    try {
-      project.addSourceFileAtPath(file);
-    } catch {
-      // Skip a file that will not parse; the rest still extract.
-    }
-  }
-  return { project, files };
+  return project;
 }
 
 /**

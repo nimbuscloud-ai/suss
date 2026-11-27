@@ -580,9 +580,11 @@ describe("composeRoutes", () => {
     ]);
     expect(set.routesFor("billing/x", "y")).toEqual([]);
     expect(set.routesFor("no", "no")).toEqual([]);
+    // A mount of a table the run does not read says where it puts it,
+    // since what it serves is every path under there.
     expect(set.gaps).toEqual([
       { kind: "unread", file: "routes1.rb", name: "mount" },
-      { kind: "unread", file: "routes0.rb", name: "mount" },
+      { kind: "unread", file: "routes0.rb", name: "mount", at: "/sidekiq" },
     ]);
   });
 

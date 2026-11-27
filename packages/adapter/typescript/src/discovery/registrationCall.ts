@@ -20,6 +20,12 @@ import { routePatternFromArgument } from "../resolve/routePath.js";
 import { memberNameOf } from "../walk/propertyName.js";
 import { functionNameOrAnon } from "./graphqlShared.js";
 import { importDeclarationsOf } from "./importScan.js";
+import {
+  type BesideMounts,
+  type MountBeside,
+  noteMountedBeside,
+  noteUnprefixedMount,
+} from "./mountBeside.js";
 import { importedReferenceSpellings } from "./resolveImport.js";
 import {
   functionValueOf,
@@ -69,6 +75,10 @@ export interface MountPrefixIndex {
   globalPrefixes?: ReadonlyMap<string, GlobalPrefix>;
   /** How the run's applications serve API versions, keyed by `routeVersioningKey`. */
   versionings?: ReadonlyMap<string, AppVersioning>;
+  /** By pack, the mount calls that serve requests beside the routes suss read. */
+  servedBeside?: ReadonlyMap<string, readonly MountBeside[]>;
+  /** By pack that states what it serves beside its routes, the creation site of every app and router it builds. */
+  servers?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 /** One mount call this file states, before it's folded into the index. */
@@ -103,8 +113,7 @@ export function discoverRegistrationCalls(
   );
   const registrationMethods = registrationMethodsOf(match);
   if (
-    registrationSubjects.size === 0 &&
-    !storeCanFindSubjects(sourceFile, match, resolution, registrationMethods)
+    !looksForRegistrations(sourceFile, match, registrationSubjects, resolution)
   ) {
     return results;
   }
@@ -308,7 +317,7 @@ export interface ExpandedRegistrations {
  * fills in at each call site instead. The call sites have the path and
  * the handler the caller supplied, which the body does not.
  */
-function expandedAtCallSites(
+export function expandedAtCallSites(
   call: Node,
   method: string,
   expanded: ExpandedRegistrations | undefined,
@@ -552,6 +561,24 @@ export function receiverOf(
     match.importName,
   );
   return candidates > 1 ? { kind: "several", candidates } : NOT_A_ROUTABLE;
+}
+
+/** Whether route discovery reads a file's registration calls for the pattern at all. */
+export function looksForRegistrations(
+  sourceFile: SourceFile,
+  match: Extract<DiscoveryPattern["match"], { type: "registrationCall" }>,
+  subjects: ReadonlyMap<string, Node>,
+  resolution: ResolutionStore | undefined,
+): boolean {
+  return (
+    subjects.size > 0 ||
+    storeCanFindSubjects(
+      sourceFile,
+      match,
+      resolution,
+      registrationMethodsOf(match),
+    )
+  );
 }
 
 /**
@@ -843,6 +870,7 @@ export function discoverMountEdges(
   knownSubjectIds: ReadonlySet<string>,
   resolution?: ResolutionStore,
   packMethods: ReadonlySet<string> = new Set(),
+  beside?: BesideMounts,
 ): MountEdgeCandidate[] {
   const ownMethods = new Set([
     ...packMethods,
@@ -892,6 +920,9 @@ export function discoverMountEdges(
     const prefix =
       prefixArg === undefined ? null : stringValueOf(prefixArg, resolution);
     if (prefix === null) {
+      if (beside !== undefined) {
+        noteUnprefixedMount(node, prefixArg, args, beside, resolution);
+      }
       return;
     }
 
@@ -911,6 +942,17 @@ export function discoverMountEdges(
       )
     ) {
       return;
+    }
+    if (beside !== undefined) {
+      noteMountedBeside(
+        node,
+        args,
+        mount.targetPosition,
+        targetNodes,
+        prefix,
+        beside,
+        resolution,
+      );
     }
     for (const targetNode of targetNodes) {
       edges.push({

@@ -107,8 +107,53 @@ export function coveringFallback(
   ask: Ask,
 ): string | null {
   const answers = new Set(answersAt(db, relations.writtenAs, key, site));
+  return answers.size < 2
+    ? null
+    : outermostCovering(db, key, answers, relations, site, ask);
+}
+
+/**
+ * The fallback `a or b` a value's one expression came through, when the
+ * fallback's other branch came to nothing the rules could find, as
+ * `process.env.API_URL` does in `process.env.API_URL || ""`.
+ * `writtenValueOf` gives the branch that resolved, which is what a
+ * reader of the written expression wants. A value reader reads the
+ * fallback whole, so its own `or` takes the default and marks it as
+ * taken over a value that did not read.
+ */
+export function fallbackAroundOne(
+  db: Database,
+  key: string,
+  ask: Ask,
+): string | null {
+  return aroundOne(db, key, CONTEXT_FREE, null, ask);
+}
+
+/** `fallbackAroundOne`, for the relations one reader asks through, under `site` when it is not null. */
+export function aroundOne(
+  db: Database,
+  key: string,
+  relations: FallbackRelations,
+  site: string | null,
+  ask: Ask,
+): string | null {
+  const answers = new Set(answersAt(db, relations.writtenAs, key, site));
+  return answers.size === 1
+    ? outermostCovering(db, key, answers, relations, site, ask)
+    : null;
+}
+
+/** The outermost fallback the value passes whose expressions are exactly `answers`. */
+function outermostCovering(
+  db: Database,
+  key: string,
+  answers: ReadonlySet<string>,
+  relations: FallbackRelations,
+  site: string | null,
+  ask: Ask,
+): string | null {
   const fallbacks = answersAt(db, relations.fallbacks, key, site);
-  if (answers.size < 2 || fallbacks.length === 0) {
+  if (fallbacks.length === 0) {
     return null;
   }
   ask(fallbacks);

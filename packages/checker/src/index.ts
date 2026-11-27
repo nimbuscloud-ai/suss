@@ -40,6 +40,10 @@ import { checkSchemaAgreement } from "./storage/schemaAgreement.js";
 import { checkStorage } from "./storage/storagePairing.js";
 import { checkComponentStoryAgreement } from "./story/componentStoryAgreement.js";
 import { checkUnitInvocation } from "./unit-invocation/unitInvocationPairing.js";
+import {
+  checkUnknownRoutes,
+  type UncheckedRoute,
+} from "./unknown-route/unknownRoute.js";
 
 import type {
   BehavioralSummary,
@@ -305,6 +309,10 @@ export {
   type InvokesInRun,
   invokersOfUnits,
 } from "./unit-invocation/unitInvocationPairing.js";
+export {
+  checkUnknownRoutes,
+  type UncheckedRoute,
+} from "./unknown-route/unknownRoute.js";
 
 export type { GroundedName, Grounding } from "./storage/grounding.js";
 
@@ -360,11 +368,13 @@ export interface CheckAllResult {
    * What a pass could have reported and did not judge. An environment
    * read in a file a runtime loads that no call from its handler reaches
    * is one: it may run there or not, so it is neither a finding nor clear.
-   * A contract document that nothing serves or calls is another.
+   * A contract document that nothing serves or calls is another, and so
+   * is a REST call suss read in full whose service it could not settle.
    */
   unchecked: {
     runtimeConfig: UncheckedRead[];
     contracts: UncheckedContract[];
+    routes: UncheckedRoute[];
   };
 }
 
@@ -523,6 +533,10 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
   findings.push(...checkMessageBus(production, interactionIndex, pairInfo));
   findings.push(...checkUnitInvocation(production, interactionIndex, pairInfo));
   findings.push(...checkMetric(production, interactionIndex));
+  const uncheckedRoutes: UncheckedRoute[] = [];
+  findings.push(
+    ...checkUnknownRoutes(production, unmatched.consumers, uncheckedRoutes),
+  );
 
   // Pairing matches on method and path, so it lists a store or a queue as
   // unpaired even after the pass for that protocol compared it.
@@ -569,6 +583,7 @@ export function checkAll(summaries: BehavioralSummary[]): CheckAllResult {
     unchecked: {
       runtimeConfig: uncheckedReads,
       contracts: uncheckedContracts,
+      routes: uncheckedRoutes,
     },
   };
 }

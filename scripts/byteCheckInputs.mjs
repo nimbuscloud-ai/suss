@@ -430,6 +430,42 @@ export const FIXTURE_INPUTS = [
     ...dir("fixtures/message-payload-drift"),
     ...packs("aws-lambda", "aws-sqs"),
   ]),
+  fixture("missing-route-express", [
+    ...project("fixtures/missing-route-express/tsconfig.json"),
+    ...packs("express", "fetch"),
+  ]),
+  fixture("missing-route-fastapi/shop", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-fastapi/shop"),
+    ...packs("fastapi"),
+  ]),
+  fixture("missing-route-fastapi/sync", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-fastapi/sync"),
+    ...packs("httpx", "aws-lambda-python"),
+  ]),
+  fixture("missing-route-flask-restx/shop", [
+    ...lang("python"),
+    ...dir("fixtures/missing-route-flask-restx/shop"),
+    ...packs("flask-restx"),
+  ]),
+  fixture("missing-route-flask-restx/web", [
+    ...project("fixtures/missing-route-flask-restx/web/tsconfig.json"),
+    ...packs("fetch"),
+  ]),
+  fixture("missing-route-nextjs", [
+    ...project("fixtures/missing-route-nextjs/tsconfig.json"),
+    ...packs("nextjs", "fetch"),
+  ]),
+  fixture("missing-route-rails", [
+    ...lang("ruby"),
+    ...dir("fixtures/missing-route-rails"),
+    ...packs(railsIn("fixtures/missing-route-rails")),
+  ]),
+  fixture("missing-route-rails/web", [
+    ...project("fixtures/missing-route-rails/web/tsconfig.json"),
+    ...packs("fetch"),
+  ]),
   fixture("modules-python", [
     ...dir("fixtures/modules-python"),
     ...packs("sqlalchemy=fixtures/modules-python/suss.sqlalchemy.json"),

@@ -110,6 +110,7 @@ const OWNING_DIRS = [
   "packages/checker/src/storage/",
   "packages/checker/src/story/",
   "packages/checker/src/unit-invocation/",
+  "packages/checker/src/unknown-route/",
   "packages/checker/src/pairing/graphqlPairing.ts",
   "packages/checker/src/pairing/semanticBridging.ts",
   "packages/checker/src/contract/",

@@ -62,6 +62,9 @@ export function urlOrHostFirst(
     return {
       path: requestTargetPath(own?.path),
       host: hostNamed(host, port, site),
+      ...(own?.tookDefault === true || tookDefault([host, port], site)
+        ? { tookDefault: true }
+        : {}),
     };
   };
 }
@@ -79,7 +82,26 @@ export function hostBase(
 ): UrlTarget | null {
   const port = link.port === undefined ? null : statedValue(built, link.port);
   const read = hostNamed(host, port, site);
-  return read === undefined ? null : { path: "", host: read };
+  if (read === undefined) {
+    return null;
+  }
+  return {
+    path: "",
+    host: read,
+    ...(tookDefault([host, port], site) ? { tookDefault: true } : {}),
+  };
+}
+
+/**
+ * Whether any of the values took a fallback's default over a value that
+ * did not read. `host` gives a string, which has no room for the mark,
+ * so the mark is read off the value as a URL.
+ */
+function tookDefault(
+  values: readonly (ValueOps | null)[],
+  site: string | undefined,
+): boolean {
+  return values.some((value) => value?.url?.(site)?.tookDefault === true);
 }
 
 /**

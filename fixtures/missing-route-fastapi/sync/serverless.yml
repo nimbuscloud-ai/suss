@@ -1,0 +1,18 @@
+# The order sync job, which calls the shop's FastAPI app on the private network.
+service: order-sync
+
+provider:
+  name: aws
+  runtime: python3.12
+  environment:
+    SHOP_API_URL: http://shop.internal
+
+functions:
+  syncOrder:
+    handler: handler.sync_order
+  fetchLogo:
+    handler: handler.fetch_logo
+  fetchMetrics:
+    handler: handler.fetch_metrics
+  fetchExport:
+    handler: handler.fetch_export

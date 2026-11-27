@@ -1796,6 +1796,76 @@ export interface GeneratedModuleSpec {
   dirs?: (fromDir: string) => readonly string[];
 }
 
+/**
+ * Where a framework pack reads what serves requests beside its routes.
+ * Each part is optional, and a pack states only the ones its framework
+ * has. Paths in `config` and `middleware` are written in the syntax
+ * `patternSyntax` gives.
+ */
+export interface ServedBesideDeclaration {
+  /** Files the framework serves a page from, each at the path its place gives, as a route file's is. */
+  pages?: readonly ServedPages[];
+  /** Directories under the project whose files the framework serves at their path below the directory. */
+  staticDirectories?: readonly string[];
+  /** The framework's config file, and what in the object it exports sends requests elsewhere. */
+  config?: ServedConfig;
+  /** Files whose exported matcher picks the requests a function runs in front of every route for. */
+  middleware?: ServedMiddleware;
+  /**
+   * Library functions whose result serves requests when the pack's mount
+   * method is handed it, such as a static file server or a proxy. A
+   * mount of anything else the pack does not read covers its prefix too.
+   */
+  servingCalls?: readonly ServingCall[];
+  /** How `config` and `middleware` write a path. Defaults to `"routePath"`, the pack's own route syntax. */
+  patternSyntax?: "routePath" | "pathToRegexp";
+  /**
+   * The methods and attributes of an app or a router the pack builds
+   * that cannot serve a request, such as Express's `listen` or `locals`.
+   * Any other method the pack does not register with may serve any path,
+   * and so may any other attribute that has a method called on it or is
+   * passed on.
+   */
+  inert?: readonly string[];
+  /**
+   * Library calls that are handed an app and serve it as it is, adding no
+   * route, such as `http.createServer(app)`. An app handed to any other
+   * library call may serve any path.
+   */
+  runners?: readonly ReceiverOrigin[];
+}
+
+export interface ServedPages {
+  filePattern: string;
+  path: Extract<BindingExtraction["path"], { type: "fromFilename" }>;
+  /** Whether the framework serves it with text after its last segment, as `/sitemap.xml` for `app/sitemap.ts`. */
+  suffixed?: boolean;
+}
+
+export interface ServedConfig {
+  /** File names at the project's root, in the order the framework looks for them. */
+  files: readonly string[];
+  /** Keys whose function returns a list of rules, each taking requests from the path in its `source`. */
+  rules: readonly { key: string; by: "rewrite" | "redirect" }[];
+  /** Keys that move or reshape every route and that the pack does not read, so any one of them makes every path uncertain. */
+  unread: readonly string[];
+}
+
+export interface ServedMiddleware {
+  /** File names at the project's root, or under `src`, in the order the framework looks for them. */
+  files: readonly string[];
+  /** The export that states the matcher, and its property, `config` and `matcher` for Next.js. */
+  export: string;
+  property: string;
+}
+
+export interface ServingCall {
+  module: string;
+  /** The names the module exports the function under, `default` for its default export. */
+  names: readonly string[];
+  by: "static" | "proxy";
+}
+
 export interface PatternPack {
   name: string;
   /**
@@ -1839,6 +1909,15 @@ export interface PatternPack {
    * leave a section out when the framework has no path for it.
    */
   requestSpelling?: RequestSpellingMetadata;
+  /**
+   * For a REST framework, what else serves a request that no route in
+   * the table matches, and where the pack reads each one. A check reports
+   * a call to a path no route serves only in a service whose packs all
+   * state this, since otherwise "no route matches" could mean "suss did
+   * not read what does". The adapter writes what it read on one summary
+   * per run, an empty list included.
+   */
+  servedBeside?: ServedBesideDeclaration;
   /**
    * The transport written into `BoundaryBinding.transport` on discovered
    * units, such as `"http"` or `"in-process"`. It is required so a pack
@@ -2123,6 +2202,13 @@ export interface RequestClaim {
   readonly host: string | undefined;
   /** What the call does with a redirect, when it says so itself. */
   readonly redirectDelivery?: RedirectDelivery;
+  /**
+   * True when part of the URL comes from a value that did not read and
+   * the path does not show it: a fallback's default taken over such a
+   * value, as in `${process.env.API_URL ?? ""}/orders`, or a base URL
+   * left out of the path. The deployment may send the call elsewhere.
+   */
+  readonly urlPartUnread?: true;
   /** The construction of the call's class this request was read under, when the URL differs between them. */
   readonly site?: string;
   /**
@@ -2168,6 +2254,12 @@ export interface RequestRead {
   readonly base?: UrlTarget & {
     readonly joins: "appended" | "resolved" | "asWritten";
   };
+  /**
+   * Set when the construction states a base suss did not read in full
+   * and the path leaves it out, so a call read again under a caller's
+   * values leaves it out too.
+   */
+  readonly baseUnread?: true;
   /** The values the call states its method and host as, for an adapter that asks where they came from. */
   readonly stated?: StatedRequest;
 }
@@ -2221,6 +2313,13 @@ export type RequestRecognizer<TCtx = unknown> = ((
   readonly response: ClientResponse;
   /** The methods table's entries in the order the pack wrote them, which a claim's `read.entry` is one of. */
   readonly entries: readonly string[];
+  /**
+   * The path of properties on the client where the library keeps a base
+   * URL for every client built without one, `["defaults", "baseURL"]`
+   * for axios. An adapter notes the program's writes to it, which
+   * `CallOps.propertyWrites` gives back.
+   */
+  readonly defaultBase?: readonly string[];
 };
 
 /**

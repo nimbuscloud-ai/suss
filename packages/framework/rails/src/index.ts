@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { underscoreConstantPath } from "@suss/adapter-ruby";
 
+import { configuredBeside } from "./appConfig.js";
 import {
   appDirectoryOf,
   applicationFile,
@@ -307,14 +308,21 @@ export function railsFramework(options: RailsPackOptions = {}): RubyPack {
         : conventionalRoutes(key, actionName);
     },
     routingGaps: () => routeTable().gaps,
+    routedElsewhere: () => [
+      ...routeTable().elsewhere,
+      ...configuredBeside(railsRoot, displayPathOf),
+    ],
+    declaredRoutes: () => routeTable().declared,
     optionalFormat: true,
   };
 
   return {
     name: "rails",
-    version: "6",
+    version: "8",
     protocol: "http",
     discovery: [pattern],
+    // Rails serves the files under `public` ahead of its routes.
+    servedBeside: { staticDirectories: [path.join(railsRoot, "public")] },
     bodyBlocks: BODY_BLOCKS,
     inflections,
     // An action reads the request through these, and is handed nothing.

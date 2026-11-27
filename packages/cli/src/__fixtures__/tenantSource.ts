@@ -11,7 +11,7 @@ import path from "node:path";
 
 import { expect } from "vitest";
 
-import { runCli } from "../run.js";
+import { quietly } from "./quietly.js";
 
 import type { CheckIntentResult } from "@suss/checker-intent";
 
@@ -96,19 +96,4 @@ export function tenantProject(options: TenantFixture): TenantProject {
       fs.rmSync(root, { recursive: true, force: true });
     },
   };
-}
-
-/** Run the CLI without its output landing in the test log. */
-async function quietly(argv: string[]): Promise<number> {
-  const swallow = (() => true) as typeof process.stdout.write;
-  const origOut = process.stdout.write.bind(process.stdout);
-  const origErr = process.stderr.write.bind(process.stderr);
-  process.stdout.write = swallow;
-  process.stderr.write = swallow;
-  try {
-    return await runCli(argv);
-  } finally {
-    process.stdout.write = origOut;
-    process.stderr.write = origErr;
-  }
 }

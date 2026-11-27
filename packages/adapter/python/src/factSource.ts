@@ -16,9 +16,8 @@ import {
   staysInItsFunction,
 } from "@suss/resolution";
 import {
-  hostOf,
   literalOf as literalOfValue,
-  pathOf,
+  requestUrlOf,
   scalarOf,
 } from "@suss/values";
 
@@ -221,7 +220,7 @@ export function pythonFactSource(
         return null;
       }
       const value = evaluated(node, site);
-      return { path: pathOf(value), host: hostOf(value) };
+      return requestUrlOf(value);
     },
     constructionSitesOf: (call) => {
       const node = nodeAt(call);
@@ -671,7 +670,7 @@ function nameIn(key: string): string {
  * `file:start-end`, a module name's `file#name`, or a local name's
  * `file:start-end#name`.
  */
-function fileWriting(key: string): string {
+export function fileWriting(key: string): string {
   const scope = key.includes("#") ? key.slice(0, key.lastIndexOf("#")) : key;
   return /:\d+-\d+$/.test(scope)
     ? scope.slice(0, scope.lastIndexOf(":"))

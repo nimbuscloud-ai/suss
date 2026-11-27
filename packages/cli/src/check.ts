@@ -72,6 +72,7 @@ import type {
   SuppressionRule,
   UncheckedContract,
   UncheckedRead,
+  UncheckedRoute,
 } from "@suss/checker";
 import type { CheckIntentResult, IntentFinding } from "@suss/checker-intent";
 import type { PackConfigNeed, PackPathMissing } from "@suss/extractor";
@@ -1427,8 +1428,21 @@ function findingBlock(f: Finding, confidence: ConfidenceLookup): string[] {
     `  ${f.description}`,
     ...suppressedLines(f),
     ...sideLines(f, confidence, "  "),
+    ...targetLines(f, "  "),
     `  ${boundaryLine(f)}`,
     ...formatSuppressionRule(f),
+  ];
+}
+
+/** The service a call to a missing route goes to. The description already lists the routes nearby. */
+function targetLines(f: Finding, indent: string): string[] {
+  if (f.target === undefined) {
+    return [];
+  }
+  const { service, routes } = f.target;
+  const named = service === "" ? "(unnamed)" : service;
+  return [
+    `${indent}service: ${named}, ${routes} route${routes === 1 ? "" : "s"} read`,
   ];
 }
 
@@ -1453,6 +1467,11 @@ function sideLines(
       `${indent}read: ${formatSide(f.consumer, confidence)}`,
       ...runsInLines(f, indent),
     ];
+  }
+  // A call to a missing route has no provider, and its provider side
+  // repeats the consumer.
+  if (f.target !== undefined) {
+    return [`${indent}consumer: ${formatSide(f.consumer, confidence)}`];
   }
   const mergedSide = mergedSideOf(f);
   return [
@@ -1689,11 +1708,17 @@ function ruleSideText(side: AcceptingSide): string {
   if ("transitionId" in side) {
     return `{ transitionId: ${JSON.stringify(side.transitionId)} }`;
   }
+  if ("summary" in side) {
+    return `{ summary: ${JSON.stringify(side.summary)} }`;
+  }
   return `{ field: ${JSON.stringify(side.field)} }`;
 }
 
 /** What a printed rule matches one side of a finding by. */
-export type AcceptingSide = { transitionId: string } | { field: string };
+export type AcceptingSide =
+  | { transitionId: string }
+  | { field: string }
+  | { summary: string };
 
 /** A `.sussignore` rule without its reason, which the person accepting it writes. */
 export interface AcceptingRule {
@@ -1715,7 +1740,10 @@ interface NamedSide {
  */
 export function acceptingRule(f: Finding): AcceptingRule | null {
   const key = findingRuleBoundaryKey(f);
-  const side = findingTransitionSide(f) ?? findingFieldSide(f, key);
+  const side =
+    findingTransitionSide(f) ??
+    findingFieldSide(f, key) ??
+    findingCallSide(f, key);
   if (side === null) {
     return null;
   }
@@ -1760,6 +1788,18 @@ function findingFieldSide(f: Finding, key: string | null): NamedSide | null {
     return { name: "provider", matches: { field: f.provider.field } };
   }
   return null;
+}
+
+/**
+ * The consumer by its summary, for a finding about one call with no
+ * provider behind it. The call and its route are one boundary, so the
+ * rule matches nothing else.
+ */
+function findingCallSide(f: Finding, key: string | null): NamedSide | null {
+  if (key === null || f.target === undefined) {
+    return null;
+  }
+  return { name: "consumer", matches: { summary: f.consumer.summary } };
 }
 
 /** Whether a finding is about one read, listing in `sources` the deployments it is against. */
@@ -2057,6 +2097,7 @@ function renderDirHuman(
   }
 
   lines.push(...uncheckedReadLines(result.unchecked.runtimeConfig, summaries));
+  lines.push(...uncheckedRouteLines(result.unchecked.routes, all));
 
   const testCode = unpairable.filter((u) => u.reason === "testCode").length;
   if (testCode > 0) {
@@ -2079,6 +2120,31 @@ function renderDirHuman(
     ...findingLines(result, confidence, scope, since, coverage, summaries),
   );
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * REST calls suss read in full whose service it could not settle, so no
+ * one judged whether the route they call exists.
+ */
+function uncheckedRouteLines(
+  unchecked: readonly UncheckedRoute[],
+  all: boolean,
+): string[] {
+  if (unchecked.length === 0) {
+    return [];
+  }
+  const one = unchecked.length === 1;
+  const shown = all ? unchecked : unchecked.slice(0, DIAGNOSTIC_LIMIT);
+  return [
+    "",
+    `${unchecked.length} REST call${one ? " was" : "s were"} not checked against the routes ${one ? "it goes" : "they go"} to, because suss could not tell which service that is:`,
+    ...shown.map((u) => `  ${u.consumer} (${u.call}): ${u.reason}`),
+    ...(shown.length < unchecked.length
+      ? [
+          `  ... and ${unchecked.length - shown.length} more. Run the same command with --all to list them.`,
+        ]
+      : []),
+  ];
 }
 
 /**

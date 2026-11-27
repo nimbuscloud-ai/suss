@@ -245,6 +245,8 @@ export interface UrlTarget {
   readonly host: string | undefined;
   /** True for a URL the client reads without a request, such as a `data:` URL. */
   readonly local?: boolean;
+  /** True when part of the URL is a fallback's default taken over a value that did not read. */
+  readonly tookDefault?: boolean;
 }
 
 /**
@@ -291,6 +293,13 @@ export interface ValueOps {
   flag(): boolean | null;
   /** What this object states, entry by entry. Empty for anything else. */
   entries(unsettled: UnsettledName): readonly ValueEntry[];
+  /**
+   * Whether this object is built with a spread that `entries` leaves
+   * out, because what it unpacks does not come to an object written
+   * out, such as a value a library call returns. Unset in an adapter
+   * that cannot say, which a reader takes as yes.
+   */
+  spreadsUnread?(): boolean;
   /** What this list states, item by item. Empty for anything else. */
   items(): readonly ValueOps[];
   /** What one named property of this object states, or null for none. */
@@ -948,6 +957,14 @@ export function lastValueWins<T extends { readonly key: string | null }>(
 export interface CallOps {
   /** Which method the call reaches for, spelled as the source spells it. */
   method(): string | null;
+  /**
+   * The member reads the program writes the property at the end of
+   * `path` through, anywhere in the run, each as ops whose callee is
+   * the read of `path[0]`: `axios.defaults` for `axios.defaults.baseURL
+   * = url` and `["defaults", "baseURL"]`. Only a path a request
+   * recognizer's `defaultBase` gives is noted. Unset finds none.
+   */
+  propertyWrites?(path: readonly string[]): readonly CallOps[];
   /** Whether the receiver came from where the origin says. */
   receiverIsFrom(origin: ReceiverOrigin): boolean;
   /**
@@ -1394,6 +1411,12 @@ export interface FactSource {
   read(key: string): void;
   /** The key a name or field was written as, by the adapter's own rules, or null. */
   writtenAs(key: string): string | null;
+  /**
+   * The keys of the member reads the program writes the property at the
+   * end of `path` through, as `CallOps.propertyWrites` says. Unset finds
+   * none.
+   */
+  propertyWritesOf?(path: readonly string[]): readonly string[];
   /** Every key a name or field was written as, for one written as more than one, where `writtenAs` gives none. Unset says nothing. */
   writtenAsEach?(key: string): readonly string[];
   /** The keys of the values in the collection a call returns, in order, or null when the rules settle the call on no one collection. Unset says nothing. */

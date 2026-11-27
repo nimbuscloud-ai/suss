@@ -13,6 +13,7 @@ import {
   type AskUnder,
   allocationSitesOf,
   comesToUnder,
+  fallbackAroundOneUnder,
   isWrittenAsUnder,
   objectOfUnder,
   writtenValueUnder,
@@ -142,6 +143,29 @@ describe("reading an answer under one allocation site", () => {
       "urlA",
     ]);
     expect(writtenValueUnder(db, "v1Base", "v1Site", ask)).toBe("either");
+  });
+
+  it("reads a fallback whose first branch came to nothing as the default, and a value reader reads it whole", () => {
+    // constructor() { this.base = this.configured || "/api" }, with nothing that writes `configured`.
+    const db = new Database();
+    for (const [relation, ...tuple] of [
+      ...TWO_CLIENTS,
+      ["writtenValue", "slash"],
+      ["fallbackBranch", "either", "unset"],
+      ["fallbackBranch", "either", "slash"],
+      ["storesProperty", "Api", "base", "either", "receiver"],
+      ["readsProperty", "v1Base", "v1", "base"],
+    ] as Array<[string, ...string[]]>) {
+      db.add(relation, tuple);
+    }
+    const ask: AskUnder = (pairs) => {
+      askResolutionUnder(db, pairs, resolutionUnderProgram());
+    };
+    ask([["v1Base", "v1Site"]]);
+
+    expect(writtenValueUnder(db, "v1Base", "v1Site", ask)).toBe("slash");
+    expect(fallbackAroundOneUnder(db, "v1Base", "v1Site", ask)).toBe("either");
+    expect(fallbackAroundOneUnder(db, "base", "v1Site", ask)).toBe(null);
   });
 
   it("costs nothing to ask the same pair twice", () => {

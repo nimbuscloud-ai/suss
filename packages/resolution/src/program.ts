@@ -54,6 +54,7 @@ export const ASKING_RELATIONS: readonly string[] = [
   "wantedAncestry",
   "wantedType",
   "wantedUses",
+  "wantedHolders",
   "wantedSource",
   "wantedInputRead",
   "wantedMembers",

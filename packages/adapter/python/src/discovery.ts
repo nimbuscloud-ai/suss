@@ -23,6 +23,7 @@ import {
   walkDescendants,
   writtenReading,
 } from "@suss/extractor";
+import { patternHole, rangedHole } from "@suss/ir-core";
 import { joinedTablePath } from "@suss/recognize";
 import { constantOf, literalOf, pathOf, takenOverUnread } from "@suss/values";
 
@@ -93,6 +94,7 @@ import type {
   Reading,
   SourceRange,
 } from "@suss/extractor";
+import type { HoleRange } from "@suss/ir-core";
 import type { DecoratorClassification } from "./decorators.js";
 import type { ImportedDefinitionLookup } from "./importedDefinitions.js";
 import type {
@@ -381,25 +383,59 @@ type PathTemplateReader = (path: string) => PathTemplateReading;
 
 const NO_PATH_PARAMS: ReadonlySet<string> = new Set();
 
-/** `template` has to capture the parameter name in its first group. */
-function templateReader(template: RegExp): PathTemplateReader {
+/**
+ * `template` captures the parameter's name in the group `name`, and its
+ * converter, when it has one, in the group `converter`. A converter
+ * `ranges` lists takes that many segments, and any other takes one.
+ */
+function templateReader(
+  template: RegExp,
+  ranges: Readonly<Record<string, HoleRange>>,
+): PathTemplateReader {
   return (path) => {
     const names: string[] = [];
-    const canonical = path.replace(template, (_match, name: string) => {
+    const canonical = path.replace(template, (...match: unknown[]) => {
+      const { name = "", converter = "" } = match.at(-1) as Record<
+        string,
+        string | undefined
+      >;
       names.push(name);
-      return `{${name}}`;
+      const range = Object.hasOwn(ranges, converter)
+        ? ranges[converter]
+        : undefined;
+      return range === undefined ? patternHole(name) : rangedHole(name, range);
     });
     return { path: canonical, paramNames: new Set(names) };
   };
 }
 
-/** `braces` follows Starlette's `PARAM_REGEX`, `flaskConverters` follows Werkzeug's `_part_re`. */
+/**
+ * `braces` follows Starlette's `PARAM_REGEX`, `flaskConverters` follows
+ * Werkzeug's `_part_re`. Each library's `path` converter takes the rest
+ * of the path, slashes included: Starlette's matches nothing too, and
+ * Werkzeug's needs at least one character.
+ */
 const PATH_TEMPLATE_READERS: Record<string, PathTemplateReader> = {
-  braces: templateReader(/\{([A-Za-z_]\w*)(?::[A-Za-z_]\w*)?\}/g),
+  braces: templateReader(
+    /\{(?<name>[A-Za-z_]\w*)(?::(?<converter>[A-Za-z_]\w*))?\}/g,
+    { path: "any" },
+  ),
   flaskConverters: templateReader(
-    /<(?:[A-Za-z_]\w*(?:\(.*?\))?:)?([A-Za-z_]\w*)>/g,
+    /<(?:(?<converter>[A-Za-z_]\w*)(?:\(.*?\))?:)?(?<name>[A-Za-z_]\w*)>/g,
+    { path: "many" },
   ),
 };
+
+/** A path the library writes, as a route path, read the way the pattern reads its routes' paths. */
+export function routePathIn(
+  pattern: PythonDiscoveryPattern,
+  path: string,
+): string {
+  const syntax = pattern.pathParamSyntax;
+  const reader =
+    syntax === undefined ? undefined : PATH_TEMPLATE_READERS[syntax];
+  return reader === undefined ? path : reader(path).path;
+}
 
 function readPathTemplate(
   pattern: PythonDiscoveryPattern,
